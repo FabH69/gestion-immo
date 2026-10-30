@@ -6,7 +6,7 @@ from django.urls import path, reverse
 from django.utils import timezone
 from django.utils.html import format_html
 
-from .models import Bail, Bien, Echeance, Locataire, Lot, Paiement, Proprietaire
+from .models import Bail, Bien, ChangementLocataire, Echeance, Locataire, Lot, Paiement, Proprietaire, Tache
 
 admin.site.site_header = "Gestion immobilière"
 admin.site.site_title = "Gestion immobilière"
@@ -209,3 +209,103 @@ class EcheanceAdmin(admin.ModelAdmin):
             Paiement.objects.create(echeance=e, date=timezone.localdate(), montant=e.reste_du)
             n += 1
         self.message_user(request, f"{n} échéance(s) marquée(s) comme payée(s).", messages.SUCCESS)
+
+
+class TacheInlineBase(admin.TabularInline):
+    model = Tache
+    fields = ["faite", "libelle", "aide", "echeance", "commentaire", "date_faite"]
+    readonly_fields = ["aide", "date_faite"]
+    extra = 0
+    phase = None
+
+    class Media:
+        css = {"all": ["patrimoine/checklist.css"]}
+
+    def get_queryset(self, request):
+        return super().get_queryset(request).filter(phase=self.phase)
+
+    def get_formset(self, request, obj=None, **kwargs):
+        formset = super().get_formset(request, obj, **kwargs)
+        formset.form.base_fields["libelle"].widget.attrs.update(size=50)
+        formset.form.base_fields["commentaire"].widget.attrs.update(size=25)
+        phase = self.phase
+
+        class FormsetPhase(formset):
+            def save_new(self, form, commit=True):
+                form.instance.phase = phase
+                return super().save_new(form, commit)
+
+        return FormsetPhase
+
+
+class TacheSortieInline(TacheInlineBase):
+    phase = Tache.Phase.DEPART
+    verbose_name = "tâche de sortie"
+    verbose_name_plural = "1. Sortie du locataire"
+
+
+class TacheEntreeInline(TacheInlineBase):
+    phase = Tache.Phase.ARRIVEE
+    verbose_name = "tâche d'entrée"
+    verbose_name_plural = "2. Entrée du nouveau locataire"
+
+
+@admin.register(ChangementLocataire)
+class ChangementLocataireAdmin(admin.ModelAdmin):
+    list_display = ["lot", "locataire_sortant", "date_conge", "date_depart", "date_arrivee", "avancement_affiche", "prochaine_tache", "termine"]
+    list_filter = ["termine", "lot__bien__proprietaire", "lot__bien"]
+    fields = ["lot", "bail_sortant", "date_conge", "date_depart", "date_arrivee", "termine", "notes"]
+    inlines = [TacheSortieInline, TacheEntreeInline]
+
+    @admin.display(description="locataire sortant")
+    def locataire_sortant(self, obj):
+        return ", ".join(str(l) for l in obj.bail_sortant.locataires.all()) if obj.bail_sortant else "–"
+
+    @admin.display(description="avancement")
+    def avancement_affiche(self, obj):
+        faites, total = obj.avancement
+        pct = round(100 * faites / total) if total else 0
+        return format_html(
+            '<div style="width:90px;background:#eee;border-radius:3px"><div style="width:{}%;background:#2e7d32;height:8px;border-radius:3px"></div></div>{} / {}',
+            pct, faites, total,
+        )
+
+    @admin.display(description="prochaine tâche")
+    def prochaine_tache(self, obj):
+        t = obj.taches.filter(faite=False).exclude(echeance=None).order_by("echeance").first()
+        if not t:
+            return "–"
+        couleur = "#c62828" if t.echeance < timezone.localdate() else "inherit"
+        return format_html('<span style="color:{}">{} – {}</span>', couleur, t.echeance.strftime("%d/%m/%Y"), t.libelle)
+
+
+class TacheEnRetardFilter(admin.SimpleListFilter):
+    title = "échéance"
+    parameter_name = "quand"
+
+    def lookups(self, request, model_admin):
+        return [("retard", "En retard"), ("30j", "Dans les 30 jours")]
+
+    def queryset(self, request, queryset):
+        aujourdhui = timezone.localdate()
+        if self.value() == "retard":
+            return queryset.filter(faite=False, echeance__lt=aujourdhui)
+        if self.value() == "30j":
+            return queryset.filter(faite=False, echeance__gte=aujourdhui, echeance__lte=aujourdhui + timedelta(days=30))
+        return queryset
+
+
+@admin.register(Tache)
+class TacheAdmin(admin.ModelAdmin):
+    list_display = ["echeance", "libelle", "changement", "phase", "faite"]
+    list_editable = ["faite"]
+    list_filter = [TacheEnRetardFilter, "faite", "phase", "changement__lot__bien__proprietaire"]
+    list_display_links = ["libelle"]
+    search_fields = ["libelle", "changement__lot__designation", "changement__lot__bien__nom"]
+    ordering = ["faite", "echeance"]
+    fields = ["changement", "phase", "libelle", "aide", "echeance", "faite", "date_faite", "commentaire"]
+    readonly_fields = ["date_faite"]
+
+    def get_model_perms(self, request):
+        # Accessible depuis l'accueil et les changements de locataire, sans encombrer le menu.
+        return {}

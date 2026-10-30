@@ -1,4 +1,5 @@
 import calendar
+from datetime import date, timedelta
 
 from django.db import models
 
@@ -237,3 +238,108 @@ class Paiement(models.Model):
         echeance = self.echeance
         super().delete(*args, **kwargs)
         echeance.mettre_a_jour_statut()
+
+
+class ChangementLocataire(models.Model):
+    """Départ d'un locataire et/ou arrivée d'un nouveau sur un lot, avec sa check-list."""
+
+    lot = models.ForeignKey(Lot, on_delete=models.PROTECT, related_name="changements")
+    bail_sortant = models.ForeignKey(
+        Bail, on_delete=models.SET_NULL, null=True, blank=True, related_name="+", verbose_name="bail sortant",
+        help_text="Rempli automatiquement avec le bail actif du lot si laissé vide.",
+    )
+    date_conge = models.DateField("réception du congé", null=True, blank=True)
+    date_depart = models.DateField("départ prévu", null=True, blank=True,
+                                   help_text="Si vide, calculé depuis le congé : 3 mois en location nue, 1 mois en meublé.")
+    date_arrivee = models.DateField("arrivée prévue du nouveau locataire", null=True, blank=True)
+    termine = models.BooleanField("terminé", default=False)
+    notes = models.TextField(blank=True)
+
+    class Meta:
+        verbose_name = "changement de locataire"
+        verbose_name_plural = "changements de locataire"
+        ordering = ["termine", "date_depart"]
+
+    def __str__(self):
+        quand = f" – départ le {self.date_depart:%d/%m/%Y}" if self.date_depart else ""
+        return f"{self.lot}{quand}"
+
+    def save(self, *args, **kwargs):
+        if not self.bail_sortant_id and self.lot_id:
+            self.bail_sortant = self.lot.bail_actif
+        if not self.date_depart and self.date_conge:
+            meuble = self.bail_sortant and self.bail_sortant.type in (Bail.Type.MEUBLE, Bail.Type.ETUDIANT, Bail.Type.MOBILITE)
+            self.date_depart = _ajouter_mois(self.date_conge, 1 if meuble else 3)
+        nouveau = self.pk is None
+        dates = lambda c: (c.date_conge, c.date_depart, c.date_arrivee)
+        dates_changees = not nouveau and dates(ChangementLocataire.objects.get(pk=self.pk)) != dates(self)
+        super().save(*args, **kwargs)
+        if nouveau:
+            self.creer_taches()
+        elif dates_changees:
+            # Ne touche pas aux dates ajustées à la main tant que les dates de référence ne bougent pas.
+            self.recalculer_echeances()
+
+    def _date_reference(self, reference):
+        return {"conge": self.date_conge or self.date_depart, "depart": self.date_depart, "arrivee": self.date_arrivee}[reference]
+
+    def creer_taches(self):
+        from .checklists import MODELE_CHANGEMENT_LOCATAIRE
+
+        for ordre, (phase, libelle, aide, reference, decalage) in enumerate(MODELE_CHANGEMENT_LOCATAIRE):
+            Tache.objects.create(
+                changement=self, ordre=ordre, phase=phase, libelle=libelle, aide=aide,
+                reference=reference, decalage_jours=decalage,
+            )
+        self.recalculer_echeances()
+
+    def recalculer_echeances(self):
+        """Recalcule les dates des tâches non faites, par exemple après un report du départ."""
+        for tache in self.taches.filter(faite=False):
+            base = self._date_reference(tache.reference)
+            tache.echeance = base + timedelta(days=tache.decalage_jours) if base else None
+            tache.save(update_fields=["echeance"])
+
+    @property
+    def avancement(self):
+        total = self.taches.count()
+        faites = self.taches.filter(faite=True).count()
+        return faites, total
+
+
+class Tache(models.Model):
+    class Phase(models.TextChoices):
+        DEPART = "depart", "Sortie du locataire"
+        ARRIVEE = "arrivee", "Entrée du nouveau locataire"
+
+    changement = models.ForeignKey(ChangementLocataire, on_delete=models.CASCADE, related_name="taches")
+    ordre = models.PositiveSmallIntegerField(default=0)
+    phase = models.CharField(max_length=10, choices=Phase.choices)
+    libelle = models.CharField("tâche", max_length=200)
+    aide = models.TextField("à savoir", blank=True)
+    reference = models.CharField(max_length=10, default="depart", editable=False)
+    decalage_jours = models.IntegerField(default=0, editable=False)
+    echeance = models.DateField("à faire avant le", null=True, blank=True)
+    faite = models.BooleanField("faite", default=False)
+    date_faite = models.DateField("faite le", null=True, blank=True)
+    commentaire = models.CharField(max_length=255, blank=True)
+
+    class Meta:
+        verbose_name = "tâche"
+        ordering = ["changement", "ordre"]
+
+    def __str__(self):
+        return self.libelle
+
+    def save(self, *args, **kwargs):
+        if self.faite and not self.date_faite:
+            self.date_faite = date.today()
+        if not self.faite:
+            self.date_faite = None
+        super().save(*args, **kwargs)
+
+
+def _ajouter_mois(d, n):
+    mois = d.month - 1 + n
+    annee, mois = d.year + mois // 12, mois % 12 + 1
+    return d.replace(year=annee, month=mois, day=min(d.day, calendar.monthrange(annee, mois)[1]))

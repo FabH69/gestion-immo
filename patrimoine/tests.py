@@ -90,3 +90,61 @@ class EtatLoyersTests(TestCase):
         self.assertIn("1100,00", contenu)
         r = self.client.get("/etats/loyers-encaisses/", {"annee": 2025, "format": "pdf"})
         self.assertEqual(r["Content-Type"], "application/pdf")
+
+
+class ChangementLocataireTests(TestCase):
+    def setUp(self):
+        proprio = Proprietaire.objects.create(nom="SCI", type=Proprietaire.Type.SCI_IR)
+        bien = Bien.objects.create(proprietaire=proprio, nom="Immeuble", adresse="1 rue", code_postal="69000", ville="Lyon")
+        self.lot = Lot.objects.create(bien=bien, designation="Apt")
+        self.bail = Bail.objects.create(lot=self.lot, type=Bail.Type.NU, date_debut=date(2023, 1, 1), loyer_hc=Decimal("600"))
+
+    def test_creation_genere_la_check_list_datee(self):
+        from .checklists import MODELE_CHANGEMENT_LOCATAIRE
+        from .models import ChangementLocataire
+
+        c = ChangementLocataire.objects.create(lot=self.lot, date_conge=date(2026, 9, 20), date_arrivee=date(2027, 1, 1))
+        self.assertEqual(c.bail_sortant, self.bail)
+        self.assertEqual(c.date_depart, date(2026, 12, 20))  # préavis de 3 mois en location nue
+        self.assertEqual(c.taches.count(), len(MODELE_CHANGEMENT_LOCATAIRE))
+        edl = c.taches.get(libelle="Réaliser l'état des lieux de sortie")
+        self.assertEqual(edl.echeance, date(2026, 12, 20))
+        depot = c.taches.get(libelle="Restituer le dépôt de garantie")
+        self.assertEqual(depot.echeance, date(2027, 1, 19))
+        self.assertEqual(c.taches.first().phase, "depart")
+
+    def test_report_du_depart_decale_les_taches_non_faites(self):
+        from .models import ChangementLocataire
+
+        c = ChangementLocataire.objects.create(lot=self.lot, date_depart=date(2026, 12, 20))
+        faite = c.taches.get(libelle="Réaliser l'état des lieux de sortie")
+        faite.faite = True
+        faite.save()
+        c.date_depart = date(2027, 1, 10)
+        c.save()
+        faite.refresh_from_db()
+        self.assertEqual(faite.echeance, date(2026, 12, 20))
+        self.assertIsNotNone(faite.date_faite)
+        cles = c.taches.get(libelle="Récupérer toutes les clés et badges")
+        self.assertEqual(cles.echeance, date(2027, 1, 10))
+        self.assertIsNone(c.taches.get(libelle="Remettre les clés").echeance)  # pas de date d'arrivée
+
+    def test_preavis_meuble_un_mois(self):
+        from .models import ChangementLocataire
+
+        self.bail.type = Bail.Type.MEUBLE
+        self.bail.save()
+        c = ChangementLocataire.objects.create(lot=self.lot, date_conge=date(2026, 1, 31))
+        self.assertEqual(c.date_depart, date(2026, 2, 28))
+
+    def test_date_ajustee_a_la_main_conservee(self):
+        from .models import ChangementLocataire
+
+        c = ChangementLocataire.objects.create(lot=self.lot, date_depart=date(2026, 12, 20))
+        t = c.taches.get(libelle="Récupérer toutes les clés et badges")
+        t.echeance = date(2026, 12, 22)
+        t.save()
+        c.notes = "Locataire joignable le soir"
+        c.save()
+        t.refresh_from_db()
+        self.assertEqual(t.echeance, date(2026, 12, 22))

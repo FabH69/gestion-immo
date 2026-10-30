@@ -25,3 +25,4 @@ Puis ouvrir http://127.0.0.1:8000/.
 ## États
 
 - **Loyers encaissés** (page d'accueil ou menu Loyers) : tableau par propriétaire, bien et lot, mois par mois sur une année civile, avec la répartition loyers HC / charges. Filtre par entité, export PDF et CSV pour Excel.
+- **Changements de locataire** : à la saisie d'un congé (ou d'une date de départ), l'application crée une check-list datée de 22 tâches, de la sortie à l'entrée du nouveau locataire, avec un rappel des règles utiles. Les dates se recalculent si le départ ou l'arrivée est décalé. Les tâches des 30 prochains jours s'affichent sur la page d'accueil.

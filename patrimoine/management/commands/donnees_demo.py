@@ -4,7 +4,7 @@ from decimal import Decimal
 
 from django.core.management.base import BaseCommand
 
-from patrimoine.models import Bail, Bien, Echeance, Locataire, Lot, Paiement, Proprietaire
+from patrimoine.models import Bail, Bien, ChangementLocataire, Echeance, Locataire, Lot, Paiement, Proprietaire
 
 
 class Command(BaseCommand):
@@ -56,5 +56,10 @@ class Command(BaseCommand):
                 Paiement.objects.create(echeance=e, date=e.date_exigibilite.replace(day=5), montant=e.total)
             elif e.bail.lot == lots[3]:
                 Paiement.objects.create(echeance=e, date=date(2026, 10, 8), montant=Decimal("500"))
+
+        changement = ChangementLocataire.objects.create(lot=lots[1], date_conge=date(2026, 9, 20), date_arrivee=date(2027, 1, 1))
+        for tache in changement.taches.all()[:2]:
+            tache.faite = True
+            tache.save()
 
         self.stdout.write(self.style.SUCCESS("Données de démonstration créées."))
