@@ -1,0 +1,74 @@
+{% load l10n %}<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<style>
+  @page { size: A4; margin: 2cm; }
+  body { font-family: "DejaVu Sans", sans-serif; font-size: 10.5pt; color: #222; }
+  h1 { font-size: 18pt; text-align: center; margin: 0 0 4pt; letter-spacing: 1pt; }
+  .periode { text-align: center; color: #555; margin-bottom: 24pt; }
+  .parties { display: flex; justify-content: space-between; margin-bottom: 20pt; }
+  .partie { width: 46%; }
+  .label { font-size: 8.5pt; text-transform: uppercase; color: #777; margin-bottom: 3pt; }
+  table { width: 100%; border-collapse: collapse; margin: 16pt 0; }
+  td { padding: 6pt 8pt; border-bottom: 1px solid #ddd; }
+  td.m { text-align: right; white-space: nowrap; }
+  tr.total td { font-weight: bold; border-top: 2px solid #222; border-bottom: none; }
+  .texte { line-height: 1.5; margin: 14pt 0; }
+  .signature { margin-top: 36pt; text-align: right; }
+  .mention { margin-top: 40pt; font-size: 8pt; color: #777; }
+</style>
+</head>
+<body>
+  <h1>{% if est_quittance %}QUITTANCE DE LOYER{% else %}AVIS D'ÉCHÉANCE{% endif %}</h1>
+  <div class="periode">Période du {{ e.periode|date:"d/m/Y" }} au {{ e.fin_periode|date:"d/m/Y" }}</div>
+
+  <div class="parties">
+    <div class="partie">
+      <div class="label">Bailleur</div>
+      <strong>{{ proprietaire.nom }}</strong><br>
+      {{ proprietaire.adresse|linebreaksbr }}
+    </div>
+    <div class="partie">
+      <div class="label">Locataire{{ locataires|length|pluralize }}</div>
+      {% for l in locataires %}<strong>{{ l }}</strong><br>{% endfor %}
+      {{ bien.adresse }}<br>{{ bien.code_postal }} {{ bien.ville }}
+    </div>
+  </div>
+
+  <div class="label">Logement</div>
+  {{ lot.designation }}, {{ bien.adresse }}, {{ bien.code_postal }} {{ bien.ville }}
+
+  <table>
+    <tr><td>Loyer hors charges</td><td class="m">{{ e.loyer_hc|floatformat:2 }} €</td></tr>
+    <tr><td>Provision sur charges</td><td class="m">{{ e.charges|floatformat:2 }} €</td></tr>
+    <tr class="total"><td>Total</td><td class="m">{{ e.total|floatformat:2 }} €</td></tr>
+  </table>
+
+  {% if est_quittance %}
+  <p class="texte">
+    Je soussigné(e), {{ proprietaire.nom }}, bailleur du logement désigné ci-dessus, déclare avoir reçu
+    de {% for l in locataires %}{{ l }}{% if not forloop.last %} et {% endif %}{% endfor %}
+    la somme de <strong>{{ e.total|floatformat:2 }} €</strong> au titre du loyer et des charges
+    pour la période du {{ e.periode|date:"d/m/Y" }} au {{ e.fin_periode|date:"d/m/Y" }},
+    {% if date_paiement %}réglée le {{ date_paiement|date:"d/m/Y" }}, {% endif %}et lui en donne quittance,
+    sous réserve de tous mes droits.
+  </p>
+  {% else %}
+  <p class="texte">
+    Montant à régler avant le <strong>{{ e.date_exigibilite|date:"d/m/Y" }}</strong> :
+    <strong>{{ e.reste_du|floatformat:2 }} €</strong>{% if e.montant_paye %} (déjà reçu : {{ e.montant_paye|floatformat:2 }} €){% endif %}.
+    {% if proprietaire.iban %}<br>IBAN : {{ proprietaire.iban }}{% endif %}
+  </p>
+  {% endif %}
+
+  <div class="signature">
+    Fait le {{ aujourdhui|date:"d/m/Y" }}<br><br>
+    {{ proprietaire.nom }}
+  </div>
+
+  {% if est_quittance %}
+  <p class="mention">Cette quittance annule tous les reçus qui auraient pu être établis précédemment en cas de paiement partiel du montant ci-dessus.</p>
+  {% endif %}
+</body>
+</html>
