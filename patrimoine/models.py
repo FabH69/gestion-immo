@@ -41,6 +41,7 @@ class Bien(models.Model):
     adresse = models.CharField(max_length=255)
     code_postal = models.CharField(max_length=10)
     ville = models.CharField(max_length=100)
+    syndic = models.CharField(max_length=150, blank=True, help_text="Syndic de copropriété ou régie")
     date_acquisition = models.DateField("date d'acquisition", null=True, blank=True)
     prix_acquisition = models.DecimalField(
         "prix d'acquisition (€)", max_digits=12, decimal_places=2, null=True, blank=True
@@ -89,6 +90,9 @@ class Lot(models.Model):
         help_text="Une pièce par ligne. Si vide, une liste standard est proposée selon le nombre de pièces.",
     )
     zone_tendue = models.BooleanField("zone tendue", default=False)
+    pdl = models.CharField("n° PDL électricité", max_length=20, blank=True)
+    vendu = models.BooleanField(default=False, help_text="Lot vendu : conservé pour l'historique")
+    ref_import = models.CharField("référence d'import", max_length=40, blank=True, editable=False, help_text="Identifiant Airtable d'origine")
     loyer_propose = models.DecimalField(
         "loyer proposé à la location, charges comprises (€)", max_digits=10, decimal_places=2, null=True, blank=True,
         help_text="Affiché aux candidats et utilisé pour le taux d'effort quand le lot est vacant",

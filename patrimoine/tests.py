@@ -390,3 +390,33 @@ class AnnonceTests(TestCase):
         self.client.force_login(User.objects.create_superuser("admin", "a@example.com", "x"))
         r = self.client.get(f"/lots/{self.lot.pk}/photos.zip")
         self.assertEqual(_zip.ZipFile(_io.BytesIO(r.content)).namelist(), ["01-sejour.jpg", "02-cuisine.jpg"])
+
+
+class ImportAirtableTests(TestCase):
+    def test_import_lots(self):
+        import os
+        import tempfile
+
+        from django.core.management import call_command
+
+        contenu = (
+            "\ufeffAppartement,Adresse_Appart,CP_Appart,Ville_Appart,Etage,Tags,Superficie,Copro,Nb_Pièce,Propriétaire,PDL,Record ID,Statut,Type_Chauffage,Type_eau,Location 4\n"
+            "Immeuble A,\"1 rue Test\n\",69000,Lyon,1er étage,Appartement,40,Syndic X,2,SCI TEST,123,rec1,,Individuel,,A1\n"
+            "Immeuble A,1 rue Test,69000,Lyon,Rez de chaussée,Garage,,Syndic X,1,SCI TEST,,rec2,,,,G1\n"
+            "Vieux,2 rue Test,69000,Lyon,,Appartement,30,,1,SCI TEST,,rec3,Vendu,,,\n"
+        )
+        with tempfile.NamedTemporaryFile("w", suffix=".csv", delete=False, encoding="utf-8") as f:
+            f.write(contenu)
+        try:
+            call_command("importer_airtable_lots", f.name, stdout=open(os.devnull, "w"))
+            self.assertEqual(Lot.objects.count(), 0)  # simulation par défaut
+            call_command("importer_airtable_lots", f.name, "--appliquer", stdout=open(os.devnull, "w"))
+            call_command("importer_airtable_lots", f.name, "--appliquer", stdout=open(os.devnull, "w"))  # idempotent
+        finally:
+            os.unlink(f.name)
+        self.assertEqual(Lot.objects.count(), 2)
+        self.assertEqual(Bien.objects.get().syndic, "Syndic X")
+        self.assertEqual(Proprietaire.objects.get().type, Proprietaire.Type.SCI_IR)
+        garage = Lot.objects.get(ref_import="rec2")
+        self.assertEqual((garage.type, garage.nb_pieces), (Lot.Type.PARKING, None))
+        self.assertEqual(Lot.objects.get(ref_import="rec1").pdl, "123")
