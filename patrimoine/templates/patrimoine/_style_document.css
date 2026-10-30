@@ -1,0 +1,14 @@
+@page { size: A4; margin: 1.8cm 1.8cm 2cm; @bottom-center { content: "Paraphes : ______    ______          Page " counter(page) " / " counter(pages); font-size: 7.5pt; color: #666; } }
+body { font-family: "DejaVu Sans", sans-serif; font-size: 9.5pt; color: #222; line-height: 1.45; }
+h1 { font-size: 15pt; text-align: center; margin: 0 0 2pt; }
+.sous-titre { text-align: center; color: #555; margin-bottom: 16pt; font-size: 9pt; }
+h2 { font-size: 10.5pt; background: #264b5d; color: #fff; padding: 3pt 6pt; margin: 14pt 0 6pt; }
+h3 { font-size: 9.5pt; margin: 8pt 0 3pt; }
+table { width: 100%; border-collapse: collapse; }
+td, th { padding: 3pt 5pt; vertical-align: top; border: 1px solid #ccc; }
+th { background: #f1f1f1; text-align: left; font-size: 8.5pt; }
+td.l { width: 38%; color: #555; }
+.a-remplir { color: #999; }
+.signatures { display: flex; justify-content: space-between; margin-top: 18pt; page-break-inside: avoid; }
+.signatures div { width: 46%; border: 1px solid #ccc; height: 90pt; padding: 5pt; font-size: 8.5pt; }
+.petit { font-size: 8pt; color: #555; }

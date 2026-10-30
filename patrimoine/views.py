@@ -1,4 +1,5 @@
 import csv
+from datetime import date
 
 from django.contrib import admin
 from django.contrib.admin.views.decorators import staff_member_required
@@ -9,8 +10,9 @@ from django.utils import timezone
 from django.utils.text import slugify
 from weasyprint import HTML
 
-from .etats import loyers_encaisses
-from .models import Echeance, Proprietaire
+from .documents import ELEMENTS_PIECE, INVENTAIRE_MEUBLE, duree_texte
+from .etats import endettement, loyers_encaisses
+from .models import Bail, Echeance, EtatDesLieux, MouvementDepot, Pret, Proprietaire
 
 
 @staff_member_required
@@ -84,3 +86,113 @@ def _etat_csv(etat, nom_fichier):
     t = etat["total"]
     w.writerow(["TOTAL", "", "", *map(fr, t["mois"]), fr(t["total"]), fr(t["loyers_hc"]), fr(t["charges"])])
     return response
+
+
+def _pdf(html, nom):
+    response = HttpResponse(HTML(string=html).write_pdf(), content_type="application/pdf")
+    response["Content-Disposition"] = f'inline; filename="{slugify(nom)}.pdf"'
+    return response
+
+
+def _contexte_bail(bail):
+    lot = bail.lot
+    return {
+        "bail": bail,
+        "lot": lot,
+        "bien": lot.bien,
+        "proprietaire": lot.bien.proprietaire,
+        "locataires": list(bail.locataires.all()),
+    }
+
+
+@staff_member_required
+def document_bail(request, pk):
+    bail = get_object_or_404(Bail.objects.select_related("lot__bien__proprietaire"), pk=pk)
+    contexte = _contexte_bail(bail)
+    contexte.update(duree_texte=duree_texte(bail), nb_exemplaires=1 + len(contexte["locataires"]))
+    return _pdf(render_to_string("patrimoine/bail.html", contexte), f"bail {bail.lot} {bail.date_debut:%Y-%m-%d}")
+
+
+def _rendu_edl(bail, edl):
+    contexte = _contexte_bail(bail)
+    contexte.update(
+        edl=edl,
+        pieces=bail.lot.liste_pieces(),
+        elements=ELEMENTS_PIECE,
+        meuble=bail.lot.meuble or bail.type in (Bail.Type.MEUBLE, Bail.Type.ETUDIANT, Bail.Type.MOBILITE),
+        inventaire=INVENTAIRE_MEUBLE,
+    )
+    return _pdf(render_to_string("patrimoine/etat_des_lieux.html", contexte), f"etat des lieux {edl.get_type_display()} {bail.lot}")
+
+
+@staff_member_required
+def document_etat_des_lieux(request, pk):
+    edl = get_object_or_404(EtatDesLieux.objects.select_related("bail__lot__bien__proprietaire"), pk=pk)
+    return _rendu_edl(edl.bail, edl)
+
+
+@staff_member_required
+def document_etat_des_lieux_vierge(request, pk, type_edl):
+    """Fiche pré-remplie depuis le bail, sans état des lieux enregistré (à imprimer avant le rendez-vous)."""
+    bail = get_object_or_404(Bail.objects.select_related("lot__bien__proprietaire"), pk=pk)
+    return _rendu_edl(bail, EtatDesLieux(bail=bail, type=type_edl, date=None))
+
+
+@staff_member_required
+def document_inventaire(request, pk, type_edl):
+    bail = get_object_or_404(Bail.objects.select_related("lot__bien__proprietaire"), pk=pk)
+    contexte = _contexte_bail(bail)
+    contexte.update(type_edl=type_edl, pieces=bail.lot.liste_pieces(), inventaire=INVENTAIRE_MEUBLE, lignes_libres=range(5))
+    return _pdf(render_to_string("patrimoine/inventaire.html", contexte), f"inventaire {type_edl} {bail.lot}")
+
+
+@staff_member_required
+def document_recu_depot(request, pk):
+    m = get_object_or_404(MouvementDepot.objects.select_related("bail__lot__bien__proprietaire"), pk=pk, type=MouvementDepot.Type.ENCAISSEMENT)
+    contexte = _contexte_bail(m.bail)
+    contexte.update(m=m, aujourdhui=timezone.localdate())
+    return _pdf(render_to_string("patrimoine/recu_depot.html", contexte), f"recu depot garantie {m.bail.lot}")
+
+
+@staff_member_required
+def etat_endettement(request):
+    try:
+        a_date = date.fromisoformat(request.GET.get("date", ""))
+    except ValueError:
+        a_date = timezone.localdate()
+    proprietaire = None
+    if request.GET.get("proprietaire"):
+        proprietaire = get_object_or_404(Proprietaire, pk=request.GET["proprietaire"])
+    etat = endettement(a_date, proprietaire)
+    nom_fichier = f"endettement-{a_date:%Y-%m-%d}-{slugify(proprietaire.nom) if proprietaire else 'tous'}"
+    contexte = {**etat, "proprietaire": proprietaire, "proprietaires_choix": Proprietaire.objects.all(), "aujourdhui": timezone.localdate()}
+
+    if request.GET.get("format") == "csv":
+        response = HttpResponse(content_type="text/csv; charset=utf-8")
+        response["Content-Disposition"] = f'attachment; filename="{nom_fichier}.csv"'
+        response.write("\ufeff")
+        w = csv.writer(response, delimiter=";")
+        fr = lambda d: f"{d:.2f}".replace(".", ",")
+        w.writerow(["Emprunteur", "Banque", "N° de prêt", "Bien", "Capital emprunté", "Taux (%)", "Fin", "Mensualité + assurance", f"Intérêts {a_date.year}", f"Capital restant dû au {a_date:%d/%m/%Y}"])
+        for bloc in etat["blocs"]:
+            for l in bloc["lignes"]:
+                p = l["pret"]
+                w.writerow([p.proprietaire.nom, p.banque, p.reference, p.bien.nom if p.bien else "", fr(p.montant), fr(p.taux), f"{p.date_derniere_echeance:%m/%Y}", fr(l["mensualite"]), fr(l["interets"]), fr(l["restant"])])
+        t = etat["total"]
+        w.writerow(["TOTAL", "", "", "", fr(t["montant"]), "", "", fr(t["mensualite"]), fr(t["interets"]), fr(t["restant"])])
+        return response
+    if request.GET.get("format") == "pdf":
+        return _pdf(render_to_string("patrimoine/endettement_pdf.html", contexte), nom_fichier)
+    titre = f"Endettement au {a_date:%d/%m/%Y}" + (f" – {proprietaire.nom}" if proprietaire else "")
+    return render(request, "patrimoine/endettement.html", {**admin.site.each_context(request), **contexte, "title": titre})
+
+
+@staff_member_required
+def document_amortissement(request, pk):
+    pret = get_object_or_404(Pret.objects.select_related("proprietaire", "bien"), pk=pk)
+    lignes = pret.echeancier()
+    for i, l in enumerate(lignes):
+        if i == len(lignes) - 1 or lignes[i + 1]["date"].year != l["date"].year:
+            annee = [x for x in lignes if x["date"].year == l["date"].year]
+            l["fin_annee"] = {c: sum(x[c] for x in annee) for c in ("mensualite", "interets", "capital", "assurance")}
+    return _pdf(render_to_string("patrimoine/amortissement_pdf.html", {"pret": pret, "lignes": lignes}), f"amortissement {pret.banque} {pret.reference}")

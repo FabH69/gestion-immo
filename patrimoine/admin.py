@@ -6,11 +6,22 @@ from django.urls import path, reverse
 from django.utils import timezone
 from django.utils.html import format_html
 
-from .models import Bail, Bien, ChangementLocataire, Echeance, Locataire, Lot, Paiement, Proprietaire, Tache
+from .models import Bail, Bien, ChangementLocataire, Echeance, EtatDesLieux, MouvementDepot, Pret, Locataire, Lot, Paiement, Proprietaire, Tache
 
 admin.site.site_header = "Gestion immobilière"
 admin.site.site_title = "Gestion immobilière"
 admin.site.index_title = "Tableau de bord"
+
+_changelist_view_django = admin.ModelAdmin.changelist_view
+
+
+def _changelist_view_titre_simple(self, request, extra_context=None):
+    """Titre de liste « Loyers » au lieu de « Sélectionnez l'objet loyer à changer »."""
+    extra_context = {"title": self.model._meta.verbose_name_plural.capitalize(), **(extra_context or {})}
+    return _changelist_view_django(self, request, extra_context)
+
+
+admin.ModelAdmin.changelist_view = _changelist_view_titre_simple
 
 
 class BienInline(admin.TabularInline):
@@ -25,6 +36,20 @@ class LotInline(admin.TabularInline):
     fields = ["designation", "type", "surface", "meuble"]
     extra = 0
     show_change_link = True
+
+
+class MouvementDepotInline(admin.TabularInline):
+    model = MouvementDepot
+    fields = ["date", "type", "montant", "mode", "justification", "recu"]
+    readonly_fields = ["recu"]
+    extra = 0
+    verbose_name_plural = "Dépôt de garantie (compte séparé)"
+
+    @admin.display(description="reçu")
+    def recu(self, obj):
+        if obj.pk and obj.type == MouvementDepot.Type.ENCAISSEMENT:
+            return format_html('<a href="{}" target="_blank">Reçu PDF</a>', reverse("document_recu_depot", args=[obj.pk]))
+        return "–"
 
 
 class BailInline(admin.TabularInline):
@@ -63,6 +88,12 @@ class LotAdmin(admin.ModelAdmin):
     list_filter = ["bien__proprietaire", "bien", "type", "meuble"]
     search_fields = ["designation", "bien__nom"]
     inlines = [BailInline]
+    fieldsets = [
+        (None, {"fields": ["bien", "designation", "type", "surface", "nb_pieces", "meuble", "etage"]}),
+        ("Caractéristiques (reprises dans le bail)", {"fields": ["annee_construction", "regime_juridique", "chauffage", "eau_chaude", "classe_dpe", "zone_tendue", "equipements", "annexes"]}),
+        ("État des lieux", {"fields": ["pieces"]}),
+        ("Notes", {"fields": ["notes"]}),
+    ]
 
     @admin.display(description="locataire")
     def locataire_actuel(self, obj):
@@ -88,6 +119,34 @@ class BailAdmin(admin.ModelAdmin):
     search_fields = ["lot__designation", "lot__bien__nom", "locataires__nom"]
     filter_horizontal = ["locataires"]
     date_hierarchy = "date_debut"
+    readonly_fields = ["documents"]
+    fieldsets = [
+        (None, {"fields": ["lot", "locataires", "type", "destination", "date_debut", "date_fin", "actif"]}),
+        ("Conditions financières", {"fields": ["loyer_hc", "charges", "mode_charges", "depot_garantie", "jour_echeance", "paiement_a_echoir", "indice_reference"]}),
+        ("Clauses particulières", {"fields": ["notes"]}),
+        ("Documents pré-remplis", {"fields": ["documents"]}),
+    ]
+    inlines = [MouvementDepotInline]
+
+    @admin.display(description="documents")
+    def documents(self, obj):
+        if not obj.pk:
+            return "Enregistrez le bail pour générer les documents."
+        liens = [
+            (reverse("document_bail", args=[obj.pk]), "Bail PDF"),
+            (reverse("document_edl_vierge", args=[obj.pk, "entree"]), "Fiche d'état des lieux d'entrée"),
+            (reverse("document_edl_vierge", args=[obj.pk, "sortie"]), "Fiche d'état des lieux de sortie"),
+        ]
+        if obj.lot.meuble or obj.type in (Bail.Type.MEUBLE, Bail.Type.ETUDIANT, Bail.Type.MOBILITE):
+            liens += [
+                (reverse("document_inventaire", args=[obj.pk, "entree"]), "Inventaire du mobilier (entrée)"),
+                (reverse("document_inventaire", args=[obj.pk, "sortie"]), "Inventaire du mobilier (sortie)"),
+            ]
+        return format_html(
+            "{}<p class='help'>Les champs manquants apparaissent « à compléter » : complétez la fiche du lot, du locataire ou du propriétaire. "
+            "Vérifiez le bail avec le modèle officiel (décret n° 2015-587) avant signature.</p>",
+            format_html(" · ".join('<a href="{}" target="_blank">{}</a>' for _ in liens), *[x for l in liens for x in l]),
+        )
 
     @admin.display(description="locataires")
     def liste_locataires(self, obj):
@@ -309,3 +368,91 @@ class TacheAdmin(admin.ModelAdmin):
     def get_model_perms(self, request):
         # Accessible depuis l'accueil et les changements de locataire, sans encombrer le menu.
         return {}
+
+
+@admin.register(EtatDesLieux)
+class EtatDesLieuxAdmin(admin.ModelAdmin):
+    list_display = ["date", "type", "bail", "document"]
+    list_filter = ["type", "bail__lot__bien__proprietaire"]
+    readonly_fields = ["document"]
+    fields = ["bail", "type", "date", ("compteur_electricite", "compteur_gaz"), ("compteur_eau_froide", "compteur_eau_chaude"), "nb_cles", "nouvelle_adresse", "observations", "document"]
+
+    @admin.display(description="document")
+    def document(self, obj):
+        if not obj.pk:
+            return "Enregistrez pour générer la fiche pré-remplie."
+        return format_html('<a href="{}" target="_blank">Fiche PDF pré-remplie</a>', reverse("document_edl", args=[obj.pk]))
+
+
+@admin.register(MouvementDepot)
+class MouvementDepotAdmin(admin.ModelAdmin):
+    list_display = ["date", "type", "montant_affiche", "bail", "mode", "recu"]
+    list_filter = ["type", "bail__lot__bien__proprietaire"]
+    search_fields = ["bail__lot__designation", "bail__locataires__nom"]
+    date_hierarchy = "date"
+    change_list_template = "admin/patrimoine/mouvementdepot/change_list.html"
+
+    @admin.display(description="montant (€)", ordering="montant")
+    def montant_affiche(self, obj):
+        return obj.montant_signe
+
+    @admin.display(description="reçu")
+    def recu(self, obj):
+        if obj.type == MouvementDepot.Type.ENCAISSEMENT:
+            return format_html('<a href="{}" target="_blank">Reçu PDF</a>', reverse("document_recu_depot", args=[obj.pk]))
+        return "–"
+
+    def changelist_view(self, request, extra_context=None):
+        soldes = []
+        for proprio in Proprietaire.objects.all():
+            mouvements = MouvementDepot.objects.filter(bail__lot__bien__proprietaire=proprio)
+            solde = sum((m.montant_signe for m in mouvements), 0)
+            if mouvements.exists():
+                soldes.append((proprio, solde))
+        extra_context = {**(extra_context or {}), "soldes": soldes, "total_detenu": sum(s for _, s in soldes)}
+        return super().changelist_view(request, extra_context)
+
+
+@admin.register(Pret)
+class PretAdmin(admin.ModelAdmin):
+    list_display = ["__str__", "proprietaire", "bien", "taux_affiche", "mensualite", "fin", "restant_du", "amortissement"]
+    list_filter = ["proprietaire", "banque", "type"]
+    readonly_fields = ["calculs"]
+    fieldsets = [
+        (None, {"fields": ["proprietaire", "bien", "banque", "reference", "type"]}),
+        ("Conditions", {"fields": ["montant", "taux", "duree_mois", "date_premiere_echeance", "assurance_mensuelle"]}),
+        ("Calculs", {"fields": ["calculs"]}),
+        ("Notes", {"fields": ["notes"]}),
+    ]
+    change_list_template = "admin/patrimoine/pret/change_list.html"
+
+    @admin.display(description="taux")
+    def taux_affiche(self, obj):
+        return f"{obj.taux:.3f} %".replace(".", ",")
+
+    @admin.display(description="mensualité + assur. (€)")
+    def mensualite(self, obj):
+        return obj.mensualite_hors_assurance + obj.assurance_mensuelle
+
+    @admin.display(description="fin")
+    def fin(self, obj):
+        return obj.date_derniere_echeance.strftime("%m/%Y")
+
+    @admin.display(description="restant dû aujourd'hui (€)")
+    def restant_du(self, obj):
+        return obj.capital_restant_du(timezone.localdate())
+
+    @admin.display(description="tableau")
+    def amortissement(self, obj):
+        return format_html('<a href="{}" target="_blank">PDF</a>', reverse("document_amortissement", args=[obj.pk]))
+
+    @admin.display(description="résultats")
+    def calculs(self, obj):
+        if not obj.pk:
+            return "Enregistrez le prêt pour voir les calculs."
+        return format_html(
+            "Mensualité hors assurance : <strong>{} €</strong> · Dernière échéance : {} · Capital restant dû aujourd'hui : <strong>{} €</strong><br>"
+            '<a href="{}" target="_blank">Tableau d\'amortissement PDF</a>',
+            obj.mensualite_hors_assurance, obj.date_derniere_echeance.strftime("%d/%m/%Y"),
+            obj.capital_restant_du(timezone.localdate()), reverse("document_amortissement", args=[obj.pk]),
+        )

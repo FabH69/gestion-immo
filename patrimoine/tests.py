@@ -148,3 +148,92 @@ class ChangementLocataireTests(TestCase):
         c.save()
         t.refresh_from_db()
         self.assertEqual(t.echeance, date(2026, 12, 22))
+
+
+class DocumentsTests(TestCase):
+    def setUp(self):
+        proprio = Proprietaire.objects.create(nom="SCI Test", type=Proprietaire.Type.SCI_IR, representant="M. X, gérant")
+        bien = Bien.objects.create(proprietaire=proprio, nom="Immeuble", adresse="1 rue", code_postal="69000", ville="Lyon")
+        self.lot = Lot.objects.create(bien=bien, designation="Apt", nb_pieces=3, meuble=True)
+        self.bail = Bail.objects.create(lot=self.lot, type=Bail.Type.MEUBLE, date_debut=date(2026, 9, 1), loyer_hc=Decimal("600"))
+        self.bail.locataires.add(Locataire.objects.create(nom="Martin"))
+        self.client.force_login(User.objects.create_superuser("admin", "a@example.com", "x"))
+
+    def test_pieces_par_defaut(self):
+        self.assertEqual(self.lot.liste_pieces(), ["Entrée", "Séjour", "Cuisine", "Chambre 1", "Chambre 2", "Salle de bains", "WC"])
+        self.lot.pieces = "Pièce de vie\n\nMezzanine"
+        self.assertEqual(self.lot.liste_pieces(), ["Pièce de vie", "Mezzanine"])
+
+    def test_pdfs(self):
+        from .models import EtatDesLieux
+
+        self.assertEqual(self.bail.duree_mois, 12)
+        for url in (f"/baux/{self.bail.pk}/bail.pdf", f"/baux/{self.bail.pk}/etat-des-lieux-entree.pdf"):
+            r = self.client.get(url)
+            self.assertEqual(r.status_code, 200, url)
+            self.assertEqual(r["Content-Type"], "application/pdf")
+        edl = EtatDesLieux.objects.create(bail=self.bail, type="sortie", date=date(2027, 8, 31), compteur_electricite="12345")
+        self.assertEqual(self.client.get(f"/etats-des-lieux/{edl.pk}/document.pdf").status_code, 200)
+
+
+class DepotGarantieTests(TestCase):
+    def test_solde_et_recu(self):
+        from .models import MouvementDepot
+
+        proprio = Proprietaire.objects.create(nom="SCI", type=Proprietaire.Type.SCI_IR)
+        bien = Bien.objects.create(proprietaire=proprio, nom="Immeuble", adresse="1 rue", code_postal="69000", ville="Lyon")
+        lot = Lot.objects.create(bien=bien, designation="Apt", meuble=True)
+        bail = Bail.objects.create(lot=lot, type=Bail.Type.MEUBLE, date_debut=date(2026, 1, 1), loyer_hc=Decimal("500"), depot_garantie=Decimal("1000"))
+        bail.locataires.add(Locataire.objects.create(nom="Martin"))
+        encaissement = MouvementDepot.objects.create(bail=bail, date=date(2026, 1, 1), montant=Decimal("1000"))
+        MouvementDepot.objects.create(bail=bail, type="retenue", date=date(2027, 1, 20), montant=Decimal("150"))
+        MouvementDepot.objects.create(bail=bail, type="restitution", date=date(2027, 1, 20), montant=Decimal("850"))
+        self.assertEqual(bail.depot_detenu, Decimal("0"))
+
+        self.client.force_login(User.objects.create_superuser("admin", "a@example.com", "x"))
+        self.assertEqual(self.client.get(f"/depots/{encaissement.pk}/recu.pdf").status_code, 200)
+        self.assertEqual(self.client.get(f"/baux/{bail.pk}/inventaire-entree.pdf").status_code, 200)
+        r = self.client.get("/admin/patrimoine/mouvementdepot/")
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(r.context["total_detenu"], Decimal("0"))
+
+
+class PretTests(TestCase):
+    def setUp(self):
+        from .models import Pret
+
+        self.sci = Proprietaire.objects.create(nom="SCI", type=Proprietaire.Type.SCI_IR)
+        self.pret = Pret.objects.create(
+            proprietaire=self.sci, banque="Banque", montant=Decimal("200000"), taux=Decimal("3"),
+            duree_mois=240, date_premiere_echeance=date(2020, 1, 5), assurance_mensuelle=Decimal("30"),
+        )
+
+    def test_echeancier_amortissable(self):
+        self.assertEqual(self.pret.mensualite_hors_assurance, Decimal("1109.20"))
+        lignes = self.pret.echeancier()
+        self.assertEqual(len(lignes), 240)
+        self.assertEqual(lignes[0]["interets"], Decimal("500.00"))
+        self.assertEqual(lignes[-1]["restant"], Decimal("0"))
+        self.assertEqual(sum(l["capital"] for l in lignes), Decimal("200000"))
+        self.assertEqual(self.pret.date_derniere_echeance, date(2039, 12, 5))
+
+    def test_capital_restant_du_a_une_date(self):
+        self.assertEqual(self.pret.capital_restant_du(date(2020, 1, 4)), Decimal("200000"))
+        self.assertEqual(self.pret.capital_restant_du(date(2020, 1, 5)), Decimal("200000") - Decimal("609.20"))
+        self.assertEqual(self.pret.capital_restant_du(date(2045, 1, 1)), Decimal("0"))
+
+    def test_in_fine(self):
+        from .models import Pret
+
+        p = Pret.objects.create(proprietaire=self.sci, banque="B", type="in_fine", montant=Decimal("100000"), taux=Decimal("2.4"), duree_mois=120, date_premiere_echeance=date(2025, 1, 1))
+        self.assertEqual(p.mensualite_hors_assurance, Decimal("200.00"))
+        self.assertEqual(p.capital_restant_du(date(2034, 11, 30)), Decimal("100000"))
+        self.assertEqual(p.capital_restant_du(date(2034, 12, 1)), Decimal("0"))
+
+    def test_etat_et_exports(self):
+        self.client.force_login(User.objects.create_superuser("admin", "a@example.com", "x"))
+        r = self.client.get("/etats/endettement/", {"date": "2020-01-31"})
+        self.assertEqual(r.context["total"]["restant"], Decimal("199390.80"))
+        self.assertIn("199390,80", self.client.get("/etats/endettement/", {"date": "2020-01-31", "format": "csv"}).content.decode("utf-8-sig"))
+        self.assertEqual(self.client.get("/etats/endettement/", {"format": "pdf"})["Content-Type"], "application/pdf")
+        self.assertEqual(self.client.get(f"/prets/{self.pret.pk}/amortissement.pdf").status_code, 200)

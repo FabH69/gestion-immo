@@ -1,0 +1,16 @@
+<!doctype html>
+<html lang="fr"><head><meta charset="utf-8">
+<style>
+  @page { size: A4 landscape; margin: 1.2cm; @bottom-right { content: "Page " counter(page) " / " counter(pages); font-size: 7pt; color: #777; } }
+  body { font-family: "DejaVu Sans", sans-serif; font-size: 8pt; color: #222; }
+  h1 { font-size: 13pt; margin: 0 0 3pt; }
+  .sous-titre { color: #555; margin-bottom: 10pt; }
+  {% include "patrimoine/_style_etat.css" %}
+  tr { page-break-inside: avoid; }
+</style></head>
+<body>
+  <h1>État de l'endettement au {{ date|date:"d/m/Y" }}</h1>
+  <div class="sous-titre">{% if proprietaire %}{{ proprietaire.nom }}{% else %}Toutes entités{% endif %} · montants en euros · capital restant dû après les échéances échues à cette date · édité le {{ aujourdhui|date:"d/m/Y" }}</div>
+  {% include "patrimoine/_tableau_endettement.html" %}
+  <p style="color:#777;font-size:7pt;margin-top:8pt">Calcul théorique à partir du capital, du taux et de la durée de chaque prêt. Pour un document officiel, se référer au tableau d'amortissement de la banque.</p>
+</body></html>

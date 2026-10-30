@@ -54,3 +54,29 @@ def loyers_encaisses(annee, proprietaire=None):
         _ajouter(total, bloc_p["sous_total"])
         blocs.append(bloc_p)
     return {"annee": annee, "proprietaires": blocs, "total": total, "mois": MOIS}
+
+
+def endettement(a_date, proprietaire=None):
+    """Capital restant dû par prêt et par emprunteur à une date donnée, avec les intérêts de l'année."""
+    from .models import Pret
+
+    prets = Pret.objects.select_related("proprietaire", "bien")
+    if proprietaire:
+        prets = prets.filter(proprietaire=proprietaire)
+    cles = ("montant", "mensualite", "interets", "restant")
+    blocs, total = {}, dict.fromkeys(cles, Decimal(0))
+    for pret in prets:
+        restant = pret.capital_restant_du(a_date)
+        ligne = {
+            "pret": pret,
+            "montant": pret.montant,
+            "mensualite": (pret.mensualite_hors_assurance + pret.assurance_mensuelle) if restant > 0 else Decimal(0),
+            "interets": pret.cumul_annee(a_date.year)["interets"],
+            "restant": restant,
+        }
+        bloc = blocs.setdefault(pret.proprietaire_id, {"proprietaire": pret.proprietaire, "lignes": [], **dict.fromkeys(cles, Decimal(0))})
+        bloc["lignes"].append(ligne)
+        for c in cles:
+            bloc[c] += ligne[c]
+            total[c] += ligne[c]
+    return {"blocs": list(blocs.values()), "total": total, "date": a_date, "annee": a_date.year}

@@ -4,7 +4,7 @@ from decimal import Decimal
 
 from django.core.management.base import BaseCommand
 
-from patrimoine.models import Bail, Bien, ChangementLocataire, Echeance, Locataire, Lot, Paiement, Proprietaire
+from patrimoine.models import Bail, Bien, ChangementLocataire, Echeance, MouvementDepot, Pret, Locataire, Lot, Paiement, Proprietaire
 
 
 class Command(BaseCommand):
@@ -13,7 +13,7 @@ class Command(BaseCommand):
     def handle(self, *args, **options):
         P = Proprietaire.Type
         nom_propre = Proprietaire.objects.create(nom="Nom propre", type=P.NOM_PROPRE)
-        sci1 = Proprietaire.objects.create(nom="SCI Démo 1", type=P.SCI_IR, adresse="1 place Bellecour\n69002 Lyon", iban="FR76 0000 0000 0000 0000 0000 000")
+        sci1 = Proprietaire.objects.create(nom="SCI Démo 1", type=P.SCI_IR, adresse="1 place Bellecour\n69002 Lyon", siret="12345678900011", representant="M. Jean Exemple, gérant", iban="FR76 0000 0000 0000 0000 0000 000")
         sci2 = Proprietaire.objects.create(nom="SCI Démo 2", type=P.SCI_IS)
         sarl = Proprietaire.objects.create(nom="SARL de famille Démo", type=P.SARL_FAMILLE)
 
@@ -24,7 +24,7 @@ class Command(BaseCommand):
 
         L = Lot.Type
         lots = [
-            Lot.objects.create(bien=immeuble, designation="Apt RDC", type=L.APPARTEMENT, surface=45, nb_pieces=2),
+            Lot.objects.create(bien=immeuble, designation="Apt RDC", type=L.APPARTEMENT, surface=45, nb_pieces=2, etage="Rez-de-chaussée, porte gauche", annee_construction="1975", regime_juridique="copropriete", chauffage="Individuel gaz", eau_chaude="Individuelle gaz", classe_dpe="D", equipements="Cuisine équipée (plaques, hotte), interphone, fibre", annexes="Cave n° 4"),
             Lot.objects.create(bien=immeuble, designation="Apt 1er", type=L.APPARTEMENT, surface=62, nb_pieces=3),
             Lot.objects.create(bien=immeuble, designation="Parking 1", type=L.PARKING),
             Lot.objects.create(bien=maison, designation="Maison", type=L.MAISON, surface=95, nb_pieces=4),
@@ -33,7 +33,7 @@ class Command(BaseCommand):
             Lot.objects.create(bien=local, designation="Boutique", type=L.LOCAL_COMMERCIAL, surface=70),
         ]
 
-        martin = Locataire.objects.create(civilite="Mme", prenom="Claire", nom="Martin", email="claire.martin@example.com")
+        martin = Locataire.objects.create(civilite="Mme", prenom="Claire", nom="Martin", email="claire.martin@example.com", date_naissance=date(1992, 4, 12), lieu_naissance="Angers", adresse_actuelle="5 rue Neuve, 49000 Angers", garant="M. Pierre Martin, 5 rue Neuve, 49000 Angers")
         durand = Locataire.objects.create(civilite="M.", prenom="Paul", nom="Durand")
         petit = Locataire.objects.create(civilite="Mme", prenom="Léa", nom="Petit")
         bernard = Locataire.objects.create(civilite="M.", prenom="Hugo", nom="Bernard")
@@ -48,6 +48,7 @@ class Command(BaseCommand):
         for lot, locs, type_, debut, loyer, charges, depot in baux:
             bail = Bail.objects.create(lot=lot, type=type_, date_debut=debut, loyer_hc=Decimal(loyer), charges=Decimal(charges), depot_garantie=Decimal(depot))
             bail.locataires.set(locs)
+            MouvementDepot.objects.create(bail=bail, date=debut, montant=bail.depot_garantie)
 
         for mois in (9, 10):
             Echeance.generer_pour_mois(date(2026, mois, 1))
@@ -61,5 +62,10 @@ class Command(BaseCommand):
         for tache in changement.taches.all()[:2]:
             tache.faite = True
             tache.save()
+
+        Pret.objects.create(proprietaire=sci1, bien=immeuble, banque="Banque Démo", reference="IMM-001", montant=Decimal("320000"), taux=Decimal("1.45"), duree_mois=240, date_premiere_echeance=date(2021, 3, 5), assurance_mensuelle=Decimal("42"))
+        Pret.objects.create(proprietaire=sarl, bien=residence, banque="Crédit Démo", reference="RG-77", montant=Decimal("180000"), taux=Decimal("3.9"), duree_mois=300, date_premiere_echeance=date(2024, 2, 10), assurance_mensuelle=Decimal("25"))
+        Pret.objects.create(proprietaire=nom_propre, bien=maison, banque="Banque Démo", reference="MP-12", montant=Decimal("150000"), taux=Decimal("1.1"), duree_mois=180, date_premiere_echeance=date(2020, 9, 1), assurance_mensuelle=Decimal("18"))
+        Pret.objects.create(proprietaire=sci2, bien=local, banque="Crédit Démo", reference="LC-03", type="in_fine", montant=Decimal("200000"), taux=Decimal("2.8"), duree_mois=120, date_premiere_echeance=date(2023, 6, 15))
 
         self.stdout.write(self.style.SUCCESS("Données de démonstration créées."))

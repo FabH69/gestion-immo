@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="fr"><head><meta charset="utf-8">
+<style>
+  @page { size: A4; margin: 1.5cm; @bottom-right { content: "Page " counter(page) " / " counter(pages); font-size: 7pt; color: #777; } }
+  body { font-family: "DejaVu Sans", sans-serif; font-size: 8pt; color: #222; }
+  h1 { font-size: 13pt; margin: 0 0 3pt; }
+  .sous-titre { color: #555; margin-bottom: 10pt; }
+  table { width: 100%; border-collapse: collapse; }
+  th, td { padding: 2pt 4pt; text-align: right; border-bottom: 1px solid #e3e3e3; }
+  th { background: #f1f1f1; }
+  tr.annee td { font-weight: bold; background: #eef3f6; }
+  thead { display: table-header-group; }
+</style></head>
+<body>
+  <h1>Tableau d'amortissement – {{ pret.banque }}{% if pret.reference %} n° {{ pret.reference }}{% endif %}</h1>
+  <div class="sous-titre">{{ pret.proprietaire.nom }}{% if pret.bien %} · {{ pret.bien.nom }}{% endif %} · {{ pret.montant|floatformat:"2g" }} € à {{ pret.taux|floatformat:"-3" }} % sur {{ pret.duree_mois }} mois · {{ pret.get_type_display }} · mensualité {{ pret.mensualite_hors_assurance|floatformat:"2g" }} € + assurance {{ pret.assurance_mensuelle|floatformat:"2g" }} €</div>
+  <table>
+    <thead><tr><th>N°</th><th>Date</th><th>Mensualité</th><th>Intérêts</th><th>Capital</th><th>Assurance</th><th>Capital restant dû</th></tr></thead>
+    <tbody>
+    {% for l in lignes %}
+      <tr><td>{{ l.numero }}</td><td>{{ l.date|date:"d/m/Y" }}</td><td>{{ l.mensualite|floatformat:"2g" }}</td><td>{{ l.interets|floatformat:"2g" }}</td><td>{{ l.capital|floatformat:"2g" }}</td><td>{{ l.assurance|floatformat:"2g" }}</td><td>{{ l.restant|floatformat:"2g" }}</td></tr>
+      {% if l.fin_annee %}<tr class="annee"><td colspan="2">Total {{ l.date.year }}</td><td>{{ l.fin_annee.mensualite|floatformat:"2g" }}</td><td>{{ l.fin_annee.interets|floatformat:"2g" }}</td><td>{{ l.fin_annee.capital|floatformat:"2g" }}</td><td>{{ l.fin_annee.assurance|floatformat:"2g" }}</td><td></td></tr>{% endif %}
+    {% endfor %}
+    </tbody>
+  </table>
+</body></html>
