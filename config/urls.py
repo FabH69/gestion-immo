@@ -15,5 +15,8 @@ urlpatterns = [
     path("etats-des-lieux/<int:pk>/document.pdf", views.document_etat_des_lieux, name="document_edl"),
     path("etats/endettement/", views.etat_endettement, name="etat_endettement"),
     path("prets/<int:pk>/amortissement.pdf", views.document_amortissement, name="document_amortissement"),
+    path("baux/<int:pk>/revision/", views.revision_loyer, name="revision_loyer"),
+    path("revisions/<int:pk>/lettre.pdf", views.lettre_revision, name="lettre_revision"),
+    path("rappels/<str:type_rappel>/<int:pk>/fait/", views.rappel_fait, name="rappel_fait"),
     path("", RedirectView.as_view(url="/admin/")),
 ]
