@@ -26,3 +26,9 @@ Puis ouvrir http://127.0.0.1:8000/.
 
 - **Loyers encaissés** (page d'accueil ou menu Loyers) : tableau par propriétaire, bien et lot, mois par mois sur une année civile, avec la répartition loyers HC / charges. Filtre par entité, export PDF et CSV pour Excel.
 - **Changements de locataire** : à la saisie d'un congé (ou d'une date de départ), l'application crée une check-list datée de 22 tâches, de la sortie à l'entrée du nouveau locataire, avec un rappel des règles utiles. Les dates se recalculent si le départ ou l'arrivée est décalé. Les tâches des 30 prochains jours s'affichent sur la page d'accueil.
+
+## Documents pré-remplis
+
+- Fiche d'un **bail** → « Documents pré-remplis » : bail PDF (structure du contrat type de la loi du 6 juillet 1989), fiche d'état des lieux d'entrée ou de sortie à imprimer.
+- Menu **États des lieux** : saisie des compteurs, clés et observations, puis fiche PDF pré-remplie (avec inventaire du mobilier si meublé).
+- Les données viennent du propriétaire, du lot (caractéristiques, pièces) et des locataires ; ce qui manque apparaît « à compléter ». Vérifier le bail avec le modèle officiel avant signature.

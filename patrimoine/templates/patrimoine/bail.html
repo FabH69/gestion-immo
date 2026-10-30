@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="fr"><head><meta charset="utf-8"><style>{% include "patrimoine/_style_document.css" %}</style></head>
+<body>
+<h1>CONTRAT DE LOCATION</h1>
+<div class="sous-titre">
+  {% if bail.type == "meuble" or bail.type == "etudiant" %}Logement meublé{% elif bail.type == "mobilite" %}Bail mobilité (logement meublé){% else %}Logement nu{% endif %}
+  · soumis au titre Ier{% if bail.type == "meuble" or bail.type == "etudiant" or bail.type == "mobilite" %} bis{% endif %} de la loi n° 89-462 du 6 juillet 1989
+</div>
+
+<h2>I. Désignation des parties</h2>
+<table>
+  <tr><td class="l">Bailleur</td><td><strong>{{ proprietaire.nom }}</strong>{% if proprietaire.get_type_display != "Nom propre" %} ({{ proprietaire.get_type_display }}){% endif %}{% if proprietaire.siret %}, SIRET {{ proprietaire.siret }}{% endif %}<br>{{ proprietaire.adresse|linebreaksbr|default:'<span class="a-remplir">adresse à compléter</span>' }}{% if proprietaire.representant %}<br>Représenté par {{ proprietaire.representant }}{% endif %}</td></tr>
+  {% for l in locataires %}
+  <tr><td class="l">Locataire{% if locataires|length > 1 %} {{ forloop.counter }}{% endif %}</td><td><strong>{{ l }}</strong>{% if l.date_naissance %}, né(e) le {{ l.date_naissance|date:"d/m/Y" }}{% if l.lieu_naissance %} à {{ l.lieu_naissance }}{% endif %}{% endif %}{% if l.adresse_actuelle %}<br>Demeurant {{ l.adresse_actuelle|linebreaksbr }}{% endif %}{% if l.email %}<br>{{ l.email }}{% endif %}{% if l.telephone %} · {{ l.telephone }}{% endif %}</td></tr>
+  {% endfor %}
+  {% if locataires|length > 1 %}<tr><td class="l">Solidarité</td><td>Les locataires sont tenus solidairement et indivisiblement de l'exécution du présent contrat.</td></tr>{% endif %}
+</table>
+
+<h2>II. Objet du contrat</h2>
+<table>
+  <tr><td class="l">Adresse du logement</td><td>{{ bien.adresse }}, {{ bien.code_postal }} {{ bien.ville }}{% if lot.etage %}<br>{{ lot.etage }}{% endif %}</td></tr>
+  <tr><td class="l">Désignation</td><td>{{ lot.get_type_display }} – {{ lot.designation }}</td></tr>
+  <tr><td class="l">Type d'habitat / régime juridique</td><td>{% if bien.lots.count > 1 %}Immeuble collectif{% else %}Individuel{% endif %}{% if lot.regime_juridique %} · {{ lot.get_regime_juridique_display }}{% endif %}</td></tr>
+  <tr><td class="l">Période de construction</td><td>{{ lot.annee_construction|default:'<span class="a-remplir">à compléter</span>' }}</td></tr>
+  <tr><td class="l">Surface habitable</td><td>{% if lot.surface %}{{ lot.surface|floatformat:"-2" }} m²{% else %}<span class="a-remplir">à compléter</span>{% endif %}</td></tr>
+  <tr><td class="l">Nombre de pièces principales</td><td>{{ lot.nb_pieces|default:'<span class="a-remplir">à compléter</span>' }}</td></tr>
+  <tr><td class="l">Équipements</td><td>{{ lot.equipements|linebreaksbr|default:'–' }}</td></tr>
+  <tr><td class="l">Chauffage / eau chaude</td><td>{{ lot.chauffage|default:'–' }} / {{ lot.eau_chaude|default:'–' }}</td></tr>
+  <tr><td class="l">Annexes privatives</td><td>{{ lot.annexes|linebreaksbr|default:'Aucune' }}</td></tr>
+  <tr><td class="l">Classe énergétique (DPE)</td><td>{{ lot.classe_dpe|default:'<span class="a-remplir">à compléter</span>' }}</td></tr>
+  <tr><td class="l">Destination des locaux</td><td>{{ bail.get_destination_display }}</td></tr>
+</table>
+
+<h2>III. Date de prise d'effet et durée du contrat</h2>
+<table>
+  <tr><td class="l">Prise d'effet</td><td>{{ bail.date_debut|date:"j F Y" }}</td></tr>
+  <tr><td class="l">Durée</td><td>{{ duree_texte }}{% if bail.date_fin %}, soit jusqu'au {{ bail.date_fin|date:"j F Y" }}{% endif %}{% if bail.type == "nu" or bail.type == "meuble" %}, renouvelable par tacite reconduction{% endif %}</td></tr>
+</table>
+
+<h2>IV. Conditions financières</h2>
+<table>
+  <tr><td class="l">Loyer mensuel hors charges</td><td><strong>{{ bail.loyer_hc|floatformat:2 }} €</strong></td></tr>
+  <tr><td class="l">Charges récupérables</td><td>{{ bail.charges|floatformat:2 }} € par mois – {{ bail.get_mode_charges_display|lower }}</td></tr>
+  <tr><td class="l">Total mensuel</td><td><strong>{{ bail.loyer_cc|floatformat:2 }} €</strong></td></tr>
+  <tr><td class="l">Zone tendue / encadrement</td><td>{% if lot.zone_tendue %}Le logement est situé en zone tendue : le loyer est soumis aux règles d'évolution des loyers à la relocation. Loyer de référence et loyer du précédent locataire : <span class="a-remplir">à compléter si applicable</span>{% else %}Logement hors zone tendue{% endif %}</td></tr>
+  <tr><td class="l">Révision annuelle</td><td>Le loyer est révisé chaque année à la date anniversaire du contrat selon la variation de l'indice de référence des loyers (IRL) publié par l'INSEE.{% if bail.indice_reference %} Indice de référence : {{ bail.indice_reference }}.{% endif %}</td></tr>
+  <tr><td class="l">Modalités de paiement</td><td>Paiement mensuel {% if bail.paiement_a_echoir %}à échoir (d'avance){% else %}à terme échu{% endif %}, le {{ bail.jour_echeance }} de chaque mois{% if proprietaire.iban %}, par virement sur le compte IBAN {{ proprietaire.iban }}{% endif %}.</td></tr>
+</table>
+
+<h2>V. Garanties</h2>
+<table>
+  <tr><td class="l">Dépôt de garantie</td><td>{{ bail.depot_garantie|floatformat:2 }} €{% if bail.type == "nu" %} (au plus 1 mois de loyer hors charges){% elif bail.type == "mobilite" %} (aucun dépôt de garantie ne peut être exigé){% else %} (au plus 2 mois de loyer hors charges){% endif %}</td></tr>
+  {% for l in locataires %}{% if l.garant %}<tr><td class="l">Caution de {{ l }}</td><td>{{ l.garant }} – acte de cautionnement annexé</td></tr>{% endif %}{% endfor %}
+</table>
+
+<h2>VI. Clause de solidarité et clause résolutoire</h2>
+<p>Le bail sera résilié de plein droit, après commandement de payer demeuré infructueux pendant six semaines, à défaut de paiement du loyer ou des charges aux termes convenus, de versement du dépôt de garantie, ou de souscription d'une assurance des risques locatifs, ainsi qu'en cas de troubles de voisinage constatés par une décision de justice.</p>
+
+<h2>VII. Annexes</h2>
+<p>Sont annexés au présent contrat : la notice d'information ; le dossier de diagnostic technique (DPE, état des risques, et selon le logement : constat de risque d'exposition au plomb, état de l'installation électrique et de gaz, amiante) ; l'état des lieux d'entrée{% if bail.type == "meuble" or bail.type == "etudiant" or bail.type == "mobilite" %} et l'inventaire du mobilier{% endif %} ; {% if lot.regime_juridique == "copropriete" %}les extraits du règlement de copropriété ; {% endif %}le cas échéant, l'acte de cautionnement.</p>
+
+<h2>VIII. Autres conditions particulières</h2>
+<p>{{ bail.notes|linebreaksbr|default:"Néant." }}</p>
+
+<p>Fait en {{ nb_exemplaires }} exemplaires originaux, à ________________________, le ________________.</p>
+<div class="signatures">
+  <div>Le bailleur{% if proprietaire.representant %} ({{ proprietaire.representant }}){% endif %}<br><span class="petit">Signature précédée de « lu et approuvé »</span></div>
+  <div>{% if locataires|length > 1 %}Les locataires{% else %}Le locataire{% endif %}<br><span class="petit">Signature précédée de « lu et approuvé »</span></div>
+</div>
+</body></html>

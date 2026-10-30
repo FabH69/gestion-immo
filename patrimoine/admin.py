@@ -6,7 +6,7 @@ from django.urls import path, reverse
 from django.utils import timezone
 from django.utils.html import format_html
 
-from .models import Bail, Bien, ChangementLocataire, Echeance, Locataire, Lot, Paiement, Proprietaire, Tache
+from .models import Bail, Bien, ChangementLocataire, Echeance, EtatDesLieux, Locataire, Lot, Paiement, Proprietaire, Tache
 
 admin.site.site_header = "Gestion immobilière"
 admin.site.site_title = "Gestion immobilière"
@@ -63,6 +63,12 @@ class LotAdmin(admin.ModelAdmin):
     list_filter = ["bien__proprietaire", "bien", "type", "meuble"]
     search_fields = ["designation", "bien__nom"]
     inlines = [BailInline]
+    fieldsets = [
+        (None, {"fields": ["bien", "designation", "type", "surface", "nb_pieces", "meuble", "etage"]}),
+        ("Caractéristiques (reprises dans le bail)", {"fields": ["annee_construction", "regime_juridique", "chauffage", "eau_chaude", "classe_dpe", "zone_tendue", "equipements", "annexes"]}),
+        ("État des lieux", {"fields": ["pieces"]}),
+        ("Notes", {"fields": ["notes"]}),
+    ]
 
     @admin.display(description="locataire")
     def locataire_actuel(self, obj):
@@ -88,6 +94,28 @@ class BailAdmin(admin.ModelAdmin):
     search_fields = ["lot__designation", "lot__bien__nom", "locataires__nom"]
     filter_horizontal = ["locataires"]
     date_hierarchy = "date_debut"
+    readonly_fields = ["documents"]
+    fieldsets = [
+        (None, {"fields": ["lot", "locataires", "type", "destination", "date_debut", "date_fin", "actif"]}),
+        ("Conditions financières", {"fields": ["loyer_hc", "charges", "mode_charges", "depot_garantie", "jour_echeance", "paiement_a_echoir", "indice_reference"]}),
+        ("Clauses particulières", {"fields": ["notes"]}),
+        ("Documents pré-remplis", {"fields": ["documents"]}),
+    ]
+
+    @admin.display(description="documents")
+    def documents(self, obj):
+        if not obj.pk:
+            return "Enregistrez le bail pour générer les documents."
+        liens = [
+            (reverse("document_bail", args=[obj.pk]), "Bail PDF"),
+            (reverse("document_edl_vierge", args=[obj.pk, "entree"]), "Fiche d'état des lieux d'entrée"),
+            (reverse("document_edl_vierge", args=[obj.pk, "sortie"]), "Fiche d'état des lieux de sortie"),
+        ]
+        return format_html(
+            "{}<p class='help'>Les champs manquants apparaissent « à compléter » : complétez la fiche du lot, du locataire ou du propriétaire. "
+            "Vérifiez le bail avec le modèle officiel (décret n° 2015-587) avant signature.</p>",
+            format_html(" · ".join('<a href="{}" target="_blank">{}</a>' for _ in liens), *[x for l in liens for x in l]),
+        )
 
     @admin.display(description="locataires")
     def liste_locataires(self, obj):
@@ -309,3 +337,17 @@ class TacheAdmin(admin.ModelAdmin):
     def get_model_perms(self, request):
         # Accessible depuis l'accueil et les changements de locataire, sans encombrer le menu.
         return {}
+
+
+@admin.register(EtatDesLieux)
+class EtatDesLieuxAdmin(admin.ModelAdmin):
+    list_display = ["date", "type", "bail", "document"]
+    list_filter = ["type", "bail__lot__bien__proprietaire"]
+    readonly_fields = ["document"]
+    fields = ["bail", "type", "date", ("compteur_electricite", "compteur_gaz"), ("compteur_eau_froide", "compteur_eau_chaude"), "nb_cles", "nouvelle_adresse", "observations", "document"]
+
+    @admin.display(description="document")
+    def document(self, obj):
+        if not obj.pk:
+            return "Enregistrez pour générer la fiche pré-remplie."
+        return format_html('<a href="{}" target="_blank">Fiche PDF pré-remplie</a>', reverse("document_edl", args=[obj.pk]))

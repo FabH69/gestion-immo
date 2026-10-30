@@ -9,8 +9,9 @@ from django.utils import timezone
 from django.utils.text import slugify
 from weasyprint import HTML
 
+from .documents import ELEMENTS_PIECE, INVENTAIRE_MEUBLE, duree_texte
 from .etats import loyers_encaisses
-from .models import Echeance, Proprietaire
+from .models import Bail, Echeance, EtatDesLieux, Proprietaire
 
 
 @staff_member_required
@@ -84,3 +85,53 @@ def _etat_csv(etat, nom_fichier):
     t = etat["total"]
     w.writerow(["TOTAL", "", "", *map(fr, t["mois"]), fr(t["total"]), fr(t["loyers_hc"]), fr(t["charges"])])
     return response
+
+
+def _pdf(html, nom):
+    response = HttpResponse(HTML(string=html).write_pdf(), content_type="application/pdf")
+    response["Content-Disposition"] = f'inline; filename="{slugify(nom)}.pdf"'
+    return response
+
+
+def _contexte_bail(bail):
+    lot = bail.lot
+    return {
+        "bail": bail,
+        "lot": lot,
+        "bien": lot.bien,
+        "proprietaire": lot.bien.proprietaire,
+        "locataires": list(bail.locataires.all()),
+    }
+
+
+@staff_member_required
+def document_bail(request, pk):
+    bail = get_object_or_404(Bail.objects.select_related("lot__bien__proprietaire"), pk=pk)
+    contexte = _contexte_bail(bail)
+    contexte.update(duree_texte=duree_texte(bail), nb_exemplaires=1 + len(contexte["locataires"]))
+    return _pdf(render_to_string("patrimoine/bail.html", contexte), f"bail {bail.lot} {bail.date_debut:%Y-%m-%d}")
+
+
+def _rendu_edl(bail, edl):
+    contexte = _contexte_bail(bail)
+    contexte.update(
+        edl=edl,
+        pieces=bail.lot.liste_pieces(),
+        elements=ELEMENTS_PIECE,
+        meuble=bail.lot.meuble or bail.type in (Bail.Type.MEUBLE, Bail.Type.ETUDIANT, Bail.Type.MOBILITE),
+        inventaire=INVENTAIRE_MEUBLE,
+    )
+    return _pdf(render_to_string("patrimoine/etat_des_lieux.html", contexte), f"etat des lieux {edl.get_type_display()} {bail.lot}")
+
+
+@staff_member_required
+def document_etat_des_lieux(request, pk):
+    edl = get_object_or_404(EtatDesLieux.objects.select_related("bail__lot__bien__proprietaire"), pk=pk)
+    return _rendu_edl(edl.bail, edl)
+
+
+@staff_member_required
+def document_etat_des_lieux_vierge(request, pk, type_edl):
+    """Fiche pré-remplie depuis le bail, sans état des lieux enregistré (à imprimer avant le rendez-vous)."""
+    bail = get_object_or_404(Bail.objects.select_related("lot__bien__proprietaire"), pk=pk)
+    return _rendu_edl(bail, EtatDesLieux(bail=bail, type=type_edl, date=None))

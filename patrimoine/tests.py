@@ -148,3 +148,29 @@ class ChangementLocataireTests(TestCase):
         c.save()
         t.refresh_from_db()
         self.assertEqual(t.echeance, date(2026, 12, 22))
+
+
+class DocumentsTests(TestCase):
+    def setUp(self):
+        proprio = Proprietaire.objects.create(nom="SCI Test", type=Proprietaire.Type.SCI_IR, representant="M. X, gérant")
+        bien = Bien.objects.create(proprietaire=proprio, nom="Immeuble", adresse="1 rue", code_postal="69000", ville="Lyon")
+        self.lot = Lot.objects.create(bien=bien, designation="Apt", nb_pieces=3, meuble=True)
+        self.bail = Bail.objects.create(lot=self.lot, type=Bail.Type.MEUBLE, date_debut=date(2026, 9, 1), loyer_hc=Decimal("600"))
+        self.bail.locataires.add(Locataire.objects.create(nom="Martin"))
+        self.client.force_login(User.objects.create_superuser("admin", "a@example.com", "x"))
+
+    def test_pieces_par_defaut(self):
+        self.assertEqual(self.lot.liste_pieces(), ["Entrée", "Séjour", "Cuisine", "Chambre 1", "Chambre 2", "Salle de bains", "WC"])
+        self.lot.pieces = "Pièce de vie\n\nMezzanine"
+        self.assertEqual(self.lot.liste_pieces(), ["Pièce de vie", "Mezzanine"])
+
+    def test_pdfs(self):
+        from .models import EtatDesLieux
+
+        self.assertEqual(self.bail.duree_mois, 12)
+        for url in (f"/baux/{self.bail.pk}/bail.pdf", f"/baux/{self.bail.pk}/etat-des-lieux-entree.pdf"):
+            r = self.client.get(url)
+            self.assertEqual(r.status_code, 200, url)
+            self.assertEqual(r["Content-Type"], "application/pdf")
+        edl = EtatDesLieux.objects.create(bail=self.bail, type="sortie", date=date(2027, 8, 31), compteur_electricite="12345")
+        self.assertEqual(self.client.get(f"/etats-des-lieux/{edl.pk}/document.pdf").status_code, 200)

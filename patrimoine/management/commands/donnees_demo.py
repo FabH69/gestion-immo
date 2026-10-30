@@ -13,7 +13,7 @@ class Command(BaseCommand):
     def handle(self, *args, **options):
         P = Proprietaire.Type
         nom_propre = Proprietaire.objects.create(nom="Nom propre", type=P.NOM_PROPRE)
-        sci1 = Proprietaire.objects.create(nom="SCI Démo 1", type=P.SCI_IR, adresse="1 place Bellecour\n69002 Lyon", iban="FR76 0000 0000 0000 0000 0000 000")
+        sci1 = Proprietaire.objects.create(nom="SCI Démo 1", type=P.SCI_IR, adresse="1 place Bellecour\n69002 Lyon", siret="12345678900011", representant="M. Jean Exemple, gérant", iban="FR76 0000 0000 0000 0000 0000 000")
         sci2 = Proprietaire.objects.create(nom="SCI Démo 2", type=P.SCI_IS)
         sarl = Proprietaire.objects.create(nom="SARL de famille Démo", type=P.SARL_FAMILLE)
 
@@ -24,7 +24,7 @@ class Command(BaseCommand):
 
         L = Lot.Type
         lots = [
-            Lot.objects.create(bien=immeuble, designation="Apt RDC", type=L.APPARTEMENT, surface=45, nb_pieces=2),
+            Lot.objects.create(bien=immeuble, designation="Apt RDC", type=L.APPARTEMENT, surface=45, nb_pieces=2, etage="Rez-de-chaussée, porte gauche", annee_construction="1975", regime_juridique="copropriete", chauffage="Individuel gaz", eau_chaude="Individuelle gaz", classe_dpe="D", equipements="Cuisine équipée (plaques, hotte), interphone, fibre", annexes="Cave n° 4"),
             Lot.objects.create(bien=immeuble, designation="Apt 1er", type=L.APPARTEMENT, surface=62, nb_pieces=3),
             Lot.objects.create(bien=immeuble, designation="Parking 1", type=L.PARKING),
             Lot.objects.create(bien=maison, designation="Maison", type=L.MAISON, surface=95, nb_pieces=4),
@@ -33,7 +33,7 @@ class Command(BaseCommand):
             Lot.objects.create(bien=local, designation="Boutique", type=L.LOCAL_COMMERCIAL, surface=70),
         ]
 
-        martin = Locataire.objects.create(civilite="Mme", prenom="Claire", nom="Martin", email="claire.martin@example.com")
+        martin = Locataire.objects.create(civilite="Mme", prenom="Claire", nom="Martin", email="claire.martin@example.com", date_naissance=date(1992, 4, 12), lieu_naissance="Angers", adresse_actuelle="5 rue Neuve, 49000 Angers", garant="M. Pierre Martin, 5 rue Neuve, 49000 Angers")
         durand = Locataire.objects.create(civilite="M.", prenom="Paul", nom="Durand")
         petit = Locataire.objects.create(civilite="Mme", prenom="Léa", nom="Petit")
         bernard = Locataire.objects.create(civilite="M.", prenom="Hugo", nom="Bernard")
