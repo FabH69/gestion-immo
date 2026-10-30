@@ -12,6 +12,17 @@ admin.site.site_header = "Gestion immobilière"
 admin.site.site_title = "Gestion immobilière"
 admin.site.index_title = "Tableau de bord"
 
+_changelist_view_django = admin.ModelAdmin.changelist_view
+
+
+def _changelist_view_titre_simple(self, request, extra_context=None):
+    """Titre de liste « Loyers » au lieu de « Sélectionnez l'objet loyer à changer »."""
+    extra_context = {"title": self.model._meta.verbose_name_plural.capitalize(), **(extra_context or {})}
+    return _changelist_view_django(self, request, extra_context)
+
+
+admin.ModelAdmin.changelist_view = _changelist_view_titre_simple
+
 
 class BienInline(admin.TabularInline):
     model = Bien

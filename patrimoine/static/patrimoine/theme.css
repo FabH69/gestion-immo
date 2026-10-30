@@ -1,0 +1,110 @@
+/* Thème « Gestion immobilière » : interface plus moderne et arrondie par-dessus l'admin Django. */
+:root, html[data-theme="light"] {
+  --primary: #2f6f73;
+  --secondary: #24585c;
+  --accent: #f2c14e;
+  --primary-fg: #fff;
+  --body-fg: #1f2933;
+  --body-bg: #ffffff;
+  --body-quiet-color: #6b7785;
+  --body-loud-color: #111827;
+  --header-color: #e8f3f2;
+  --header-branding-color: #ffffff;
+  --header-bg: #24585c;
+  --header-link-color: #ffffff;
+  --breadcrumbs-fg: #5b6b73;
+  --breadcrumbs-link-fg: #2f6f73;
+  --breadcrumbs-bg: #f4f7f7;
+  --link-fg: #2f6f73;
+  --link-hover-color: #1d4a4d;
+  --link-selected-fg: #1d4a4d;
+  --hairline-color: #e6eaee;
+  --border-color: #dfe5ea;
+  --darkened-bg: #f6f8f9;
+  --selected-bg: #e6f2f1;
+  --selected-row: #fff8e1;
+  --button-bg: #2f6f73;
+  --button-hover-bg: #24585c;
+  --default-button-bg: #24585c;
+  --default-button-hover-bg: #1d4a4d;
+  --close-button-bg: #8a96a3;
+  --object-tools-bg: #e6f2f1;
+  --object-tools-fg: #24585c;
+  --object-tools-hover-bg: #2f6f73;
+  --font-family-primary: "Inter", -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --radius: 12px;
+  --radius-sm: 8px;
+  --shadow: 0 1px 2px rgba(16, 24, 40, .05), 0 1px 6px rgba(16, 24, 40, .06);
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) { --primary: #5fb3b3; --secondary: #2f6f73; --header-bg: #16393b; --link-fg: #7cc7c4; --object-tools-bg: #1f3a3c; --object-tools-fg: #cfe9e7; --radius: 12px; --radius-sm: 8px; --shadow: none; --font-family-primary: "Inter", -apple-system, "Segoe UI", Roboto, Arial, sans-serif; }
+}
+html[data-theme="dark"] { --primary: #5fb3b3; --secondary: #2f6f73; --header-bg: #16393b; --link-fg: #7cc7c4; --object-tools-bg: #1f3a3c; --object-tools-fg: #cfe9e7; --radius: 12px; --radius-sm: 8px; --shadow: none; --font-family-primary: "Inter", -apple-system, "Segoe UI", Roboto, Arial, sans-serif; }
+
+body { font-size: 14px; background: var(--darkened-bg); }
+#header { padding: 14px 32px; box-shadow: 0 2px 10px rgba(0,0,0,.08); }
+#site-name { font-weight: 700; font-size: 1.25rem; letter-spacing: -.01em; }
+#site-name .logo { display: inline-flex; align-items: center; justify-content: center; width: 32px; height: 32px; margin-right: 8px; border-radius: 10px; background: var(--accent); color: #24585c; font-size: 20px; }
+#user-tools { font-size: .78rem; text-transform: none; letter-spacing: 0; }
+div.breadcrumbs { background: transparent; color: var(--breadcrumbs-fg); padding: 14px 32px 0; font-size: .85rem; }
+div.breadcrumbs a { color: var(--breadcrumbs-link-fg); }
+#content { padding: 16px 32px 40px; }
+#content h1 { font-weight: 700; font-size: 1.6rem; letter-spacing: -.02em; color: var(--body-loud-color); }
+#content h2 { font-weight: 600; }
+
+/* Cartes arrondies */
+.module, #changelist .changelist-form-container, #changelist-filter, fieldset.module, .inline-group, .submit-row, #changelist .results, .etat-scroll {
+  border-radius: var(--radius); box-shadow: var(--shadow); background: var(--body-bg); border: 1px solid var(--hairline-color); overflow: hidden;
+}
+.module { margin-bottom: 20px; }
+.module h2, .module caption, .inline-group h2 {
+  background: var(--body-bg); color: var(--body-loud-color); font-weight: 600; font-size: .95rem; text-transform: none; letter-spacing: 0;
+  padding: 14px 16px; border-bottom: 1px solid var(--hairline-color);
+}
+.module caption a.section, .module h2 a { color: var(--body-loud-color); }
+#nav-sidebar .module caption, #nav-sidebar .module th { font-size: .82rem; }
+#nav-sidebar { background: var(--darkened-bg); border-right: none; }
+#nav-sidebar .module { box-shadow: none; }
+#nav-sidebar .current-model { background: var(--selected-bg); border-radius: var(--radius-sm); }
+#nav-sidebar th a, #nav-sidebar td a { font-weight: 500; }
+.toggle-nav-sidebar { border-radius: 0 var(--radius-sm) var(--radius-sm) 0; }
+#nav-filter { border-radius: var(--radius-sm); padding: 8px 10px; border: 1px solid var(--border-color); }
+
+/* Boutons et champs */
+.button, input[type=submit], input[type=button], .submit-row input, a.button, button.button {
+  border-radius: 999px !important; padding: 9px 18px; font-weight: 600; font-size: .85rem; text-transform: none; letter-spacing: 0;
+}
+.submit-row { padding: 14px 16px; }
+.submit-row a.deletelink { border-radius: 999px; height: auto; padding: 9px 18px; }
+.object-tools a:link, .object-tools a:visited { border-radius: 999px; padding: 7px 14px; font-weight: 600; text-transform: none; letter-spacing: 0; font-size: .8rem; }
+input[type=text], input[type=password], input[type=email], input[type=url], input[type=number], input[type=tel], input[type=date], textarea, select, .vTextField {
+  border-radius: var(--radius-sm); border: 1px solid var(--border-color); padding: 7px 10px;
+}
+input:focus, textarea:focus, select:focus { outline: 2px solid color-mix(in srgb, var(--primary) 35%, transparent); border-color: var(--primary); }
+#searchbar { border-radius: 999px; padding: 8px 14px; }
+#changelist #toolbar { background: transparent; border: none; padding: 12px 0; }
+
+/* Tableaux */
+#changelist table thead th, table thead th { background: var(--darkened-bg); font-size: .75rem; text-transform: uppercase; letter-spacing: .03em; color: var(--body-quiet-color); }
+#result_list tbody tr:hover td, #result_list tbody tr:hover th { background: var(--selected-bg); }
+td, th { border-bottom-color: var(--hairline-color); }
+#changelist-filter { padding-bottom: 8px; }
+#changelist-filter h2 { border-radius: 0; }
+#changelist-filter li.selected a { color: var(--primary); font-weight: 600; }
+.paginator { border-top: none; }
+
+/* Messages */
+ul.messagelist li { border-radius: var(--radius-sm); margin: 0 0 10px; }
+
+/* États (loyers encaissés, endettement) */
+table.etat tr.proprio td { background: var(--secondary) !important; }
+table.etat tr.bien td { background: var(--selected-bg) !important; color: var(--secondary) !important; }
+.etat-scroll { padding: 0; }
+
+/* Page de connexion */
+.login #container { border-radius: 16px; overflow: hidden; box-shadow: 0 10px 30px rgba(0,0,0,.12); }
+
+/* Titre de liste lisible : les boutons d'action passent sous le titre */
+#content-main .object-tools, .object-tools { float: none; margin: -6px 0 14px; padding: 0; display: flex; flex-wrap: wrap; gap: 8px; justify-content: flex-start; }
+.object-tools li { margin: 0; }
+#nav-sidebar .current-app .section:link, #nav-sidebar .current-app .section:visited, #nav-sidebar .current-app caption, #nav-sidebar .module caption a { color: var(--body-loud-color); }
