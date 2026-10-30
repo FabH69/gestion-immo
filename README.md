@@ -35,3 +35,12 @@ Puis ouvrir http://127.0.0.1:8000/.
 - **Dépôts de garantie** : suivis sur un compte séparé des loyers (encaissement, retenues justifiées, restitution), solde détenu par entité, reçu PDF pour chaque encaissement.
 - Les données viennent du propriétaire, du lot (caractéristiques, pièces) et des locataires ; ce qui manque apparaît « à compléter ». Vérifier le bail avec le modèle officiel avant signature.
 - **Endettement** (page d'accueil ou menu Prêts) : récapitulatif des prêts par emprunteur, capital restant dû à la date choisie et intérêts de l'année, export PDF et CSV. Tableau d'amortissement PDF par prêt (prêts amortissables ou in fine).
+
+## Rappels et révisions
+
+- **Bloc « À faire »** sur la page d'accueil : tout ce qui arrive dans les 30 jours ou est en retard, avec un bouton « Fait ».
+  - Révision annuelle du loyer (date anniversaire du bail ; une révision non demandée depuis plus d'un an est abandonnée).
+  - Attestation d'assurance habitation (1 an après la dernière reçue).
+  - Attestation d'entretien de la chaudière gaz (si le lot en a une, 1 an après le dernier entretien).
+  - Rappels libres (AG, taxe foncière…), ponctuels ou annuels, et tâches des changements de locataire.
+- **Révision du loyer** (fiche du bail → « Réviser le loyer ») : calcul selon l'IRL, mail pré-rempli au locataire, courrier PDF, application du nouveau loyer au bail. Alerte si le logement est classé F ou G (hausse interdite).

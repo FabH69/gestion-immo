@@ -4,7 +4,7 @@ from decimal import Decimal
 
 from django.core.management.base import BaseCommand
 
-from patrimoine.models import Bail, Bien, ChangementLocataire, Echeance, MouvementDepot, Pret, Locataire, Lot, Paiement, Proprietaire
+from patrimoine.models import Bail, Bien, ChangementLocataire, Echeance, MouvementDepot, Pret, Rappel, Locataire, Lot, Paiement, Proprietaire
 
 
 class Command(BaseCommand):
@@ -46,7 +46,9 @@ class Command(BaseCommand):
             (lots[4], [bernard], B.MEUBLE, date(2026, 9, 1), "490", "50", "980"),
         ]
         for lot, locs, type_, debut, loyer, charges, depot in baux:
-            bail = Bail.objects.create(lot=lot, type=type_, date_debut=debut, loyer_hc=Decimal(loyer), charges=Decimal(charges), depot_garantie=Decimal(depot))
+            bail = Bail.objects.create(lot=lot, type=type_, date_debut=debut, loyer_hc=Decimal(loyer), charges=Decimal(charges), depot_garantie=Decimal(depot),
+                                       irl_trimestre="T2", irl_valeur=Decimal("143.58"), date_attestation_assurance=debut.replace(year=2025),
+                                       date_derniere_revision=debut.replace(year=2025) if debut.year < 2025 else None)
             bail.locataires.set(locs)
             MouvementDepot.objects.create(bail=bail, date=debut, montant=bail.depot_garantie)
 
@@ -67,5 +69,9 @@ class Command(BaseCommand):
         Pret.objects.create(proprietaire=sarl, bien=residence, banque="Crédit Démo", reference="RG-77", montant=Decimal("180000"), taux=Decimal("3.9"), duree_mois=300, date_premiere_echeance=date(2024, 2, 10), assurance_mensuelle=Decimal("25"))
         Pret.objects.create(proprietaire=nom_propre, bien=maison, banque="Banque Démo", reference="MP-12", montant=Decimal("150000"), taux=Decimal("1.1"), duree_mois=180, date_premiere_echeance=date(2020, 9, 1), assurance_mensuelle=Decimal("18"))
         Pret.objects.create(proprietaire=sci2, bien=local, banque="Crédit Démo", reference="LC-03", type="in_fine", montant=Decimal("200000"), taux=Decimal("2.8"), duree_mois=120, date_premiere_echeance=date(2023, 6, 15))
+
+        Lot.objects.filter(pk=lots[3].pk).update(chaudiere_gaz=True, date_entretien_chaudiere=date(2025, 11, 20))
+        Rappel.objects.create(titre="AG de copropriété – Immeuble des Lilas", date=date(2026, 11, 18), categorie=Rappel.Categorie.AG, bien=immeuble)
+        Rappel.objects.create(titre="Payer la taxe foncière", date=date(2026, 10, 15), categorie=Rappel.Categorie.FISCAL, annuel=True)
 
         self.stdout.write(self.style.SUCCESS("Données de démonstration créées."))

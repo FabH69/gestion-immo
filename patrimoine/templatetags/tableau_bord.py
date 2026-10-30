@@ -1,19 +1,12 @@
-from datetime import timedelta
-
 from django import template
 from django.utils import timezone
 
-from patrimoine.models import Tache
+from patrimoine.rappels import a_faire
 
 register = template.Library()
 
 
-@register.inclusion_tag("patrimoine/_taches_a_venir.html")
-def taches_a_venir(jours=30):
-    aujourdhui = timezone.localdate()
-    taches = (
-        Tache.objects.filter(faite=False, changement__termine=False, echeance__lte=aujourdhui + timedelta(days=jours))
-        .select_related("changement__lot__bien")
-        .order_by("echeance")[:10]
-    )
-    return {"taches": taches, "aujourdhui": aujourdhui}
+@register.inclusion_tag("patrimoine/_a_faire.html", takes_context=True)
+def bloc_a_faire(context):
+    items = a_faire(timezone.localdate())
+    return {"items": items, "nb_retard": sum(i["en_retard"] for i in items), "csrf_token": context.get("csrf_token")}

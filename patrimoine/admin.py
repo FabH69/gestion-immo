@@ -6,7 +6,7 @@ from django.urls import path, reverse
 from django.utils import timezone
 from django.utils.html import format_html
 
-from .models import Bail, Bien, ChangementLocataire, Echeance, EtatDesLieux, MouvementDepot, Pret, Locataire, Lot, Paiement, Proprietaire, Tache
+from .models import Bail, Bien, ChangementLocataire, Echeance, EtatDesLieux, MouvementDepot, Pret, Rappel, RevisionLoyer, Locataire, Lot, Paiement, Proprietaire, Tache
 
 admin.site.site_header = "Gestion immobilière"
 admin.site.site_title = "Gestion immobilière"
@@ -91,6 +91,7 @@ class LotAdmin(admin.ModelAdmin):
     fieldsets = [
         (None, {"fields": ["bien", "designation", "type", "surface", "nb_pieces", "meuble", "etage"]}),
         ("Caractéristiques (reprises dans le bail)", {"fields": ["annee_construction", "regime_juridique", "chauffage", "eau_chaude", "classe_dpe", "zone_tendue", "equipements", "annexes"]}),
+        ("Chaudière gaz", {"fields": ["chaudiere_gaz", "date_entretien_chaudiere"]}),
         ("État des lieux", {"fields": ["pieces"]}),
         ("Notes", {"fields": ["notes"]}),
     ]
@@ -122,7 +123,8 @@ class BailAdmin(admin.ModelAdmin):
     readonly_fields = ["documents"]
     fieldsets = [
         (None, {"fields": ["lot", "locataires", "type", "destination", "date_debut", "date_fin", "actif"]}),
-        ("Conditions financières", {"fields": ["loyer_hc", "charges", "mode_charges", "depot_garantie", "jour_echeance", "paiement_a_echoir", "indice_reference"]}),
+        ("Conditions financières", {"fields": ["loyer_hc", "charges", "mode_charges", "depot_garantie", "jour_echeance", "paiement_a_echoir"]}),
+        ("Révision annuelle et rappels", {"fields": ["revision_annuelle", ("irl_trimestre", "irl_valeur"), "indice_reference", "date_derniere_revision", "date_attestation_assurance"]}),
         ("Clauses particulières", {"fields": ["notes"]}),
         ("Documents pré-remplis", {"fields": ["documents"]}),
     ]
@@ -133,6 +135,7 @@ class BailAdmin(admin.ModelAdmin):
         if not obj.pk:
             return "Enregistrez le bail pour générer les documents."
         liens = [
+            (reverse("revision_loyer", args=[obj.pk]), "Réviser le loyer"),
             (reverse("document_bail", args=[obj.pk]), "Bail PDF"),
             (reverse("document_edl_vierge", args=[obj.pk, "entree"]), "Fiche d'état des lieux d'entrée"),
             (reverse("document_edl_vierge", args=[obj.pk, "sortie"]), "Fiche d'état des lieux de sortie"),
@@ -456,3 +459,32 @@ class PretAdmin(admin.ModelAdmin):
             obj.mensualite_hors_assurance, obj.date_derniere_echeance.strftime("%d/%m/%Y"),
             obj.capital_restant_du(timezone.localdate()), reverse("document_amortissement", args=[obj.pk]),
         )
+
+
+@admin.register(Rappel)
+class RappelAdmin(admin.ModelAdmin):
+    list_display = ["date", "titre", "categorie", "bien", "annuel", "fait"]
+    list_editable = ["fait"]
+    list_filter = ["fait", "categorie", "annuel", "bien"]
+    list_display_links = ["titre"]
+    search_fields = ["titre", "notes"]
+    actions = ["marquer_fait"]
+
+    @admin.action(description="Marquer comme fait (les rappels annuels passent à l'année suivante)")
+    def marquer_fait(self, request, queryset):
+        for rappel in queryset:
+            rappel.marquer_fait()
+
+
+@admin.register(RevisionLoyer)
+class RevisionLoyerAdmin(admin.ModelAdmin):
+    list_display = ["date_effet", "bail", "ancien_loyer", "nouveau_loyer", "trimestre", "appliquee", "liens"]
+    list_filter = ["appliquee", "bail__lot__bien__proprietaire"]
+
+    def has_add_permission(self, request):
+        return False  # une révision se crée depuis la page « Réviser le loyer » du bail
+
+    @admin.display(description="")
+    def liens(self, obj):
+        return format_html('<a href="{}">Ouvrir</a> · <a href="{}" target="_blank">Courrier PDF</a>',
+                           f"{reverse('revision_loyer', args=[obj.bail_id])}?revision={obj.pk}", reverse("lettre_revision", args=[obj.pk]))

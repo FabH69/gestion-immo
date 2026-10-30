@@ -1,0 +1,85 @@
+{% extends "admin/base_site.html" %}
+{% block breadcrumbs %}<div class="breadcrumbs"><a href="{% url 'admin:index' %}">Accueil</a> › <a href="{% url 'admin:patrimoine_bail_change' bail.pk %}">{{ bail.lot }}</a> › Révision du loyer</div>{% endblock %}
+{% block extrastyle %}{{ block.super }}<style>
+.carte { background: var(--body-bg); border: 1px solid var(--hairline-color); border-radius: 12px; box-shadow: 0 1px 6px rgba(16,24,40,.06); padding: 18px 20px; margin-bottom: 18px; max-width: 760px; }
+.carte h2 { margin: 0 0 12px; font-size: 1.05rem; }
+.grille { display: grid; grid-template-columns: 220px 1fr; gap: 10px 16px; align-items: center; }
+.grille label { color: var(--body-quiet-color); }
+.resultat { font-size: 1.6rem; font-weight: 700; color: var(--primary); }
+.alerte { background: #fff4e5; border: 1px solid #f5c27a; border-radius: 10px; padding: 10px 14px; margin-bottom: 16px; max-width: 760px; }
+.actions { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 14px; }
+.calc { color: var(--body-quiet-color); margin-top: 4px; }
+</style>{% endblock %}
+{% block content %}
+{% if dpe_gele %}<div class="alerte"><strong>Attention :</strong> le logement est classé {{ bail.lot.classe_dpe }} au DPE. Depuis le 24 août 2022, le loyer des logements classés F ou G ne peut pas être augmenté, même par la révision annuelle.</div>{% endif %}
+
+<div class="carte">
+  <h2>Bail</h2>
+  <div class="grille">
+    <label>Locataire(s)</label><div>{% for l in locataires %}{{ l }}{% if l.email %} ({{ l.email }}){% endif %}{% if not forloop.last %}, {% endif %}{% endfor %}</div>
+    <label>Loyer actuel hors charges</label><div><strong>{{ bail.loyer_hc|floatformat:2 }} €</strong> + {{ bail.charges|floatformat:2 }} € de charges</div>
+    <label>IRL de référence actuel</label><div>{% if bail.irl_valeur %}{{ bail.irl_trimestre }} : {{ bail.irl_valeur }}{% else %}non renseigné{% endif %}</div>
+    <label>Dernière révision</label><div>{{ bail.date_derniere_revision|date:"d/m/Y"|default:"jamais" }}</div>
+  </div>
+</div>
+
+{% if not revision %}
+<div class="carte">
+  <h2>Calculer le nouveau loyer</h2>
+  <form method="post">{% csrf_token %}
+    <div class="grille">
+      <label for="date_effet">Date d'effet</label><input type="date" id="date_effet" name="date_effet" value="{{ date_effet|date:'Y-m-d' }}">
+      <label for="ancien_irl">Ancien IRL</label><input type="text" id="ancien_irl" name="ancien_irl" value="{{ bail.irl_valeur|default_if_none:'' }}" placeholder="ex. 143,47">
+      <label for="trimestre">Nouvel IRL : trimestre</label><input type="text" id="trimestre" name="trimestre" value="{{ trimestre_propose }}" placeholder="ex. T2 2026">
+      <label for="nouvel_irl">Nouvel IRL : valeur</label><div><input type="text" id="nouvel_irl" name="nouvel_irl" placeholder="ex. 146,12"><div class="calc">Valeur publiée par l'INSEE : <a href="https://www.insee.fr/fr/statistiques/serie/001515333" target="_blank" rel="noopener">série IRL sur insee.fr</a></div></div>
+      <label>Nouveau loyer</label><div class="resultat" id="apercu">–</div>
+    </div>
+    <div class="actions"><button type="submit" class="button default">Enregistrer la révision</button></div>
+  </form>
+  <script>
+  (function () {
+    const loyer = {{ bail.loyer_hc|stringformat:"s" }};
+    const lire = id => parseFloat((document.getElementById(id).value || "").replace(",", "."));
+    function maj() {
+      const a = lire("ancien_irl"), n = lire("nouvel_irl");
+      const out = document.getElementById("apercu");
+      if (a > 0 && n > 0) {
+        const nouveau = Math.round(loyer * n / a * 100) / 100;
+        out.textContent = nouveau.toLocaleString("fr-FR", { minimumFractionDigits: 2 }) + " € (" + (nouveau - loyer >= 0 ? "+" : "") + (nouveau - loyer).toLocaleString("fr-FR", { minimumFractionDigits: 2 }) + " €)";
+      } else { out.textContent = "–"; }
+    }
+    ["ancien_irl", "nouvel_irl"].forEach(id => document.getElementById(id).addEventListener("input", maj));
+    maj();
+  })();
+  </script>
+</div>
+{% else %}
+<div class="carte">
+  <h2>Révision au {{ revision.date_effet|date:"d/m/Y" }}</h2>
+  <div class="grille">
+    <label>Calcul</label><div>{{ revision.ancien_loyer|floatformat:2 }} € × {{ revision.nouvel_irl }} / {{ revision.ancien_irl }}</div>
+    <label>Nouveau loyer hors charges</label><div class="resultat">{{ revision.nouveau_loyer|floatformat:2 }} € <span style="font-size:1rem;font-weight:500">({% if revision.hausse >= 0 %}+{% endif %}{{ revision.hausse|floatformat:2 }} €)</span></div>
+    <label>Statut</label><div>{% if revision.appliquee %}<strong style="color:#2e7d32">Appliquée au bail</strong>{% else %}Pas encore appliquée{% endif %}</div>
+  </div>
+  <div class="actions">
+    {% if mailto %}<a class="button" href="{{ mailto }}">Préparer le mail au locataire</a>{% endif %}
+    <a class="button" href="{% url 'lettre_revision' revision.pk %}" target="_blank">Courrier PDF</a>
+    {% if not revision.appliquee %}
+    <form method="post" style="display:inline">{% csrf_token %}<input type="hidden" name="action" value="appliquer"><input type="hidden" name="revision" value="{{ revision.pk }}"><button type="submit" class="button default">Appliquer le nouveau loyer au bail</button></form>
+    {% endif %}
+    <a class="button" href="{% url 'revision_loyer' bail.pk %}" style="background:var(--close-button-bg)">Nouveau calcul</a>
+  </div>
+  <p class="calc">Le mail s'ouvre dans ta messagerie, pré-rempli : tu le relis puis tu l'envoies toi-même.</p>
+</div>
+{% endif %}
+
+{% if historique %}
+<div class="carte">
+  <h2>Historique des révisions</h2>
+  <table style="width:100%">
+    <tr><th>Date d'effet</th><th>IRL</th><th>Ancien loyer</th><th>Nouveau loyer</th><th>Appliquée</th></tr>
+    {% for h in historique %}<tr><td><a href="?revision={{ h.pk }}">{{ h.date_effet|date:"d/m/Y" }}</a></td><td>{{ h.trimestre }} : {{ h.nouvel_irl }}</td><td>{{ h.ancien_loyer|floatformat:2 }} €</td><td>{{ h.nouveau_loyer|floatformat:2 }} €</td><td>{{ h.appliquee|yesno:"oui,non" }}</td></tr>{% endfor %}
+  </table>
+</div>
+{% endif %}
+{% endblock %}

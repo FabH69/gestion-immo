@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="fr"><head><meta charset="utf-8"><style>{% include "patrimoine/_style_document.css" %}
+@page { @bottom-center { content: none; } }
+.expediteur { margin-bottom: 24pt; }
+.destinataire { margin-left: 55%; margin-bottom: 28pt; }
+.objet { font-weight: bold; margin: 18pt 0 12pt; }
+p { margin: 0 0 9pt; text-align: justify; }
+table.calcul td { border: none; padding: 2pt 0; }
+</style></head>
+<body>
+<div class="expediteur"><strong>{{ proprietaire.nom }}</strong>{% if proprietaire.representant %}<br>{{ proprietaire.representant }}{% endif %}<br>{{ proprietaire.adresse|linebreaksbr }}</div>
+<div class="destinataire">{% for l in locataires %}{{ l }}<br>{% endfor %}{{ bien.adresse }}{% if lot.etage %}<br>{{ lot.etage }}{% endif %}<br>{{ bien.code_postal }} {{ bien.ville }}<br><br>Le {{ aujourdhui|date:"j F Y" }}</div>
+<div class="objet">Objet : révision annuelle du loyer – {{ lot.designation }}, {{ bien.adresse }}</div>
+<p>{% if locataires|length > 1 %}Madame, Monsieur,{% else %}{% if locataires.0.civilite == "Mme" %}Madame,{% elif locataires.0.civilite == "M." %}Monsieur,{% else %}Madame, Monsieur,{% endif %}{% endif %}</p>
+<p>Conformément à la clause de révision de votre bail, le loyer est révisé chaque année à la date anniversaire du contrat, selon la variation de l'indice de référence des loyers (IRL) publié par l'INSEE.</p>
+<table class="calcul">
+  <tr><td>Loyer actuel hors charges</td><td style="text-align:right">{{ r.ancien_loyer|floatformat:2 }} €</td></tr>
+  <tr><td>IRL de référence (précédent)</td><td style="text-align:right">{{ r.ancien_irl }}</td></tr>
+  <tr><td>IRL {{ r.trimestre }}</td><td style="text-align:right">{{ r.nouvel_irl }}</td></tr>
+  <tr><td><strong>Nouveau loyer hors charges</strong> ({{ r.ancien_loyer|floatformat:2 }} × {{ r.nouvel_irl }} / {{ r.ancien_irl }})</td><td style="text-align:right"><strong>{{ r.nouveau_loyer|floatformat:2 }} €</strong></td></tr>
+  <tr><td>Provision sur charges (inchangée)</td><td style="text-align:right">{{ bail.charges|floatformat:2 }} €</td></tr>
+  <tr><td><strong>Nouveau total mensuel</strong></td><td style="text-align:right"><strong>{{ r.nouveau_loyer|add:bail.charges|floatformat:2 }} €</strong></td></tr>
+</table>
+<p style="margin-top:12pt">Ce nouveau montant s'applique à compter de l'échéance du <strong>{{ r.date_effet|date:"j F Y" }}</strong>. Je vous remercie de bien vouloir ajuster votre règlement en conséquence.</p>
+<p>Je vous prie d'agréer, {% if locataires|length > 1 %}Madame, Monsieur{% elif locataires.0.civilite == "Mme" %}Madame{% elif locataires.0.civilite == "M." %}Monsieur{% else %}Madame, Monsieur{% endif %}, l'expression de mes salutations distinguées.</p>
+<p style="margin-top:28pt; margin-left:55%">{{ proprietaire.representant|default:proprietaire.nom }}</p>
+</body></html>

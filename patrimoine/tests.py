@@ -3,6 +3,7 @@ from decimal import Decimal
 
 from django.contrib.auth.models import User
 from django.test import TestCase
+from django.utils import timezone
 
 from .models import Bail, Bien, Echeance, Locataire, Lot, Paiement, Proprietaire
 
@@ -237,3 +238,67 @@ class PretTests(TestCase):
         self.assertIn("199390,80", self.client.get("/etats/endettement/", {"date": "2020-01-31", "format": "csv"}).content.decode("utf-8-sig"))
         self.assertEqual(self.client.get("/etats/endettement/", {"format": "pdf"})["Content-Type"], "application/pdf")
         self.assertEqual(self.client.get(f"/prets/{self.pret.pk}/amortissement.pdf").status_code, 200)
+
+
+class RappelsEtRevisionTests(TestCase):
+    def setUp(self):
+        proprio = Proprietaire.objects.create(nom="SCI", type=Proprietaire.Type.SCI_IR)
+        bien = Bien.objects.create(proprietaire=proprio, nom="Immeuble", adresse="1 rue", code_postal="69000", ville="Lyon")
+        self.lot = Lot.objects.create(bien=bien, designation="Apt", chaudiere_gaz=True, date_entretien_chaudiere=date(2025, 11, 20))
+        self.bail = Bail.objects.create(
+            lot=self.lot, type=Bail.Type.NU, date_debut=date(2024, 11, 15), loyer_hc=Decimal("600"), charges=Decimal("40"),
+            irl_trimestre="T2", irl_valeur=Decimal("143.58"), date_attestation_assurance=date(2025, 11, 10),
+        )
+        self.bail.locataires.add(Locataire.objects.create(nom="Martin", email="martin@example.com"))
+        self.client.force_login(User.objects.create_superuser("admin", "a@example.com", "x"))
+
+    def test_prochaine_revision(self):
+        self.assertEqual(self.bail.prochaine_revision(date(2025, 10, 1)), date(2025, 11, 15))
+        self.bail.date_derniere_revision = date(2025, 11, 15)
+        self.assertEqual(self.bail.prochaine_revision(date(2026, 10, 1)), date(2026, 11, 15))
+        # Révisions jamais faites : celle de moins d'un an reste due, les plus anciennes sont perdues.
+        self.bail.date_derniere_revision = None
+        self.assertEqual(self.bail.prochaine_revision(date(2026, 12, 1)), date(2026, 11, 15))
+        self.assertEqual(self.bail.prochaine_revision(date(2027, 12, 1)), date(2027, 11, 15))
+
+    def test_a_faire_un_mois_avant(self):
+        from .models import Rappel
+        from .rappels import a_faire
+
+        self.bail.date_derniere_revision = date(2025, 11, 15)
+        self.bail.save()
+        Rappel.objects.create(titre="AG", date=date(2026, 12, 1))
+        titres = [i["titre"] for i in a_faire(date(2026, 10, 22))]
+        self.assertIn("Réviser le loyer (IRL)", titres)
+        self.assertIn("Demander l'attestation d'assurance habitation", titres)
+        self.assertIn("Demander l'attestation d'entretien de la chaudière", titres)
+        self.assertNotIn("AG", titres)  # au-delà de 30 jours
+        self.assertEqual(a_faire(date(2026, 9, 1)), [])
+
+    def test_bouton_fait(self):
+        from .models import Rappel
+
+        r = Rappel.objects.create(titre="Taxe foncière", date=date(2026, 10, 15), annuel=True)
+        self.client.post(f"/rappels/rappel/{r.pk}/fait/")
+        r.refresh_from_db()
+        self.assertEqual(r.date, date(2027, 10, 15))
+        self.assertFalse(r.fait)
+        self.client.post(f"/rappels/assurance/{self.bail.pk}/fait/")
+        self.bail.refresh_from_db()
+        self.assertEqual(self.bail.date_attestation_assurance, timezone.localdate())
+        self.assertEqual(self.client.get("/admin/").status_code, 200)
+
+    def test_revision_calcul_courrier_et_application(self):
+        from .models import RevisionLoyer
+
+        r = self.client.post(f"/baux/{self.bail.pk}/revision/", {"ancien_irl": "143,58", "nouvel_irl": "146,12", "trimestre": "T2 2026", "date_effet": "2026-11-15"})
+        revision = RevisionLoyer.objects.get()
+        self.assertEqual(revision.nouveau_loyer, Decimal("610.61"))  # 600 × 146,12 / 143,58
+        page = self.client.get(r["Location"])
+        self.assertIn("mailto:martin@example.com", page.content.decode())
+        self.assertEqual(self.client.get(f"/revisions/{revision.pk}/lettre.pdf")["Content-Type"], "application/pdf")
+        self.client.post(f"/baux/{self.bail.pk}/revision/", {"action": "appliquer", "revision": revision.pk})
+        self.bail.refresh_from_db()
+        self.assertEqual(self.bail.loyer_hc, Decimal("610.61"))
+        self.assertEqual(self.bail.irl_valeur, Decimal("146.12"))
+        self.assertEqual(self.bail.prochaine_revision(date(2027, 1, 1)), date(2027, 11, 15))

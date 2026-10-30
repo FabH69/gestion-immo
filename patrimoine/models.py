@@ -85,6 +85,8 @@ class Lot(models.Model):
         help_text="Une pièce par ligne. Si vide, une liste standard est proposée selon le nombre de pièces.",
     )
     zone_tendue = models.BooleanField("zone tendue", default=False)
+    chaudiere_gaz = models.BooleanField("chaudière gaz individuelle", default=False, help_text="Entretien annuel obligatoire à la charge du locataire")
+    date_entretien_chaudiere = models.DateField("dernier entretien de la chaudière", null=True, blank=True)
     notes = models.TextField(blank=True)
 
     class Meta:
@@ -157,6 +159,11 @@ class Bail(models.Model):
     indice_reference = models.CharField(
         "indice de référence (IRL/ILC)", max_length=50, blank=True, help_text="ex. « IRL T2 2026 : 146,12 »"
     )
+    irl_trimestre = models.CharField("trimestre IRL de référence", max_length=2, blank=True, choices=[("T1", "T1"), ("T2", "T2"), ("T3", "T3"), ("T4", "T4")])
+    irl_valeur = models.DecimalField("valeur de l'IRL de référence", max_digits=7, decimal_places=2, null=True, blank=True, help_text="IRL utilisé pour le loyer actuel")
+    revision_annuelle = models.BooleanField("révision annuelle du loyer", default=True)
+    date_derniere_revision = models.DateField("dernière révision", null=True, blank=True)
+    date_attestation_assurance = models.DateField("dernière attestation d'assurance reçue", null=True, blank=True)
     actif = models.BooleanField(default=True)
     notes = models.TextField(blank=True)
 
@@ -176,6 +183,21 @@ class Bail(models.Model):
     def depot_detenu(self):
         """Solde du dépôt de garantie encore détenu (compte séparé des loyers)."""
         return sum((m.montant_signe for m in self.mouvements_depot.all()), Decimal(0))
+
+    def prochaine_revision(self, aujourdhui=None):
+        """Prochaine date anniversaire de révision, après la dernière révision.
+
+        Une révision non demandée dans l'année qui suit sa date anniversaire est perdue
+        (pas de rattrapage) : on ne remonte donc pas plus d'un an en arrière.
+        """
+        if not self.revision_annuelle:
+            return None
+        aujourdhui = aujourdhui or date.today()
+        depart = max(self.date_derniere_revision or self.date_debut, _ajouter_mois(aujourdhui, -12))
+        prochaine = _ajouter_mois(self.date_debut, 12 * max(depart.year - self.date_debut.year, 0))
+        while prochaine <= depart:
+            prochaine = _ajouter_mois(prochaine, 12)
+        return prochaine
 
     DUREES_MOIS = {"nu": 36, "meuble": 12, "etudiant": 9, "mobilite": 10, "commercial": 108, "professionnel": 72, "parking": 12}
 
@@ -527,3 +549,76 @@ class Pret(models.Model):
             "capital": sum((l["capital"] for l in lignes), Decimal(0)),
             "assurance": sum((l["assurance"] for l in lignes), Decimal(0)),
         }
+
+
+class RevisionLoyer(models.Model):
+    """Révision annuelle du loyer selon l'IRL : nouveau loyer = loyer actuel × nouvel IRL / ancien IRL."""
+
+    bail = models.ForeignKey(Bail, on_delete=models.CASCADE, related_name="revisions")
+    date_effet = models.DateField("date d'effet")
+    ancien_loyer = models.DecimalField("ancien loyer HC (€)", max_digits=10, decimal_places=2)
+    ancien_irl = models.DecimalField("ancien IRL", max_digits=7, decimal_places=2)
+    nouvel_irl = models.DecimalField("nouvel IRL", max_digits=7, decimal_places=2)
+    trimestre = models.CharField("trimestre et année du nouvel IRL", max_length=20, help_text="ex. « T2 2026 »")
+    nouveau_loyer = models.DecimalField("nouveau loyer HC (€)", max_digits=10, decimal_places=2)
+    appliquee = models.BooleanField("appliquée au bail", default=False)
+
+    class Meta:
+        verbose_name = "révision de loyer"
+        verbose_name_plural = "révisions de loyer"
+        ordering = ["-date_effet"]
+
+    def __str__(self):
+        return f"Révision {self.date_effet:%m/%Y} – {self.bail.lot}"
+
+    @staticmethod
+    def calculer(ancien_loyer, ancien_irl, nouvel_irl):
+        return (ancien_loyer * nouvel_irl / ancien_irl).quantize(Decimal("0.01"))
+
+    @property
+    def hausse(self):
+        return self.nouveau_loyer - self.ancien_loyer
+
+    def appliquer(self):
+        bail = self.bail
+        bail.loyer_hc = self.nouveau_loyer
+        bail.irl_valeur = self.nouvel_irl
+        bail.indice_reference = f"IRL {self.trimestre} : {self.nouvel_irl}"
+        bail.date_derniere_revision = self.date_effet
+        bail.save()
+        self.appliquee = True
+        self.save(update_fields=["appliquee"])
+
+
+class Rappel(models.Model):
+    """Rappel saisi à la main (AG de copropriété, taxe foncière, contrôle…), ponctuel ou annuel."""
+
+    class Categorie(models.TextChoices):
+        AG = "ag", "Assemblée générale"
+        FISCAL = "fiscal", "Impôts et déclarations"
+        TRAVAUX = "travaux", "Travaux / entretien"
+        ADMINISTRATIF = "administratif", "Administratif"
+        AUTRE = "autre", "Autre"
+
+    titre = models.CharField(max_length=200)
+    date = models.DateField()
+    categorie = models.CharField("catégorie", max_length=20, choices=Categorie.choices, default=Categorie.AUTRE)
+    bien = models.ForeignKey(Bien, on_delete=models.CASCADE, null=True, blank=True, related_name="rappels")
+    annuel = models.BooleanField("se répète chaque année", default=False)
+    fait = models.BooleanField(default=False)
+    notes = models.TextField(blank=True)
+
+    class Meta:
+        verbose_name = "rappel"
+        ordering = ["fait", "date"]
+
+    def __str__(self):
+        return self.titre
+
+    def marquer_fait(self):
+        """Un rappel annuel passe à l'année suivante ; un rappel ponctuel est clos."""
+        if self.annuel:
+            self.date = _ajouter_mois(self.date, 12)
+        else:
+            self.fait = True
+        self.save()

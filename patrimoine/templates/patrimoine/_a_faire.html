@@ -1,0 +1,16 @@
+<div class="module a-faire" style="margin-bottom:20px">
+  <table style="width:100%">
+    <caption>À faire dans les 30 prochains jours{% if nb_retard %} <span class="pastille-retard">{{ nb_retard }} en retard</span>{% endif %}
+      <a href="{% url 'admin:patrimoine_rappel_add' %}" class="ajout-rappel">+ Ajouter un rappel</a></caption>
+    {% for i in items %}
+    <tr>
+      <td class="date{% if i.en_retard %} retard{% endif %}">{{ i.date|date:"d/m/Y" }}</td>
+      <td><span class="categorie">{{ i.categorie }}</span></td>
+      <th scope="row"><a href="{{ i.url }}">{{ i.titre }}</a>{% if i.detail %}<div class="detail">{{ i.detail }}</div>{% endif %}</th>
+      <td class="action">{% if i.action %}<form method="post" action="{{ i.action }}">{% csrf_token %}<button type="submit" class="button fait">Fait</button></form>{% endif %}</td>
+    </tr>
+    {% empty %}
+    <tr><td colspan="4" style="padding:16px;color:var(--body-quiet-color)">Rien à faire dans les 30 prochains jours.</td></tr>
+    {% endfor %}
+  </table>
+</div>
