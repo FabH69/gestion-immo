@@ -1,0 +1,13 @@
+table.etat { border-collapse: collapse; width: 100%; font-variant-numeric: tabular-nums; }
+table.etat th, table.etat td { padding: 4px 6px; text-align: right; border-bottom: 1px solid #e3e3e3; white-space: nowrap; }
+table.etat th { font-size: 0.85em; background: #f3f3f3; }
+table.etat .libelle { text-align: left; }
+table.etat .lot { padding-left: 18px; }
+table.etat .fort { font-weight: bold; }
+table.etat tr.proprio td { text-align: left; font-weight: bold; background: #264b5d; color: #fff; padding-top: 6px; }
+table.etat tr.proprio .type { font-weight: normal; opacity: .8; }
+table.etat tr.bien td { text-align: left; font-weight: bold; background: #eef3f6; color: #264b5d; }
+table.etat tr.st td { font-style: italic; }
+table.etat tr.stp td { font-weight: bold; border-bottom: 2px solid #999; }
+table.etat tr.total td { font-weight: bold; border-top: 2px solid #222; font-size: 1.05em; }
+table.etat td.vide { text-align: center; padding: 20px; color: #777; }

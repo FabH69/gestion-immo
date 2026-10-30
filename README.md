@@ -21,3 +21,7 @@ Puis ouvrir http://127.0.0.1:8000/.
 - Filtre « Impayés en retard » pour voir les loyers non soldés après leur date d'échéance.
 - Colonne **Document** : quittance PDF si le loyer est payé en entier, sinon avis d'échéance.
 - En ligne de commande : `python manage.py generer_echeances 2026-11`.
+
+## États
+
+- **Loyers encaissés** (page d'accueil ou menu Loyers) : tableau par propriétaire, bien et lot, mois par mois sur une année civile, avec la répartition loyers HC / charges. Filtre par entité, export PDF et CSV pour Excel.

@@ -52,3 +52,41 @@ class EcheanceTests(TestCase):
         self.assertEqual(r.status_code, 200)
         self.assertEqual(r["Content-Type"], "application/pdf")
         self.assertIn("quittance-2026-10", r["Content-Disposition"])
+
+
+class EtatLoyersTests(TestCase):
+    def setUp(self):
+        self.sci = Proprietaire.objects.create(nom="SCI A", type=Proprietaire.Type.SCI_IR)
+        autre = Proprietaire.objects.create(nom="Nom propre", type=Proprietaire.Type.NOM_PROPRE)
+        for proprio, loyer in ((self.sci, "600"), (autre, "400")):
+            bien = Bien.objects.create(proprietaire=proprio, nom=f"Bien {proprio.nom}", adresse="1 rue", code_postal="69000", ville="Lyon")
+            lot = Lot.objects.create(bien=bien, designation="Apt")
+            bail = Bail.objects.create(lot=lot, type=Bail.Type.NU, date_debut=date(2025, 1, 1), loyer_hc=Decimal(loyer), charges=Decimal("50"))
+        for mois in (11, 12):
+            Echeance.generer_pour_mois(date(2025, mois, 1))
+        for e in Echeance.objects.all():
+            # Le loyer de décembre est encaissé en janvier : il compte pour l'année suivante.
+            jour = date(2025, 11, 3) if e.periode.month == 11 else date(2026, 1, 4)
+            Paiement.objects.create(echeance=e, date=jour, montant=e.total)
+        self.client.force_login(User.objects.create_superuser("admin", "a@example.com", "x"))
+
+    def test_totaux_par_date_d_encaissement(self):
+        from .etats import loyers_encaisses
+
+        etat = loyers_encaisses(2025)
+        self.assertEqual(etat["total"]["total"], Decimal("1100"))
+        self.assertEqual(etat["total"]["mois"][10], Decimal("1100"))
+        self.assertEqual(etat["total"]["loyers_hc"], Decimal("1000"))
+        self.assertEqual(etat["total"]["charges"], Decimal("100"))
+        self.assertEqual(loyers_encaisses(2026)["total"]["mois"][0], Decimal("1100"))
+
+    def test_filtre_proprietaire_et_exports(self):
+        r = self.client.get("/etats/loyers-encaisses/", {"annee": 2025, "proprietaire": self.sci.pk})
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(r.context["total"]["total"], Decimal("650"))
+        r = self.client.get("/etats/loyers-encaisses/", {"annee": 2025, "format": "csv"})
+        contenu = r.content.decode("utf-8-sig")
+        self.assertIn("TOTAL;;;0,00", contenu)
+        self.assertIn("1100,00", contenu)
+        r = self.client.get("/etats/loyers-encaisses/", {"annee": 2025, "format": "pdf"})
+        self.assertEqual(r["Content-Type"], "application/pdf")
