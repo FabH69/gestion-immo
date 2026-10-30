@@ -4,7 +4,7 @@ from decimal import Decimal
 
 from django.core.management.base import BaseCommand
 
-from patrimoine.models import Bail, Bien, Candidature, ChangementLocataire, Garant, Echeance, MouvementDepot, Pret, Rappel, Locataire, Lot, Paiement, Proprietaire
+from patrimoine.models import Annonce, Bail, Bien, Candidature, PhotoLot, ChangementLocataire, Garant, Echeance, MouvementDepot, Pret, Rappel, Locataire, Lot, Paiement, Proprietaire
 
 
 class Command(BaseCommand):
@@ -81,7 +81,26 @@ class Command(BaseCommand):
             telephone="06 00 00 00 00", situation="cdi", employeur="Société Exemple", revenus_mensuels=Decimal("1850"), nb_occupants=1,
             type_garantie="visale", consentement=True,
         )
-        Lot.objects.filter(pk=lots[5].pk).update(loyer_propose=Decimal("560"))
+        Lot.objects.filter(pk=lots[5].pk).update(loyer_propose=Decimal("560"), classe_dpe="D", classe_ges="B", energie_min=480, energie_max=690, energie_annee=2023,
+                                                 equipements="Kitchenette équipée, lave-linge, fibre", etage="2e étage avec ascenseur")
+        self._photos_fictives(lots[5], ["Pièce principale", "Kitchenette", "Salle d'eau", "Vue"])
+        Annonce.objects.create(lot=Lot.objects.get(pk=lots[5].pk), loyer_cc=Decimal("560"), charges=Decimal("50"), depot_garantie=Decimal("1020"),
+                               disponible_le=date(2026, 12, 1), points_forts="À 5 minutes à pied de la gare\nRésidence calme et sécurisée\nIdéal étudiant ou jeune actif")
         Candidature.objects.create(lot=lots[5])
 
         self.stdout.write(self.style.SUCCESS("Données de démonstration créées."))
+
+    def _photos_fictives(self, lot, legendes):
+        """Images de remplacement unies (aucune vraie photo dans les données de démo)."""
+        import io
+
+        from django.core.files.uploadedfile import SimpleUploadedFile
+        from PIL import Image, ImageDraw
+
+        couleurs = ["#cfe3e1", "#f6e3b4", "#dfe7f2", "#e9dfd3"]
+        for i, legende in enumerate(legendes):
+            image = Image.new("RGB", (800, 600), couleurs[i % len(couleurs)])
+            ImageDraw.Draw(image).text((30, 30), f"Photo d'exemple : {legende}", fill="#24585c")
+            tampon = io.BytesIO()
+            image.save(tampon, "JPEG")
+            PhotoLot.objects.create(lot=lot, ordre=i, legende=legende, image=SimpleUploadedFile(f"exemple-{i}.jpg", tampon.getvalue()))

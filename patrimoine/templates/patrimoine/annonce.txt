@@ -1,0 +1,21 @@
+{% load l10n %}{% autoescape off %}À louer {% if lot.meuble %}meublé {% endif %}: {{ lot.get_type_display|lower }}{% if lot.nb_pieces and lot.type != "parking" and lot.type != "cave" %} de {{ lot.nb_pieces }} pièce{{ lot.nb_pieces|pluralize }}{% endif %}{% if lot.surface %} – {{ lot.surface|floatformat:"-2" }} m²{% endif %}, à {{ bien.ville }}{% if lot.etage %} ({{ lot.etage }}){% endif %}.
+{% if points %}
+Les plus :
+{% for p in points %}- {{ p }}
+{% endfor %}{% endif %}{% if lot.equipements %}
+Équipements : {{ lot.equipements }}
+{% endif %}{% if lot.annexes %}Annexes : {{ lot.annexes }}
+{% endif %}{% if lot.chauffage %}Chauffage : {{ lot.chauffage }}{% if lot.eau_chaude %} – eau chaude : {{ lot.eau_chaude }}{% endif %}
+{% endif %}{% if a.disponible_le %}
+Disponible le {{ a.disponible_le|date:"j F Y" }}.
+{% endif %}
+Loyer : {{ a.loyer_cc|floatformat:"-2" }} € par mois charges comprises, dont {{ a.charges|floatformat:"-2" }} € de charges ({% if a.charges_forfait %}forfait{% else %}provisions avec régularisation annuelle{% endif %}).
+Dépôt de garantie : {{ a.depot_garantie|floatformat:"-2" }} €.
+Location {% if lot.meuble %}meublée{% else %}vide{% endif %}{% if lot.surface %} – surface habitable {{ lot.surface|floatformat:"-2" }} m²{% endif %}.
+Pas de frais d'agence : location directe de particulier à particulier.
+{% if lot.zone_tendue %}Logement situé en zone tendue.
+{% endif %}
+Classe énergie : {{ lot.classe_dpe|default:"à compléter" }} – Classe climat : {{ lot.classe_ges|default:"à compléter" }}.
+{% if lot.energie_min and lot.energie_max %}Montant estimé des dépenses annuelles d'énergie pour un usage standard : entre {{ lot.energie_min }} € et {{ lot.energie_max }} € par an{% if lot.energie_annee %} (prix moyens des énergies indexés au 1er janvier {{ lot.energie_annee|unlocalize }}){% endif %}.{% endif %}
+
+Dossier complet et garant ou garantie Visale demandés. Contactez-moi pour organiser une visite.{% endautoescape %}

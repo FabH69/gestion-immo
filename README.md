@@ -49,3 +49,4 @@ Puis ouvrir http://127.0.0.1:8000/.
 
 - **Candidatures** : choisir le logement crée un lien personnel à envoyer au futur locataire (mail pré-rempli). Le candidat remplit le formulaire sans compte, depuis son téléphone ; le dossier apparaît avec le taux d'effort. L'action « Retenir » crée le locataire et son garant. Le lien ne fonctionne pour le candidat qu'une fois l'application en ligne.
 - **Garants** : fiche complète (identité, revenus, caution solidaire ou simple, montant maximum, durée) rattachée au locataire et au bail ; acte de cautionnement PDF pré-rempli.
+- **Annonces** (fiche du lot → « Créer une annonce ») : titre et texte générés avec les mentions obligatoires (loyer CC, charges, dépôt, surface, DPE/GES, dépenses d'énergie), modifiables ; boutons de copie, photos du lot en zip numéroté, lien de dépôt Leboncoin. Les photos se chargent dans la fiche du lot.

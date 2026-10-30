@@ -1,4 +1,6 @@
 import csv
+import io
+import zipfile
 from datetime import date
 from decimal import Decimal, InvalidOperation
 from urllib.parse import quote
@@ -338,3 +340,19 @@ def acte_cautionnement(request, pk):
     contexte = _contexte_bail(garant.bail)
     contexte.update(g=garant, montant=garant.montant_garanti(), duree_texte=duree_texte(garant.bail))
     return _pdf(render_to_string("patrimoine/acte_cautionnement.html", contexte), f"acte cautionnement {garant}")
+
+
+@staff_member_required
+def photos_zip(request, pk):
+    """Toutes les photos du lot dans un fichier zip, numérotées dans l'ordre, prêtes à déposer sur l'annonce."""
+    lot = get_object_or_404(Lot, pk=pk)
+    tampon = io.BytesIO()
+    with zipfile.ZipFile(tampon, "w", zipfile.ZIP_DEFLATED) as archive:
+        for i, photo in enumerate(lot.photos.all(), start=1):
+            extension = photo.image.name.rsplit(".", 1)[-1].lower()
+            nom = slugify(photo.legende) or "photo"
+            with photo.image.open("rb") as f:
+                archive.writestr(f"{i:02d}-{nom}.{extension}", f.read())
+    response = HttpResponse(tampon.getvalue(), content_type="application/zip")
+    response["Content-Disposition"] = f'attachment; filename="photos-{slugify(str(lot))}.zip"'
+    return response

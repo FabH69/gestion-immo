@@ -78,6 +78,10 @@ class Lot(models.Model):
     chauffage = models.CharField(max_length=100, blank=True, help_text="ex. « individuel gaz », « collectif »")
     eau_chaude = models.CharField("eau chaude", max_length=100, blank=True, help_text="ex. « individuelle électrique »")
     classe_dpe = models.CharField("classe DPE", max_length=1, blank=True, choices=[(c, c) for c in "ABCDEFG"])
+    classe_ges = models.CharField("classe GES", max_length=1, blank=True, choices=[(c, c) for c in "ABCDEFG"])
+    energie_min = models.PositiveIntegerField("dépenses d'énergie annuelles estimées, min (€)", null=True, blank=True, help_text="Indiquées sur le DPE")
+    energie_max = models.PositiveIntegerField("dépenses d'énergie annuelles estimées, max (€)", null=True, blank=True)
+    energie_annee = models.PositiveSmallIntegerField("année de référence des prix de l'énergie", null=True, blank=True, help_text="ex. 2023, indiquée sur le DPE")
     equipements = models.TextField("équipements", blank=True, help_text="Cuisine équipée, interphone, fibre…")
     annexes = models.TextField("annexes privatives", blank=True, help_text="Cave, parking, jardin…")
     pieces = models.TextField(
@@ -760,3 +764,80 @@ class Candidature(models.Model):
         self.statut = self.Statut.RETENUE
         self.save(update_fields=["statut"])
         return locataire
+
+
+def _chemin_photo(instance, nom):
+    return f"photos/lot-{instance.lot_id}/{nom}"
+
+
+class PhotoLot(models.Model):
+    lot = models.ForeignKey(Lot, on_delete=models.CASCADE, related_name="photos")
+    image = models.ImageField(upload_to=_chemin_photo)
+    legende = models.CharField("légende", max_length=150, blank=True, help_text="ex. « Séjour lumineux »")
+    ordre = models.PositiveSmallIntegerField(default=0, help_text="La photo n° 0 sert de photo principale")
+
+    class Meta:
+        verbose_name = "photo"
+        ordering = ["lot", "ordre", "pk"]
+
+    def __str__(self):
+        return self.legende or self.image.name.rsplit("/", 1)[-1]
+
+
+class Annonce(models.Model):
+    """Annonce de location prête à copier sur Leboncoin (ou tout autre site)."""
+
+    lot = models.ForeignKey(Lot, on_delete=models.CASCADE, related_name="annonces")
+    titre = models.CharField(max_length=100, blank=True, help_text="Laisser vide pour le générer")
+    loyer_cc = models.DecimalField("loyer charges comprises (€/mois)", max_digits=10, decimal_places=2)
+    charges = models.DecimalField("dont charges (€/mois)", max_digits=10, decimal_places=2, default=0)
+    charges_forfait = models.BooleanField("charges au forfait", default=False, help_text="Sinon : provisions avec régularisation annuelle")
+    depot_garantie = models.DecimalField("dépôt de garantie (€)", max_digits=10, decimal_places=2, default=0)
+    disponible_le = models.DateField("disponible le", null=True, blank=True)
+    points_forts = models.TextField("points forts", blank=True, help_text="Une idée par ligne : « proche gare », « balcon plein sud »…")
+    texte = models.TextField(blank=True, help_text="Laisser vide puis enregistrer pour générer le texte ; il reste modifiable ensuite.")
+    cree_le = models.DateField("créée le", auto_now_add=True)
+
+    class Meta:
+        ordering = ["-cree_le"]
+
+    def __str__(self):
+        return self.titre or f"Annonce {self.lot}"
+
+    def titre_genere(self):
+        lot = self.lot
+        morceaux = [lot.get_type_display()]
+        if lot.nb_pieces and lot.type not in (Lot.Type.PARKING, Lot.Type.CAVE):
+            morceaux.append(f"{lot.nb_pieces} pièce{'s' if lot.nb_pieces > 1 else ''}")
+        if lot.meuble:
+            morceaux.append("meublé")
+        if lot.surface:
+            morceaux.append(f"{lot.surface:.0f} m²")
+        morceaux.append(f"– {lot.bien.ville}")
+        return " ".join(morceaux)[:100]
+
+    def texte_genere(self):
+        from django.template.loader import render_to_string
+
+        return render_to_string("patrimoine/annonce.txt", {"a": self, "lot": self.lot, "bien": self.lot.bien,
+                                                           "points": [p.strip() for p in self.points_forts.splitlines() if p.strip()]}).strip()
+
+    def mentions_manquantes(self):
+        lot = self.lot
+        manque = []
+        if not lot.surface:
+            manque.append("surface habitable")
+        if not lot.classe_dpe:
+            manque.append("classe énergie (DPE)")
+        if not lot.classe_ges:
+            manque.append("classe climat (GES)")
+        if not (lot.energie_min and lot.energie_max):
+            manque.append("dépenses d'énergie estimées")
+        return manque
+
+    def save(self, *args, **kwargs):
+        if not self.titre:
+            self.titre = self.titre_genere()
+        if not self.texte:
+            self.texte = self.texte_genere()
+        super().save(*args, **kwargs)

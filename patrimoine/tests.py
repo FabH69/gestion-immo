@@ -343,3 +343,50 @@ class CandidatureEtGarantTests(TestCase):
         self.client.force_login(User.objects.create_superuser("admin", "a@example.com", "x"))
         self.assertEqual(self.client.get(f"/garants/{g.pk}/acte-de-cautionnement.pdf")["Content-Type"], "application/pdf")
         self.assertEqual(self.client.get(f"/baux/{bail.pk}/bail.pdf").status_code, 200)
+
+
+class AnnonceTests(TestCase):
+    def setUp(self):
+        import tempfile
+
+        self.media = self.settings(MEDIA_ROOT=tempfile.mkdtemp())
+        self.media.enable()
+        proprio = Proprietaire.objects.create(nom="SCI", type=Proprietaire.Type.SCI_IR)
+        bien = Bien.objects.create(proprietaire=proprio, nom="Résidence", adresse="8 av. Gare", code_postal="35000", ville="Rennes")
+        self.lot = Lot.objects.create(bien=bien, designation="Studio 4", type=Lot.Type.STUDIO, surface=Decimal("24"), nb_pieces=1, meuble=True,
+                                      classe_dpe="D", classe_ges="B", energie_min=480, energie_max=690, energie_annee=2023)
+
+    def tearDown(self):
+        self.media.disable()
+
+    def test_texte_genere_avec_mentions_obligatoires(self):
+        from .models import Annonce
+
+        a = Annonce.objects.create(lot=self.lot, loyer_cc=Decimal("560"), charges=Decimal("50"), depot_garantie=Decimal("1020"),
+                                   points_forts="Proche gare\nCalme")
+        self.assertEqual(a.titre, "Studio 1 pièce meublé 24 m² – Rennes")
+        for attendu in ("560 € par mois charges comprises", "dont 50 € de charges", "Dépôt de garantie : 1020 €", "Location meublée",
+                        "surface habitable 24 m²", "Classe énergie : D", "Classe climat : B", "entre 480 € et 690 € par an",
+                        "1er janvier 2023", "- Proche gare"):
+            self.assertIn(attendu, a.texte)
+        self.assertEqual(a.mentions_manquantes(), [])
+        a.texte = "Texte retouché"
+        a.save()
+        self.assertEqual(Annonce.objects.get().texte, "Texte retouché")
+
+    def test_photos_zip(self):
+        import io as _io
+        import zipfile as _zip
+
+        from django.core.files.uploadedfile import SimpleUploadedFile
+        from PIL import Image
+
+        from .models import PhotoLot
+
+        for i, legende in enumerate(["Séjour", "Cuisine"]):
+            tampon = _io.BytesIO()
+            Image.new("RGB", (40, 30), "white").save(tampon, "JPEG")
+            PhotoLot.objects.create(lot=self.lot, ordre=i, legende=legende, image=SimpleUploadedFile(f"p{i}.jpg", tampon.getvalue()))
+        self.client.force_login(User.objects.create_superuser("admin", "a@example.com", "x"))
+        r = self.client.get(f"/lots/{self.lot.pk}/photos.zip")
+        self.assertEqual(_zip.ZipFile(_io.BytesIO(r.content)).namelist(), ["01-sejour.jpg", "02-cuisine.jpg"])

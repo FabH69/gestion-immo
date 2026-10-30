@@ -5,9 +5,9 @@ from django.shortcuts import redirect
 from django.urls import path, reverse
 from urllib.parse import quote
 from django.utils import timezone
-from django.utils.html import format_html
+from django.utils.html import format_html, format_html_join
 
-from .models import Bail, Bien, Candidature, ChangementLocataire, Garant, Echeance, EtatDesLieux, MouvementDepot, Pret, Rappel, RevisionLoyer, Locataire, Lot, Paiement, Proprietaire, Tache
+from .models import Annonce, Bail, Bien, Candidature, ChangementLocataire, Garant, PhotoLot, Echeance, EtatDesLieux, MouvementDepot, Pret, Rappel, RevisionLoyer, Locataire, Lot, Paiement, Proprietaire, Tache
 
 admin.site.site_header = "Gestion immobilière"
 admin.site.site_title = "Gestion immobilière"
@@ -30,6 +30,20 @@ class BienInline(admin.TabularInline):
     fields = ["nom", "ville"]
     extra = 0
     show_change_link = True
+
+
+class PhotoInline(admin.TabularInline):
+    model = PhotoLot
+    fields = ["apercu", "image", "legende", "ordre"]
+    readonly_fields = ["apercu"]
+    extra = 3
+    verbose_name_plural = "Photos (pour les annonces)"
+
+    @admin.display(description="aperçu")
+    def apercu(self, obj):
+        if obj.pk and obj.image:
+            return format_html('<img src="{}" style="height:70px;border-radius:8px">', obj.image.url)
+        return "–"
 
 
 class LotInline(admin.TabularInline):
@@ -107,12 +121,26 @@ class LotAdmin(admin.ModelAdmin):
     list_display = ["designation", "bien", "type", "surface", "meuble", "locataire_actuel", "loyer_actuel"]
     list_filter = ["bien__proprietaire", "bien", "type", "meuble"]
     search_fields = ["designation", "bien__nom"]
-    inlines = [BailInline]
+    inlines = [BailInline, PhotoInline]
+    readonly_fields = ["outils_relocation"]
+
+    @admin.display(description="outils")
+    def outils_relocation(self, obj):
+        if not obj.pk:
+            return "–"
+        bail = obj.bail_actif
+        loyer = obj.loyer_propose or (bail.loyer_cc if bail else "")
+        charges = bail.charges if bail else ""
+        depot = bail.depot_garantie if bail else ""
+        url_annonce = f"{reverse('admin:patrimoine_annonce_add')}?lot={obj.pk}&loyer_cc={loyer}&charges={charges}&depot_garantie={depot}"
+        url_candidature = f"{reverse('admin:patrimoine_candidature_add')}?lot={obj.pk}"
+        return format_html('<a class="button" href="{}">Créer une annonce</a> <a class="button" href="{}">Envoyer un formulaire de candidature</a>',
+                           url_annonce, url_candidature)
     fieldsets = [
         (None, {"fields": ["bien", "designation", "type", "surface", "nb_pieces", "meuble", "etage"]}),
         ("Caractéristiques (reprises dans le bail)", {"fields": ["annee_construction", "regime_juridique", "chauffage", "eau_chaude", "classe_dpe", "zone_tendue", "equipements", "annexes"]}),
         ("Chaudière gaz", {"fields": ["chaudiere_gaz", "date_entretien_chaudiere"]}),
-        ("Relocation", {"fields": ["loyer_propose"]}),
+        ("Relocation et annonce", {"fields": ["loyer_propose", ("classe_ges", "energie_annee"), ("energie_min", "energie_max"), "outils_relocation"]}),
         ("État des lieux", {"fields": ["pieces"]}),
         ("Notes", {"fields": ["notes"]}),
     ]
@@ -589,3 +617,49 @@ class CandidatureAdmin(admin.ModelAdmin):
     @admin.action(description="Ne pas retenir")
     def refuser(self, request, queryset):
         queryset.update(statut=Candidature.Statut.REFUSEE)
+
+
+@admin.register(Annonce)
+class AnnonceAdmin(admin.ModelAdmin):
+    list_display = ["titre", "lot", "loyer_cc", "disponible_le", "cree_le"]
+    list_filter = ["lot__bien"]
+    readonly_fields = ["a_copier"]
+    actions = ["regenerer"]
+
+    def get_form(self, request, obj=None, **kwargs):
+        form = super().get_form(request, obj, **kwargs)
+        form.base_fields["texte"].widget.attrs.update(rows=22, style="width:100%;max-width:720px")
+        form.base_fields["points_forts"].widget.attrs.update(rows=4)
+        form.base_fields["titre"].widget.attrs.update(size=60)
+        return form
+    fieldsets = [
+        (None, {"fields": ["lot", ("loyer_cc", "charges", "charges_forfait"), "depot_garantie", "disponible_le", "points_forts"]}),
+        ("Annonce", {"fields": ["titre", "texte", "a_copier"]}),
+    ]
+
+    @admin.display(description="publier")
+    def a_copier(self, obj):
+        if not obj.pk:
+            return "Enregistrez : le titre et le texte seront générés à partir de la fiche du lot."
+        manque = obj.mentions_manquantes()
+        alerte = format_html(
+            '<p style="color:#c62828"><strong>Mentions obligatoires manquantes :</strong> {} (à compléter dans la fiche du lot puis régénérer le texte).</p>',
+            ", ".join(manque),
+        ) if manque else ""
+        photos = format_html_join("", '<img src="{}" title="{}" style="height:80px;border-radius:8px;margin:0 6px 6px 0">',
+                                  ((p.image.url, str(p)) for p in obj.lot.photos.all()))
+        return format_html(
+            '{}<p><button type="button" class="button" onclick="navigator.clipboard.writeText(document.getElementById(\'id_titre\').value);this.textContent=\'Titre copié\'">Copier le titre</button> '
+            '<button type="button" class="button" onclick="navigator.clipboard.writeText(document.getElementById(\'id_texte\').value);this.textContent=\'Texte copié\'">Copier le texte</button> '
+            '<a class="button" href="{}">Télécharger les photos (zip)</a> '
+            '<a class="button" href="https://www.leboncoin.fr/deposer-une-annonce" target="_blank" rel="noopener">Déposer sur Leboncoin</a></p>'
+            '<div>{}</div><p class="help">Leboncoin ne permet pas la publication automatique pour les particuliers : copiez le titre et le texte, puis ajoutez les photos du zip.</p>',
+            alerte, reverse("photos_zip", args=[obj.lot_id]), photos or "Aucune photo : ajoutez-en dans la fiche du lot.",
+        )
+
+    @admin.action(description="Régénérer le titre et le texte depuis la fiche du lot")
+    def regenerer(self, request, queryset):
+        for annonce in queryset:
+            annonce.titre = ""
+            annonce.texte = ""
+            annonce.save()

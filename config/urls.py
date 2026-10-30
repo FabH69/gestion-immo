@@ -1,3 +1,5 @@
+from django.conf import settings
+from django.conf.urls.static import static
 from django.contrib import admin
 from django.urls import path
 from django.views.generic import RedirectView
@@ -20,5 +22,8 @@ urlpatterns = [
     path("rappels/<str:type_rappel>/<int:pk>/fait/", views.rappel_fait, name="rappel_fait"),
     path("candidature/<str:jeton>/", views.candidature_publique, name="candidature_publique"),
     path("garants/<int:pk>/acte-de-cautionnement.pdf", views.acte_cautionnement, name="acte_cautionnement"),
+    path("lots/<int:pk>/photos.zip", views.photos_zip, name="photos_zip"),
     path("", RedirectView.as_view(url="/admin/")),
 ]
+
+urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
