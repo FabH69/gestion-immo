@@ -1,0 +1,81 @@
+"""Modèle de check-list pour un changement de locataire.
+
+Chaque tâche : (phase, libellé, aide, référence, décalage en jours).
+La référence est la date à partir de laquelle l'échéance est calculée :
+« conge » (réception du congé), « depart » (sortie prévue) ou « arrivee » (entrée prévue).
+"""
+
+DEPART = "depart"
+ARRIVEE = "arrivee"
+
+MODELE_CHANGEMENT_LOCATAIRE = [
+    # --- Sortie du locataire ---
+    (DEPART, "Accuser réception du congé et vérifier le préavis",
+     "Préavis de 3 mois en location nue (1 mois en zone tendue ou cas légaux), 1 mois en meublé. Le préavis court à partir de la réception de la lettre.",
+     "conge", 3),
+    (DEPART, "Demander la nouvelle adresse du locataire",
+     "Indispensable pour restituer le dépôt de garantie et envoyer la régularisation des charges.",
+     "conge", 7),
+    (DEPART, "Organiser les visites pour la relocation",
+     "Selon la clause du bail, dans la limite de 2 heures par jour ouvrable.",
+     "conge", 14),
+    (DEPART, "Fixer le rendez-vous d'état des lieux de sortie",
+     "Prévoir l'état des lieux d'entrée sous la main pour comparer.",
+     "depart", -14),
+    (DEPART, "Réaliser l'état des lieux de sortie",
+     "Comparer pièce par pièce avec l'entrée, en tenant compte de la vétusté. Faire signer les deux parties.",
+     "depart", 0),
+    (DEPART, "Relever les compteurs (eau, électricité, gaz)",
+     "Noter les index sur l'état des lieux, avec photos.",
+     "depart", 0),
+    (DEPART, "Récupérer toutes les clés et badges",
+     "Vérifier le nombre remis à l'entrée.",
+     "depart", 0),
+    (DEPART, "Faire établir les devis de remise en état",
+     "Les retenues sur le dépôt de garantie doivent être justifiées (devis ou factures).",
+     "depart", 7),
+    (DEPART, "Restituer le dépôt de garantie",
+     "1 mois maximum si l'état des lieux de sortie est conforme, 2 mois s'il y a des dégradations. Au-delà, majoration de 10 % du loyer par mois de retard.",
+     "depart", 30),
+    (DEPART, "Régulariser les charges",
+     "En copropriété, une retenue de 20 % du dépôt est possible jusqu'à l'approbation des comptes annuels.",
+     "depart", 60),
+    (DEPART, "Clôturer le bail dans l'application",
+     "Saisir la date de fin et décocher « actif » pour arrêter la génération des loyers.",
+     "depart", 1),
+
+    # --- Entrée du nouveau locataire ---
+    (ARRIVEE, "Vérifier les diagnostics obligatoires",
+     "DPE (logements classés G interdits à la location depuis 2025), état des risques de moins de 6 mois, électricité et gaz si installation de plus de 15 ans, plomb (avant 1949), amiante (avant 1997), surface habitable.",
+     "arrivee", -45),
+    (ARRIVEE, "Fixer le nouveau loyer",
+     "En zone tendue, la hausse à la relocation est encadrée ; vérifier aussi l'encadrement des loyers dans les villes concernées.",
+     "arrivee", -45),
+    (ARRIVEE, "Publier l'annonce et organiser les visites",
+     "",
+     "arrivee", -40),
+    (ARRIVEE, "Étudier les dossiers et choisir le locataire",
+     "Ne demander que les pièces autorisées par la loi. Vérifier la solvabilité, le garant ou la garantie Visale.",
+     "arrivee", -21),
+    (ARRIVEE, "Rédiger et faire signer le bail",
+     "Joindre la notice d'information, les diagnostics, l'acte de cautionnement si garant, et le règlement de copropriété (extraits).",
+     "arrivee", -10),
+    (ARRIVEE, "Encaisser le dépôt de garantie et le premier loyer",
+     "Premier loyer au prorata si l'entrée a lieu en cours de mois.",
+     "arrivee", -3),
+    (ARRIVEE, "Obtenir l'attestation d'assurance habitation",
+     "Obligatoire en location nue avant la remise des clés.",
+     "arrivee", -3),
+    (ARRIVEE, "Réaliser l'état des lieux d'entrée (et l'inventaire si meublé)",
+     "Photos de chaque pièce, relevé des compteurs, signature des deux parties.",
+     "arrivee", 0),
+    (ARRIVEE, "Remettre les clés",
+     "Noter le nombre de clés et badges remis.",
+     "arrivee", 0),
+    (ARRIVEE, "Créer le locataire et le bail dans l'application",
+     "Les loyers seront générés automatiquement à partir de la date de début.",
+     "arrivee", 0),
+    (ARRIVEE, "Informer le syndic (si copropriété)",
+     "Coordonnées du nouvel occupant.",
+     "arrivee", 7),
+]

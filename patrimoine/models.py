@@ -1,3 +1,6 @@
+import calendar
+from datetime import date, timedelta
+
 from django.db import models
 
 
@@ -133,3 +136,210 @@ class Bail(models.Model):
     @property
     def loyer_cc(self):
         return self.loyer_hc + self.charges
+
+
+class Echeance(models.Model):
+    """Loyer dû pour un mois donné sur un bail."""
+
+    class Statut(models.TextChoices):
+        A_PAYER = "a_payer", "À payer"
+        PARTIEL = "partiel", "Payé partiellement"
+        PAYE = "paye", "Payé"
+
+    bail = models.ForeignKey(Bail, on_delete=models.PROTECT, related_name="echeances")
+    periode = models.DateField("période", help_text="Premier jour du mois concerné")
+    loyer_hc = models.DecimalField("loyer HC (€)", max_digits=10, decimal_places=2)
+    charges = models.DecimalField("charges (€)", max_digits=10, decimal_places=2, default=0)
+    date_exigibilite = models.DateField("date d'exigibilité")
+    statut = models.CharField(max_length=10, choices=Statut.choices, default=Statut.A_PAYER, editable=False)
+
+    class Meta:
+        verbose_name = "loyer"
+        verbose_name_plural = "loyers"
+        ordering = ["-periode", "bail__lot__bien__nom"]
+        constraints = [models.UniqueConstraint(fields=["bail", "periode"], name="echeance_unique_par_mois")]
+
+    def __str__(self):
+        return f"{self.bail.lot} – {self.periode:%m/%Y}"
+
+    @property
+    def total(self):
+        return self.loyer_hc + self.charges
+
+    @property
+    def montant_paye(self):
+        return self.paiements.aggregate(s=models.Sum("montant"))["s"] or 0
+
+    @property
+    def reste_du(self):
+        return self.total - self.montant_paye
+
+    @property
+    def fin_periode(self):
+        return self.periode.replace(day=calendar.monthrange(self.periode.year, self.periode.month)[1])
+
+    def mettre_a_jour_statut(self):
+        paye = self.montant_paye
+        if paye >= self.total:
+            self.statut = self.Statut.PAYE
+        elif paye > 0:
+            self.statut = self.Statut.PARTIEL
+        else:
+            self.statut = self.Statut.A_PAYER
+        self.save(update_fields=["statut"])
+
+    @classmethod
+    def generer_pour_mois(cls, periode):
+        """Crée l'échéance du mois pour chaque bail actif ; renvoie le nombre créé."""
+        periode = periode.replace(day=1)
+        fin = periode.replace(day=calendar.monthrange(periode.year, periode.month)[1])
+        crees = 0
+        baux = Bail.objects.filter(actif=True, date_debut__lte=fin).exclude(date_fin__lt=periode)
+        for bail in baux:
+            jour = min(bail.jour_echeance, fin.day)
+            _, cree = cls.objects.get_or_create(
+                bail=bail,
+                periode=periode,
+                defaults={
+                    "loyer_hc": bail.loyer_hc,
+                    "charges": bail.charges,
+                    "date_exigibilite": periode.replace(day=jour),
+                },
+            )
+            crees += cree
+        return crees
+
+
+class Paiement(models.Model):
+    class Mode(models.TextChoices):
+        VIREMENT = "virement", "Virement"
+        PRELEVEMENT = "prelevement", "Prélèvement"
+        CHEQUE = "cheque", "Chèque"
+        ESPECES = "especes", "Espèces"
+        CAF = "caf", "CAF / APL"
+
+    echeance = models.ForeignKey(Echeance, on_delete=models.CASCADE, related_name="paiements", verbose_name="échéance")
+    date = models.DateField()
+    montant = models.DecimalField("montant (€)", max_digits=10, decimal_places=2)
+    mode = models.CharField(max_length=20, choices=Mode.choices, default=Mode.VIREMENT)
+    notes = models.CharField(max_length=255, blank=True)
+
+    class Meta:
+        ordering = ["-date"]
+
+    def __str__(self):
+        return f"{self.montant} € le {self.date:%d/%m/%Y}"
+
+    def save(self, *args, **kwargs):
+        super().save(*args, **kwargs)
+        self.echeance.mettre_a_jour_statut()
+
+    def delete(self, *args, **kwargs):
+        echeance = self.echeance
+        super().delete(*args, **kwargs)
+        echeance.mettre_a_jour_statut()
+
+
+class ChangementLocataire(models.Model):
+    """Départ d'un locataire et/ou arrivée d'un nouveau sur un lot, avec sa check-list."""
+
+    lot = models.ForeignKey(Lot, on_delete=models.PROTECT, related_name="changements")
+    bail_sortant = models.ForeignKey(
+        Bail, on_delete=models.SET_NULL, null=True, blank=True, related_name="+", verbose_name="bail sortant",
+        help_text="Rempli automatiquement avec le bail actif du lot si laissé vide.",
+    )
+    date_conge = models.DateField("réception du congé", null=True, blank=True)
+    date_depart = models.DateField("départ prévu", null=True, blank=True,
+                                   help_text="Si vide, calculé depuis le congé : 3 mois en location nue, 1 mois en meublé.")
+    date_arrivee = models.DateField("arrivée prévue du nouveau locataire", null=True, blank=True)
+    termine = models.BooleanField("terminé", default=False)
+    notes = models.TextField(blank=True)
+
+    class Meta:
+        verbose_name = "changement de locataire"
+        verbose_name_plural = "changements de locataire"
+        ordering = ["termine", "date_depart"]
+
+    def __str__(self):
+        quand = f" – départ le {self.date_depart:%d/%m/%Y}" if self.date_depart else ""
+        return f"{self.lot}{quand}"
+
+    def save(self, *args, **kwargs):
+        if not self.bail_sortant_id and self.lot_id:
+            self.bail_sortant = self.lot.bail_actif
+        if not self.date_depart and self.date_conge:
+            meuble = self.bail_sortant and self.bail_sortant.type in (Bail.Type.MEUBLE, Bail.Type.ETUDIANT, Bail.Type.MOBILITE)
+            self.date_depart = _ajouter_mois(self.date_conge, 1 if meuble else 3)
+        nouveau = self.pk is None
+        dates = lambda c: (c.date_conge, c.date_depart, c.date_arrivee)
+        dates_changees = not nouveau and dates(ChangementLocataire.objects.get(pk=self.pk)) != dates(self)
+        super().save(*args, **kwargs)
+        if nouveau:
+            self.creer_taches()
+        elif dates_changees:
+            # Ne touche pas aux dates ajustées à la main tant que les dates de référence ne bougent pas.
+            self.recalculer_echeances()
+
+    def _date_reference(self, reference):
+        return {"conge": self.date_conge or self.date_depart, "depart": self.date_depart, "arrivee": self.date_arrivee}[reference]
+
+    def creer_taches(self):
+        from .checklists import MODELE_CHANGEMENT_LOCATAIRE
+
+        for ordre, (phase, libelle, aide, reference, decalage) in enumerate(MODELE_CHANGEMENT_LOCATAIRE):
+            Tache.objects.create(
+                changement=self, ordre=ordre, phase=phase, libelle=libelle, aide=aide,
+                reference=reference, decalage_jours=decalage,
+            )
+        self.recalculer_echeances()
+
+    def recalculer_echeances(self):
+        """Recalcule les dates des tâches non faites, par exemple après un report du départ."""
+        for tache in self.taches.filter(faite=False):
+            base = self._date_reference(tache.reference)
+            tache.echeance = base + timedelta(days=tache.decalage_jours) if base else None
+            tache.save(update_fields=["echeance"])
+
+    @property
+    def avancement(self):
+        total = self.taches.count()
+        faites = self.taches.filter(faite=True).count()
+        return faites, total
+
+
+class Tache(models.Model):
+    class Phase(models.TextChoices):
+        DEPART = "depart", "Sortie du locataire"
+        ARRIVEE = "arrivee", "Entrée du nouveau locataire"
+
+    changement = models.ForeignKey(ChangementLocataire, on_delete=models.CASCADE, related_name="taches")
+    ordre = models.PositiveSmallIntegerField(default=0)
+    phase = models.CharField(max_length=10, choices=Phase.choices)
+    libelle = models.CharField("tâche", max_length=200)
+    aide = models.TextField("à savoir", blank=True)
+    reference = models.CharField(max_length=10, default="depart", editable=False)
+    decalage_jours = models.IntegerField(default=0, editable=False)
+    echeance = models.DateField("à faire avant le", null=True, blank=True)
+    faite = models.BooleanField("faite", default=False)
+    date_faite = models.DateField("faite le", null=True, blank=True)
+    commentaire = models.CharField(max_length=255, blank=True)
+
+    class Meta:
+        verbose_name = "tâche"
+        ordering = ["changement", "ordre"]
+
+    def __str__(self):
+        return self.libelle
+
+    def save(self, *args, **kwargs):
+        if self.faite and not self.date_faite:
+            self.date_faite = date.today()
+        if not self.faite:
+            self.date_faite = None
+        super().save(*args, **kwargs)
+
+
+def _ajouter_mois(d, n):
+    mois = d.month - 1 + n
+    annee, mois = d.year + mois // 12, mois % 12 + 1
+    return d.replace(year=annee, month=mois, day=min(d.day, calendar.monthrange(annee, mois)[1]))

@@ -4,7 +4,7 @@ from decimal import Decimal
 
 from django.core.management.base import BaseCommand
 
-from patrimoine.models import Bail, Bien, Locataire, Lot, Proprietaire
+from patrimoine.models import Bail, Bien, ChangementLocataire, Echeance, Locataire, Lot, Paiement, Proprietaire
 
 
 class Command(BaseCommand):
@@ -13,7 +13,7 @@ class Command(BaseCommand):
     def handle(self, *args, **options):
         P = Proprietaire.Type
         nom_propre = Proprietaire.objects.create(nom="Nom propre", type=P.NOM_PROPRE)
-        sci1 = Proprietaire.objects.create(nom="SCI Démo 1", type=P.SCI_IR)
+        sci1 = Proprietaire.objects.create(nom="SCI Démo 1", type=P.SCI_IR, adresse="1 place Bellecour\n69002 Lyon", iban="FR76 0000 0000 0000 0000 0000 000")
         sci2 = Proprietaire.objects.create(nom="SCI Démo 2", type=P.SCI_IS)
         sarl = Proprietaire.objects.create(nom="SARL de famille Démo", type=P.SARL_FAMILLE)
 
@@ -48,5 +48,18 @@ class Command(BaseCommand):
         for lot, locs, type_, debut, loyer, charges, depot in baux:
             bail = Bail.objects.create(lot=lot, type=type_, date_debut=debut, loyer_hc=Decimal(loyer), charges=Decimal(charges), depot_garantie=Decimal(depot))
             bail.locataires.set(locs)
+
+        for mois in (9, 10):
+            Echeance.generer_pour_mois(date(2026, mois, 1))
+        for e in Echeance.objects.all():
+            if e.periode.month == 9 or e.bail.lot == lots[0]:
+                Paiement.objects.create(echeance=e, date=e.date_exigibilite.replace(day=5), montant=e.total)
+            elif e.bail.lot == lots[3]:
+                Paiement.objects.create(echeance=e, date=date(2026, 10, 8), montant=Decimal("500"))
+
+        changement = ChangementLocataire.objects.create(lot=lots[1], date_conge=date(2026, 9, 20), date_arrivee=date(2027, 1, 1))
+        for tache in changement.taches.all()[:2]:
+            tache.faite = True
+            tache.save()
 
         self.stdout.write(self.style.SUCCESS("Données de démonstration créées."))

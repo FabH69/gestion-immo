@@ -1,0 +1,5 @@
+/* Check-list : masque le titre répété au-dessus de chaque ligne et allège l'aide. */
+.inline-group .tabular td.original p { display: none; }
+.inline-group .tabular td.field-aide p, .inline-group .tabular td.field-aide { color: #666; font-size: 0.92em; max-width: 420px; white-space: normal; }
+.inline-group .tabular td.field-faite input { transform: scale(1.4); margin: 6px; }
+.inline-group .tabular tr.faite td.field-libelle input { text-decoration: line-through; color: #888; }
