@@ -1,0 +1,52 @@
+"""Crée des données fictives pour tester l'interface (python manage.py donnees_demo)."""
+from datetime import date
+from decimal import Decimal
+
+from django.core.management.base import BaseCommand
+
+from patrimoine.models import Bail, Bien, Locataire, Lot, Proprietaire
+
+
+class Command(BaseCommand):
+    help = "Crée des données fictives de démonstration"
+
+    def handle(self, *args, **options):
+        P = Proprietaire.Type
+        nom_propre = Proprietaire.objects.create(nom="Nom propre", type=P.NOM_PROPRE)
+        sci1 = Proprietaire.objects.create(nom="SCI Démo 1", type=P.SCI_IR)
+        sci2 = Proprietaire.objects.create(nom="SCI Démo 2", type=P.SCI_IS)
+        sarl = Proprietaire.objects.create(nom="SARL de famille Démo", type=P.SARL_FAMILLE)
+
+        immeuble = Bien.objects.create(proprietaire=sci1, nom="Immeuble des Lilas", adresse="12 rue des Lilas", code_postal="44000", ville="Nantes")
+        maison = Bien.objects.create(proprietaire=nom_propre, nom="Maison du Port", adresse="3 quai du Port", code_postal="56100", ville="Lorient")
+        residence = Bien.objects.create(proprietaire=sarl, nom="Résidence Gare", adresse="8 avenue de la Gare", code_postal="35000", ville="Rennes")
+        local = Bien.objects.create(proprietaire=sci2, nom="Local centre-ville", adresse="25 place du Marché", code_postal="44000", ville="Nantes")
+
+        L = Lot.Type
+        lots = [
+            Lot.objects.create(bien=immeuble, designation="Apt RDC", type=L.APPARTEMENT, surface=45, nb_pieces=2),
+            Lot.objects.create(bien=immeuble, designation="Apt 1er", type=L.APPARTEMENT, surface=62, nb_pieces=3),
+            Lot.objects.create(bien=immeuble, designation="Parking 1", type=L.PARKING),
+            Lot.objects.create(bien=maison, designation="Maison", type=L.MAISON, surface=95, nb_pieces=4),
+            Lot.objects.create(bien=residence, designation="Studio 3", type=L.STUDIO, surface=22, nb_pieces=1, meuble=True),
+            Lot.objects.create(bien=residence, designation="Studio 4", type=L.STUDIO, surface=24, nb_pieces=1, meuble=True),
+            Lot.objects.create(bien=local, designation="Boutique", type=L.LOCAL_COMMERCIAL, surface=70),
+        ]
+
+        martin = Locataire.objects.create(civilite="Mme", prenom="Claire", nom="Martin", email="claire.martin@example.com")
+        durand = Locataire.objects.create(civilite="M.", prenom="Paul", nom="Durand")
+        petit = Locataire.objects.create(civilite="Mme", prenom="Léa", nom="Petit")
+        bernard = Locataire.objects.create(civilite="M.", prenom="Hugo", nom="Bernard")
+
+        B = Bail.Type
+        baux = [
+            (lots[0], [martin], B.NU, date(2024, 9, 1), "620", "40", "620"),
+            (lots[1], [durand], B.NU, date(2023, 3, 1), "780", "60", "780"),
+            (lots[3], [petit], B.NU, date(2022, 7, 1), "1050", "0", "1050"),
+            (lots[4], [bernard], B.MEUBLE, date(2026, 9, 1), "490", "50", "980"),
+        ]
+        for lot, locs, type_, debut, loyer, charges, depot in baux:
+            bail = Bail.objects.create(lot=lot, type=type_, date_debut=debut, loyer_hc=Decimal(loyer), charges=Decimal(charges), depot_garantie=Decimal(depot))
+            bail.locataires.set(locs)
+
+        self.stdout.write(self.style.SUCCESS("Données de démonstration créées."))
