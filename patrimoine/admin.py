@@ -171,7 +171,7 @@ class LocataireAdmin(admin.ModelAdmin):
 @admin.register(Bail)
 class BailAdmin(admin.ModelAdmin):
     list_display = ["lot", "liste_locataires", "type", "date_debut", "loyer_hc", "charges", "loyer_cc", "actif"]
-    list_filter = ["actif", "type", "lot__bien__proprietaire"]
+    list_filter = ["actif", "type", "type_garantie", "lot__bien__proprietaire"]
     search_fields = ["lot__designation", "lot__bien__nom", "locataires__nom"]
     filter_horizontal = ["locataires"]
     date_hierarchy = "date_debut"
@@ -179,6 +179,7 @@ class BailAdmin(admin.ModelAdmin):
     fieldsets = [
         (None, {"fields": ["lot", "locataires", "type", "destination", "date_debut", "date_fin", "actif"]}),
         ("Conditions financières", {"fields": ["loyer_hc", "charges", "mode_charges", "depot_garantie", "jour_echeance", "paiement_a_echoir"]}),
+        ("Garantie", {"fields": [("type_garantie", "detail_garantie")], "description": "Les garants se saisissent en bas de page."}),
         ("Révision annuelle et rappels", {"fields": ["revision_annuelle", ("irl_trimestre", "irl_valeur"), "indice_reference", "date_derniere_revision", "date_attestation_assurance"]}),
         ("Clauses particulières", {"fields": ["notes"]}),
         ("Documents pré-remplis", {"fields": ["documents"]}),

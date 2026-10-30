@@ -420,3 +420,49 @@ class ImportAirtableTests(TestCase):
         garage = Lot.objects.get(ref_import="rec2")
         self.assertEqual((garage.type, garage.nb_pieces), (Lot.Type.PARKING, None))
         self.assertEqual(Lot.objects.get(ref_import="rec1").pdl, "123")
+
+
+class ImportAirtableCompletTests(TestCase):
+    def test_import_locataires_locations_garants(self):
+        import os
+        import tempfile
+        from django.core.management import call_command
+
+        tables = {
+            "appartements": "Appartement,Adresse_Appart,CP_Appart,Ville_Appart,Tags,Propriétaire,Record ID,Statut,Location 4\n"
+                            "Imm,1 rue Test,69000,Lyon,Appartement,SCI TEST,rec1,,A1\nImm,1 rue Test,69000,Lyon,Appartement,SCI TEST,rec2,,A2\n",
+            "proprietaires": "Propriétaire,Adresse_Propr,CP_Prop,Ville_Prop,SIRET,Type Fiscalité\nSCI TEST,2 rue X,69001,Lyon,123 456 789 00012,IS\n",
+            "locataires": "Nom_loc,Prénom_loc,Civilité_Loc,Tel_Loc,Date_naissance_loc,ID\n"
+                          "DUPONT,Karine,Mme,06-01-02-03-04,9/10/1987,recA\nDUPONT ,Christelle,Mme,,,recB\nDUPONT copy,Karine,Mme,,,recC\n",
+            "locations": "Appartement,Date_début_Bail,Date_fin_Bail,Locataire,Loyer,Charges,Durée_Bail,IRL_Ref,IRL_Ref_Période,type Location,Dépot Garantie,Statut Dépot Gar,Type Garantie\n"
+                         "A1,1/3/2020,1/3/2023,\"DUPONT,DUPONT copy\",\"500,00\",\"10,00\",3,\"138,61\",1er trimestre 2023,Nue,\"500,00\",Encaissé,Visale\n"
+                         "A2,1/3/2024,1/3/2025,DUPONT ,\"600,00\",\"0,00\",1,,,Meublée,,,\n",
+            "garants": "Nom_Garant,Prénom_Garant,Nom_Garant2,Prénom_Garant2,CP_Garant,Ville_Garant,Locataire,Location\nMARTIN,Paul,MARTIN,Anne,38000,GRENOBLE,DUPONT ,A2\n",
+        }
+        chemins = {}
+        for table, contenu in tables.items():
+            with tempfile.NamedTemporaryFile("w", suffix=".csv", delete=False, encoding="utf-8") as f:
+                f.write(contenu)
+            chemins[table] = f.name
+        options = [x for table, chemin in chemins.items() for x in (f"--{table}", chemin)]
+        try:
+            call_command("importer_airtable", *options, stdout=open(os.devnull, "w"))
+            self.assertEqual(Bail.objects.count(), 0)  # simulation par défaut
+            for _ in range(2):  # idempotent
+                call_command("importer_airtable", *options, "--appliquer", stdout=open(os.devnull, "w"))
+        finally:
+            for chemin in chemins.values():
+                os.unlink(chemin)
+
+        self.assertEqual(Proprietaire.objects.get().type, Proprietaire.Type.SCI_IS)
+        self.assertEqual(Locataire.objects.count(), 2)
+        karine = Locataire.objects.get(prenom="Karine")
+        self.assertEqual((karine.civilite, karine.telephone), ("Mme", "06 01 02 03 04"))
+        a1 = Bail.objects.get(lot__designation="A1")
+        self.assertEqual(list(a1.locataires.all()), [karine])
+        self.assertIsNone(a1.date_fin)  # reconduit tacitement
+        self.assertEqual((a1.irl_trimestre, a1.irl_valeur, a1.depot_detenu), ("T1", Decimal("138.61"), Decimal("500")))
+        a2 = Bail.objects.get(lot__designation="A2")
+        self.assertEqual((a2.type, a2.locataires.get().prenom, a2.lot.meuble), (Bail.Type.MEUBLE, "Christelle", True))
+        self.assertEqual(sorted(a2.garants.values_list("prenom", flat=True)), ["Anne", "Paul"])
+        self.assertEqual((a1.type_garantie, a2.type_garantie), ("visale", "garant"))

@@ -143,12 +143,16 @@ class Locataire(models.Model):
     adresse_actuelle = models.TextField("adresse actuelle", blank=True, help_text="Adresse avant l'entrée dans les lieux ou après le départ")
     garant = models.CharField(max_length=200, blank=True, help_text="Nom et coordonnées du garant")
     notes = models.TextField(blank=True)
+    ref_import = models.CharField("référence d'import", max_length=40, blank=True, editable=False, help_text="Identifiant Airtable d'origine")
 
     class Meta:
         ordering = ["nom", "prenom"]
 
     def __str__(self):
         return f"{self.civilite} {self.prenom} {self.nom}".strip()
+
+
+TYPES_GARANTIE = [("garant", "Garant (caution d'une personne)"), ("visale", "Garantie Visale"), ("autre", "Autre garantie"), ("aucune", "Aucune")]
 
 
 class Bail(models.Model):
@@ -169,6 +173,11 @@ class Bail(models.Model):
     loyer_hc = models.DecimalField("loyer hors charges (€)", max_digits=10, decimal_places=2)
     charges = models.DecimalField("provision sur charges (€)", max_digits=10, decimal_places=2, default=0)
     depot_garantie = models.DecimalField("dépôt de garantie (€)", max_digits=10, decimal_places=2, default=0)
+    type_garantie = models.CharField("type de garantie", max_length=10, blank=True, choices=TYPES_GARANTIE)
+    detail_garantie = models.CharField(
+        "précisions sur la garantie", max_length=200, blank=True,
+        help_text="Visale : n° de visa. Autre : caution bancaire, garantie d'un organisme, Garantme…",
+    )
     jour_echeance = models.PositiveSmallIntegerField("jour d'échéance", default=1)
     paiement_a_echoir = models.BooleanField("paiement à échoir", default=True, help_text="Coché : loyer payé d'avance en début de mois")
     mode_charges = models.CharField(
@@ -186,6 +195,7 @@ class Bail(models.Model):
     date_attestation_assurance = models.DateField("dernière attestation d'assurance reçue", null=True, blank=True)
     actif = models.BooleanField(default=True)
     notes = models.TextField(blank=True)
+    ref_import = models.CharField("référence d'import", max_length=40, blank=True, editable=False, help_text="Identifiant Airtable d'origine")
 
     class Meta:
         verbose_name = "bail"
@@ -719,9 +729,7 @@ class Candidature(models.Model):
     revenus_mensuels = models.DecimalField("revenus nets mensuels (€)", max_digits=10, decimal_places=2, null=True, blank=True)
     nb_occupants = models.PositiveSmallIntegerField("nombre d'occupants", null=True, blank=True)
     date_entree_souhaitee = models.DateField("date d'entrée souhaitée", null=True, blank=True)
-    type_garantie = models.CharField("garantie", max_length=20, blank=True, choices=[
-        ("garant", "Une personne se porte caution"), ("visale", "Garantie Visale"), ("aucune", "Aucune"),
-    ])
+    type_garantie = models.CharField("garantie", max_length=20, blank=True, choices=TYPES_GARANTIE)
     garant_nom = models.CharField("garant : nom et prénom", max_length=200, blank=True)
     garant_lien = models.CharField("garant : lien", max_length=100, blank=True)
     garant_email = models.EmailField("garant : e-mail", blank=True)

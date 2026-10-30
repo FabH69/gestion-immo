@@ -52,6 +52,8 @@
   <tr><td class="l">Dépôt de garantie</td><td>{{ bail.depot_garantie|floatformat:2 }} €{% if bail.type == "nu" %} (au plus 1 mois de loyer hors charges){% elif bail.type == "mobilite" %} (aucun dépôt de garantie ne peut être exigé){% else %} (au plus 2 mois de loyer hors charges){% endif %}</td></tr>
   {% for g in garants %}<tr><td class="l">Caution de {{ g.locataire }}</td><td>{{ g }}, {{ g.get_type_caution_display|lower }} – acte de cautionnement annexé</td></tr>
   {% empty %}{% for l in locataires %}{% if l.garant %}<tr><td class="l">Caution de {{ l }}</td><td>{{ l.garant }} – acte de cautionnement annexé</td></tr>{% endif %}{% endfor %}{% endfor %}
+  {% if bail.type_garantie == "visale" %}<tr><td class="l">Garantie Visale</td><td>Le paiement du loyer et des charges est garanti par Action Logement (dispositif Visale){% if bail.detail_garantie %}, visa n° {{ bail.detail_garantie }}{% endif %}.</td></tr>
+  {% elif bail.type_garantie == "autre" and bail.detail_garantie %}<tr><td class="l">Autre garantie</td><td>{{ bail.detail_garantie }}</td></tr>{% endif %}
 </table>
 
 <h2>VI. Clause de solidarité et clause résolutoire</h2>
