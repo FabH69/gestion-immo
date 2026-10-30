@@ -1,0 +1,49 @@
+{% extends "patrimoine/_public_base.html" %}
+{% block titre %}Dossier de candidature – {{ lot.designation }}{% endblock %}
+{% block entete %}Dossier de candidature – {{ lot.get_type_display }} {{ lot.designation }}{% endblock %}
+{% block contenu %}
+{% if ferme %}
+<div class="carte"><h2>Ce dossier est clôturé</h2><p>Merci pour votre intérêt. Le propriétaire a déjà traité cette candidature.</p></div>
+{% else %}
+<div class="carte">
+  <div class="resume">
+    {% if lot.surface %}<span>Surface <strong>{{ lot.surface|floatformat:"-2" }} m²</strong></span>{% endif %}
+    {% if lot.nb_pieces %}<span>Pièces <strong>{{ lot.nb_pieces }}</strong></span>{% endif %}
+    <span>{% if lot.meuble %}<strong>Meublé</strong>{% else %}<strong>Non meublé</strong>{% endif %}</span>
+    {% if loyer_indicatif %}<span>Loyer indicatif <strong>{{ loyer_indicatif|floatformat:0 }} € charges comprises</strong></span>{% endif %}
+  </div>
+  <p class="aide" style="margin-bottom:0">Remplissez ce formulaire en 5 minutes. Les justificatifs (pièce d'identité, justificatifs de revenus et de domicile) vous seront demandés ensuite, uniquement parmi la liste autorisée par la loi.</p>
+</div>
+<form method="post" novalidate>{% csrf_token %}
+  {% if form.non_field_errors %}<div class="carte erreur">{{ form.non_field_errors }}</div>{% endif %}
+  <div class="carte"><h2>Vous</h2><div class="grille">
+    {% for f in form %}{% if f.name in "civilite prenom nom date_naissance lieu_naissance email telephone adresse_actuelle" %}
+    <div class="{% if f.name == 'adresse_actuelle' %}plein{% endif %}">{{ f.label_tag }}{{ f }}{% for e in f.errors %}<div class="erreur">{{ e }}</div>{% endfor %}</div>
+    {% endif %}{% endfor %}
+  </div></div>
+  <div class="carte"><h2>Situation et projet</h2><div class="grille">
+    {% for f in form %}{% if f.name in "situation employeur revenus_mensuels nb_occupants date_entree_souhaitee" %}
+    <div>{{ f.label_tag }}{{ f }}{% for e in f.errors %}<div class="erreur">{{ e }}</div>{% endfor %}</div>
+    {% endif %}{% endfor %}
+  </div></div>
+  <div class="carte"><h2>Garantie</h2><div class="grille">
+    <div class="plein">{{ form.type_garantie.label_tag }}{{ form.type_garantie }}{% for e in form.type_garantie.errors %}<div class="erreur">{{ e }}</div>{% endfor %}</div>
+    {% for f in form %}{% if f.name|slice:":7" == "garant_" %}
+    <div class="{% if f.name == 'garant_adresse' %}plein{% endif %} bloc-garant">{{ f.label_tag }}{{ f }}{% for e in f.errors %}<div class="erreur">{{ e }}</div>{% endfor %}</div>
+    {% endif %}{% endfor %}
+  </div></div>
+  <div class="carte">
+    {{ form.message.label_tag }}{{ form.message }}
+    <label class="case" style="margin-top:14px">{{ form.consentement }} {{ form.consentement.label }}</label>
+    {% for e in form.consentement.errors %}<div class="erreur">{{ e }}</div>{% endfor %}
+    <p class="aide">Vos données sont conservées par le propriétaire uniquement le temps de l'étude de votre dossier, et supprimées sous 3 mois si votre candidature n'est pas retenue.</p>
+    <button type="submit">Envoyer mon dossier</button>
+  </div>
+</form>
+<script>
+  const choix = document.getElementById("id_type_garantie");
+  const maj = () => document.querySelectorAll(".bloc-garant").forEach(b => b.style.display = choix.value === "garant" ? "" : "none");
+  choix.addEventListener("change", maj); maj();
+</script>
+{% endif %}
+{% endblock %}

@@ -16,7 +16,8 @@ from weasyprint import HTML
 
 from .documents import ELEMENTS_PIECE, INVENTAIRE_MEUBLE, duree_texte
 from .etats import endettement, loyers_encaisses
-from .models import Bail, Echeance, EtatDesLieux, Lot, MouvementDepot, Pret, Proprietaire, Rappel, RevisionLoyer, Tache
+from .forms import CandidatureForm
+from .models import Bail, Candidature, Echeance, EtatDesLieux, Garant, Lot, MouvementDepot, Pret, Proprietaire, Rappel, RevisionLoyer, Tache
 
 
 @staff_member_required
@@ -106,6 +107,7 @@ def _contexte_bail(bail):
         "bien": lot.bien,
         "proprietaire": lot.bien.proprietaire,
         "locataires": list(bail.locataires.all()),
+        "garants": list(bail.garants.select_related("locataire")),
     }
 
 
@@ -304,3 +306,35 @@ def lettre_revision(request, pk):
     contexte = _contexte_bail(revision.bail)
     contexte.update(r=revision, aujourdhui=timezone.localdate())
     return _pdf(render_to_string("patrimoine/lettre_revision.html", contexte), f"revision loyer {revision.bail.lot} {revision.date_effet:%Y}")
+
+
+def candidature_publique(request, jeton):
+    """Formulaire envoyé au futur locataire : accessible sans compte, via un lien personnel."""
+    candidature = get_object_or_404(Candidature.objects.select_related("lot__bien"), jeton=jeton)
+    lot = candidature.lot
+    ferme = candidature.statut in (Candidature.Statut.RETENUE, Candidature.Statut.REFUSEE)
+    if request.method == "POST" and not ferme:
+        form = CandidatureForm(request.POST, instance=candidature)
+        if form.is_valid():
+            candidature = form.save(commit=False)
+            candidature.statut = Candidature.Statut.RECUE
+            candidature.recue_le = timezone.now()
+            candidature.save()
+            return render(request, "patrimoine/candidature_merci.html", {"candidature": candidature, "lot": lot})
+    else:
+        form = CandidatureForm(instance=candidature)
+    return render(request, "patrimoine/candidature_formulaire.html", {
+        "form": form, "candidature": candidature, "lot": lot, "bien": lot.bien, "ferme": ferme,
+        "loyer_indicatif": lot.loyer_reference,
+    })
+
+
+@staff_member_required
+def acte_cautionnement(request, pk):
+    garant = get_object_or_404(Garant.objects.select_related("locataire", "bail__lot__bien__proprietaire"), pk=pk)
+    if not garant.bail:
+        messages.error(request, "Rattachez d'abord le garant à un bail pour générer l'acte de cautionnement.")
+        return redirect("admin:patrimoine_garant_change", garant.pk)
+    contexte = _contexte_bail(garant.bail)
+    contexte.update(g=garant, montant=garant.montant_garanti(), duree_texte=duree_texte(garant.bail))
+    return _pdf(render_to_string("patrimoine/acte_cautionnement.html", contexte), f"acte cautionnement {garant}")

@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="fr"><head><meta charset="utf-8"><style>{% include "patrimoine/_style_document.css" %}
+p { text-align: justify; margin: 0 0 8pt; }
+.encadre { border: 1px solid #999; padding: 8pt 10pt; margin: 10pt 0; }
+</style></head>
+<body>
+<h1>ACTE DE CAUTIONNEMENT</h1>
+<div class="sous-titre">{{ g.get_type_caution_display }} · bail d'habitation soumis à la loi n° 89-462 du 6 juillet 1989</div>
+
+<h2>La caution</h2>
+<table>
+  <tr><td class="l">Nom et prénom</td><td><strong>{{ g }}</strong></td></tr>
+  <tr><td class="l">Né(e) le / à</td><td>{{ g.date_naissance|date:"d/m/Y"|default:'<span class="a-remplir">à compléter</span>' }}{% if g.lieu_naissance %} à {{ g.lieu_naissance }}{% endif %}</td></tr>
+  <tr><td class="l">Adresse</td><td>{{ g.adresse|linebreaksbr|default:'<span class="a-remplir">à compléter</span>' }}</td></tr>
+  {% if g.lien %}<tr><td class="l">Lien avec le locataire</td><td>{{ g.lien }}</td></tr>{% endif %}
+</table>
+
+<h2>Le bail garanti</h2>
+<table>
+  <tr><td class="l">Bailleur</td><td>{{ proprietaire.nom }}{% if proprietaire.representant %}, représenté par {{ proprietaire.representant }}{% endif %}<br>{{ proprietaire.adresse|linebreaksbr }}</td></tr>
+  <tr><td class="l">Locataire garanti</td><td><strong>{{ g.locataire }}</strong></td></tr>
+  <tr><td class="l">Logement</td><td>{{ lot.designation }}, {{ bien.adresse }}, {{ bien.code_postal }} {{ bien.ville }}</td></tr>
+  <tr><td class="l">Type et durée du bail</td><td>{{ bail.get_type_display }}, à compter du {{ bail.date_debut|date:"d/m/Y" }}, pour {{ duree_texte }}</td></tr>
+  <tr><td class="l">Loyer mensuel</td><td><strong>{{ bail.loyer_hc|floatformat:2 }} €</strong> hors charges + {{ bail.charges|floatformat:2 }} € de provision sur charges, soit {{ bail.loyer_cc|floatformat:2 }} € par mois</td></tr>
+  <tr><td class="l">Révision du loyer</td><td>Chaque année à la date anniversaire du bail, selon la variation de l'indice de référence des loyers (IRL) publié par l'INSEE{% if bail.irl_trimestre %} ; trimestre de référence : {{ bail.irl_trimestre }}{% endif %}{% if bail.irl_valeur %}, valeur {{ bail.irl_valeur }}{% endif %}.</td></tr>
+</table>
+
+<h2>Engagement de la caution</h2>
+<p>Je soussigné(e) {{ g }}, déclare me porter <strong>caution {{ g.type_caution }}</strong> de {{ g.locataire }} pour le paiement des loyers, des charges, des indemnités d'occupation, des réparations locatives et des frais éventuels de procédure dus au titre du bail désigné ci-dessus, ainsi que de ses révisions.</p>
+<div class="encadre">
+  Montant maximum de mon engagement : <strong>{% if montant %}{{ montant|floatformat:2 }} €{% else %}______________ €{% endif %}</strong><br>
+  Durée de mon engagement : <strong>{% if g.duree_mois %}{{ g.duree_mois }} mois à compter du {{ bail.date_debut|date:"d/m/Y" }}{% else %}durée indéterminée{% endif %}</strong>
+</div>
+{% if g.type_caution == "solidaire" %}
+<p>En me portant caution solidaire, je renonce au bénéfice de discussion : le bailleur pourra me demander le paiement des sommes dues sans avoir à poursuivre d'abord le locataire.</p>
+{% else %}
+<p>En me portant caution simple, le bailleur devra d'abord poursuivre le locataire avant de pouvoir me demander le paiement des sommes dues.</p>
+{% endif %}
+{% if not g.duree_mois %}
+<p>Mon engagement étant à durée indéterminée, je peux le résilier à tout moment ; la résiliation prendra effet au terme du contrat de location, qu'il s'agisse du contrat initial ou d'un contrat reconduit ou renouvelé, au cours duquel le bailleur reçoit la notification de la résiliation.</p>
+{% endif %}
+<p>Je reconnais avoir reçu un exemplaire du contrat de location et avoir pris connaissance de la nature et de l'étendue de mon engagement, ainsi que des dispositions de l'article 22-1 de la loi du 6 juillet 1989, dont un extrait est reproduit en annexe.</p>
+
+<p style="margin-top:14pt">Fait à ________________________, le ________________, en deux exemplaires.</p>
+<div class="signatures">
+  <div>La caution<br><span class="petit">Signature précédée de la mention « Bon pour caution {{ g.type_caution }} à hauteur de {% if montant %}{{ montant|floatformat:2 }} €{% else %}……… €{% endif %} »</span></div>
+  <div>Le bailleur<br><span class="petit">Signature</span></div>
+</div>
+<p class="petit" style="margin-top:12pt">Annexe à joindre : extrait de l'article 22-1 de la loi n° 89-462 du 6 juillet 1989 (texte en vigueur sur legifrance.gouv.fr) et copie du bail.</p>
+</body></html>

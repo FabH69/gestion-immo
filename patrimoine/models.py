@@ -85,6 +85,10 @@ class Lot(models.Model):
         help_text="Une pièce par ligne. Si vide, une liste standard est proposée selon le nombre de pièces.",
     )
     zone_tendue = models.BooleanField("zone tendue", default=False)
+    loyer_propose = models.DecimalField(
+        "loyer proposé à la location, charges comprises (€)", max_digits=10, decimal_places=2, null=True, blank=True,
+        help_text="Affiché aux candidats et utilisé pour le taux d'effort quand le lot est vacant",
+    )
     chaudiere_gaz = models.BooleanField("chaudière gaz individuelle", default=False, help_text="Entretien annuel obligatoire à la charge du locataire")
     date_entretien_chaudiere = models.DateField("dernier entretien de la chaudière", null=True, blank=True)
     notes = models.TextField(blank=True)
@@ -98,6 +102,14 @@ class Lot(models.Model):
     @property
     def bail_actif(self):
         return self.baux.filter(actif=True).first()
+
+    @property
+    def loyer_reference(self):
+        """Loyer charges comprises à comparer aux revenus d'un candidat."""
+        if self.loyer_propose:
+            return self.loyer_propose
+        bail = self.bail_actif
+        return bail.loyer_cc if bail else None
 
     def liste_pieces(self):
         if self.pieces.strip():
@@ -622,3 +634,129 @@ class Rappel(models.Model):
         else:
             self.fait = True
         self.save()
+
+
+class Garant(models.Model):
+    """Personne qui se porte caution pour un locataire sur un bail."""
+
+    class TypeCaution(models.TextChoices):
+        SOLIDAIRE = "solidaire", "Caution solidaire"
+        SIMPLE = "simple", "Caution simple"
+
+    bail = models.ForeignKey(Bail, on_delete=models.CASCADE, related_name="garants", null=True, blank=True)
+    locataire = models.ForeignKey(Locataire, on_delete=models.CASCADE, related_name="garants", verbose_name="locataire garanti")
+    civilite = models.CharField("civilité", max_length=10, blank=True, choices=[("M.", "M."), ("Mme", "Mme")])
+    nom = models.CharField(max_length=100)
+    prenom = models.CharField("prénom", max_length=100, blank=True)
+    date_naissance = models.DateField("date de naissance", null=True, blank=True)
+    lieu_naissance = models.CharField("lieu de naissance", max_length=100, blank=True)
+    adresse = models.TextField(blank=True)
+    email = models.EmailField("e-mail", blank=True)
+    telephone = models.CharField("téléphone", max_length=20, blank=True)
+    lien = models.CharField("lien avec le locataire", max_length=100, blank=True, help_text="ex. « père », « employeur »")
+    profession = models.CharField(max_length=100, blank=True)
+    revenus_mensuels = models.DecimalField("revenus nets mensuels (€)", max_digits=10, decimal_places=2, null=True, blank=True)
+    type_caution = models.CharField("type de caution", max_length=10, choices=TypeCaution.choices, default=TypeCaution.SOLIDAIRE)
+    montant_max = models.DecimalField(
+        "montant maximum garanti (€)", max_digits=10, decimal_places=2, null=True, blank=True,
+        help_text="Si vide : loyer et charges sur la durée de l'engagement",
+    )
+    duree_mois = models.PositiveSmallIntegerField(
+        "durée de l'engagement (mois)", null=True, blank=True,
+        help_text="Si vide : engagement à durée indéterminée (résiliable, avec effet à la fin du bail en cours)",
+    )
+
+    class Meta:
+        ordering = ["nom", "prenom"]
+
+    def __str__(self):
+        return f"{self.civilite} {self.prenom} {self.nom}".strip()
+
+    def montant_garanti(self):
+        if self.montant_max:
+            return self.montant_max
+        if self.bail and self.duree_mois:
+            return self.bail.loyer_cc * self.duree_mois
+        return None
+
+
+class Candidature(models.Model):
+    """Dossier rempli par un candidat locataire via un lien personnel (sans compte)."""
+
+    class Statut(models.TextChoices):
+        ENVOYEE = "envoyee", "Lien envoyé"
+        RECUE = "recue", "Dossier reçu"
+        RETENUE = "retenue", "Retenue"
+        REFUSEE = "refusee", "Non retenue"
+
+    lot = models.ForeignKey(Lot, on_delete=models.CASCADE, related_name="candidatures")
+    jeton = models.CharField(max_length=40, unique=True, editable=False)
+    statut = models.CharField(max_length=10, choices=Statut.choices, default=Statut.ENVOYEE)
+    cree_le = models.DateTimeField("créée le", auto_now_add=True)
+    recue_le = models.DateTimeField("reçue le", null=True, blank=True)
+    # Réponses du candidat
+    civilite = models.CharField("civilité", max_length=10, blank=True, choices=[("M.", "M."), ("Mme", "Mme")])
+    nom = models.CharField(max_length=100, blank=True)
+    prenom = models.CharField("prénom", max_length=100, blank=True)
+    date_naissance = models.DateField("date de naissance", null=True, blank=True)
+    lieu_naissance = models.CharField("lieu de naissance", max_length=100, blank=True)
+    email = models.EmailField("e-mail", blank=True)
+    telephone = models.CharField("téléphone", max_length=20, blank=True)
+    adresse_actuelle = models.TextField("adresse actuelle", blank=True)
+    situation = models.CharField("situation professionnelle", max_length=20, blank=True, choices=[
+        ("cdi", "CDI"), ("cdd", "CDD / intérim"), ("independant", "Indépendant"), ("fonctionnaire", "Fonctionnaire"),
+        ("etudiant", "Étudiant"), ("retraite", "Retraité"), ("autre", "Autre"),
+    ])
+    employeur = models.CharField(max_length=150, blank=True)
+    revenus_mensuels = models.DecimalField("revenus nets mensuels (€)", max_digits=10, decimal_places=2, null=True, blank=True)
+    nb_occupants = models.PositiveSmallIntegerField("nombre d'occupants", null=True, blank=True)
+    date_entree_souhaitee = models.DateField("date d'entrée souhaitée", null=True, blank=True)
+    type_garantie = models.CharField("garantie", max_length=20, blank=True, choices=[
+        ("garant", "Une personne se porte caution"), ("visale", "Garantie Visale"), ("aucune", "Aucune"),
+    ])
+    garant_nom = models.CharField("garant : nom et prénom", max_length=200, blank=True)
+    garant_lien = models.CharField("garant : lien", max_length=100, blank=True)
+    garant_email = models.EmailField("garant : e-mail", blank=True)
+    garant_telephone = models.CharField("garant : téléphone", max_length=20, blank=True)
+    garant_adresse = models.TextField("garant : adresse", blank=True)
+    garant_profession = models.CharField("garant : profession", max_length=100, blank=True)
+    garant_revenus = models.DecimalField("garant : revenus nets mensuels (€)", max_digits=10, decimal_places=2, null=True, blank=True)
+    message = models.TextField(blank=True)
+    consentement = models.BooleanField(default=False)
+
+    class Meta:
+        ordering = ["-cree_le"]
+
+    def __str__(self):
+        qui = f"{self.prenom} {self.nom}".strip() or "(non remplie)"
+        return f"{qui} – {self.lot}"
+
+    def save(self, *args, **kwargs):
+        if not self.jeton:
+            import secrets
+
+            self.jeton = secrets.token_urlsafe(24)
+        super().save(*args, **kwargs)
+
+    def taux_effort(self, loyer_cc):
+        """Part du loyer dans les revenus du candidat (en %)."""
+        if not self.revenus_mensuels or not loyer_cc:
+            return None
+        return round(loyer_cc / self.revenus_mensuels * 100)
+
+    def creer_locataire(self):
+        """Crée le locataire (et son garant) à partir du dossier retenu."""
+        locataire = Locataire.objects.create(
+            civilite=self.civilite, nom=self.nom, prenom=self.prenom, email=self.email, telephone=self.telephone,
+            date_naissance=self.date_naissance, lieu_naissance=self.lieu_naissance, adresse_actuelle=self.adresse_actuelle,
+        )
+        if self.type_garantie == "garant" and self.garant_nom:
+            prenom, _, nom = self.garant_nom.strip().partition(" ")
+            Garant.objects.create(
+                locataire=locataire, prenom=prenom if nom else "", nom=nom or prenom, lien=self.garant_lien,
+                email=self.garant_email, telephone=self.garant_telephone, adresse=self.garant_adresse,
+                profession=self.garant_profession, revenus_mensuels=self.garant_revenus,
+            )
+        self.statut = self.Statut.RETENUE
+        self.save(update_fields=["statut"])
+        return locataire

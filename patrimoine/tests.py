@@ -302,3 +302,44 @@ class RappelsEtRevisionTests(TestCase):
         self.assertEqual(self.bail.loyer_hc, Decimal("610.61"))
         self.assertEqual(self.bail.irl_valeur, Decimal("146.12"))
         self.assertEqual(self.bail.prochaine_revision(date(2027, 1, 1)), date(2027, 11, 15))
+
+
+class CandidatureEtGarantTests(TestCase):
+    def setUp(self):
+        proprio = Proprietaire.objects.create(nom="SCI", type=Proprietaire.Type.SCI_IR)
+        bien = Bien.objects.create(proprietaire=proprio, nom="Immeuble", adresse="1 rue", code_postal="69000", ville="Lyon")
+        self.lot = Lot.objects.create(bien=bien, designation="Apt 2", surface=40, nb_pieces=2)
+
+    def test_formulaire_public_puis_creation_du_locataire(self):
+        from .models import Candidature
+
+        c = Candidature.objects.create(lot=self.lot)
+        url = f"/candidature/{c.jeton}/"
+        self.assertEqual(self.client.get(url).status_code, 200)  # sans connexion
+        r = self.client.post(url, {"prenom": "Léa", "nom": "Durand", "email": "lea@example.com", "telephone": "0600000000",
+                                   "situation": "cdi", "revenus_mensuels": "2400", "type_garantie": "garant"})
+        self.assertContains(r, "Indiquez le nom de la personne")
+        r = self.client.post(url, {"prenom": "Léa", "nom": "Durand", "email": "lea@example.com", "telephone": "0600000000",
+                                   "situation": "cdi", "revenus_mensuels": "2400", "type_garantie": "garant",
+                                   "garant_nom": "Paul Durand", "garant_lien": "père", "consentement": "on"})
+        self.assertContains(r, "Merci Léa")
+        c.refresh_from_db()
+        self.assertEqual(c.statut, "recue")
+        self.assertEqual(c.taux_effort(Decimal("800")), 33)
+        locataire = c.creer_locataire()
+        garant = locataire.garants.get()
+        self.assertEqual((garant.prenom, garant.nom, garant.lien), ("Paul", "Durand", "père"))
+        self.assertContains(self.client.get(url), "clôturé")
+        self.assertEqual(self.client.get("/candidature/inconnu/").status_code, 404)
+
+    def test_acte_de_cautionnement(self):
+        from .models import Garant
+
+        bail = Bail.objects.create(lot=self.lot, type=Bail.Type.NU, date_debut=date(2026, 9, 1), loyer_hc=Decimal("700"), charges=Decimal("50"))
+        locataire = Locataire.objects.create(nom="Durand")
+        bail.locataires.add(locataire)
+        g = Garant.objects.create(locataire=locataire, bail=bail, nom="Durand", prenom="Paul", duree_mois=36)
+        self.assertEqual(g.montant_garanti(), Decimal("27000"))
+        self.client.force_login(User.objects.create_superuser("admin", "a@example.com", "x"))
+        self.assertEqual(self.client.get(f"/garants/{g.pk}/acte-de-cautionnement.pdf")["Content-Type"], "application/pdf")
+        self.assertEqual(self.client.get(f"/baux/{bail.pk}/bail.pdf").status_code, 200)

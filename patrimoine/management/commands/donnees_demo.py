@@ -4,7 +4,7 @@ from decimal import Decimal
 
 from django.core.management.base import BaseCommand
 
-from patrimoine.models import Bail, Bien, ChangementLocataire, Echeance, MouvementDepot, Pret, Rappel, Locataire, Lot, Paiement, Proprietaire
+from patrimoine.models import Bail, Bien, Candidature, ChangementLocataire, Garant, Echeance, MouvementDepot, Pret, Rappel, Locataire, Lot, Paiement, Proprietaire
 
 
 class Command(BaseCommand):
@@ -73,5 +73,15 @@ class Command(BaseCommand):
         Lot.objects.filter(pk=lots[3].pk).update(chaudiere_gaz=True, date_entretien_chaudiere=date(2025, 11, 20))
         Rappel.objects.create(titre="AG de copropriété – Immeuble des Lilas", date=date(2026, 11, 18), categorie=Rappel.Categorie.AG, bien=immeuble)
         Rappel.objects.create(titre="Payer la taxe foncière", date=date(2026, 10, 15), categorie=Rappel.Categorie.FISCAL, annuel=True)
+
+        Garant.objects.create(locataire=martin, bail=Bail.objects.get(lot=lots[0]), civilite="M.", prenom="Pierre", nom="Martin",
+                              date_naissance=date(1960, 2, 3), lieu_naissance="Angers", adresse="5 rue Neuve\n49000 Angers", lien="père", duree_mois=36)
+        Candidature.objects.create(
+            lot=lots[5], statut=Candidature.Statut.RECUE, civilite="M.", prenom="Lucas", nom="Moreau", email="lucas.moreau@example.com",
+            telephone="06 00 00 00 00", situation="cdi", employeur="Société Exemple", revenus_mensuels=Decimal("1850"), nb_occupants=1,
+            type_garantie="visale", consentement=True,
+        )
+        Lot.objects.filter(pk=lots[5].pk).update(loyer_propose=Decimal("560"))
+        Candidature.objects.create(lot=lots[5])
 
         self.stdout.write(self.style.SUCCESS("Données de démonstration créées."))

@@ -3,10 +3,11 @@ from datetime import date, timedelta
 from django.contrib import admin, messages
 from django.shortcuts import redirect
 from django.urls import path, reverse
+from urllib.parse import quote
 from django.utils import timezone
 from django.utils.html import format_html
 
-from .models import Bail, Bien, ChangementLocataire, Echeance, EtatDesLieux, MouvementDepot, Pret, Rappel, RevisionLoyer, Locataire, Lot, Paiement, Proprietaire, Tache
+from .models import Bail, Bien, Candidature, ChangementLocataire, Garant, Echeance, EtatDesLieux, MouvementDepot, Pret, Rappel, RevisionLoyer, Locataire, Lot, Paiement, Proprietaire, Tache
 
 admin.site.site_header = "Gestion immobilière"
 admin.site.site_title = "Gestion immobilière"
@@ -36,6 +37,25 @@ class LotInline(admin.TabularInline):
     fields = ["designation", "type", "surface", "meuble"]
     extra = 0
     show_change_link = True
+
+
+class GarantInline(admin.StackedInline):
+    model = Garant
+    extra = 0
+    fields = [("civilite", "prenom", "nom"), ("date_naissance", "lieu_naissance"), "adresse", ("email", "telephone"),
+              ("lien", "profession", "revenus_mensuels"), ("type_caution", "montant_max", "duree_mois"), "acte"]
+    readonly_fields = ["acte"]
+
+    @admin.display(description="acte de cautionnement")
+    def acte(self, obj):
+        if obj.pk and obj.bail_id:
+            return format_html('<a href="{}" target="_blank">Acte de cautionnement PDF</a>', reverse("acte_cautionnement", args=[obj.pk]))
+        return "Disponible une fois le garant enregistré et rattaché à un bail."
+
+
+class GarantBailInline(GarantInline):
+    fields = ["locataire"] + GarantInline.fields
+    verbose_name_plural = "Garants (cautions)"
 
 
 class MouvementDepotInline(admin.TabularInline):
@@ -92,6 +112,7 @@ class LotAdmin(admin.ModelAdmin):
         (None, {"fields": ["bien", "designation", "type", "surface", "nb_pieces", "meuble", "etage"]}),
         ("Caractéristiques (reprises dans le bail)", {"fields": ["annee_construction", "regime_juridique", "chauffage", "eau_chaude", "classe_dpe", "zone_tendue", "equipements", "annexes"]}),
         ("Chaudière gaz", {"fields": ["chaudiere_gaz", "date_entretien_chaudiere"]}),
+        ("Relocation", {"fields": ["loyer_propose"]}),
         ("État des lieux", {"fields": ["pieces"]}),
         ("Notes", {"fields": ["notes"]}),
     ]
@@ -109,8 +130,14 @@ class LotAdmin(admin.ModelAdmin):
 
 @admin.register(Locataire)
 class LocataireAdmin(admin.ModelAdmin):
-    list_display = ["__str__", "email", "telephone"]
+    list_display = ["__str__", "email", "telephone", "liste_garants"]
     search_fields = ["nom", "prenom", "email"]
+    exclude = ["garant"]
+    inlines = [GarantInline]
+
+    @admin.display(description="garants")
+    def liste_garants(self, obj):
+        return ", ".join(str(g) for g in obj.garants.all()) or "–"
 
 
 @admin.register(Bail)
@@ -128,7 +155,7 @@ class BailAdmin(admin.ModelAdmin):
         ("Clauses particulières", {"fields": ["notes"]}),
         ("Documents pré-remplis", {"fields": ["documents"]}),
     ]
-    inlines = [MouvementDepotInline]
+    inlines = [GarantBailInline, MouvementDepotInline]
 
     @admin.display(description="documents")
     def documents(self, obj):
@@ -488,3 +515,77 @@ class RevisionLoyerAdmin(admin.ModelAdmin):
     def liens(self, obj):
         return format_html('<a href="{}">Ouvrir</a> · <a href="{}" target="_blank">Courrier PDF</a>',
                            f"{reverse('revision_loyer', args=[obj.bail_id])}?revision={obj.pk}", reverse("lettre_revision", args=[obj.pk]))
+
+
+@admin.register(Garant)
+class GarantAdmin(admin.ModelAdmin):
+    list_display = ["__str__", "locataire", "bail", "type_caution", "montant_max", "acte"]
+    list_filter = ["type_caution"]
+    search_fields = ["nom", "prenom", "locataire__nom"]
+
+    @admin.display(description="acte")
+    def acte(self, obj):
+        if obj.bail_id:
+            return format_html('<a href="{}" target="_blank">PDF</a>', reverse("acte_cautionnement", args=[obj.pk]))
+        return "–"
+
+
+@admin.register(Candidature)
+class CandidatureAdmin(admin.ModelAdmin):
+    list_display = ["__str__", "statut", "situation", "revenus_mensuels", "taux_effort", "type_garantie", "recue_le"]
+    list_filter = ["statut", "lot"]
+    readonly_fields = ["lien_a_envoyer", "statut", "recue_le", "taux_effort"]
+    actions = ["retenir", "refuser"]
+
+    def get_fieldsets(self, request, obj=None):
+        if obj is None:
+            return [(None, {"fields": ["lot"], "description": "Choisissez le logement : un lien personnel sera créé pour le candidat."})]
+        reponses = [f.name for f in Candidature._meta.fields if f.name not in ("id", "lot", "jeton", "statut", "cree_le", "recue_le", "consentement")]
+        return [
+            (None, {"fields": ["lot", "lien_a_envoyer", "statut", "recue_le", "taux_effort"]}),
+            ("Réponses du candidat", {"fields": reponses}),
+        ]
+
+    def get_readonly_fields(self, request, obj=None):
+        if obj is None:
+            return []
+        return ["lot", *self.readonly_fields]
+
+    @admin.display(description="taux d'effort")
+    def taux_effort(self, obj):
+        taux = obj.taux_effort(obj.lot.loyer_reference)
+        if taux is None:
+            return "–"
+        couleur = "#2e7d32" if taux <= 33 else "#ef6c00" if taux <= 40 else "#c62828"
+        return format_html('<strong style="color:{}">{} %</strong>', couleur, taux)
+
+    @admin.display(description="lien à envoyer au candidat")
+    def lien_a_envoyer(self, obj):
+        url = self.request_courante.build_absolute_uri(reverse("candidature_publique", args=[obj.jeton]))
+        corps = (f"Bonjour,\n\nSuite à votre intérêt pour le logement {obj.lot.designation} ({obj.lot.bien.adresse}, {obj.lot.bien.ville}), "
+                 f"voici le formulaire de candidature à remplir en ligne :\n{url}\n\nCordialement")
+        mailto = f"mailto:{obj.email}?subject={quote('Votre dossier de candidature – ' + obj.lot.designation)}&body={quote(corps)}"
+        return format_html(
+            '<input type="text" value="{}" readonly style="width:100%;max-width:560px" onclick="this.select()"> '
+            '<p><a class="button" href="{}">Préparer le mail au candidat</a></p>'
+            "<p class='help'>Le lien ne fonctionnera pour le candidat qu'une fois l'application mise en ligne.</p>",
+            url, mailto,
+        )
+
+    def get_form(self, request, obj=None, **kwargs):
+        self.request_courante = request
+        return super().get_form(request, obj, **kwargs)
+
+    def response_add(self, request, obj, post_url_continue=None):
+        return redirect("admin:patrimoine_candidature_change", obj.pk)
+
+    @admin.action(description="Retenir : créer le locataire (et son garant)")
+    def retenir(self, request, queryset):
+        for c in queryset.filter(statut=Candidature.Statut.RECUE):
+            locataire = c.creer_locataire()
+            self.message_user(request, format_html('Locataire créé : <a href="{}">{}</a>. Créez ensuite le bail.',
+                                                   reverse("admin:patrimoine_locataire_change", args=[locataire.pk]), locataire))
+
+    @admin.action(description="Ne pas retenir")
+    def refuser(self, request, queryset):
+        queryset.update(statut=Candidature.Statut.REFUSEE)

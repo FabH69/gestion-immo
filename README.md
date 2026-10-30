@@ -44,3 +44,8 @@ Puis ouvrir http://127.0.0.1:8000/.
   - Attestation d'entretien de la chaudière gaz (si le lot en a une, 1 an après le dernier entretien).
   - Rappels libres (AG, taxe foncière…), ponctuels ou annuels, et tâches des changements de locataire.
 - **Révision du loyer** (fiche du bail → « Réviser le loyer ») : calcul selon l'IRL, mail pré-rempli au locataire, courrier PDF, application du nouveau loyer au bail. Alerte si le logement est classé F ou G (hausse interdite).
+
+## Candidatures et garants
+
+- **Candidatures** : choisir le logement crée un lien personnel à envoyer au futur locataire (mail pré-rempli). Le candidat remplit le formulaire sans compte, depuis son téléphone ; le dossier apparaît avec le taux d'effort. L'action « Retenir » crée le locataire et son garant. Le lien ne fonctionne pour le candidat qu'une fois l'application en ligne.
+- **Garants** : fiche complète (identité, revenus, caution solidaire ou simple, montant maximum, durée) rattachée au locataire et au bail ; acte de cautionnement PDF pré-rempli.
