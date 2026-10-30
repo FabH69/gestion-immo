@@ -1,0 +1,22 @@
+{% extends "admin/base_site.html" %}
+{% block extrastyle %}{{ block.super }}<style>{% include "patrimoine/_style_etat.css" %}
+.filtres { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; margin: 10px 0 18px; }
+.etat-scroll { overflow-x: auto; }
+</style>{% endblock %}
+{% block breadcrumbs %}<div class="breadcrumbs"><a href="{% url 'admin:index' %}">Accueil</a> › États › Endettement</div>{% endblock %}
+{% block content %}
+<p>Capital restant dû calculé à partir des conditions de chaque prêt ; mensualité assurance comprise. Il peut différer de quelques euros du tableau de la banque.</p>
+<form method="get" class="filtres">
+  <label>Au <input type="date" name="date" value="{{ date|date:'Y-m-d' }}"></label>
+  <label>Emprunteur
+    <select name="proprietaire">
+      <option value="">Tous</option>
+      {% for p in proprietaires_choix %}<option value="{{ p.pk }}" {% if proprietaire.pk == p.pk %}selected{% endif %}>{{ p.nom }}</option>{% endfor %}
+    </select>
+  </label>
+  <button type="submit" class="button">Afficher</button>
+  <a class="button" href="?date={{ date|date:'Y-m-d' }}&proprietaire={{ proprietaire.pk|default:'' }}&format=pdf" target="_blank">Télécharger en PDF</a>
+  <a class="button" href="?date={{ date|date:'Y-m-d' }}&proprietaire={{ proprietaire.pk|default:'' }}&format=csv">Télécharger pour Excel</a>
+</form>
+<div class="etat-scroll">{% include "patrimoine/_tableau_endettement.html" %}</div>
+{% endblock %}

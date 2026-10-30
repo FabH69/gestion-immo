@@ -13,5 +13,7 @@ urlpatterns = [
     path("baux/<int:pk>/inventaire-<str:type_edl>.pdf", views.document_inventaire, name="document_inventaire"),
     path("depots/<int:pk>/recu.pdf", views.document_recu_depot, name="document_recu_depot"),
     path("etats-des-lieux/<int:pk>/document.pdf", views.document_etat_des_lieux, name="document_edl"),
+    path("etats/endettement/", views.etat_endettement, name="etat_endettement"),
+    path("prets/<int:pk>/amortissement.pdf", views.document_amortissement, name="document_amortissement"),
     path("", RedirectView.as_view(url="/admin/")),
 ]

@@ -6,7 +6,7 @@ from django.urls import path, reverse
 from django.utils import timezone
 from django.utils.html import format_html
 
-from .models import Bail, Bien, ChangementLocataire, Echeance, EtatDesLieux, MouvementDepot, Locataire, Lot, Paiement, Proprietaire, Tache
+from .models import Bail, Bien, ChangementLocataire, Echeance, EtatDesLieux, MouvementDepot, Pret, Locataire, Lot, Paiement, Proprietaire, Tache
 
 admin.site.site_header = "Gestion immobilière"
 admin.site.site_title = "Gestion immobilière"
@@ -400,3 +400,48 @@ class MouvementDepotAdmin(admin.ModelAdmin):
                 soldes.append((proprio, solde))
         extra_context = {**(extra_context or {}), "soldes": soldes, "total_detenu": sum(s for _, s in soldes)}
         return super().changelist_view(request, extra_context)
+
+
+@admin.register(Pret)
+class PretAdmin(admin.ModelAdmin):
+    list_display = ["__str__", "proprietaire", "bien", "taux_affiche", "mensualite", "fin", "restant_du", "amortissement"]
+    list_filter = ["proprietaire", "banque", "type"]
+    readonly_fields = ["calculs"]
+    fieldsets = [
+        (None, {"fields": ["proprietaire", "bien", "banque", "reference", "type"]}),
+        ("Conditions", {"fields": ["montant", "taux", "duree_mois", "date_premiere_echeance", "assurance_mensuelle"]}),
+        ("Calculs", {"fields": ["calculs"]}),
+        ("Notes", {"fields": ["notes"]}),
+    ]
+    change_list_template = "admin/patrimoine/pret/change_list.html"
+
+    @admin.display(description="taux")
+    def taux_affiche(self, obj):
+        return f"{obj.taux:.3f} %".replace(".", ",")
+
+    @admin.display(description="mensualité + assur. (€)")
+    def mensualite(self, obj):
+        return obj.mensualite_hors_assurance + obj.assurance_mensuelle
+
+    @admin.display(description="fin")
+    def fin(self, obj):
+        return obj.date_derniere_echeance.strftime("%m/%Y")
+
+    @admin.display(description="restant dû aujourd'hui (€)")
+    def restant_du(self, obj):
+        return obj.capital_restant_du(timezone.localdate())
+
+    @admin.display(description="tableau")
+    def amortissement(self, obj):
+        return format_html('<a href="{}" target="_blank">PDF</a>', reverse("document_amortissement", args=[obj.pk]))
+
+    @admin.display(description="résultats")
+    def calculs(self, obj):
+        if not obj.pk:
+            return "Enregistrez le prêt pour voir les calculs."
+        return format_html(
+            "Mensualité hors assurance : <strong>{} €</strong> · Dernière échéance : {} · Capital restant dû aujourd'hui : <strong>{} €</strong><br>"
+            '<a href="{}" target="_blank">Tableau d\'amortissement PDF</a>',
+            obj.mensualite_hors_assurance, obj.date_derniere_echeance.strftime("%d/%m/%Y"),
+            obj.capital_restant_du(timezone.localdate()), reverse("document_amortissement", args=[obj.pk]),
+        )

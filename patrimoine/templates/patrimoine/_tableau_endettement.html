@@ -1,0 +1,27 @@
+<table class="etat">
+  <thead><tr>
+    <th class="libelle">Prêt</th><th class="libelle">Bien financé</th><th>Capital emprunté</th><th>Taux</th><th>Fin</th>
+    <th>Mensualité</th><th>Intérêts {{ annee }}</th><th class="fort">Restant dû au {{ date|date:"d/m/Y" }}</th>
+  </tr></thead>
+  <tbody>
+  {% for bloc in blocs %}
+    <tr class="proprio"><td colspan="8">{{ bloc.proprietaire.nom }} <span class="type">({{ bloc.proprietaire.get_type_display }})</span></td></tr>
+    {% for l in bloc.lignes %}
+    <tr>
+      <td class="libelle lot">{{ l.pret.banque }}{% if l.pret.reference %} n° {{ l.pret.reference }}{% endif %}{% if l.pret.type == "in_fine" %} (in fine){% endif %}</td>
+      <td class="libelle">{{ l.pret.bien.nom|default:"–" }}</td>
+      <td>{{ l.pret.montant|floatformat:"2g" }}</td>
+      <td>{{ l.pret.taux|floatformat:"-3" }} %</td>
+      <td>{{ l.pret.date_derniere_echeance|date:"m/Y" }}</td>
+      <td>{{ l.mensualite|floatformat:"2g" }}</td>
+      <td>{{ l.interets|floatformat:"2g" }}</td>
+      <td class="fort">{{ l.restant|floatformat:"2g" }}</td>
+    </tr>
+    {% endfor %}
+    <tr class="stp"><td class="libelle" colspan="2">Total {{ bloc.proprietaire.nom }}</td><td>{{ bloc.montant|floatformat:"2g" }}</td><td></td><td></td><td>{{ bloc.mensualite|floatformat:"2g" }}</td><td>{{ bloc.interets|floatformat:"2g" }}</td><td class="fort">{{ bloc.restant|floatformat:"2g" }}</td></tr>
+  {% empty %}
+    <tr><td colspan="8" class="vide">Aucun prêt enregistré.</td></tr>
+  {% endfor %}
+  </tbody>
+  {% if blocs %}<tfoot><tr class="total"><td class="libelle" colspan="2">TOTAL</td><td>{{ total.montant|floatformat:"2g" }}</td><td></td><td></td><td>{{ total.mensualite|floatformat:"2g" }}</td><td>{{ total.interets|floatformat:"2g" }}</td><td class="fort">{{ total.restant|floatformat:"2g" }}</td></tr></tfoot>{% endif %}
+</table>

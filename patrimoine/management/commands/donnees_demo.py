@@ -4,7 +4,7 @@ from decimal import Decimal
 
 from django.core.management.base import BaseCommand
 
-from patrimoine.models import Bail, Bien, ChangementLocataire, Echeance, MouvementDepot, Locataire, Lot, Paiement, Proprietaire
+from patrimoine.models import Bail, Bien, ChangementLocataire, Echeance, MouvementDepot, Pret, Locataire, Lot, Paiement, Proprietaire
 
 
 class Command(BaseCommand):
@@ -62,5 +62,10 @@ class Command(BaseCommand):
         for tache in changement.taches.all()[:2]:
             tache.faite = True
             tache.save()
+
+        Pret.objects.create(proprietaire=sci1, bien=immeuble, banque="Banque Démo", reference="IMM-001", montant=Decimal("320000"), taux=Decimal("1.45"), duree_mois=240, date_premiere_echeance=date(2021, 3, 5), assurance_mensuelle=Decimal("42"))
+        Pret.objects.create(proprietaire=sarl, bien=residence, banque="Crédit Démo", reference="RG-77", montant=Decimal("180000"), taux=Decimal("3.9"), duree_mois=300, date_premiere_echeance=date(2024, 2, 10), assurance_mensuelle=Decimal("25"))
+        Pret.objects.create(proprietaire=nom_propre, bien=maison, banque="Banque Démo", reference="MP-12", montant=Decimal("150000"), taux=Decimal("1.1"), duree_mois=180, date_premiere_echeance=date(2020, 9, 1), assurance_mensuelle=Decimal("18"))
+        Pret.objects.create(proprietaire=sci2, bien=local, banque="Crédit Démo", reference="LC-03", type="in_fine", montant=Decimal("200000"), taux=Decimal("2.8"), duree_mois=120, date_premiere_echeance=date(2023, 6, 15))
 
         self.stdout.write(self.style.SUCCESS("Données de démonstration créées."))

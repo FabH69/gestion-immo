@@ -34,3 +34,4 @@ Puis ouvrir http://127.0.0.1:8000/.
 - Bail meublé : inventaire et état détaillé du mobilier (entrée et sortie).
 - **Dépôts de garantie** : suivis sur un compte séparé des loyers (encaissement, retenues justifiées, restitution), solde détenu par entité, reçu PDF pour chaque encaissement.
 - Les données viennent du propriétaire, du lot (caractéristiques, pièces) et des locataires ; ce qui manque apparaît « à compléter ». Vérifier le bail avec le modèle officiel avant signature.
+- **Endettement** (page d'accueil ou menu Prêts) : récapitulatif des prêts par emprunteur, capital restant dû à la date choisie et intérêts de l'année, export PDF et CSV. Tableau d'amortissement PDF par prêt (prêts amortissables ou in fine).

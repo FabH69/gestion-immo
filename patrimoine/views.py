@@ -1,4 +1,5 @@
 import csv
+from datetime import date
 
 from django.contrib import admin
 from django.contrib.admin.views.decorators import staff_member_required
@@ -10,8 +11,8 @@ from django.utils.text import slugify
 from weasyprint import HTML
 
 from .documents import ELEMENTS_PIECE, INVENTAIRE_MEUBLE, duree_texte
-from .etats import loyers_encaisses
-from .models import Bail, Echeance, EtatDesLieux, MouvementDepot, Proprietaire
+from .etats import endettement, loyers_encaisses
+from .models import Bail, Echeance, EtatDesLieux, MouvementDepot, Pret, Proprietaire
 
 
 @staff_member_required
@@ -151,3 +152,47 @@ def document_recu_depot(request, pk):
     contexte = _contexte_bail(m.bail)
     contexte.update(m=m, aujourdhui=timezone.localdate())
     return _pdf(render_to_string("patrimoine/recu_depot.html", contexte), f"recu depot garantie {m.bail.lot}")
+
+
+@staff_member_required
+def etat_endettement(request):
+    try:
+        a_date = date.fromisoformat(request.GET.get("date", ""))
+    except ValueError:
+        a_date = timezone.localdate()
+    proprietaire = None
+    if request.GET.get("proprietaire"):
+        proprietaire = get_object_or_404(Proprietaire, pk=request.GET["proprietaire"])
+    etat = endettement(a_date, proprietaire)
+    nom_fichier = f"endettement-{a_date:%Y-%m-%d}-{slugify(proprietaire.nom) if proprietaire else 'tous'}"
+    contexte = {**etat, "proprietaire": proprietaire, "proprietaires_choix": Proprietaire.objects.all(), "aujourdhui": timezone.localdate()}
+
+    if request.GET.get("format") == "csv":
+        response = HttpResponse(content_type="text/csv; charset=utf-8")
+        response["Content-Disposition"] = f'attachment; filename="{nom_fichier}.csv"'
+        response.write("\ufeff")
+        w = csv.writer(response, delimiter=";")
+        fr = lambda d: f"{d:.2f}".replace(".", ",")
+        w.writerow(["Emprunteur", "Banque", "N° de prêt", "Bien", "Capital emprunté", "Taux (%)", "Fin", "Mensualité + assurance", f"Intérêts {a_date.year}", f"Capital restant dû au {a_date:%d/%m/%Y}"])
+        for bloc in etat["blocs"]:
+            for l in bloc["lignes"]:
+                p = l["pret"]
+                w.writerow([p.proprietaire.nom, p.banque, p.reference, p.bien.nom if p.bien else "", fr(p.montant), fr(p.taux), f"{p.date_derniere_echeance:%m/%Y}", fr(l["mensualite"]), fr(l["interets"]), fr(l["restant"])])
+        t = etat["total"]
+        w.writerow(["TOTAL", "", "", "", fr(t["montant"]), "", "", fr(t["mensualite"]), fr(t["interets"]), fr(t["restant"])])
+        return response
+    if request.GET.get("format") == "pdf":
+        return _pdf(render_to_string("patrimoine/endettement_pdf.html", contexte), nom_fichier)
+    titre = f"Endettement au {a_date:%d/%m/%Y}" + (f" – {proprietaire.nom}" if proprietaire else "")
+    return render(request, "patrimoine/endettement.html", {**admin.site.each_context(request), **contexte, "title": titre})
+
+
+@staff_member_required
+def document_amortissement(request, pk):
+    pret = get_object_or_404(Pret.objects.select_related("proprietaire", "bien"), pk=pk)
+    lignes = pret.echeancier()
+    for i, l in enumerate(lignes):
+        if i == len(lignes) - 1 or lignes[i + 1]["date"].year != l["date"].year:
+            annee = [x for x in lignes if x["date"].year == l["date"].year]
+            l["fin_annee"] = {c: sum(x[c] for x in annee) for c in ("mensualite", "interets", "capital", "assurance")}
+    return _pdf(render_to_string("patrimoine/amortissement_pdf.html", {"pret": pret, "lignes": lignes}), f"amortissement {pret.banque} {pret.reference}")

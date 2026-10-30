@@ -196,3 +196,44 @@ class DepotGarantieTests(TestCase):
         r = self.client.get("/admin/patrimoine/mouvementdepot/")
         self.assertEqual(r.status_code, 200)
         self.assertEqual(r.context["total_detenu"], Decimal("0"))
+
+
+class PretTests(TestCase):
+    def setUp(self):
+        from .models import Pret
+
+        self.sci = Proprietaire.objects.create(nom="SCI", type=Proprietaire.Type.SCI_IR)
+        self.pret = Pret.objects.create(
+            proprietaire=self.sci, banque="Banque", montant=Decimal("200000"), taux=Decimal("3"),
+            duree_mois=240, date_premiere_echeance=date(2020, 1, 5), assurance_mensuelle=Decimal("30"),
+        )
+
+    def test_echeancier_amortissable(self):
+        self.assertEqual(self.pret.mensualite_hors_assurance, Decimal("1109.20"))
+        lignes = self.pret.echeancier()
+        self.assertEqual(len(lignes), 240)
+        self.assertEqual(lignes[0]["interets"], Decimal("500.00"))
+        self.assertEqual(lignes[-1]["restant"], Decimal("0"))
+        self.assertEqual(sum(l["capital"] for l in lignes), Decimal("200000"))
+        self.assertEqual(self.pret.date_derniere_echeance, date(2039, 12, 5))
+
+    def test_capital_restant_du_a_une_date(self):
+        self.assertEqual(self.pret.capital_restant_du(date(2020, 1, 4)), Decimal("200000"))
+        self.assertEqual(self.pret.capital_restant_du(date(2020, 1, 5)), Decimal("200000") - Decimal("609.20"))
+        self.assertEqual(self.pret.capital_restant_du(date(2045, 1, 1)), Decimal("0"))
+
+    def test_in_fine(self):
+        from .models import Pret
+
+        p = Pret.objects.create(proprietaire=self.sci, banque="B", type="in_fine", montant=Decimal("100000"), taux=Decimal("2.4"), duree_mois=120, date_premiere_echeance=date(2025, 1, 1))
+        self.assertEqual(p.mensualite_hors_assurance, Decimal("200.00"))
+        self.assertEqual(p.capital_restant_du(date(2034, 11, 30)), Decimal("100000"))
+        self.assertEqual(p.capital_restant_du(date(2034, 12, 1)), Decimal("0"))
+
+    def test_etat_et_exports(self):
+        self.client.force_login(User.objects.create_superuser("admin", "a@example.com", "x"))
+        r = self.client.get("/etats/endettement/", {"date": "2020-01-31"})
+        self.assertEqual(r.context["total"]["restant"], Decimal("199390.80"))
+        self.assertIn("199390,80", self.client.get("/etats/endettement/", {"date": "2020-01-31", "format": "csv"}).content.decode("utf-8-sig"))
+        self.assertEqual(self.client.get("/etats/endettement/", {"format": "pdf"})["Content-Type"], "application/pdf")
+        self.assertEqual(self.client.get(f"/prets/{self.pret.pk}/amortissement.pdf").status_code, 200)

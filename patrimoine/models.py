@@ -446,3 +446,84 @@ class MouvementDepot(models.Model):
         return self.montant if self.type == self.Type.ENCAISSEMENT else -self.montant
 
 
+
+
+class Pret(models.Model):
+    """Emprunt immobilier. L'échéancier est recalculé à partir des conditions du prêt."""
+
+    class Type(models.TextChoices):
+        AMORTISSABLE = "amortissable", "Amortissable (mensualités constantes)"
+        IN_FINE = "in_fine", "In fine (intérêts seuls, capital à la fin)"
+
+    proprietaire = models.ForeignKey(Proprietaire, on_delete=models.PROTECT, related_name="prets", verbose_name="emprunteur")
+    bien = models.ForeignKey(Bien, on_delete=models.SET_NULL, null=True, blank=True, related_name="prets", help_text="Bien financé (facultatif)")
+    banque = models.CharField(max_length=100)
+    reference = models.CharField("n° de prêt", max_length=50, blank=True)
+    type = models.CharField(max_length=15, choices=Type.choices, default=Type.AMORTISSABLE)
+    montant = models.DecimalField("capital emprunté (€)", max_digits=12, decimal_places=2)
+    taux = models.DecimalField("taux nominal annuel (%)", max_digits=5, decimal_places=3)
+    duree_mois = models.PositiveSmallIntegerField("durée (mois)")
+    date_premiere_echeance = models.DateField("date de la 1re échéance")
+    assurance_mensuelle = models.DecimalField("assurance mensuelle (€)", max_digits=8, decimal_places=2, default=0)
+    notes = models.TextField(blank=True)
+
+    class Meta:
+        verbose_name = "prêt"
+        ordering = ["proprietaire__nom", "date_premiere_echeance"]
+
+    def __str__(self):
+        return f"{self.banque} {self.reference or ''} – {self.montant:.0f} €".replace("  ", " ")
+
+    @property
+    def date_derniere_echeance(self):
+        return _ajouter_mois(self.date_premiere_echeance, self.duree_mois - 1)
+
+    @property
+    def mensualite_hors_assurance(self):
+        t = self.taux / Decimal(1200)
+        if self.type == self.Type.IN_FINE:
+            return (self.montant * t).quantize(Decimal("0.01"))
+        if t == 0:
+            return (self.montant / self.duree_mois).quantize(Decimal("0.01"))
+        return (self.montant * t / (1 - (1 + t) ** -self.duree_mois)).quantize(Decimal("0.01"))
+
+    def echeancier(self):
+        """Liste des échéances : (n°, date, mensualité, intérêts, capital remboursé, assurance, capital restant dû)."""
+        t = self.taux / Decimal(1200)
+        restant = self.montant
+        mensualite = self.mensualite_hors_assurance
+        lignes = []
+        for n in range(1, self.duree_mois + 1):
+            interets = (restant * t).quantize(Decimal("0.01"))
+            if self.type == self.Type.IN_FINE:
+                capital = restant if n == self.duree_mois else Decimal(0)
+            else:
+                capital = restant if n == self.duree_mois else mensualite - interets
+            restant -= capital
+            lignes.append({
+                "numero": n,
+                "date": _ajouter_mois(self.date_premiere_echeance, n - 1),
+                "mensualite": interets + capital,
+                "interets": interets,
+                "capital": capital,
+                "assurance": self.assurance_mensuelle,
+                "restant": restant,
+            })
+        return lignes
+
+    def capital_restant_du(self, a_date):
+        """Capital restant dû après les échéances passées à cette date (incluse)."""
+        restant = self.montant
+        for ligne in self.echeancier():
+            if ligne["date"] > a_date:
+                break
+            restant = ligne["restant"]
+        return restant
+
+    def cumul_annee(self, annee):
+        lignes = [l for l in self.echeancier() if l["date"].year == annee]
+        return {
+            "interets": sum((l["interets"] for l in lignes), Decimal(0)),
+            "capital": sum((l["capital"] for l in lignes), Decimal(0)),
+            "assurance": sum((l["assurance"] for l in lignes), Decimal(0)),
+        }
