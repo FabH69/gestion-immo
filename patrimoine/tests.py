@@ -174,3 +174,25 @@ class DocumentsTests(TestCase):
             self.assertEqual(r["Content-Type"], "application/pdf")
         edl = EtatDesLieux.objects.create(bail=self.bail, type="sortie", date=date(2027, 8, 31), compteur_electricite="12345")
         self.assertEqual(self.client.get(f"/etats-des-lieux/{edl.pk}/document.pdf").status_code, 200)
+
+
+class DepotGarantieTests(TestCase):
+    def test_solde_et_recu(self):
+        from .models import MouvementDepot
+
+        proprio = Proprietaire.objects.create(nom="SCI", type=Proprietaire.Type.SCI_IR)
+        bien = Bien.objects.create(proprietaire=proprio, nom="Immeuble", adresse="1 rue", code_postal="69000", ville="Lyon")
+        lot = Lot.objects.create(bien=bien, designation="Apt", meuble=True)
+        bail = Bail.objects.create(lot=lot, type=Bail.Type.MEUBLE, date_debut=date(2026, 1, 1), loyer_hc=Decimal("500"), depot_garantie=Decimal("1000"))
+        bail.locataires.add(Locataire.objects.create(nom="Martin"))
+        encaissement = MouvementDepot.objects.create(bail=bail, date=date(2026, 1, 1), montant=Decimal("1000"))
+        MouvementDepot.objects.create(bail=bail, type="retenue", date=date(2027, 1, 20), montant=Decimal("150"))
+        MouvementDepot.objects.create(bail=bail, type="restitution", date=date(2027, 1, 20), montant=Decimal("850"))
+        self.assertEqual(bail.depot_detenu, Decimal("0"))
+
+        self.client.force_login(User.objects.create_superuser("admin", "a@example.com", "x"))
+        self.assertEqual(self.client.get(f"/depots/{encaissement.pk}/recu.pdf").status_code, 200)
+        self.assertEqual(self.client.get(f"/baux/{bail.pk}/inventaire-entree.pdf").status_code, 200)
+        r = self.client.get("/admin/patrimoine/mouvementdepot/")
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(r.context["total_detenu"], Decimal("0"))

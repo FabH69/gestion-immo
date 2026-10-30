@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="fr"><head><meta charset="utf-8"><style>{% include "patrimoine/_style_document.css" %}
+@page { @bottom-center { content: none; } }
+.texte { margin: 16pt 0; line-height: 1.6; }
+</style></head>
+<body>
+<h1>REÇU DE DÉPÔT DE GARANTIE</h1>
+<div class="sous-titre">N° DG-{{ m.pk|stringformat:"05d" }}</div>
+<table>
+  <tr><td class="l">Bailleur</td><td><strong>{{ proprietaire.nom }}</strong>{% if proprietaire.representant %}, représenté par {{ proprietaire.representant }}{% endif %}<br>{{ proprietaire.adresse|linebreaksbr }}</td></tr>
+  <tr><td class="l">Locataire{{ locataires|length|pluralize }}</td><td>{% for l in locataires %}<strong>{{ l }}</strong>{% if not forloop.last %}, {% endif %}{% endfor %}</td></tr>
+  <tr><td class="l">Logement</td><td>{{ lot.designation }}, {{ bien.adresse }}, {{ bien.code_postal }} {{ bien.ville }}</td></tr>
+  <tr><td class="l">Bail</td><td>{{ bail.get_type_display }}, prise d'effet le {{ bail.date_debut|date:"d/m/Y" }}</td></tr>
+</table>
+<p class="texte">
+  Je soussigné(e), {{ proprietaire.nom }}, reconnais avoir reçu de
+  {% for l in locataires %}{{ l }}{% if not forloop.last %} et {% endif %}{% endfor %}
+  la somme de <strong>{{ m.montant|floatformat:2 }} €</strong>
+  le {{ m.date|date:"d/m/Y" }} par {{ m.get_mode_display|lower }},
+  à titre de dépôt de garantie pour le logement désigné ci-dessus.
+</p>
+<p class="texte">
+  Ce dépôt ne porte pas intérêt et ne peut être imputé par le locataire sur le dernier loyer.
+  Il sera restitué dans un délai d'un mois à compter de la remise des clés si l'état des lieux de sortie est conforme
+  à l'état des lieux d'entrée, et de deux mois dans le cas contraire, déduction faite, le cas échéant,
+  des sommes restant dues au bailleur et dûment justifiées.
+</p>
+<p>Fait le {{ aujourdhui|date:"d/m/Y" }}</p>
+<div class="signatures">
+  <div>Le bailleur<br><span class="petit">Signature</span></div>
+  <div style="border:none"></div>
+</div>
+</body></html>

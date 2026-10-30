@@ -31,4 +31,6 @@ Puis ouvrir http://127.0.0.1:8000/.
 
 - Fiche d'un **bail** → « Documents pré-remplis » : bail PDF (structure du contrat type de la loi du 6 juillet 1989), fiche d'état des lieux d'entrée ou de sortie à imprimer.
 - Menu **États des lieux** : saisie des compteurs, clés et observations, puis fiche PDF pré-remplie (avec inventaire du mobilier si meublé).
+- Bail meublé : inventaire et état détaillé du mobilier (entrée et sortie).
+- **Dépôts de garantie** : suivis sur un compte séparé des loyers (encaissement, retenues justifiées, restitution), solde détenu par entité, reçu PDF pour chaque encaissement.
 - Les données viennent du propriétaire, du lot (caractéristiques, pièces) et des locataires ; ce qui manque apparaît « à compléter ». Vérifier le bail avec le modèle officiel avant signature.

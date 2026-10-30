@@ -1,4 +1,5 @@
 import calendar
+from decimal import Decimal
 from datetime import date, timedelta
 
 from django.db import models
@@ -170,6 +171,11 @@ class Bail(models.Model):
     @property
     def loyer_cc(self):
         return self.loyer_hc + self.charges
+
+    @property
+    def depot_detenu(self):
+        """Solde du dépôt de garantie encore détenu (compte séparé des loyers)."""
+        return sum((m.montant_signe for m in self.mouvements_depot.all()), Decimal(0))
 
     DUREES_MOIS = {"nu": 36, "meuble": 12, "etudiant": 9, "mobilite": 10, "commercial": 108, "professionnel": 72, "parking": 12}
 
@@ -410,3 +416,33 @@ class EtatDesLieux(models.Model):
 
     def __str__(self):
         return f"EDL {self.get_type_display().lower()} – {self.bail.lot} – {self.date:%d/%m/%Y}"
+
+
+class MouvementDepot(models.Model):
+    """Compte séparé des dépôts de garantie : encaissements, retenues et restitutions, hors loyers."""
+
+    class Type(models.TextChoices):
+        ENCAISSEMENT = "encaissement", "Encaissement"
+        RETENUE = "retenue", "Retenue (dégradations, charges)"
+        RESTITUTION = "restitution", "Restitution au locataire"
+
+    bail = models.ForeignKey(Bail, on_delete=models.PROTECT, related_name="mouvements_depot")
+    type = models.CharField(max_length=15, choices=Type.choices, default=Type.ENCAISSEMENT)
+    date = models.DateField()
+    montant = models.DecimalField("montant (€)", max_digits=10, decimal_places=2, help_text="Toujours positif")
+    mode = models.CharField(max_length=20, choices=Paiement.Mode.choices, default=Paiement.Mode.VIREMENT)
+    justification = models.CharField(max_length=255, blank=True, help_text="Pour une retenue : devis ou facture justificative")
+
+    class Meta:
+        verbose_name = "mouvement de dépôt de garantie"
+        verbose_name_plural = "dépôts de garantie"
+        ordering = ["-date"]
+
+    def __str__(self):
+        return f"{self.get_type_display()} {self.montant} € – {self.bail.lot}"
+
+    @property
+    def montant_signe(self):
+        return self.montant if self.type == self.Type.ENCAISSEMENT else -self.montant
+
+

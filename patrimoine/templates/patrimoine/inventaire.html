@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="fr"><head><meta charset="utf-8"><style>{% include "patrimoine/_style_document.css" %}
+  table.grille td { height: 18pt; }
+  table.grille th.etat { width: 7%; text-align: center; }
+  table.grille td.c { text-align: center; }
+  .piece { page-break-inside: avoid; }
+  .legende { font-size: 8pt; color: #555; margin: 4pt 0 8pt; }
+</style></head>
+<body>
+<h1>INVENTAIRE ET ÉTAT DÉTAILLÉ DU MOBILIER</h1>
+<div class="sous-titre">Annexe au bail meublé · établi le ________________ à l'{% if type_edl == "sortie" %}sortie{% else %}entrée{% endif %} dans les lieux</div>
+<table>
+  <tr><td class="l">Bailleur</td><td><strong>{{ proprietaire.nom }}</strong>{% if proprietaire.representant %}, représenté par {{ proprietaire.representant }}{% endif %}</td></tr>
+  <tr><td class="l">Locataire{{ locataires|length|pluralize }}</td><td>{% for l in locataires %}<strong>{{ l }}</strong>{% if not forloop.last %}, {% endif %}{% endfor %}</td></tr>
+  <tr><td class="l">Logement</td><td>{{ lot.designation }}, {{ bien.adresse }}, {{ bien.code_postal }} {{ bien.ville }}</td></tr>
+</table>
+
+<h2>Mobilier obligatoire (décret n° 2015-981)</h2>
+<div class="legende">Indiquer la quantité, l'état (TB très bon · B bon · U usagé · M mauvais) et les observations.</div>
+<table class="grille">
+  <tr><th style="width:40%">Élément</th><th style="width:8%">Qté</th><th class="etat">TB</th><th class="etat">B</th><th class="etat">U</th><th class="etat">M</th><th>Observations</th></tr>
+  {% for element in inventaire %}<tr><td>{{ element }}</td><td></td><td class="c">☐</td><td class="c">☐</td><td class="c">☐</td><td class="c">☐</td><td></td></tr>{% endfor %}
+</table>
+
+<h2>Mobilier et équipements par pièce</h2>
+{% for piece in pieces %}
+<div class="piece">
+<h3>{{ piece }}</h3>
+<table class="grille">
+  <tr><th style="width:40%">Élément</th><th style="width:8%">Qté</th><th class="etat">TB</th><th class="etat">B</th><th class="etat">U</th><th class="etat">M</th><th>Observations</th></tr>
+  {% for i in lignes_libres %}<tr><td></td><td></td><td class="c">☐</td><td class="c">☐</td><td class="c">☐</td><td class="c">☐</td><td></td></tr>{% endfor %}
+</table>
+</div>
+{% endfor %}
+
+<div class="signatures">
+  <div>Le bailleur<br><span class="petit">Signature</span></div>
+  <div>{% if locataires|length > 1 %}Les locataires{% else %}Le locataire{% endif %}<br><span class="petit">Signature</span></div>
+</div>
+</body></html>

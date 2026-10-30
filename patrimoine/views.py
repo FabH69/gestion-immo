@@ -11,7 +11,7 @@ from weasyprint import HTML
 
 from .documents import ELEMENTS_PIECE, INVENTAIRE_MEUBLE, duree_texte
 from .etats import loyers_encaisses
-from .models import Bail, Echeance, EtatDesLieux, Proprietaire
+from .models import Bail, Echeance, EtatDesLieux, MouvementDepot, Proprietaire
 
 
 @staff_member_required
@@ -135,3 +135,19 @@ def document_etat_des_lieux_vierge(request, pk, type_edl):
     """Fiche pré-remplie depuis le bail, sans état des lieux enregistré (à imprimer avant le rendez-vous)."""
     bail = get_object_or_404(Bail.objects.select_related("lot__bien__proprietaire"), pk=pk)
     return _rendu_edl(bail, EtatDesLieux(bail=bail, type=type_edl, date=None))
+
+
+@staff_member_required
+def document_inventaire(request, pk, type_edl):
+    bail = get_object_or_404(Bail.objects.select_related("lot__bien__proprietaire"), pk=pk)
+    contexte = _contexte_bail(bail)
+    contexte.update(type_edl=type_edl, pieces=bail.lot.liste_pieces(), inventaire=INVENTAIRE_MEUBLE, lignes_libres=range(5))
+    return _pdf(render_to_string("patrimoine/inventaire.html", contexte), f"inventaire {type_edl} {bail.lot}")
+
+
+@staff_member_required
+def document_recu_depot(request, pk):
+    m = get_object_or_404(MouvementDepot.objects.select_related("bail__lot__bien__proprietaire"), pk=pk, type=MouvementDepot.Type.ENCAISSEMENT)
+    contexte = _contexte_bail(m.bail)
+    contexte.update(m=m, aujourdhui=timezone.localdate())
+    return _pdf(render_to_string("patrimoine/recu_depot.html", contexte), f"recu depot garantie {m.bail.lot}")

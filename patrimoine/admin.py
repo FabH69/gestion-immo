@@ -6,7 +6,7 @@ from django.urls import path, reverse
 from django.utils import timezone
 from django.utils.html import format_html
 
-from .models import Bail, Bien, ChangementLocataire, Echeance, EtatDesLieux, Locataire, Lot, Paiement, Proprietaire, Tache
+from .models import Bail, Bien, ChangementLocataire, Echeance, EtatDesLieux, MouvementDepot, Locataire, Lot, Paiement, Proprietaire, Tache
 
 admin.site.site_header = "Gestion immobilière"
 admin.site.site_title = "Gestion immobilière"
@@ -25,6 +25,20 @@ class LotInline(admin.TabularInline):
     fields = ["designation", "type", "surface", "meuble"]
     extra = 0
     show_change_link = True
+
+
+class MouvementDepotInline(admin.TabularInline):
+    model = MouvementDepot
+    fields = ["date", "type", "montant", "mode", "justification", "recu"]
+    readonly_fields = ["recu"]
+    extra = 0
+    verbose_name_plural = "Dépôt de garantie (compte séparé)"
+
+    @admin.display(description="reçu")
+    def recu(self, obj):
+        if obj.pk and obj.type == MouvementDepot.Type.ENCAISSEMENT:
+            return format_html('<a href="{}" target="_blank">Reçu PDF</a>', reverse("document_recu_depot", args=[obj.pk]))
+        return "–"
 
 
 class BailInline(admin.TabularInline):
@@ -101,6 +115,7 @@ class BailAdmin(admin.ModelAdmin):
         ("Clauses particulières", {"fields": ["notes"]}),
         ("Documents pré-remplis", {"fields": ["documents"]}),
     ]
+    inlines = [MouvementDepotInline]
 
     @admin.display(description="documents")
     def documents(self, obj):
@@ -111,6 +126,11 @@ class BailAdmin(admin.ModelAdmin):
             (reverse("document_edl_vierge", args=[obj.pk, "entree"]), "Fiche d'état des lieux d'entrée"),
             (reverse("document_edl_vierge", args=[obj.pk, "sortie"]), "Fiche d'état des lieux de sortie"),
         ]
+        if obj.lot.meuble or obj.type in (Bail.Type.MEUBLE, Bail.Type.ETUDIANT, Bail.Type.MOBILITE):
+            liens += [
+                (reverse("document_inventaire", args=[obj.pk, "entree"]), "Inventaire du mobilier (entrée)"),
+                (reverse("document_inventaire", args=[obj.pk, "sortie"]), "Inventaire du mobilier (sortie)"),
+            ]
         return format_html(
             "{}<p class='help'>Les champs manquants apparaissent « à compléter » : complétez la fiche du lot, du locataire ou du propriétaire. "
             "Vérifiez le bail avec le modèle officiel (décret n° 2015-587) avant signature.</p>",
@@ -351,3 +371,32 @@ class EtatDesLieuxAdmin(admin.ModelAdmin):
         if not obj.pk:
             return "Enregistrez pour générer la fiche pré-remplie."
         return format_html('<a href="{}" target="_blank">Fiche PDF pré-remplie</a>', reverse("document_edl", args=[obj.pk]))
+
+
+@admin.register(MouvementDepot)
+class MouvementDepotAdmin(admin.ModelAdmin):
+    list_display = ["date", "type", "montant_affiche", "bail", "mode", "recu"]
+    list_filter = ["type", "bail__lot__bien__proprietaire"]
+    search_fields = ["bail__lot__designation", "bail__locataires__nom"]
+    date_hierarchy = "date"
+    change_list_template = "admin/patrimoine/mouvementdepot/change_list.html"
+
+    @admin.display(description="montant (€)", ordering="montant")
+    def montant_affiche(self, obj):
+        return obj.montant_signe
+
+    @admin.display(description="reçu")
+    def recu(self, obj):
+        if obj.type == MouvementDepot.Type.ENCAISSEMENT:
+            return format_html('<a href="{}" target="_blank">Reçu PDF</a>', reverse("document_recu_depot", args=[obj.pk]))
+        return "–"
+
+    def changelist_view(self, request, extra_context=None):
+        soldes = []
+        for proprio in Proprietaire.objects.all():
+            mouvements = MouvementDepot.objects.filter(bail__lot__bien__proprietaire=proprio)
+            solde = sum((m.montant_signe for m in mouvements), 0)
+            if mouvements.exists():
+                soldes.append((proprio, solde))
+        extra_context = {**(extra_context or {}), "soldes": soldes, "total_detenu": sum(s for _, s in soldes)}
+        return super().changelist_view(request, extra_context)

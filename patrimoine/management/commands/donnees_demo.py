@@ -4,7 +4,7 @@ from decimal import Decimal
 
 from django.core.management.base import BaseCommand
 
-from patrimoine.models import Bail, Bien, ChangementLocataire, Echeance, Locataire, Lot, Paiement, Proprietaire
+from patrimoine.models import Bail, Bien, ChangementLocataire, Echeance, MouvementDepot, Locataire, Lot, Paiement, Proprietaire
 
 
 class Command(BaseCommand):
@@ -48,6 +48,7 @@ class Command(BaseCommand):
         for lot, locs, type_, debut, loyer, charges, depot in baux:
             bail = Bail.objects.create(lot=lot, type=type_, date_debut=debut, loyer_hc=Decimal(loyer), charges=Decimal(charges), depot_garantie=Decimal(depot))
             bail.locataires.set(locs)
+            MouvementDepot.objects.create(bail=bail, date=debut, montant=bail.depot_garantie)
 
         for mois in (9, 10):
             Echeance.generer_pour_mois(date(2026, mois, 1))
