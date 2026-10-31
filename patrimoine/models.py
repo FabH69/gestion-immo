@@ -517,6 +517,11 @@ class Pret(models.Model):
     duree_mois = models.PositiveSmallIntegerField("durée (mois)")
     date_premiere_echeance = models.DateField("date de la 1re échéance")
     assurance_mensuelle = models.DecimalField("assurance mensuelle (€)", max_digits=8, decimal_places=2, default=0)
+    taux_assurance = models.DecimalField(
+        "assurance en % du capital restant dû", max_digits=5, decimal_places=3, null=True, blank=True,
+        help_text="Seulement si la banque calcule l'assurance sur le capital restant dû et l'inclut dans une échéance constante "
+                  "(ex. Caisse d'Épargne) : l'assurance mensuelle ci-dessus est alors ignorée.",
+    )
     notes = models.TextField(blank=True)
 
     class Meta:
@@ -530,9 +535,25 @@ class Pret(models.Model):
     def date_derniere_echeance(self):
         return _ajouter_mois(self.date_premiere_echeance, self.duree_mois - 1)
 
+    @staticmethod
+    def _mensualite(capital, taux_mensuel, duree):
+        if taux_mensuel == 0:
+            return (capital / duree).quantize(Decimal("0.01"))
+        return (capital * taux_mensuel / (1 - (1 + taux_mensuel) ** -duree)).quantize(Decimal("0.01"))
+
+    @property
+    def mensualite_totale(self):
+        """Échéance assurance comprise (constante quand l'assurance est incluse en % du capital restant dû)."""
+        if self.taux_assurance and self.type == self.Type.AMORTISSABLE:
+            return self._mensualite(self.montant, (self.taux + self.taux_assurance) / Decimal(1200), self.duree_mois)
+        return self.mensualite_hors_assurance + self.assurance_mensuelle
+
     @property
     def mensualite_hors_assurance(self):
         t = self.taux / Decimal(1200)
+        if self.taux_assurance and self.type == self.Type.AMORTISSABLE:
+            # Première échéance : la part d'assurance diminue ensuite avec le capital restant dû.
+            return self.mensualite_totale - (self.montant * self.taux_assurance / Decimal(1200)).quantize(Decimal("0.01"))
         if self.type == self.Type.IN_FINE:
             return (self.montant * t).quantize(Decimal("0.01"))
         if t == 0:
@@ -544,11 +565,16 @@ class Pret(models.Model):
         t = self.taux / Decimal(1200)
         restant = self.montant
         mensualite = self.mensualite_hors_assurance
+        assurance_incluse = bool(self.taux_assurance) and self.type == self.Type.AMORTISSABLE
+        totale = self.mensualite_totale
         lignes = []
         for n in range(1, self.duree_mois + 1):
             interets = (restant * t).quantize(Decimal("0.01"))
+            assurance = (restant * self.taux_assurance / Decimal(1200)).quantize(Decimal("0.01")) if assurance_incluse else self.assurance_mensuelle
             if self.type == self.Type.IN_FINE:
                 capital = restant if n == self.duree_mois else Decimal(0)
+            elif assurance_incluse:
+                capital = restant if n == self.duree_mois else totale - interets - assurance
             else:
                 capital = restant if n == self.duree_mois else mensualite - interets
             restant -= capital
@@ -558,7 +584,7 @@ class Pret(models.Model):
                 "mensualite": interets + capital,
                 "interets": interets,
                 "capital": capital,
-                "assurance": self.assurance_mensuelle,
+                "assurance": assurance,
                 "restant": restant,
             })
         return lignes

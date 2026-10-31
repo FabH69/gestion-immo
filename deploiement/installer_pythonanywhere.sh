@@ -23,6 +23,9 @@ export DJANGO_SECRET_KEY="$(cat "$SECRET")" DJANGO_DEBUG=0 DJANGO_ALLOWED_HOSTS=
 echo "2/5 Base de données et fichiers de style…"
 "$VENV/bin/python" manage.py migrate -v0
 "$VENV/bin/python" manage.py collectstatic --noinput -v0
+if [ -f donnees/prets.csv ]; then
+  "$VENV/bin/python" manage.py importer_prets donnees/prets.csv --appliquer | tail -1
+fi
 
 echo "3/5 Vérification des PDF…"
 if "$VENV/bin/python" -c "import weasyprint; weasyprint.HTML(string='<p>ok</p>').write_pdf()" 2>/dev/null; then

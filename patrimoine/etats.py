@@ -70,7 +70,7 @@ def endettement(a_date, proprietaire=None):
         ligne = {
             "pret": pret,
             "montant": pret.montant,
-            "mensualite": (pret.mensualite_hors_assurance + pret.assurance_mensuelle) if restant > 0 else Decimal(0),
+            "mensualite": pret.mensualite_totale if restant > 0 else Decimal(0),
             "interets": pret.cumul_annee(a_date.year)["interets"],
             "restant": restant,
         }

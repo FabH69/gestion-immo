@@ -479,7 +479,7 @@ class PretAdmin(admin.ModelAdmin):
     readonly_fields = ["calculs"]
     fieldsets = [
         (None, {"fields": ["proprietaire", "bien", "banque", "reference", "type"]}),
-        ("Conditions", {"fields": ["montant", "taux", "duree_mois", "date_premiere_echeance", "assurance_mensuelle"]}),
+        ("Conditions", {"fields": ["montant", "taux", "duree_mois", "date_premiere_echeance", "assurance_mensuelle", "taux_assurance"]}),
         ("Calculs", {"fields": ["calculs"]}),
         ("Notes", {"fields": ["notes"]}),
     ]
@@ -491,7 +491,7 @@ class PretAdmin(admin.ModelAdmin):
 
     @admin.display(description="mensualité + assur. (€)")
     def mensualite(self, obj):
-        return obj.mensualite_hors_assurance + obj.assurance_mensuelle
+        return obj.mensualite_totale
 
     @admin.display(description="fin")
     def fin(self, obj):

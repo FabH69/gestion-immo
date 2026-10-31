@@ -499,3 +499,16 @@ class TableauDeBordTests(TestCase):
         bail.refresh_from_db()
         self.assertEqual(bail.date_derniere_revision, echeance)
         self.assertNotIn("Réviser le loyer", self.client.get("/admin/").content.decode())
+
+
+class PretAssuranceIncluseTests(TestCase):
+    def test_echeance_constante_assurance_sur_capital_restant(self):
+        # Tableau Caisse d'Épargne : 92 233,74 € à 3,13 % + assurance 0,64 %, échéance constante de 547,80 €.
+        from .models import Pret
+        proprio = Proprietaire.objects.create(nom="X", type=Proprietaire.Type.NOM_PROPRE)
+        pret = Pret(proprietaire=proprio, banque="CE", montant=Decimal("92233.74"), taux=Decimal("3.13"),
+                    taux_assurance=Decimal("0.64"), duree_mois=240, date_premiere_echeance=date(2025, 10, 10))
+        self.assertEqual(pret.mensualite_totale, Decimal("547.80"))
+        premiere = pret.echeancier()[0]
+        self.assertEqual((premiere["capital"], premiere["interets"], premiere["assurance"]), (Decimal("258.03"), Decimal("240.58"), Decimal("49.19")))
+        self.assertEqual(pret.capital_restant_du(date(2026, 12, 10)), Decimal("88276.98"))
