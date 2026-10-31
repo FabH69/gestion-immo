@@ -117,9 +117,31 @@ table.etat tr.bien td { background: var(--selected-bg) !important; color: var(--
 .a-faire .detail { font-weight: 400; color: var(--body-quiet-color); font-size: .82rem; margin-top: 2px; }
 .a-faire td.action { text-align: right; width: 1%; }
 .a-faire button.fait { padding: 5px 14px; font-size: .78rem; cursor: pointer; }
-.a-faire .pastille-retard { margin-left: 8px; padding: 2px 10px; border-radius: 999px; background: #fdecea; color: #c62828; font-size: .75rem; }
+.a-faire .pastille-retard { white-space: nowrap; margin-left: 8px; padding: 2px 10px; border-radius: 999px; background: #fdecea; color: #c62828; font-size: .75rem; }
 .a-faire .ajout-rappel { float: right; font-weight: 500; font-size: .82rem; }
 #content-main { max-width: 1100px; }
 .dashboard #content { width: auto; max-width: 1240px; }
 .dashboard #content-main { width: 64%; }
 .dashboard #content-related { width: 30%; }
+
+/* Menu principal dans le bandeau */
+#menu-principal { flex-basis: 100%; display: flex; flex-wrap: wrap; gap: 4px; margin-top: 10px; }
+#menu-principal .menu { position: relative; }
+#menu-principal .menu-lien, #menu-principal .menu-titre { display: block; padding: 7px 12px; border-radius: var(--radius-sm); color: var(--header-link-color); font-weight: 500; cursor: pointer; }
+#menu-principal .menu-lien:hover, #menu-principal .menu:hover .menu-titre, #menu-principal .menu:focus-within .menu-titre { background: rgba(255,255,255,.14); text-decoration: none; }
+#menu-principal .menu-liste { display: none; position: absolute; z-index: 1000; top: 100%; left: 0; min-width: 230px; padding: 6px; background: var(--body-bg); border: 1px solid var(--border-color); border-radius: var(--radius); box-shadow: 0 8px 24px rgba(16,24,40,.16); }
+#menu-principal .menu:hover .menu-liste, #menu-principal .menu:focus-within .menu-liste { display: block; }
+#menu-principal .menu-liste a { display: block; padding: 8px 12px; border-radius: var(--radius-sm); color: var(--body-fg); }
+#menu-principal .menu-liste a:hover { background: var(--selected-bg); color: var(--link-hover-color); text-decoration: none; }
+#header { flex-wrap: wrap; }
+@media (max-width: 767px) {
+  #header { padding: 12px 16px; align-items: stretch; flex-wrap: nowrap; }
+  #menu-principal { width: 100%; flex-basis: auto; }
+  #menu-principal .menu-liste { left: 0; min-width: 210px; }
+  .a-faire table, .a-faire tbody, .a-faire caption { display: block; }
+  .a-faire tr { display: grid; grid-template-columns: auto 1fr auto; gap: 4px 10px; padding: 10px 12px; border-bottom: 1px solid var(--hairline-color); }
+  .a-faire td, .a-faire th { padding: 0; border: 0; }
+  .a-faire th { grid-column: 1 / -1; grid-row: 2; }
+  .a-faire td.action { grid-column: 3; grid-row: 1; }
+  .a-faire .ajout-rappel { float: none; display: block; margin-top: 6px; }
+}

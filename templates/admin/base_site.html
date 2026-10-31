@@ -10,4 +10,45 @@
 <div id="site-name"><a href="{% url 'admin:index' %}"><span class="logo">⌂</span> {{ site_header|default:_('Django administration') }}</a></div>
 {% if user.is_anonymous %}{% include "admin/color_theme_toggle.html" %}{% endif %}
 {% endblock %}
-{% block nav-global %}{% endblock %}
+{% block nav-global %}{% if user.is_active and user.is_staff %}
+<nav id="menu-principal" aria-label="Menu principal">
+  <a class="menu-lien" href="{% url 'admin:index' %}">Accueil</a>
+  <div class="menu" tabindex="0"><span class="menu-titre">Patrimoine ▾</span>
+    <div class="menu-liste">
+      <a href="{% url 'admin:patrimoine_proprietaire_changelist' %}">Propriétaires</a>
+      <a href="{% url 'admin:patrimoine_bien_changelist' %}">Biens</a>
+      <a href="{% url 'admin:patrimoine_lot_changelist' %}">Lots</a>
+    </div>
+  </div>
+  <div class="menu" tabindex="0"><span class="menu-titre">Locations ▾</span>
+    <div class="menu-liste">
+      <a href="{% url 'admin:patrimoine_bail_changelist' %}">Baux</a>
+      <a href="{% url 'admin:patrimoine_locataire_changelist' %}">Locataires</a>
+      <a href="{% url 'admin:patrimoine_garant_changelist' %}">Garants</a>
+      <a href="{% url 'admin:patrimoine_etatdeslieux_changelist' %}">États des lieux</a>
+      <a href="{% url 'admin:patrimoine_changementlocataire_changelist' %}">Changements de locataire</a>
+    </div>
+  </div>
+  <div class="menu" tabindex="0"><span class="menu-titre">Loyers ▾</span>
+    <div class="menu-liste">
+      <a href="{% url 'admin:patrimoine_echeance_changelist' %}">Loyers du mois</a>
+      <a href="{% url 'admin:patrimoine_revisionloyer_changelist' %}">Révisions de loyer</a>
+      <a href="{% url 'admin:patrimoine_mouvementdepot_changelist' %}">Dépôts de garantie</a>
+      <a href="{% url 'etat_loyers_encaisses' %}">État des loyers encaissés</a>
+    </div>
+  </div>
+  <div class="menu" tabindex="0"><span class="menu-titre">Relocation ▾</span>
+    <div class="menu-liste">
+      <a href="{% url 'admin:patrimoine_candidature_changelist' %}">Candidatures</a>
+      <a href="{% url 'admin:patrimoine_annonce_changelist' %}">Annonces</a>
+    </div>
+  </div>
+  <div class="menu" tabindex="0"><span class="menu-titre">Finances ▾</span>
+    <div class="menu-liste">
+      <a href="{% url 'admin:patrimoine_pret_changelist' %}">Prêts</a>
+      <a href="{% url 'etat_endettement' %}">État d'endettement</a>
+    </div>
+  </div>
+  <a class="menu-lien" href="{% url 'admin:patrimoine_rappel_changelist' %}">Rappels</a>
+</nav>
+{% endif %}{% endblock %}
