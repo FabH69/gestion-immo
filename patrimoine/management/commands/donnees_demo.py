@@ -72,7 +72,7 @@ class Command(BaseCommand):
 
         Lot.objects.filter(pk=lots[3].pk).update(chaudiere_gaz=True, date_entretien_chaudiere=date(2025, 11, 20))
         Rappel.objects.create(titre="AG de copropriété – Immeuble des Lilas", date=date(2026, 11, 18), categorie=Rappel.Categorie.AG, bien=immeuble)
-        Rappel.objects.create(titre="Payer la taxe foncière", date=date(2026, 10, 15), categorie=Rappel.Categorie.FISCAL, annuel=True)
+        Rappel.objects.create(titre="Payer la taxe foncière", date=date(2026, 10, 15), categorie=Rappel.Categorie.FISCAL, periodicite=Rappel.Periodicite.ANNUEL)
 
         Garant.objects.create(locataire=martin, bail=Bail.objects.get(lot=lots[0]), civilite="M.", prenom="Pierre", nom="Martin",
                               date_naissance=date(1960, 2, 3), lieu_naissance="Angers", adresse="5 rue Neuve\n49000 Angers", lien="père", duree_mois=36)

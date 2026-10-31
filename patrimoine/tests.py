@@ -278,7 +278,7 @@ class RappelsEtRevisionTests(TestCase):
     def test_bouton_fait(self):
         from .models import Rappel
 
-        r = Rappel.objects.create(titre="Taxe foncière", date=date(2026, 10, 15), annuel=True)
+        r = Rappel.objects.create(titre="Taxe foncière", date=date(2026, 10, 15), periodicite=Rappel.Periodicite.ANNUEL)
         self.client.post(f"/rappels/rappel/{r.pk}/fait/")
         r.refresh_from_db()
         self.assertEqual(r.date, date(2027, 10, 15))
@@ -601,3 +601,28 @@ class LocationCourteDureeTests(TestCase):
         page = self.client.get(f"/location-courte-duree/?lot={self.lot.pk}&annee=2025&mois=2").content.decode()
         self.assertIn("Comparaison avec 2024", page)
         self.assertIn("Taux de remplissage", page)
+
+
+class PeriodiciteRappelsTests(TestCase):
+    def test_mensuel_et_desactivation(self):
+        from .models import Rappel
+        from .rappels import a_faire
+        jour = date(2026, 10, 31)
+        r = Rappel.objects.create(titre="Relever le compteur", date=jour, periodicite=Rappel.Periodicite.MENSUEL)
+        r.marquer_fait()
+        self.assertEqual((r.date, r.fait), (date(2026, 11, 30), False))
+        self.assertIn("Relever le compteur", [i["titre"] for i in a_faire(jour)])
+        r.actif = False
+        r.save()
+        self.assertNotIn("Relever le compteur", [i["titre"] for i in a_faire(jour)])
+
+    def test_rappel_assurance_desactivable(self):
+        from .rappels import a_faire
+        proprio = Proprietaire.objects.create(nom="X", type=Proprietaire.Type.NOM_PROPRE)
+        bien = Bien.objects.create(proprietaire=proprio, nom="B", adresse="1 rue", code_postal="69000", ville="Lyon")
+        lot = Lot.objects.create(bien=bien, designation="A1")
+        bail = Bail.objects.create(lot=lot, type=Bail.Type.NU, date_debut=date(2025, 11, 1), loyer_hc=500, revision_annuelle=False)
+        self.assertIn("Assurance", [i["categorie"] for i in a_faire(date(2026, 10, 31))])
+        bail.rappel_assurance = False
+        bail.save()
+        self.assertNotIn("Assurance", [i["categorie"] for i in a_faire(date(2026, 10, 31))])

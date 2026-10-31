@@ -31,9 +31,10 @@ def a_faire(aujourdhui, horizon_jours=PREAVIS_JOURS):
                     action=reverse("rappel_fait", args=["revision", bail.pk]))
 
         echeance = _ajouter_mois(bail.date_attestation_assurance or bail.date_debut, 12)
-        ajouter(echeance, "Demander l'attestation d'assurance habitation", lieu, "Assurance",
-                reverse("admin:patrimoine_bail_change", args=[bail.pk]),
-                action=reverse("rappel_fait", args=["assurance", bail.pk]))
+        if bail.rappel_assurance:
+            ajouter(echeance, "Demander l'attestation d'assurance habitation", lieu, "Assurance",
+                    reverse("admin:patrimoine_bail_change", args=[bail.pk]),
+                    action=reverse("rappel_fait", args=["assurance", bail.pk]))
 
         if bail.lot.chaudiere_gaz:
             echeance = _ajouter_mois(bail.lot.date_entretien_chaudiere or bail.date_debut, 12)
@@ -41,7 +42,7 @@ def a_faire(aujourdhui, horizon_jours=PREAVIS_JOURS):
                     reverse("admin:patrimoine_lot_change", args=[bail.lot.pk]),
                     action=reverse("rappel_fait", args=["chaudiere", bail.lot.pk]))
 
-    for rappel in Rappel.objects.filter(fait=False).select_related("bien"):
+    for rappel in Rappel.objects.filter(fait=False, actif=True).select_related("bien"):
         ajouter(rappel.date, rappel.titre, str(rappel.bien or ""), rappel.get_categorie_display(),
                 reverse("admin:patrimoine_rappel_change", args=[rappel.pk]),
                 action=reverse("rappel_fait", args=["rappel", rappel.pk]))

@@ -227,7 +227,7 @@ class BailAdmin(admin.ModelAdmin):
         (None, {"fields": ["lot", "locataires", "type", "destination", "date_debut", "date_fin", "actif"]}),
         ("Conditions financières", {"fields": ["loyer_hc", "charges", "mode_charges", "depot_garantie", "jour_echeance", "paiement_a_echoir"]}),
         ("Garantie", {"fields": [("type_garantie", "detail_garantie")], "description": "Les garants se saisissent en bas de page."}),
-        ("Révision annuelle et rappels", {"fields": ["revision_annuelle", ("irl_trimestre", "irl_valeur"), "indice_reference", "date_derniere_revision", "date_attestation_assurance"]}),
+        ("Révision annuelle et rappels", {"fields": ["revision_annuelle", ("irl_trimestre", "irl_valeur"), "indice_reference", "date_derniere_revision", ("date_attestation_assurance", "rappel_assurance")]}),
         ("Clauses particulières", {"fields": ["notes"]}),
         ("Documents pré-remplis", {"fields": ["documents"]}),
     ]
@@ -566,17 +566,27 @@ class PretAdmin(admin.ModelAdmin):
 
 @admin.register(Rappel)
 class RappelAdmin(admin.ModelAdmin):
-    list_display = ["date", "titre", "categorie", "bien", "annuel", "fait"]
-    list_editable = ["fait"]
-    list_filter = ["fait", "categorie", "annuel", "bien"]
+    list_display = ["date", "titre", "categorie", "bien", "periodicite", "actif", "fait"]
+    list_editable = ["actif", "fait"]
+    list_filter = ["actif", "fait", "periodicite", "categorie", "bien"]
+    fields = ["titre", "date", "periodicite", "categorie", "bien", "actif", "fait", "notes"]
     list_display_links = ["titre"]
     search_fields = ["titre", "notes"]
-    actions = ["marquer_fait"]
 
-    @admin.action(description="Marquer comme fait (les rappels annuels passent à l'année suivante)")
+    actions = ["marquer_fait", "desactiver", "reactiver"]
+
+    @admin.action(description="Marquer comme fait (les rappels périodiques passent à l'échéance suivante)")
     def marquer_fait(self, request, queryset):
         for rappel in queryset:
             rappel.marquer_fait()
+
+    @admin.action(description="Désactiver les rappels sélectionnés")
+    def desactiver(self, request, queryset):
+        queryset.update(actif=False)
+
+    @admin.action(description="Réactiver les rappels sélectionnés")
+    def reactiver(self, request, queryset):
+        queryset.update(actif=True)
 
 
 @admin.register(RevisionLoyer)

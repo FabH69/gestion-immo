@@ -194,6 +194,7 @@ class Bail(models.Model):
     revision_annuelle = models.BooleanField("révision annuelle du loyer", default=True)
     date_derniere_revision = models.DateField("dernière révision", null=True, blank=True)
     date_attestation_assurance = models.DateField("dernière attestation d'assurance reçue", null=True, blank=True)
+    rappel_assurance = models.BooleanField("rappel annuel de l'attestation d'assurance", default=True)
     actif = models.BooleanField(default=True)
     notes = models.TextField(blank=True)
     ref_import = models.CharField("référence d'import", max_length=40, blank=True, editable=False, help_text="Identifiant Airtable d'origine")
@@ -648,7 +649,15 @@ class RevisionLoyer(models.Model):
 
 
 class Rappel(models.Model):
-    """Rappel saisi à la main (AG de copropriété, taxe foncière, contrôle…), ponctuel ou annuel."""
+    """Rappel saisi à la main (AG de copropriété, taxe foncière, contrôle…), ponctuel ou périodique."""
+
+    class Periodicite(models.TextChoices):
+        PONCTUEL = "ponctuel", "Une seule fois"
+        MENSUEL = "mensuel", "Tous les mois"
+        TRIMESTRIEL = "trimestriel", "Tous les trimestres"
+        ANNUEL = "annuel", "Tous les ans"
+
+    MOIS_PAR_PERIODE = {"mensuel": 1, "trimestriel": 3, "annuel": 12}
 
     class Categorie(models.TextChoices):
         AG = "ag", "Assemblée générale"
@@ -661,7 +670,8 @@ class Rappel(models.Model):
     date = models.DateField()
     categorie = models.CharField("catégorie", max_length=20, choices=Categorie.choices, default=Categorie.AUTRE)
     bien = models.ForeignKey(Bien, on_delete=models.CASCADE, null=True, blank=True, related_name="rappels")
-    annuel = models.BooleanField("se répète chaque année", default=False)
+    periodicite = models.CharField("périodicité", max_length=12, choices=Periodicite.choices, default=Periodicite.PONCTUEL)
+    actif = models.BooleanField(default=True, help_text="Décocher pour arrêter un rappel périodique sans le supprimer")
     fait = models.BooleanField(default=False)
     notes = models.TextField(blank=True)
 
@@ -673,9 +683,9 @@ class Rappel(models.Model):
         return self.titre
 
     def marquer_fait(self):
-        """Un rappel annuel passe à l'année suivante ; un rappel ponctuel est clos."""
-        if self.annuel:
-            self.date = _ajouter_mois(self.date, 12)
+        """Un rappel périodique passe à l'échéance suivante ; un rappel ponctuel est clos."""
+        if self.periodicite in self.MOIS_PAR_PERIODE:
+            self.date = _ajouter_mois(self.date, self.MOIS_PAR_PERIODE[self.periodicite])
         else:
             self.fait = True
         self.save()
