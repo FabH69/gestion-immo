@@ -853,3 +853,21 @@ class Annonce(models.Model):
         if not self.texte:
             self.texte = self.texte_genere()
         super().save(*args, **kwargs)
+
+
+class JournalFait(models.Model):
+    """Trace des rappels cochés « Fait » depuis l'accueil, pour le filtre « Déjà fait »."""
+
+    date = models.DateField(auto_now_add=True)
+    titre = models.CharField(max_length=200)
+    detail = models.CharField("détail", max_length=255, blank=True)
+    categorie = models.CharField("catégorie", max_length=50)
+    url = models.CharField(max_length=255, blank=True)
+
+    class Meta:
+        verbose_name = "rappel fait"
+        verbose_name_plural = "rappels faits"
+        ordering = ["-date", "-pk"]
+
+    def __str__(self):
+        return f"{self.titre} ({self.date:%d/%m/%Y})"

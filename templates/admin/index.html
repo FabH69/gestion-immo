@@ -1,13 +1,8 @@
 {% extends "admin/index.html" %}
 {% load tableau_bord %}
 {% block content %}
+<div id="content-main">
 {% bloc_a_faire %}
-<div class="module" style="margin-bottom:20px">
-  <table style="width:100%">
-    <caption>États</caption>
-    <tr><th scope="row"><a href="{% url 'etat_loyers_encaisses' %}">Loyers encaissés par mois et par année</a></th></tr>
-    <tr><th scope="row"><a href="{% url 'etat_endettement' %}">Endettement : capital restant dû à une date</a></th></tr>
-  </table>
 </div>
-{{ block.super }}
 {% endblock %}
+{% block sidebar %}{% endblock %}

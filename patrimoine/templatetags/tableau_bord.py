@@ -1,12 +1,18 @@
 from django import template
 from django.utils import timezone
 
-from patrimoine.rappels import a_faire
+from patrimoine.rappels import HISTORIQUE_JOURS, a_faire, deja_fait
 
 register = template.Library()
 
 
 @register.inclusion_tag("patrimoine/_a_faire.html", takes_context=True)
 def bloc_a_faire(context):
-    items = a_faire(timezone.localdate())
-    return {"items": items, "nb_retard": sum(i["en_retard"] for i in items), "csrf_token": context.get("csrf_token")}
+    aujourdhui = timezone.localdate()
+    request = context.get("request")
+    vue = "fait" if request and request.GET.get("vue") == "fait" else "a_faire"
+    items = a_faire(aujourdhui)
+    contexte = {"vue": vue, "nb_a_faire": len(items), "nb_retard": sum(i["en_retard"] for i in items),
+                "historique_jours": HISTORIQUE_JOURS, "csrf_token": context.get("csrf_token")}
+    contexte["items"] = deja_fait(aujourdhui) if vue == "fait" else items
+    return contexte

@@ -34,7 +34,6 @@
       <a href="{% url 'admin:patrimoine_echeance_changelist' %}">Loyers du mois</a>
       <a href="{% url 'admin:patrimoine_revisionloyer_changelist' %}">Révisions de loyer</a>
       <a href="{% url 'admin:patrimoine_mouvementdepot_changelist' %}">Dépôts de garantie</a>
-      <a href="{% url 'etat_loyers_encaisses' %}">État des loyers encaissés</a>
     </div>
   </div>
   <div class="menu" tabindex="0"><span class="menu-titre">Relocation ▾</span>
@@ -46,9 +45,21 @@
   <div class="menu" tabindex="0"><span class="menu-titre">Finances ▾</span>
     <div class="menu-liste">
       <a href="{% url 'admin:patrimoine_pret_changelist' %}">Prêts</a>
-      <a href="{% url 'etat_endettement' %}">État d'endettement</a>
+    </div>
+  </div>
+  <div class="menu" tabindex="0"><span class="menu-titre">États ▾</span>
+    <div class="menu-liste">
+      <a href="{% url 'etat_loyers_encaisses' %}">Loyers encaissés par mois et par année</a>
+      <a href="{% url 'etat_endettement' %}">Endettement : capital restant dû à une date</a>
     </div>
   </div>
   <a class="menu-lien" href="{% url 'admin:patrimoine_rappel_changelist' %}">Rappels</a>
+  <div class="menu" tabindex="0"><span class="menu-titre">Réglages ▾</span>
+    <div class="menu-liste">
+      <a href="{% url 'admin:auth_user_changelist' %}">Utilisateurs</a>
+      <a href="{% url 'admin:auth_group_changelist' %}">Groupes</a>
+      <a href="{% url 'admin:password_change' %}">Changer mon mot de passe</a>
+    </div>
+  </div>
 </nav>
 {% endif %}{% endblock %}

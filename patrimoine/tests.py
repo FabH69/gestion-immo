@@ -466,3 +466,22 @@ class ImportAirtableCompletTests(TestCase):
         self.assertEqual((a2.type, a2.locataires.get().prenom, a2.lot.meuble), (Bail.Type.MEUBLE, "Christelle", True))
         self.assertEqual(sorted(a2.garants.values_list("prenom", flat=True)), ["Anne", "Paul"])
         self.assertEqual((a1.type_garantie, a2.type_garantie), ("visale", "garant"))
+
+
+class TableauDeBordTests(TestCase):
+    def setUp(self):
+        self.user = User.objects.create_superuser("admin", "", "x")
+        self.client.force_login(self.user)
+
+    def test_filtre_a_faire_et_deja_fait(self):
+        from .models import JournalFait, Rappel
+        rappel = Rappel.objects.create(titre="AG copropriété", date=timezone.localdate())
+        page = self.client.get("/admin/").content.decode()
+        self.assertIn("AG copropriété", page)
+        self.assertNotIn("Authentification", page)
+        self.assertNotIn("Loyers encaissés par mois et par année</a></th>", page)
+        self.client.post(f"/rappels/rappel/{rappel.pk}/fait/")
+        self.assertNotIn("AG copropriété", self.client.get("/admin/").content.decode())
+        fait = self.client.get("/admin/?vue=fait").content.decode()
+        self.assertIn("AG copropriété", fait)
+        self.assertEqual(JournalFait.objects.count(), 1)

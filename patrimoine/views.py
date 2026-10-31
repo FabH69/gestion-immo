@@ -19,7 +19,7 @@ from weasyprint import HTML
 from .documents import ELEMENTS_PIECE, INVENTAIRE_MEUBLE, duree_texte
 from .etats import endettement, loyers_encaisses
 from .forms import CandidatureForm
-from .models import Bail, Candidature, Echeance, EtatDesLieux, Garant, Lot, MouvementDepot, Pret, Proprietaire, Rappel, RevisionLoyer, Tache
+from .models import Bail, Candidature, Echeance, EtatDesLieux, Garant, JournalFait, Lot, MouvementDepot, Pret, Proprietaire, Rappel, RevisionLoyer, Tache
 
 
 @staff_member_required
@@ -206,19 +206,33 @@ def document_amortissement(request, pk):
     return _pdf(render_to_string("patrimoine/amortissement_pdf.html", {"pret": pret, "lignes": lignes}), f"amortissement {pret.banque} {pret.reference}")
 
 
+def _lieu(bail):
+    noms = ", ".join(str(l) for l in bail.locataires.all())
+    return f"{bail.lot} – {noms}" if noms else str(bail.lot)
+
+
 @staff_member_required
 @require_POST
 def rappel_fait(request, type_rappel, pk):
     """Bouton « Fait » du bloc À faire de la page d'accueil."""
     aujourdhui = timezone.localdate()
     if type_rappel == "assurance":
+        bail = get_object_or_404(Bail, pk=pk)
         Bail.objects.filter(pk=pk).update(date_attestation_assurance=aujourdhui)
+        JournalFait.objects.create(titre="Attestation d'assurance habitation reçue", detail=_lieu(bail), categorie="Assurance",
+                                   url=reverse("admin:patrimoine_bail_change", args=[pk]))
         messages.success(request, "Attestation d'assurance notée comme reçue aujourd'hui.")
     elif type_rappel == "chaudiere":
+        lot = get_object_or_404(Lot, pk=pk)
         Lot.objects.filter(pk=pk).update(date_entretien_chaudiere=aujourdhui)
+        JournalFait.objects.create(titre="Attestation d'entretien de la chaudière reçue", detail=str(lot), categorie="Chaudière",
+                                   url=reverse("admin:patrimoine_lot_change", args=[pk]))
         messages.success(request, "Entretien de la chaudière noté à la date d'aujourd'hui.")
     elif type_rappel == "rappel":
-        get_object_or_404(Rappel, pk=pk).marquer_fait()
+        rappel = get_object_or_404(Rappel, pk=pk)
+        JournalFait.objects.create(titre=rappel.titre, detail=str(rappel.bien or ""), categorie=rappel.get_categorie_display(),
+                                   url=reverse("admin:patrimoine_rappel_change", args=[pk]))
+        rappel.marquer_fait()
         messages.success(request, "Rappel marqué comme fait.")
     elif type_rappel == "tache":
         tache = get_object_or_404(Tache, pk=pk)

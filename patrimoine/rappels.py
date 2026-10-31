@@ -3,9 +3,10 @@ from datetime import timedelta
 
 from django.urls import reverse
 
-from .models import Bail, Rappel, Tache, _ajouter_mois
+from .models import Bail, JournalFait, Rappel, RevisionLoyer, Tache, _ajouter_mois
 
 PREAVIS_JOURS = 30
+HISTORIQUE_JOURS = 90
 
 
 def a_faire(aujourdhui, horizon_jours=PREAVIS_JOURS):
@@ -51,3 +52,18 @@ def a_faire(aujourdhui, horizon_jours=PREAVIS_JOURS):
                 action=reverse("rappel_fait", args=["tache", t.pk]))
 
     return sorted(items, key=lambda i: i["date"])
+
+
+def deja_fait(aujourdhui, jours=HISTORIQUE_JOURS):
+    """Ce qui a été fait ces derniers jours : rappels cochés, tâches de check-list, révisions appliquées."""
+    depuis = aujourdhui - timedelta(days=jours)
+    items = [{"date": j.date, "titre": j.titre, "detail": j.detail, "categorie": j.categorie, "url": j.url}
+             for j in JournalFait.objects.filter(date__gte=depuis)]
+    for t in Tache.objects.filter(faite=True, date_faite__gte=depuis).select_related("changement__lot__bien"):
+        items.append({"date": t.date_faite, "titre": t.libelle, "detail": str(t.changement.lot), "categorie": "Changement de locataire",
+                      "url": reverse("admin:patrimoine_changementlocataire_change", args=[t.changement_id])})
+    revisions = RevisionLoyer.objects.filter(appliquee=True, date_effet__gte=depuis, date_effet__lte=aujourdhui).select_related("bail__lot__bien")
+    for r in revisions:
+        items.append({"date": r.date_effet, "titre": f"Loyer révisé : {r.ancien_loyer} € → {r.nouveau_loyer} €", "detail": str(r.bail.lot),
+                      "categorie": "Révision", "url": reverse("admin:patrimoine_revisionloyer_change", args=[r.pk])})
+    return sorted(items, key=lambda i: i["date"], reverse=True)
