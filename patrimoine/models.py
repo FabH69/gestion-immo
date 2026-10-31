@@ -92,6 +92,7 @@ class Lot(models.Model):
     zone_tendue = models.BooleanField("zone tendue", default=False)
     pdl = models.CharField("n° PDL électricité", max_length=20, blank=True)
     vendu = models.BooleanField(default=False, help_text="Lot vendu : conservé pour l'historique")
+    date_vente = models.DateField("date de vente", null=True, blank=True)
     ref_import = models.CharField("référence d'import", max_length=40, blank=True, editable=False, help_text="Identifiant Airtable d'origine")
     loyer_propose = models.DecimalField(
         "loyer proposé à la location, charges comprises (€)", max_digits=10, decimal_places=2, null=True, blank=True,

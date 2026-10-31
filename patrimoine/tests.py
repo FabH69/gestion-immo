@@ -512,3 +512,22 @@ class PretAssuranceIncluseTests(TestCase):
         premiere = pret.echeancier()[0]
         self.assertEqual((premiere["capital"], premiere["interets"], premiere["assurance"]), (Decimal("258.03"), Decimal("240.58"), Decimal("49.19")))
         self.assertEqual(pret.capital_restant_du(date(2026, 12, 10)), Decimal("88276.98"))
+
+
+class ListesPresentVenduTests(TestCase):
+    def test_colonnes_present_et_vendu(self):
+        self.client.force_login(User.objects.create_superuser("admin", "", "x"))
+        proprio = Proprietaire.objects.create(nom="SCI X", type=Proprietaire.Type.SCI_IR)
+        bien = Bien.objects.create(proprietaire=proprio, nom="B", adresse="1 rue", code_postal="69000", ville="Lyon")
+        lot = Lot.objects.create(bien=bien, designation="A1")
+        parti, present = Locataire.objects.create(nom="PARTI"), Locataire.objects.create(nom="PRESENT")
+        Bail.objects.create(lot=lot, type=Bail.Type.NU, date_debut=date(2020, 1, 1), date_fin=date(2023, 6, 30), loyer_hc=500, actif=False).locataires.add(parti)
+        Bail.objects.create(lot=lot, type=Bail.Type.NU, date_debut=date(2023, 7, 1), loyer_hc=500).locataires.add(present)
+        page = self.client.get("/admin/patrimoine/locataire/?present=non").content.decode()
+        self.assertIn("PARTI", page)
+        self.assertIn("30/06/2023", page)
+        self.assertNotIn("PRESENT", page)
+        Lot.objects.create(bien=bien, designation="Vieux", vendu=True, date_vente=date(2024, 3, 1))
+        page = self.client.get("/admin/patrimoine/lot/?vendu__exact=1").content.decode()
+        self.assertIn("Vieux", page)
+        self.assertNotIn(">A1<", page)

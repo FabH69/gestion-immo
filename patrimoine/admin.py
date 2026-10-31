@@ -119,8 +119,8 @@ class BienAdmin(admin.ModelAdmin):
 
 @admin.register(Lot)
 class LotAdmin(admin.ModelAdmin):
-    list_display = ["designation", "bien", "type", "surface", "meuble", "locataire_actuel", "loyer_actuel"]
-    list_filter = ["bien__proprietaire", "bien", "type", "meuble"]
+    list_display = ["designation", "bien", "type", "surface", "meuble", "locataire_actuel", "loyer_actuel", "vendu", "date_vente"]
+    list_filter = ["vendu", "bien__proprietaire", "bien", "type", "meuble"]
     search_fields = ["designation", "bien__nom"]
     inlines = [BailInline, PhotoInline]
     readonly_fields = ["outils_relocation"]
@@ -143,11 +143,20 @@ class LotAdmin(admin.ModelAdmin):
         ("Chaudière gaz", {"fields": ["chaudiere_gaz", "date_entretien_chaudiere"]}),
         ("Relocation et annonce", {"fields": ["loyer_propose", ("classe_ges", "energie_annee"), ("energie_min", "energie_max"), "outils_relocation"]}),
         ("État des lieux", {"fields": ["pieces"]}),
+        ("Compteurs", {"fields": ["pdl"]}),
+        ("Vente", {"fields": [("vendu", "date_vente")]}),
         ("Notes", {"fields": ["notes"]}),
     ]
 
+    def save_model(self, request, obj, form, change):
+        if obj.date_vente:
+            obj.vendu = True
+        super().save_model(request, obj, form, change)
+
     @admin.display(description="locataire")
     def locataire_actuel(self, obj):
+        if obj.vendu:
+            return "–"
         bail = obj.bail_actif
         return ", ".join(str(l) for l in bail.locataires.all()) if bail else "Vacant"
 
@@ -157,12 +166,49 @@ class LotAdmin(admin.ModelAdmin):
         return bail.loyer_cc if bail else "–"
 
 
+class PresentFilter(admin.SimpleListFilter):
+    title = "présent"
+    parameter_name = "present"
+
+    def lookups(self, request, model_admin):
+        return [("oui", "Oui"), ("non", "Non (parti)")]
+
+    def queryset(self, request, queryset):
+        if self.value() == "oui":
+            return queryset.filter(baux__actif=True).distinct()
+        if self.value() == "non":
+            return queryset.exclude(baux__actif=True)
+        return queryset
+
+
 @admin.register(Locataire)
 class LocataireAdmin(admin.ModelAdmin):
-    list_display = ["__str__", "email", "telephone", "liste_garants"]
+    list_display = ["__str__", "present", "logement", "date_sortie", "email", "telephone", "liste_garants"]
+    list_filter = [PresentFilter]
     search_fields = ["nom", "prenom", "email"]
     exclude = ["garant"]
     inlines = [GarantInline]
+
+    @admin.display(description="présent", boolean=True)
+    def present(self, obj):
+        """Présent = au moins un bail en cours (décocher « actif » sur le bail au départ du locataire)."""
+        return any(b.actif for b in obj.baux.all())
+
+    @admin.display(description="logement")
+    def logement(self, obj):
+        baux = sorted(obj.baux.all(), key=lambda b: (b.actif, b.date_debut), reverse=True)
+        return str(baux[0].lot) if baux else "–"
+
+    @admin.display(description="sorti le")
+    def date_sortie(self, obj):
+        baux = list(obj.baux.all())
+        if not baux or any(b.actif for b in baux):
+            return "–"
+        fins = [b.date_fin for b in baux if b.date_fin]
+        return max(fins).strftime("%d/%m/%Y") if fins else "date inconnue"
+
+    def get_queryset(self, request):
+        return super().get_queryset(request).prefetch_related("baux__lot__bien", "garants")
 
     @admin.display(description="garants")
     def liste_garants(self, obj):
