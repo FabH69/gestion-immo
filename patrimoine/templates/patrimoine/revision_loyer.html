@@ -34,7 +34,7 @@
       <label for="nouvel_irl">Nouvel IRL : valeur</label><div><input type="text" id="nouvel_irl" name="nouvel_irl" placeholder="ex. 146,12"><div class="calc">Valeur publiée par l'INSEE : <a href="https://www.insee.fr/fr/statistiques/serie/001515333" target="_blank" rel="noopener">série IRL sur insee.fr</a></div></div>
       <label>Nouveau loyer</label><div class="resultat" id="apercu">–</div>
     </div>
-    <div class="actions"><button type="submit" class="button default">Enregistrer la révision</button></div>
+    <div class="actions"><button type="submit" class="button default">Enregistrer la révision</button> <a href="{% url 'admin:index' %}" class="button annuler">Annuler</a></div>
   </form>
   <script>
   (function () {

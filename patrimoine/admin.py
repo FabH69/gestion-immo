@@ -10,6 +10,7 @@ from django.utils.html import format_html, format_html_join
 from .models import Annonce, Bail, Bien, Candidature, ChangementLocataire, Garant, PhotoLot, Echeance, EtatDesLieux, MouvementDepot, Pret, Rappel, RevisionLoyer, Locataire, Lot, Paiement, Proprietaire, Tache
 
 admin.site.site_header = "Gestion immobilière"
+admin.site.enable_nav_sidebar = False  # remplacé par le menu du bandeau
 admin.site.site_title = "Gestion immobilière"
 admin.site.index_title = "Tableau de bord"
 

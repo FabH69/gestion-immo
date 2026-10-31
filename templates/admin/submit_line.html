@@ -1,0 +1,9 @@
+{% extends "admin/submit_line.html" %}
+{% load i18n admin_urls %}
+{% block submit-row %}
+{{ block.super }}
+{% if not show_close %}
+    {% url opts|admin_urlname:'changelist' as changelist_url %}
+    <a href="{% add_preserved_filters changelist_url %}" class="annuler" title="Quitter sans enregistrer">Annuler</a>
+{% endif %}
+{% endblock %}
