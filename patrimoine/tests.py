@@ -562,3 +562,42 @@ class PlusValueTests(TestCase):
         page = self.client.get("/simulations/plus-value/?date_acquisition=2010-01-01&prix_acquisition=200000&date_cession=2026-06-01&prix_cession=300+000").content.decode()
         self.assertIn("11", page)
         self.assertIn("Total à payer", page)
+
+
+class LocationCourteDureeTests(TestCase):
+    def setUp(self):
+        proprio = Proprietaire.objects.create(nom="X", type=Proprietaire.Type.NOM_PROPRE)
+        bien = Bien.objects.create(proprietaire=proprio, nom="Chasselay", adresse="1 rue", code_postal="69380", ville="Chasselay")
+        self.lot = Lot.objects.create(bien=bien, designation="Chasselay", meuble=True)
+
+    def importer(self, contenu, nom="export.csv"):
+        import io
+        from . import lcd
+        return lcd.importer(self.lot, io.BytesIO(contenu.encode("utf-8")), nom)
+
+    def test_import_booking_et_airbnb_sans_doublon(self):
+        from .models import ParametresLCD, ReservationLCD
+        booking = ("Type,Reference number,Check-in,Checkout,Guest name,Reservation status,Currency,Payment status,Tourism tax,Amount,Commission,Payments Service Fee,Net,Payout date\n"
+                   "Reservation,111,2025-01-30,2025-02-02,Jean,ok,EUR,by_booking,-2.69,138.10,-20.31,-1.90,113.20,3 Feb 2025\n")
+        airbnb = ("Date;Type;Code de confirmation;Date de début;Date de fin;Nuits;Voyageur;Logement;Montant;Frais de service;Revenus bruts;Taxes de séjour\n"
+                  "05/02/2025;Réservation;HMABC;04/02/2025;06/02/2025;2;Marie;Chasselay;\"180,00\";\"30,00\";\"210,00\";\n"
+                  "06/02/2025;Versement;;;;;;;180,00;;;\n")
+        self.assertEqual(self.importer(booking)[:2], ("booking", 1))
+        self.assertEqual(self.importer(airbnb)[1:], (1, 0, 1))
+        self.assertEqual(self.importer(airbnb)[1:], (0, 1, 1))  # réimport : mise à jour
+        r = ReservationLCD.objects.get(reference="HMABC")
+        self.assertEqual((r.plateforme, r.arrivee, r.nuits, r.montant_brut, r.commission), ("airbnb", date(2025, 2, 4), 2, Decimal("210.00"), Decimal("30.00")))
+        self.assertEqual(ReservationLCD.objects.get(reference="111").net, Decimal("113.20"))
+
+        from . import lcd
+        ParametresLCD.objects.create(lot=self.lot, menage_par_sejour=28)
+        mois = lcd.suivi_annuel(self.lot, 2025)
+        # Booking du 30/01 au 02/02 : 2 nuits en janvier, 1 en février (prorata du montant)
+        self.assertEqual((mois[0]["nuits"], mois[1]["nuits"]), (2, 3))
+        self.assertEqual(round(mois[0]["brut"], 2), Decimal("92.07"))
+        self.assertEqual((mois[0]["sejours"], mois[0]["gestion"], mois[1]["gestion"]), (1, Decimal("28"), Decimal("28")))
+
+        self.client.force_login(User.objects.create_superuser("admin", "", "x"))
+        page = self.client.get(f"/location-courte-duree/?lot={self.lot.pk}&annee=2025&mois=2").content.decode()
+        self.assertIn("Comparaison avec 2024", page)
+        self.assertIn("Taux de remplissage", page)

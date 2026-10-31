@@ -26,6 +26,9 @@ echo "2/5 Base de données et fichiers de style…"
 if [ -f donnees/prets.csv ]; then
   "$VENV/bin/python" manage.py importer_prets donnees/prets.csv --appliquer | tail -1
 fi
+if [ -f donnees/lcd/initialiser.sh ]; then
+  bash donnees/lcd/initialiser.sh "$VENV/bin/python"
+fi
 
 echo "3/5 Vérification des PDF…"
 if "$VENV/bin/python" -c "import weasyprint; weasyprint.HTML(string='<p>ok</p>').write_pdf()" 2>/dev/null; then

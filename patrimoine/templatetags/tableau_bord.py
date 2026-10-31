@@ -16,3 +16,21 @@ def bloc_a_faire(context):
                 "historique_jours": HISTORIQUE_JOURS, "csrf_token": context.get("csrf_token")}
     contexte["items"] = deja_fait(aujourdhui) if vue == "fait" else items
     return contexte
+
+
+@register.filter
+def get_item(conteneur, cle):
+    """Accès à un élément de dictionnaire ou de liste depuis un gabarit."""
+    try:
+        return conteneur[cle]
+    except (KeyError, IndexError, TypeError):
+        return None
+
+
+@register.filter
+def negatif(valeur):
+    """Montant de dépense affiché en négatif, arrondi à l'euro, sans « −0 »."""
+    arrondi = round(valeur or 0)
+    if not arrondi:
+        return "0"
+    return "−" + f"{arrondi:,}".replace(",", "\u202f")

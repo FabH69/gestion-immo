@@ -1,0 +1,102 @@
+{% extends "admin/base_site.html" %}
+{% load tableau_bord %}
+{% block breadcrumbs %}<div class="breadcrumbs"><a href="{% url 'admin:index' %}">Accueil</a> › Courte durée › Suivi</div>{% endblock %}
+{% block extrastyle %}{{ block.super }}<style>
+.carte { background: var(--body-bg); border: 1px solid var(--hairline-color); border-radius: 12px; box-shadow: 0 1px 6px rgba(16,24,40,.06); padding: 16px 18px; margin-bottom: 18px; }
+.carte h2 { margin: 0 0 12px; font-size: 1.05rem; }
+.barre { display: flex; flex-wrap: wrap; gap: 12px; align-items: end; }
+.barre label { display: block; font-size: .8rem; color: var(--body-quiet-color); margin-bottom: 3px; }
+.tuiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; margin-bottom: 18px; }
+.tuile { background: var(--body-bg); border: 1px solid var(--hairline-color); border-radius: 12px; padding: 12px 14px; }
+.tuile .l { font-size: .78rem; color: var(--body-quiet-color); }
+.tuile .v { font-size: 1.35rem; font-weight: 700; color: var(--body-loud-color); }
+.defile { overflow-x: auto; }
+table.suivi { border-collapse: collapse; width: 100%; font-size: .82rem; font-variant-numeric: tabular-nums; }
+table.suivi th, table.suivi td { padding: 5px 7px; text-align: right; white-space: nowrap; border-bottom: 1px solid var(--hairline-color); }
+table.suivi th:first-child, table.suivi td:first-child { text-align: left; position: sticky; left: 0; background: var(--body-bg); }
+table.suivi thead th { color: var(--body-quiet-color); font-weight: 600; }
+table.suivi tr.section td { padding-top: 12px; font-weight: 700; color: var(--secondary); border-bottom: 0; }
+table.suivi tr.fort td { font-weight: 700; border-top: 2px solid var(--border-color); }
+table.suivi td.total, table.suivi th.total { background: var(--darkened-bg); font-weight: 700; }
+.neg { color: #c62828; }
+.pos { color: #2e7d32; }
+.aide { font-size: .8rem; color: var(--body-quiet-color); }
+</style>{% endblock %}
+{% block content %}
+<div class="carte">
+  <form method="get" class="barre">
+    <div><label for="lot">Logement</label><select id="lot" name="lot" onchange="this.form.submit()">{% for l in lots %}<option value="{{ l.pk }}"{% if l == lot %} selected{% endif %}>{{ l }}</option>{% endfor %}</select></div>
+    <div><label for="annee">Année</label><select id="annee" name="annee" onchange="this.form.submit()">{% for a in annees %}<option{% if a == annee %} selected{% endif %}>{{ a }}</option>{% endfor %}</select></div>
+    {% if lot %}<div><label for="mois">Mois comparé à l'an dernier</label><select id="mois" name="mois" onchange="this.form.submit()">{% for m in mois %}<option value="{{ m.mois }}"{% if m.mois == mois_ref %} selected{% endif %}>{{ m.mois }}/{{ annee }}</option>{% endfor %}</select></div>{% endif %}
+  </form>
+</div>
+
+{% if lot %}
+<div class="carte">
+  <h2>Importer les réservations</h2>
+  <form method="post" enctype="multipart/form-data" class="barre">{% csrf_token %}
+    <input type="hidden" name="lot" value="{{ lot.pk }}">
+    <div><label for="fichiers">Exports Airbnb ou Booking (CSV ou Excel)</label><input type="file" id="fichiers" name="fichiers" accept=".csv,.xlsx" multiple></div>
+    <div><label for="plateforme">Plateforme</label><select id="plateforme" name="plateforme"><option value="">Détection automatique</option><option value="airbnb">Airbnb</option><option value="booking">Booking</option></select></div>
+    <button type="submit" class="button default">Importer</button>
+  </form>
+  <p class="aide">Airbnb : Menu › Revenus › Exporter en CSV. Booking : Finances › Relevés de versement › Télécharger. Réimporter un fichier met à jour les réservations sans doublon. Une réservation à cheval sur deux mois est répartie au prorata des nuits.
+  {% if not parametres %}<br><strong>Astuce :</strong> renseignez le ménage et la conciergerie dans <a href="{% url 'admin:patrimoine_parametreslcd_add' %}?lot={{ lot.pk }}">Frais de gestion</a>, et les abonnements dans <a href="{% url 'admin:patrimoine_chargelcd_add' %}?lot={{ lot.pk }}">Charges mensuelles</a>.{% endif %}</p>
+</div>
+
+<div class="tuiles">
+  <div class="tuile"><div class="l">Chiffre d'affaires {{ annee }}</div><div class="v">{{ total.brut|floatformat:"0g" }} €</div></div>
+  <div class="tuile"><div class="l">Revenu net plateformes</div><div class="v">{{ total.net|floatformat:"0g" }} €</div></div>
+  <div class="tuile"><div class="l">Nuits louées</div><div class="v">{{ total.nuits }}</div></div>
+  <div class="tuile"><div class="l">Taux de remplissage</div><div class="v">{{ total.remplissage|floatformat:0 }} %</div></div>
+  <div class="tuile"><div class="l">Prix moyen / nuit</div><div class="v">{{ total.prix_nuit|floatformat:"0g" }} €</div></div>
+  <div class="tuile"><div class="l">Cash-flow après prêt</div><div class="v {% if total.cash_flow < 0 %}neg{% else %}pos{% endif %}">{{ total.cash_flow|floatformat:"0g" }} €</div></div>
+</div>
+
+<div class="carte">
+  <h2>Comparaison avec {{ annee|add:"-1" }}</h2>
+  <div class="defile"><table class="suivi">
+    <thead><tr><th></th>{% for bloc in comparaison %}<th>{{ annee|add:"-1" }}</th><th>{{ annee }}</th><th>Écart</th>{% endfor %}</tr>
+      <tr><th></th>{% for bloc in comparaison %}<th colspan="3" style="text-align:center">{{ bloc.titre }}</th>{% endfor %}</tr></thead>
+    {% for ligne in comparaison.0.lignes %}{% with i=forloop.counter0 %}
+    <tr><td>{{ ligne.libelle }}</td>
+      {% for bloc in comparaison %}{% with l=bloc.lignes|get_item:i %}
+      <td>{{ l.n1|floatformat:"0g" }} {{ l.unite }}</td><td>{{ l.n|floatformat:"0g" }} {{ l.unite }}</td>
+      <td class="{% if l.ecart is None %}{% elif l.ecart < 0 %}neg{% else %}pos{% endif %}">{% if l.ecart is not None %}{% if l.ecart > 0 %}+{% endif %}{{ l.ecart|floatformat:0 }} %{% else %}–{% endif %}</td>
+      {% endwith %}{% endfor %}</tr>
+    {% endwith %}{% endfor %}
+  </table></div>
+</div>
+
+<div class="carte">
+  <h2>Détail mensuel {{ annee }} <span class="aide">({{ nb_reservations }} réservation{{ nb_reservations|pluralize }} arrivée{{ nb_reservations|pluralize }} en {{ annee }} · <a href="{% url 'admin:patrimoine_reservationlcd_changelist' %}?lot__id__exact={{ lot.pk }}&arrivee__year={{ annee }}">voir la liste</a>)</span></h2>
+  <div class="defile"><table class="suivi">
+    <thead><tr><th></th>{% for m in mois %}<th>{{ m.mois|stringformat:"02d" }}</th>{% endfor %}<th class="total">{{ annee }}</th></tr></thead>
+    {% for code, nom in plateformes %}{% with tp=total.plateformes|get_item:code %}{% if tp.brut %}
+    <tr class="section"><td colspan="14">{{ nom }}</td></tr>
+    <tr><td>Montant brut</td>{% for m in mois %}{% with p=m.plateformes|get_item:code %}<td>{{ p.brut|floatformat:0 }}</td>{% endwith %}{% endfor %}<td class="total">{% with p=total.plateformes|get_item:code %}{{ p.brut|floatformat:"0g" }}{% endwith %}</td></tr>
+    <tr><td>Nuits</td>{% for m in mois %}{% with p=m.plateformes|get_item:code %}<td>{{ p.nuits|default:"" }}</td>{% endwith %}{% endfor %}<td class="total">{% with p=total.plateformes|get_item:code %}{{ p.nuits }}{% endwith %}</td></tr>
+    {% endif %}{% endwith %}{% endfor %}
+    <tr class="section"><td colspan="14">Total</td></tr>
+    <tr><td>Montant brut</td>{% for m in mois %}<td>{{ m.brut|floatformat:0 }}</td>{% endfor %}<td class="total">{{ total.brut|floatformat:"0g" }}</td></tr>
+    <tr><td>Commissions plateformes</td>{% for m in mois %}<td>{{ m.commission|negatif }}</td>{% endfor %}<td class="total">{{ total.commission|negatif }}</td></tr>
+    <tr><td>Frais de paiement</td>{% for m in mois %}<td>{{ m.frais|negatif }}</td>{% endfor %}<td class="total">{{ total.frais|negatif }}</td></tr>
+    <tr><td>Taxe de séjour</td>{% for m in mois %}<td>{{ m.taxe|negatif }}</td>{% endfor %}<td class="total">{{ total.taxe|negatif }}</td></tr>
+    <tr class="fort"><td>Revenu net</td>{% for m in mois %}<td>{{ m.net|floatformat:0 }}</td>{% endfor %}<td class="total">{{ total.net|floatformat:"0g" }}</td></tr>
+    <tr><td>Nuits louées</td>{% for m in mois %}<td>{{ m.nuits }}</td>{% endfor %}<td class="total">{{ total.nuits }}</td></tr>
+    <tr><td>Séjours</td>{% for m in mois %}<td>{{ m.sejours }}</td>{% endfor %}<td class="total">{{ total.sejours }}</td></tr>
+    <tr><td>Taux de remplissage</td>{% for m in mois %}<td>{{ m.remplissage|floatformat:0 }} %</td>{% endfor %}<td class="total">{{ total.remplissage|floatformat:0 }} %</td></tr>
+    <tr><td>Prix moyen / nuit</td>{% for m in mois %}<td>{{ m.prix_nuit|floatformat:0 }}</td>{% endfor %}<td class="total">{{ total.prix_nuit|floatformat:0 }}</td></tr>
+    <tr class="section"><td colspan="14">Dépenses</td></tr>
+    <tr><td>Ménage, consommables, conciergerie</td>{% for m in mois %}<td>{{ m.gestion|negatif }}</td>{% endfor %}<td class="total">{{ total.gestion|negatif }}</td></tr>
+    <tr><td>Charges mensuelles</td>{% for m in mois %}<td>{{ m.charges|negatif }}</td>{% endfor %}<td class="total">{{ total.charges|negatif }}</td></tr>
+    <tr class="fort"><td>Résultat avant prêt</td>{% for m in mois %}<td class="{% if m.resultat < 0 %}neg{% endif %}">{{ m.resultat|floatformat:0 }}</td>{% endfor %}<td class="total">{{ total.resultat|floatformat:"0g" }}</td></tr>
+    <tr><td>Prêt (assurance comprise)</td>{% for m in mois %}<td>{{ m.pret|negatif }}</td>{% endfor %}<td class="total">{{ total.pret|negatif }}</td></tr>
+    <tr class="fort"><td>Cash-flow</td>{% for m in mois %}<td class="{% if m.cash_flow < 0 %}neg{% else %}pos{% endif %}">{{ m.cash_flow|floatformat:0 }}</td>{% endfor %}<td class="total {% if total.cash_flow < 0 %}neg{% else %}pos{% endif %}">{{ total.cash_flow|floatformat:"0g" }}</td></tr>
+  </table></div>
+  <p class="aide">Le prêt est celui rattaché au bien dans Finances › Prêts. Montants en euros.</p>
+</div>
+{% else %}
+<div class="carte"><p>Aucun logement.</p></div>
+{% endif %}
+{% endblock %}

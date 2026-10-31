@@ -36,6 +36,14 @@
       <a href="{% url 'admin:patrimoine_mouvementdepot_changelist' %}">Dépôts de garantie</a>
     </div>
   </div>
+  <div class="menu" tabindex="0"><span class="menu-titre">Courte durée ▾</span>
+    <div class="menu-liste">
+      <a href="{% url 'suivi_lcd' %}">Suivi et import Airbnb / Booking</a>
+      <a href="{% url 'admin:patrimoine_reservationlcd_changelist' %}">Réservations</a>
+      <a href="{% url 'admin:patrimoine_chargelcd_changelist' %}">Charges mensuelles</a>
+      <a href="{% url 'admin:patrimoine_parametreslcd_changelist' %}">Frais de gestion (ménage, conciergerie)</a>
+    </div>
+  </div>
   <div class="menu" tabindex="0"><span class="menu-titre">Relocation ▾</span>
     <div class="menu-liste">
       <a href="{% url 'admin:patrimoine_candidature_changelist' %}">Candidatures</a>

@@ -7,7 +7,7 @@ from urllib.parse import quote
 from django.utils import timezone
 from django.utils.html import format_html, format_html_join
 
-from .models import Annonce, Bail, Bien, Candidature, ChangementLocataire, Garant, PhotoLot, Echeance, EtatDesLieux, MouvementDepot, Pret, Rappel, RevisionLoyer, Locataire, Lot, Paiement, Proprietaire, Tache
+from .models import Annonce, ChargeLCD, ParametresLCD, ReservationLCD, Bail, Bien, Candidature, ChangementLocataire, Garant, PhotoLot, Echeance, EtatDesLieux, MouvementDepot, Pret, Rappel, RevisionLoyer, Locataire, Lot, Paiement, Proprietaire, Tache
 
 admin.site.site_header = "Gestion immobilière"
 admin.site.enable_nav_sidebar = False  # remplacé par le menu du bandeau
@@ -711,3 +711,30 @@ class AnnonceAdmin(admin.ModelAdmin):
             annonce.titre = ""
             annonce.texte = ""
             annonce.save()
+
+
+@admin.register(ReservationLCD)
+class ReservationLCDAdmin(admin.ModelAdmin):
+    list_display = ["arrivee", "depart", "nuits", "voyageur", "plateforme", "lot", "montant_brut", "commission", "frais_service", "taxe_sejour", "net", "annulee"]
+    list_filter = ["plateforme", "lot", "annulee"]
+    search_fields = ["voyageur", "reference"]
+    date_hierarchy = "arrivee"
+
+    @admin.display(description="nuits")
+    def nuits(self, obj):
+        return obj.nuits
+
+    @admin.display(description="net (€)")
+    def net(self, obj):
+        return obj.net
+
+
+@admin.register(ChargeLCD)
+class ChargeLCDAdmin(admin.ModelAdmin):
+    list_display = ["libelle", "lot", "montant_mensuel", "debut", "fin"]
+    list_filter = ["lot"]
+
+
+@admin.register(ParametresLCD)
+class ParametresLCDAdmin(admin.ModelAdmin):
+    list_display = ["lot", "menage_par_sejour", "consommables_par_sejour", "commission_gestion"]
