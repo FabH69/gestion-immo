@@ -379,3 +379,61 @@ def photos_zip(request, pk):
     response = HttpResponse(tampon.getvalue(), content_type="application/zip")
     response["Content-Disposition"] = f'attachment; filename="photos-{slugify(str(lot))}.zip"'
     return response
+
+
+def _decimal_saisi(valeur):
+    valeur = (valeur or "").strip().replace(" ", "").replace("\u202f", "").replace(",", ".")
+    return Decimal(valeur) if valeur else None
+
+
+@staff_member_required
+def plus_value(request):
+    """Simulation de la plus-value immobilière à la revente (particuliers et SCI à l'IR)."""
+    from .models import Bien
+    from .plus_value import TAUX_PS, Simulation
+
+    biens = Bien.objects.select_related("proprietaire").order_by("nom")
+    donnees = request.GET if "prix_cession" in request.GET else {}
+    bien = None
+    if request.GET.get("bien"):
+        bien = biens.filter(pk=request.GET["bien"]).first()
+    valeurs = {
+        "bien": bien.pk if bien else "",
+        "date_acquisition": donnees.get("date_acquisition") or (bien.date_acquisition.isoformat() if bien and bien.date_acquisition else ""),
+        "prix_acquisition": donnees.get("prix_acquisition") or (f"{bien.prix_acquisition:.0f}" if bien and bien.prix_acquisition else ""),
+        "date_cession": donnees.get("date_cession") or timezone.localdate().isoformat(),
+        "prix_cession": donnees.get("prix_cession", ""),
+        "frais_cession": donnees.get("frais_cession", ""),
+        "frais_acquisition": donnees.get("frais_acquisition", ""),
+        "travaux": donnees.get("travaux", ""),
+        "amortissements": donnees.get("amortissements", ""),
+        "quote_part": donnees.get("quote_part", "100"),
+        "taux_ps": donnees.get("taux_ps", str(TAUX_PS).replace(".", ",")),
+    }
+    resultat = None
+    if donnees:
+        try:
+            simulation = Simulation(
+                date_acquisition=date.fromisoformat(valeurs["date_acquisition"]),
+                prix_acquisition=_decimal_saisi(valeurs["prix_acquisition"]),
+                date_cession=date.fromisoformat(valeurs["date_cession"]),
+                prix_cession=_decimal_saisi(valeurs["prix_cession"]),
+                frais_cession=_decimal_saisi(valeurs["frais_cession"]) or Decimal(0),
+                frais_acquisition_reels=_decimal_saisi(valeurs["frais_acquisition"]),
+                travaux_reels=_decimal_saisi(valeurs["travaux"]),
+                amortissements_lmnp=_decimal_saisi(valeurs["amortissements"]) or Decimal(0),
+                quote_part=_decimal_saisi(valeurs["quote_part"]) or Decimal(100),
+                taux_ps=_decimal_saisi(valeurs["taux_ps"]) or TAUX_PS,
+            )
+            if simulation.prix_acquisition is None or simulation.prix_cession is None:
+                raise ValueError
+            resultat = simulation.calculer()
+        except (ValueError, InvalidOperation):
+            messages.error(request, "Indiquez au moins les dates et les prix d'acquisition et de cession.")
+    contexte = {
+        **admin.site.each_context(request),
+        "title": "Simulation de plus-value immobilière",
+        "biens": biens, "bien": bien, "v": valeurs, "r": resultat,
+        "regime_is": bien and bien.proprietaire.type in ("sci_is",),
+    }
+    return render(request, "patrimoine/plus_value.html", contexte)

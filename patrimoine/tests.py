@@ -531,3 +531,34 @@ class ListesPresentVenduTests(TestCase):
         page = self.client.get("/admin/patrimoine/lot/?vendu__exact=1").content.decode()
         self.assertIn("Vieux", page)
         self.assertNotIn(">A1<", page)
+
+
+class PlusValueTests(TestCase):
+    def test_calcul_avec_forfaits(self):
+        from .plus_value import Simulation
+        r = Simulation(date_acquisition=date(2010, 1, 1), prix_acquisition=Decimal("200000"),
+                       date_cession=date(2026, 6, 1), prix_cession=Decimal("300000")).calculer()
+        # 200 000 + 7,5 % (15 000) + 15 % (30 000) = 245 000 ; plus-value 55 000 ; 16 ans de détention
+        self.assertEqual((r["pv_brute"], r["annees"]), (Decimal("55000"), 16))
+        self.assertEqual((r["abattement_ir"], r["pv_ir"], r["impot_ir"]), (Decimal("66"), Decimal("18700"), Decimal("3553")))
+        self.assertEqual((r["abattement_ps"], r["pv_ps"], r["impot_ps"]), (Decimal("18.15"), Decimal("45018"), Decimal("7743")))
+        self.assertEqual((r["surtaxe"], r["total"]), (Decimal("0"), Decimal("11296")))
+
+    def test_abattements_et_surtaxe(self):
+        from .plus_value import abattement_ir, abattement_ps, surtaxe
+        self.assertEqual([abattement_ir(n) for n in (5, 6, 21, 22)], [0, 6, 96, 100])
+        self.assertEqual([abattement_ps(n) for n in (5, 21, 22, 23, 30)], [0, Decimal("26.40"), 28, 37, 100])
+        self.assertEqual(surtaxe(50000), 0)
+        self.assertEqual(surtaxe(55000), Decimal("850"))  # 2 % × 55 000 − (60 000 − 55 000) / 20
+        self.assertEqual(surtaxe(80000), Decimal("1600"))
+        self.assertEqual(surtaxe(300000), Decimal("18000"))
+
+    def test_lmnp_moins_de_5_ans_et_page(self):
+        from .plus_value import Simulation
+        r = Simulation(date_acquisition=date(2023, 1, 1), prix_acquisition=Decimal("100000"), date_cession=date(2026, 6, 1),
+                       prix_cession=Decimal("110000"), amortissements_lmnp=Decimal("6000")).calculer()
+        self.assertEqual((r["travaux"], r["pv_brute"], r["abattement_ir"]), (Decimal("0"), Decimal("8500"), Decimal("0")))
+        self.client.force_login(User.objects.create_superuser("admin", "", "x"))
+        page = self.client.get("/simulations/plus-value/?date_acquisition=2010-01-01&prix_acquisition=200000&date_cession=2026-06-01&prix_cession=300+000").content.decode()
+        self.assertIn("11", page)
+        self.assertIn("Total à payer", page)
