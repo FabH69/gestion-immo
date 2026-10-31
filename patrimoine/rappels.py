@@ -27,7 +27,8 @@ def a_faire(aujourdhui, horizon_jours=PREAVIS_JOURS):
 
         revision = bail.prochaine_revision(aujourdhui)
         if revision:
-            ajouter(revision, "Réviser le loyer (IRL)", lieu, "Révision", reverse("revision_loyer", args=[bail.pk]))
+            ajouter(revision, "Réviser le loyer (IRL)", lieu, "Révision", reverse("revision_loyer", args=[bail.pk]),
+                    action=reverse("rappel_fait", args=["revision", bail.pk]))
 
         echeance = _ajouter_mois(bail.date_attestation_assurance or bail.date_debut, 12)
         ajouter(echeance, "Demander l'attestation d'assurance habitation", lieu, "Assurance",

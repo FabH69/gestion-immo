@@ -485,3 +485,17 @@ class TableauDeBordTests(TestCase):
         fait = self.client.get("/admin/?vue=fait").content.decode()
         self.assertIn("AG copropriété", fait)
         self.assertEqual(JournalFait.objects.count(), 1)
+
+    def test_cocher_revision(self):
+        from datetime import timedelta
+        proprio = Proprietaire.objects.create(nom="SCI X", type=Proprietaire.Type.SCI_IR)
+        bien = Bien.objects.create(proprietaire=proprio, nom="B", adresse="1 rue", code_postal="69000", ville="Lyon")
+        lot = Lot.objects.create(bien=bien, designation="A1")
+        debut = timezone.localdate() - timedelta(days=360)
+        bail = Bail.objects.create(lot=lot, type=Bail.Type.NU, date_debut=debut, loyer_hc=500)
+        echeance = bail.prochaine_revision(timezone.localdate())
+        self.assertIn("revision/%d/fait" % bail.pk, self.client.get("/admin/").content.decode().replace("rappels/", ""))
+        self.client.post(f"/rappels/revision/{bail.pk}/fait/")
+        bail.refresh_from_db()
+        self.assertEqual(bail.date_derniere_revision, echeance)
+        self.assertNotIn("Réviser le loyer", self.client.get("/admin/").content.decode())

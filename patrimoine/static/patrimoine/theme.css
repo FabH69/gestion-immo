@@ -154,3 +154,7 @@ table.etat tr.bien td { background: var(--selected-bg) !important; color: var(--
 .a-faire .aide-bloc { margin: 0; padding: 8px 12px; font-size: .78rem; color: var(--body-quiet-color); }
 .dashboard #content { width: auto; max-width: 1100px; }
 .dashboard #content-main { float: none; width: 100%; }
+.a-faire td.coche-cellule { width: 1%; padding-right: 0; }
+.a-faire input[type=checkbox] { width: 20px; height: 20px; accent-color: var(--primary); cursor: pointer; vertical-align: middle; }
+.a-faire input[type=checkbox]:disabled { cursor: default; }
+@media (max-width: 767px) { .a-faire td.coche-cellule { grid-column: 3; grid-row: 1; } }

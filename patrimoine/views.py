@@ -228,6 +228,15 @@ def rappel_fait(request, type_rappel, pk):
         JournalFait.objects.create(titre="Attestation d'entretien de la chaudière reçue", detail=str(lot), categorie="Chaudière",
                                    url=reverse("admin:patrimoine_lot_change", args=[pk]))
         messages.success(request, "Entretien de la chaudière noté à la date d'aujourd'hui.")
+    elif type_rappel == "revision":
+        # Révision traitée hors de l'appli, ou volontairement non appliquée cette année.
+        bail = get_object_or_404(Bail, pk=pk)
+        echeance = bail.prochaine_revision(aujourdhui)
+        if echeance:
+            Bail.objects.filter(pk=pk).update(date_derniere_revision=echeance)
+            JournalFait.objects.create(titre=f"Révision du loyer du {echeance:%d/%m/%Y} traitée", detail=_lieu(bail), categorie="Révision",
+                                       url=reverse("admin:patrimoine_bail_change", args=[pk]))
+        messages.success(request, "Révision notée comme traitée.")
     elif type_rappel == "rappel":
         rappel = get_object_or_404(Rappel, pk=pk)
         JournalFait.objects.create(titre=rappel.titre, detail=str(rappel.bien or ""), categorie=rappel.get_categorie_display(),

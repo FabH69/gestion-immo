@@ -10,14 +10,14 @@
     </caption>
     {% for i in items %}
     <tr>
+      <td class="coche-cellule">{% if vue == "fait" %}<input type="checkbox" checked disabled aria-label="Fait">{% elif i.action %}<form method="post" action="{{ i.action }}">{% csrf_token %}<input type="checkbox" class="case-fait" title="Cocher quand c'est fait" aria-label="Marquer « {{ i.titre }} » comme fait" onchange="this.form.submit()"></form>{% endif %}</td>
       <td class="date{% if i.en_retard %} retard{% endif %}">{{ i.date|date:"d/m/Y" }}</td>
       <td><span class="categorie">{{ i.categorie }}</span></td>
       <th scope="row"><a href="{{ i.url }}">{{ i.titre }}</a>{% if i.detail %}<div class="detail">{{ i.detail }}</div>{% endif %}</th>
-      <td class="action">{% if vue == "fait" %}<span class="coche">✓</span>{% elif i.action %}<form method="post" action="{{ i.action }}">{% csrf_token %}<button type="submit" class="button fait">Fait</button></form>{% endif %}</td>
     </tr>
     {% empty %}
     <tr><td colspan="4" style="padding:16px;color:var(--body-quiet-color)">{% if vue == "fait" %}Rien de fait ces {{ historique_jours }} derniers jours.{% else %}Rien à faire dans les 30 prochains jours.{% endif %}</td></tr>
     {% endfor %}
   </table>
-  {% if vue == "a_faire" %}<p class="aide-bloc">Échéances des 30 prochains jours et retards.</p>{% else %}<p class="aide-bloc">Ce qui a été fait ces {{ historique_jours }} derniers jours.</p>{% endif %}
+  {% if vue == "a_faire" %}<p class="aide-bloc">Échéances des 30 prochains jours et retards. Cochez une ligne quand c'est fait.</p>{% else %}<p class="aide-bloc">Ce qui a été fait ces {{ historique_jours }} derniers jours.</p>{% endif %}
 </div>
