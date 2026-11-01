@@ -152,7 +152,9 @@ def document_etat_des_lieux(request, pk):
 def document_etat_des_lieux_vierge(request, pk, type_edl):
     """Fiche pré-remplie depuis le bail, sans état des lieux enregistré (à imprimer avant le rendez-vous)."""
     bail = get_object_or_404(Bail.objects.select_related("lot__bien__proprietaire"), pk=pk)
-    return _rendu_edl(bail, EtatDesLieux(bail=bail, type=type_edl, date=None))
+    edl = EtatDesLieux(bail=bail, type=type_edl, date=None)
+    edl.reprendre_index_du_bail()
+    return _rendu_edl(bail, edl)
 
 
 @staff_member_required
@@ -386,21 +388,31 @@ def lettre_revision(request, pk):
 
 def candidature_publique(request, jeton):
     """Formulaire envoyé au futur locataire : accessible sans compte, via un lien personnel."""
+    from .forms import GarantsFormSet
+
     candidature = get_object_or_404(Candidature.objects.select_related("lot__bien"), jeton=jeton)
     lot = candidature.lot
     ferme = candidature.statut in (Candidature.Statut.RETENUE, Candidature.Statut.REFUSEE)
     if request.method == "POST" and not ferme:
         form = CandidatureForm(request.POST, instance=candidature)
-        if form.is_valid():
+        garants = GarantsFormSet(request.POST, request.FILES, instance=candidature, prefix="garants")
+        avec_garant = (candidature.type_garantie or request.POST.get("type_garantie")) == "garant"
+        if avec_garant:
+            garants.forms[0].empty_permitted = False
+        if form.is_valid() and (not avec_garant or garants.is_valid()):
             candidature = form.save(commit=False)
             candidature.statut = Candidature.Statut.RECUE
             candidature.recue_le = timezone.now()
             candidature.save()
+            if avec_garant:
+                garants.instance = candidature
+                garants.save()
             return render(request, "patrimoine/candidature_merci.html", {"candidature": candidature, "lot": lot})
     else:
         form = CandidatureForm(instance=candidature)
+        garants = GarantsFormSet(instance=candidature, prefix="garants")
     return render(request, "patrimoine/candidature_formulaire.html", {
-        "form": form, "candidature": candidature, "lot": lot, "bien": lot.bien, "ferme": ferme,
+        "form": form, "garants": garants, "candidature": candidature, "lot": lot, "bien": lot.bien, "ferme": ferme,
         "loyer_indicatif": lot.loyer_reference,
     })
 
@@ -586,3 +598,20 @@ def biens_lmnp(request):
     contexte = {**admin.site.each_context(request), "title": f"Biens en LMNP – {annee}", "annee": annee,
                 "annees": annees_disponibles(), **lmnp.bilan(annee)}
     return render(request, "patrimoine/lmnp.html", contexte)
+
+
+@staff_member_required
+def fichier_prive(request, chemin):
+    """Pièces d'identité des garants : visibles seulement une fois connecté à l'administration."""
+    from django.core.exceptions import SuspiciousFileOperation
+    from django.http import FileResponse, Http404
+
+    from .models import stockage_prive
+
+    stockage = stockage_prive()
+    try:
+        if not stockage.exists(chemin):
+            raise Http404
+    except SuspiciousFileOperation:
+        raise Http404
+    return FileResponse(stockage.open(chemin, "rb"), filename=chemin.rsplit("/", 1)[-1])

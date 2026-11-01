@@ -311,24 +311,47 @@ class CandidatureEtGarantTests(TestCase):
         self.lot = Lot.objects.create(bien=bien, designation="Apt 2", surface=40, nb_pieces=2)
 
     def test_formulaire_public_puis_creation_du_locataire(self):
+        import tempfile
+
+        from django.core.files.uploadedfile import SimpleUploadedFile
+        from django.test import override_settings
+
         from .models import Candidature
 
-        c = Candidature.objects.create(lot=self.lot)
+        c = Candidature.objects.create(lot=self.lot, type_garantie="garant")  # type de caution choisi avant l'envoi
         url = f"/candidature/{c.jeton}/"
-        self.assertEqual(self.client.get(url).status_code, 200)  # sans connexion
-        r = self.client.post(url, {"prenom": "Léa", "nom": "Durand", "email": "lea@example.com", "telephone": "0600000000",
-                                   "situation": "cdi", "revenus_mensuels": "2400", "type_garantie": "garant"})
-        self.assertContains(r, "Indiquez le nom de la personne")
-        r = self.client.post(url, {"prenom": "Léa", "nom": "Durand", "email": "lea@example.com", "telephone": "0600000000",
-                                   "situation": "cdi", "revenus_mensuels": "2400", "type_garantie": "garant",
-                                   "garant_nom": "Paul Durand", "garant_lien": "père", "consentement": "on"})
-        self.assertContains(r, "Merci Léa")
-        c.refresh_from_db()
-        self.assertEqual(c.statut, "recue")
-        self.assertEqual(c.taux_effort(Decimal("800")), 33)
-        locataire = c.creer_locataire()
-        garant = locataire.garants.get()
-        self.assertEqual((garant.prenom, garant.nom, garant.lien), ("Paul", "Durand", "père"))
+        page = self.client.get(url)  # sans connexion
+        self.assertContains(page, "Second garant")
+        self.assertContains(page, 'name="adresse_code_postal"')
+        base = {"prenom": "Léa", "nom": "Durand", "email": "lea@example.com", "telephone": "0600000000", "adresse_rue": "3 rue Neuve",
+                "adresse_code_postal": "69003", "adresse_ville": "Lyon", "situation": "cdi", "revenus_mensuels": "2400",
+                "consentement": "on", "garants-TOTAL_FORMS": "2", "garants-INITIAL_FORMS": "0", "garants-MIN_NUM_FORMS": "0",
+                "garants-MAX_NUM_FORMS": "2"}
+        r = self.client.post(url, base)
+        self.assertContains(r, "Ce champ est obligatoire")  # le premier garant est demandé
+        garant = {"garants-0-prenom": "Paul", "garants-0-nom": "Durand", "garants-0-date_naissance": "1965-04-02",
+                  "garants-0-lieu_naissance": "Lyon", "garants-0-adresse_rue": "5 rue Haute", "garants-0-code_postal": "69005",
+                  "garants-0-ville": "Lyon", "garants-0-lien": "père", "garants-0-piece_identite_numero": "X12345",
+                  "garants-0-piece_identite_fichier": SimpleUploadedFile("cni.pdf", b"%PDF-1.4 test", content_type="application/pdf")}
+        with tempfile.TemporaryDirectory() as prive, override_settings(PRIVE_ROOT=prive):
+            r = self.client.post(url, {**base, "type_garantie": "visale", **garant})
+            self.assertContains(r, "Merci Léa")
+            c.refresh_from_db()
+            self.assertEqual((c.statut, c.type_garantie), ("recue", "garant"))  # le choix du propriétaire ne change pas
+            self.assertEqual(c.adresse_complete, "3 rue Neuve\n69003 Lyon")
+            self.assertEqual(c.taux_effort(Decimal("800")), 33)
+            locataire = c.creer_locataire()
+            self.assertEqual(locataire.adresse_actuelle, "3 rue Neuve\n69003 Lyon")
+            g = locataire.garants.get()
+            self.assertEqual((g.prenom, g.nom, g.lien, g.piece_identite_numero), ("Paul", "Durand", "père", "X12345"))
+            self.assertEqual(g.adresse, "5 rue Haute\n69005 Lyon")
+            fichier = g.piece_identite_fichier.url
+            self.assertTrue(fichier.startswith("/prive/pieces-identite/"))
+            self.assertEqual(self.client.get(fichier).status_code, 302)  # pas connecté : vers la connexion
+            self.client.force_login(User.objects.create_superuser("admin", "a@example.com", "x"))
+            self.assertEqual(b"".join(self.client.get(fichier).streaming_content), b"%PDF-1.4 test")
+            self.assertEqual(self.client.get("/prive/../config/settings.py").status_code, 404)
+            self.client.logout()
         self.assertContains(self.client.get(url), "clôturé")
         self.assertEqual(self.client.get("/candidature/inconnu/").status_code, 404)
 
@@ -859,3 +882,43 @@ class EncaissementHistoriqueEtatTests(TestCase):
         self.assertEqual(etat["total"]["total"], Decimal("1030"))
         self.assertEqual(etat["total"]["mois"][2], Decimal("510"))
         self.assertEqual(etat["total"]["charges"], Decimal("20"))
+
+
+class CompteursEtDepotTests(TestCase):
+    def setUp(self):
+        proprio = Proprietaire.objects.create(nom="SCI", type=Proprietaire.Type.SCI_IR)
+        bien = Bien.objects.create(proprietaire=proprio, nom="Immeuble", adresse="1 rue", code_postal="69000", ville="Lyon")
+        self.lot = Lot.objects.create(bien=bien, designation="Apt", pdl="12345678901234", meuble=True)
+        self.client.force_login(User.objects.create_superuser("admin", "a@example.com", "x"))
+
+    def test_index_du_bail_repris_dans_l_etat_des_lieux(self):
+        from .models import EtatDesLieux
+        bail = Bail.objects.create(lot=self.lot, type=Bail.Type.MEUBLE, date_debut=date(2026, 9, 1), loyer_hc=600,
+                                   index_elec_entree="HP 1200 / HC 800", index_eau_froide_entree="345")
+        self.assertEqual(bail.pdl_electricite, "12345678901234")
+        edl = EtatDesLieux.objects.create(bail=bail, type="entree", date=date(2026, 9, 1), compteur_gaz="9876")
+        self.assertEqual((edl.compteur_electricite, edl.compteur_eau_froide), ("HP 1200 / HC 800", "345"))
+        bail.refresh_from_db()
+        self.assertEqual(bail.index_gaz_entree, "9876")  # saisi dans l'état des lieux, repris dans le bail
+        sortie = EtatDesLieux.objects.create(bail=bail, type="sortie", date=date(2027, 8, 31), compteur_electricite="HP 3000")
+        bail.refresh_from_db()
+        self.assertEqual((bail.index_elec_sortie, bail.index_elec_entree), ("HP 3000", "HP 1200 / HC 800"))
+        self.assertEqual(self.client.get(f"/baux/{bail.pk}/etat-des-lieux-entree.pdf").status_code, 200)
+        page = self.client.get(f"/admin/patrimoine/bail/{bail.pk}/change/").content.decode()
+        self.assertIn("Relevés des compteurs", page)
+        self.assertIn("depot_garantie.js", page)
+
+    def test_depot_plafonne(self):
+        bail = Bail.objects.create(lot=self.lot, type=Bail.Type.NU, date_debut=date(2026, 9, 1), loyer_hc=600)
+        self.assertEqual(bail.depot_maximum, 600)
+        bail.type = Bail.Type.MEUBLE
+        self.assertEqual(bail.depot_maximum, 1200)
+        from .admin import BailForm
+        donnees = {"lot": self.lot.pk, "type": "nu", "destination": "habitation", "date_debut": "2026-09-01", "loyer_hc": "600",
+                   "loyer_initial": "600", "charges": "0", "depot_garantie": "900", "jour_echeance": "1", "mode_charges": "aucune",
+                   "irl_trimestre": "", "type_garantie": ""}
+        form = BailForm(donnees)
+        self.assertFalse(form.is_valid())
+        self.assertIn("600.00", str(form.errors["depot_garantie"]))
+        form = BailForm({**donnees, "type": "meuble"})
+        self.assertNotIn("depot_garantie", form.errors)

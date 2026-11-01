@@ -203,3 +203,12 @@ table.historique-revisions th:first-child, table.historique-revisions td:first-c
 .form-row.field-historique > div > .flex-container > label, .form-row.field-historique label { display: none; }
 .form-row.field-historique .readonly { margin-left: 0 !important; padding-left: 0; width: 100%; }
 table.historique-revisions { width: 100%; }
+
+/* Relevés des compteurs du bail : 3 colonnes (n° du compteur, index d'entrée, index de sortie) */
+fieldset.releves-compteurs .form-multiline { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px 18px; width: 100%; }
+fieldset.releves-compteurs .form-multiline > div { margin: 0; }
+fieldset.releves-compteurs .form-multiline .fieldBox { flex-direction: column; align-items: stretch; margin: 0; }
+fieldset.releves-compteurs .form-multiline label { width: auto; padding: 0 0 3px; float: none; font-weight: 600; }
+fieldset.releves-compteurs .form-multiline input { width: 100%; box-sizing: border-box; }
+fieldset.releves-compteurs .form-multiline .help { margin: 3px 0 0; padding: 0; }
+@media (max-width: 767px) { fieldset.releves-compteurs .form-multiline { grid-template-columns: 1fr; } }

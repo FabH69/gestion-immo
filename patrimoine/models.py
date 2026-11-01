@@ -206,6 +206,36 @@ class Locataire(models.Model):
         return f"{self.civilite} {self.prenom} {self.nom}".strip()
 
 
+def stockage_prive():
+    """Pièces d'identité : rangées hors du dossier media public (réglage PRIVE_ROOT), visibles seulement depuis l'administration."""
+    import os
+
+    from django.conf import settings
+    from django.core.files.storage import FileSystemStorage
+
+    class StockagePrive(FileSystemStorage):
+        @property
+        def base_location(self):
+            return str(settings.PRIVE_ROOT)
+
+        @property
+        def location(self):
+            return os.path.abspath(self.base_location)
+
+    return StockagePrive(base_url="/prive/")
+
+
+def _chemin_piece(instance, nom):
+    import secrets
+
+    return f"pieces-identite/{secrets.token_hex(8)}-{nom}"
+
+
+def mois_depot_maximum(type_bail):
+    """Plafond légal du dépôt de garantie en mois de loyer HC : 1 en location nue, 2 en meublé, 0 en bail mobilité."""
+    return {"nu": 1, "meuble": 2, "etudiant": 2, "mobilite": 0}.get(type_bail)
+
+
 TYPES_GARANTIE = [("garant", "Garant (caution d'une personne)"), ("visale", "Garantie Visale"), ("autre", "Autre garantie"), ("aucune", "Aucune")]
 
 
@@ -250,8 +280,25 @@ class Bail(models.Model):
     date_attestation_assurance = models.DateField("dernière attestation d'assurance reçue", null=True, blank=True)
     rappel_assurance = models.BooleanField("rappel annuel de l'attestation d'assurance", default=True)
     actif = models.BooleanField(default=True)
+    # relevés des compteurs (repris dans les états des lieux d'entrée et de sortie)
+    pdl_electricite = models.CharField("électricité : n° PDL", max_length=20, blank=True, help_text="Point de livraison, 14 chiffres (facture ou compteur Linky)")
+    index_elec_entree = models.CharField("index à l'entrée", max_length=50, blank=True, help_text="En heures pleines / creuses : « HP 12345 / HC 6789 »")
+    index_elec_sortie = models.CharField("index à la sortie", max_length=50, blank=True)
+    pce_gaz = models.CharField("gaz : n° PCE", max_length=20, blank=True, help_text="Point de comptage et d'estimation, 14 chiffres ou GI + 6 chiffres")
+    index_gaz_entree = models.CharField("index à l'entrée", max_length=50, blank=True)
+    index_gaz_sortie = models.CharField("index à la sortie", max_length=50, blank=True)
+    compteur_eau = models.CharField("eau froide : n° de compteur", max_length=30, blank=True)
+    index_eau_froide_entree = models.CharField("index à l'entrée", max_length=50, blank=True)
+    index_eau_froide_sortie = models.CharField("index à la sortie", max_length=50, blank=True)
+    compteur_eau_chaude = models.CharField("eau chaude : n° de compteur", max_length=30, blank=True, help_text="S'il y a un compteur d'eau chaude séparé")
+    index_eau_chaude_entree = models.CharField("index à l'entrée", max_length=50, blank=True)
+    index_eau_chaude_sortie = models.CharField("index à la sortie", max_length=50, blank=True)
     notes = models.TextField(blank=True)
     ref_import = models.CharField("référence d'import", max_length=40, blank=True, editable=False, help_text="Identifiant Airtable d'origine")
+
+    # compteur de l'état des lieux -> index du bail (suffixe _entree ou _sortie)
+    COMPTEURS_EDL = {"compteur_electricite": "index_elec", "compteur_gaz": "index_gaz",
+                     "compteur_eau_froide": "index_eau_froide", "compteur_eau_chaude": "index_eau_chaude"}
 
     class Meta:
         verbose_name = "bail"
@@ -264,7 +311,15 @@ class Bail(models.Model):
     def save(self, *args, **kwargs):
         if self.loyer_initial is None:
             self.loyer_initial = self.loyer_hc
+        if not self.pdl_electricite and self.lot_id and self.lot.pdl:
+            self.pdl_electricite = self.lot.pdl
         super().save(*args, **kwargs)
+
+    @property
+    def depot_maximum(self):
+        """Dépôt de garantie maximum autorisé (None si la loi ne fixe pas de plafond pour ce type de bail)."""
+        mois = mois_depot_maximum(self.type)
+        return None if mois is None or self.loyer_hc is None else self.loyer_hc * mois
 
     @property
     def loyer_cc(self):
@@ -564,6 +619,26 @@ class EtatDesLieux(models.Model):
     def __str__(self):
         return f"EDL {self.get_type_display().lower()} – {self.bail.lot} – {self.date:%d/%m/%Y}"
 
+    def reprendre_index_du_bail(self):
+        """Complète les index vides avec ceux relevés dans le bail ; renvoie les champs du bail encore vides ici renseignés."""
+        suffixe = "_entree" if self.type == self.Type.ENTREE else "_sortie"
+        a_completer = []
+        for champ, index in Bail.COMPTEURS_EDL.items():
+            du_bail = getattr(self.bail, index + suffixe)
+            if not getattr(self, champ) and du_bail:
+                setattr(self, champ, du_bail)
+            elif getattr(self, champ) and not du_bail:
+                setattr(self.bail, index + suffixe, getattr(self, champ))
+                a_completer.append(index + suffixe)
+        return a_completer
+
+    def save(self, *args, **kwargs):
+        """Reprend les index relevés dans le bail, et complète le bail avec ceux saisis ici."""
+        a_completer = self.reprendre_index_du_bail()
+        super().save(*args, **kwargs)
+        if a_completer:
+            self.bail.save(update_fields=a_completer)
+
 
 class MouvementDepot(models.Model):
     """Compte séparé des dépôts de garantie : encaissements, retenues et restitutions, hors loyers."""
@@ -804,6 +879,8 @@ class Garant(models.Model):
     lien = models.CharField("lien avec le locataire", max_length=100, blank=True, help_text="ex. « père », « employeur »")
     profession = models.CharField(max_length=100, blank=True)
     revenus_mensuels = models.DecimalField("revenus nets mensuels (€)", max_digits=10, decimal_places=2, null=True, blank=True)
+    piece_identite_numero = models.CharField("n° de pièce d'identité", max_length=40, blank=True)
+    piece_identite_fichier = models.FileField("copie de la pièce d'identité", upload_to=_chemin_piece, storage=stockage_prive, blank=True)
     type_caution = models.CharField("type de caution", max_length=10, choices=TypeCaution.choices, default=TypeCaution.SOLIDAIRE)
     montant_max = models.DecimalField(
         "montant maximum garanti (€)", max_digits=10, decimal_places=2, null=True, blank=True,
@@ -850,7 +927,10 @@ class Candidature(models.Model):
     lieu_naissance = models.CharField("lieu de naissance", max_length=100, blank=True)
     email = models.EmailField("e-mail", blank=True)
     telephone = models.CharField("téléphone", max_length=20, blank=True)
-    adresse_actuelle = models.TextField("adresse actuelle", blank=True)
+    adresse_actuelle = models.TextField("adresse actuelle (ancien format)", blank=True)
+    adresse_rue = models.CharField("adresse actuelle : n° et rue", max_length=255, blank=True)
+    adresse_code_postal = models.CharField("code postal", max_length=10, blank=True)
+    adresse_ville = models.CharField("ville", max_length=100, blank=True)
     situation = models.CharField("situation professionnelle", max_length=20, blank=True, choices=[
         ("cdi", "CDI"), ("cdd", "CDD / intérim"), ("independant", "Indépendant"), ("fonctionnaire", "Fonctionnaire"),
         ("etudiant", "Étudiant"), ("retraite", "Retraité"), ("autre", "Autre"),
@@ -859,7 +939,8 @@ class Candidature(models.Model):
     revenus_mensuels = models.DecimalField("revenus nets mensuels (€)", max_digits=10, decimal_places=2, null=True, blank=True)
     nb_occupants = models.PositiveSmallIntegerField("nombre d'occupants", null=True, blank=True)
     date_entree_souhaitee = models.DateField("date d'entrée souhaitée", null=True, blank=True)
-    type_garantie = models.CharField("garantie", max_length=20, blank=True, choices=TYPES_GARANTIE)
+    type_garantie = models.CharField("garantie", max_length=20, blank=True, choices=TYPES_GARANTIE,
+                                     help_text="Choisie avant l'envoi : avec « Garant », le formulaire demande l'identité du ou des garants")
     garant_nom = models.CharField("garant : nom et prénom", max_length=200, blank=True)
     garant_lien = models.CharField("garant : lien", max_length=100, blank=True)
     garant_email = models.EmailField("garant : e-mail", blank=True)
@@ -890,13 +971,26 @@ class Candidature(models.Model):
             return None
         return round(loyer_cc / self.revenus_mensuels * 100)
 
+    @property
+    def adresse_complete(self):
+        if self.adresse_rue or self.adresse_ville:
+            return f"{self.adresse_rue}\n{self.adresse_code_postal} {self.adresse_ville}".strip()
+        return self.adresse_actuelle
+
     def creer_locataire(self):
-        """Crée le locataire (et son garant) à partir du dossier retenu."""
+        """Crée le locataire (et ses garants) à partir du dossier retenu."""
         locataire = Locataire.objects.create(
             civilite=self.civilite, nom=self.nom, prenom=self.prenom, email=self.email, telephone=self.telephone,
-            date_naissance=self.date_naissance, lieu_naissance=self.lieu_naissance, adresse_actuelle=self.adresse_actuelle,
+            date_naissance=self.date_naissance, lieu_naissance=self.lieu_naissance, adresse_actuelle=self.adresse_complete,
         )
-        if self.type_garantie == "garant" and self.garant_nom:
+        for g in self.garants.all():
+            Garant.objects.create(
+                locataire=locataire, civilite=g.civilite, nom=g.nom, prenom=g.prenom, date_naissance=g.date_naissance,
+                lieu_naissance=g.lieu_naissance, adresse=g.adresse_complete, email=g.email, telephone=g.telephone, lien=g.lien,
+                profession=g.profession, revenus_mensuels=g.revenus_mensuels, piece_identite_numero=g.piece_identite_numero,
+                piece_identite_fichier=g.piece_identite_fichier.name,
+            )
+        if self.type_garantie == "garant" and self.garant_nom and not self.garants.exists():
             prenom, _, nom = self.garant_nom.strip().partition(" ")
             Garant.objects.create(
                 locataire=locataire, prenom=prenom if nom else "", nom=nom or prenom, lien=self.garant_lien,
@@ -906,6 +1000,40 @@ class Candidature(models.Model):
         self.statut = self.Statut.RETENUE
         self.save(update_fields=["statut"])
         return locataire
+
+
+class GarantCandidature(models.Model):
+    """Garant proposé par un candidat dans le formulaire en ligne (un ou deux par dossier)."""
+
+    candidature = models.ForeignKey(Candidature, on_delete=models.CASCADE, related_name="garants")
+    civilite = models.CharField("civilité", max_length=10, blank=True, choices=[("M.", "M."), ("Mme", "Mme")])
+    nom = models.CharField(max_length=100)
+    prenom = models.CharField("prénom", max_length=100)
+    date_naissance = models.DateField("date de naissance")
+    lieu_naissance = models.CharField("lieu de naissance", max_length=100)
+    adresse_rue = models.CharField("n° et rue", max_length=255)
+    code_postal = models.CharField("code postal", max_length=10)
+    ville = models.CharField(max_length=100)
+    email = models.EmailField("e-mail", blank=True)
+    telephone = models.CharField("téléphone", max_length=20, blank=True)
+    lien = models.CharField("lien avec le candidat", max_length=100, blank=True, help_text="ex. « père », « mère »")
+    profession = models.CharField(max_length=100, blank=True)
+    revenus_mensuels = models.DecimalField("revenus nets mensuels (€)", max_digits=10, decimal_places=2, null=True, blank=True)
+    piece_identite_numero = models.CharField("n° de carte d'identité ou de passeport", max_length=40)
+    piece_identite_fichier = models.FileField("copie de la pièce d'identité", upload_to=_chemin_piece, storage=stockage_prive, blank=True,
+                                              help_text="Photo ou PDF, 10 Mo maximum")
+
+    class Meta:
+        verbose_name = "garant proposé"
+        verbose_name_plural = "garants proposés"
+        ordering = ["pk"]
+
+    def __str__(self):
+        return f"{self.civilite} {self.prenom} {self.nom}".strip()
+
+    @property
+    def adresse_complete(self):
+        return f"{self.adresse_rue}\n{self.code_postal} {self.ville}"
 
 
 def _chemin_photo(instance, nom):
@@ -982,6 +1110,9 @@ class Annonce(models.Model):
             self.titre = self.titre_genere()
         if not self.texte:
             self.texte = self.texte_genere()
+        if not self.depot_garantie and self.loyer_cc:
+            # 1 mois de loyer HC en location nue, 2 mois en meublé
+            self.depot_garantie = (self.loyer_cc - self.charges) * (2 if self.lot.meuble else 1)
         super().save(*args, **kwargs)
 
 

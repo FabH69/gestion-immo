@@ -14,11 +14,11 @@
   </div>
   <p class="aide" style="margin-bottom:0">Remplissez ce formulaire en 5 minutes. Les justificatifs (pièce d'identité, justificatifs de revenus et de domicile) vous seront demandés ensuite, uniquement parmi la liste autorisée par la loi.</p>
 </div>
-<form method="post" novalidate>{% csrf_token %}
+<form method="post" enctype="multipart/form-data" novalidate>{% csrf_token %}
   {% if form.non_field_errors %}<div class="carte erreur">{{ form.non_field_errors }}</div>{% endif %}
   <div class="carte"><h2>Vous</h2><div class="grille">
-    {% for f in form %}{% if f.name in "civilite prenom nom date_naissance lieu_naissance email telephone adresse_actuelle" %}
-    <div class="{% if f.name == 'adresse_actuelle' %}plein{% endif %}">{{ f.label_tag }}{{ f }}{% for e in f.errors %}<div class="erreur">{{ e }}</div>{% endfor %}</div>
+    {% for f in form %}{% if f.name in "civilite prenom nom date_naissance lieu_naissance email telephone adresse_rue adresse_code_postal adresse_ville" %}
+    <div class="{% if f.name == 'adresse_rue' %}plein{% endif %}">{{ f.label_tag }}{{ f }}{% for e in f.errors %}<div class="erreur">{{ e }}</div>{% endfor %}</div>
     {% endif %}{% endfor %}
   </div></div>
   <div class="carte"><h2>Situation et projet</h2><div class="grille">
@@ -28,10 +28,20 @@
   </div></div>
   <div class="carte"><h2>Garantie</h2><div class="grille">
     <div class="plein">{{ form.type_garantie.label_tag }}{{ form.type_garantie }}{% for e in form.type_garantie.errors %}<div class="erreur">{{ e }}</div>{% endfor %}</div>
-    {% for f in form %}{% if f.name|slice:":7" == "garant_" %}
-    <div class="{% if f.name == 'garant_adresse' %}plein{% endif %} bloc-garant">{{ f.label_tag }}{{ f }}{% for e in f.errors %}<div class="erreur">{{ e }}</div>{% endfor %}</div>
-    {% endif %}{% endfor %}
   </div></div>
+  {{ garants.management_form }}
+  {% for g in garants %}
+  <div class="carte bloc-garant"><h2>{% if forloop.first %}Garant{% else %}Second garant <span class="aide">(facultatif)</span>{% endif %}</h2>
+    {% if forloop.first %}<p class="aide">La personne qui se porte caution solidaire. S'il y a deux garants (par exemple vos deux parents), remplissez aussi le second bloc.</p>{% endif %}
+    {% for e in g.non_field_errors %}<div class="erreur">{{ e }}</div>{% endfor %}
+    {% for h in g.hidden_fields %}{{ h }}{% endfor %}
+    <div class="grille">
+    {% for f in g.visible_fields %}
+      <div class="{% if f.name in 'adresse_rue piece_identite_fichier' %}plein{% endif %}">{{ f.label_tag }}{{ f }}{% if f.help_text %}<div class="aide">{{ f.help_text }}</div>{% endif %}{% for e in f.errors %}<div class="erreur">{{ e }}</div>{% endfor %}</div>
+    {% endfor %}
+    </div>
+  </div>
+  {% endfor %}
   <div class="carte">
     {{ form.message.label_tag }}{{ form.message }}
     <label class="case" style="margin-top:14px">{{ form.consentement }} {{ form.consentement.label }}</label>
@@ -43,6 +53,8 @@
 <script>
   const choix = document.getElementById("id_type_garantie");
   const maj = () => document.querySelectorAll(".bloc-garant").forEach(b => b.style.display = choix.value === "garant" ? "" : "none");
+  // champ « garantie » verrouillé quand le propriétaire l'a choisi avant l'envoi
+  if (choix.disabled) choix.title = "Choisi par le propriétaire";
   choix.addEventListener("change", maj); maj();
 </script>
 {% endif %}

@@ -23,6 +23,7 @@ urlpatterns = [
     path("revisions/<int:pk>/lettre.pdf", views.lettre_revision, name="lettre_revision"),
     path("rappels/<str:type_rappel>/<int:pk>/fait/", views.rappel_fait, name="rappel_fait"),
     path("candidature/<str:jeton>/", views.candidature_publique, name="candidature_publique"),
+    path("prive/<path:chemin>", views.fichier_prive, name="fichier_prive"),
     path("garants/<int:pk>/acte-de-cautionnement.pdf", views.acte_cautionnement, name="acte_cautionnement"),
     path("lots/<int:pk>/photos.zip", views.photos_zip, name="photos_zip"),
     path("finances/encaissements/", views.suivi_encaissements, name="suivi_encaissements"),

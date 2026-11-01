@@ -131,6 +131,8 @@ DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 # Fichiers déposés (photos des logements)
 MEDIA_URL = "media/"
 MEDIA_ROOT = BASE_DIR / "media"
+# pièces d'identité des garants : hors de media (non publié), servies seulement aux personnes connectées
+PRIVE_ROOT = BASE_DIR / "prive"
 
 if not DEBUG:
     SESSION_COOKIE_SECURE = CSRF_COOKIE_SECURE = True

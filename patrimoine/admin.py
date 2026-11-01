@@ -8,7 +8,7 @@ from urllib.parse import quote
 from django.utils import timezone
 from django.utils.html import format_html, format_html_join
 
-from .models import EncaissementHistorique, ChargeLMNP, SiteUtile, Syndic, Annonce, ChargeLCD, ParametresLCD, ReservationLCD, Bail, Bien, Candidature, ChangementLocataire, Garant, PhotoLot, Echeance, EtatDesLieux, MouvementDepot, Pret, Rappel, RevisionLoyer, Locataire, Lot, Paiement, Proprietaire, Tache
+from .models import mois_depot_maximum, GarantCandidature, EncaissementHistorique, ChargeLMNP, SiteUtile, Syndic, Annonce, ChargeLCD, ParametresLCD, ReservationLCD, Bail, Bien, Candidature, ChangementLocataire, Garant, PhotoLot, Echeance, EtatDesLieux, MouvementDepot, Pret, Rappel, RevisionLoyer, Locataire, Lot, Paiement, Proprietaire, Tache
 
 admin.site.site_header = "Gestion immobilière"
 admin.site.enable_nav_sidebar = False  # remplacé par le menu du bandeau
@@ -59,7 +59,8 @@ class GarantInline(admin.StackedInline):
     model = Garant
     extra = 0
     fields = [("civilite", "prenom", "nom"), ("date_naissance", "lieu_naissance"), "adresse", ("email", "telephone"),
-              ("lien", "profession", "revenus_mensuels"), ("type_caution", "montant_max", "duree_mois"), "acte"]
+              ("lien", "profession", "revenus_mensuels"), ("piece_identite_numero", "piece_identite_fichier"),
+              ("type_caution", "montant_max", "duree_mois"), "acte"]
     readonly_fields = ["acte"]
 
     @admin.display(description="acte de cautionnement")
@@ -424,8 +425,35 @@ class LocataireAdmin(admin.ModelAdmin):
         return ", ".join(str(g) for g in obj.garants.all()) or "–"
 
 
+class BailForm(forms.ModelForm):
+    class Meta:
+        model = Bail
+        fields = "__all__"
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        if "depot_garantie" in self.fields:
+            self.fields["depot_garantie"].help_text = ("Maximum légal : 1 mois de loyer hors charges en location nue, 2 mois en meublé, "
+                                                       "aucun en bail mobilité. Calculé automatiquement à la saisie du loyer.")
+
+    def clean(self):
+        donnees = super().clean()
+        mois = mois_depot_maximum(donnees.get("type"))
+        loyer, depot = donnees.get("loyer_initial") or donnees.get("loyer_hc"), donnees.get("depot_garantie")
+        if mois is not None and loyer is not None and depot is not None and depot > loyer * mois:
+            maximum = loyer * mois
+            self.add_error("depot_garantie", f"Le dépôt ne peut pas dépasser {maximum:.2f} € pour ce type de bail "
+                                             f"({mois} mois de loyer hors charges)." if mois else
+                                             "Le dépôt de garantie est interdit en bail mobilité.")
+        return donnees
+
+
 @admin.register(Bail)
 class BailAdmin(admin.ModelAdmin):
+    form = BailForm
+
+    class Media:
+        js = ["patrimoine/depot_garantie.js"]
     list_display = ["liste_locataires", "lot", "type", "date_debut", "colonne_loyer_initial", "colonne_loyer_actuel", "charges", "loyer_cc", "actif"]
     list_display_links = ["liste_locataires", "lot"]
     list_filter = [BailEnCoursFilter, "type", "type_garantie", "lot__bien__proprietaire"]
@@ -437,6 +465,13 @@ class BailAdmin(admin.ModelAdmin):
         (None, {"fields": ["lot", "locataires", "type", "destination", "date_debut", "date_fin", "actif"]}),
         ("Conditions financières", {"fields": [("loyer_initial", "charges"), "loyer_hc", "mode_charges", ("depot_garantie", "recu_depot"), "jour_echeance", "paiement_a_echoir"]}),
         ("Garantie", {"fields": [("type_garantie", "detail_garantie")], "description": "Les garants se saisissent en bas de page."}),
+        ("Relevés des compteurs", {"fields": [("pdl_electricite", "index_elec_entree", "index_elec_sortie"),
+                                              ("pce_gaz", "index_gaz_entree", "index_gaz_sortie"),
+                                              ("compteur_eau", "index_eau_froide_entree", "index_eau_froide_sortie"),
+                                              ("compteur_eau_chaude", "index_eau_chaude_entree", "index_eau_chaude_sortie")],
+                                   "classes": ["releves-compteurs"],
+                                   "description": "Index relevés à l'entrée et à la sortie : ils sont repris automatiquement dans les états des lieux "
+                                                  "(et inversement, un index saisi dans un état des lieux complète le bail)."}),
         ("Révision annuelle et rappels", {"fields": ["revision_annuelle", ("irl_trimestre", "irl_valeur"), "indice_reference", "date_derniere_revision", ("date_attestation_assurance", "rappel_assurance")]}),
         ("Historique des révisions", {"fields": ["historique"]}),
         ("Clauses particulières", {"fields": ["notes"]}),
@@ -909,8 +944,18 @@ class GarantAdmin(admin.ModelAdmin):
         return "–"
 
 
+class GarantCandidatureInline(admin.StackedInline):
+    model = GarantCandidature
+    extra = 0
+    max_num = 2
+    verbose_name_plural = "garants proposés par le candidat"
+    fields = [("civilite", "prenom", "nom"), ("date_naissance", "lieu_naissance"), "adresse_rue", ("code_postal", "ville"),
+              ("email", "telephone"), ("lien", "profession", "revenus_mensuels"), ("piece_identite_numero", "piece_identite_fichier")]
+
+
 @admin.register(Candidature)
 class CandidatureAdmin(admin.ModelAdmin):
+    inlines = [GarantCandidatureInline]
     list_display = ["__str__", "statut", "situation", "revenus_mensuels", "taux_effort", "type_garantie", "recue_le"]
     list_filter = ["statut", "lot"]
     readonly_fields = ["lien_a_envoyer", "statut", "recue_le", "taux_effort"]
@@ -918,8 +963,15 @@ class CandidatureAdmin(admin.ModelAdmin):
 
     def get_fieldsets(self, request, obj=None):
         if obj is None:
-            return [(None, {"fields": ["lot"], "description": "Choisissez le logement : un lien personnel sera créé pour le candidat."})]
-        reponses = [f.name for f in Candidature._meta.fields if f.name not in ("id", "lot", "jeton", "statut", "cree_le", "recue_le", "consentement")]
+            return [(None, {"fields": ["lot", "type_garantie"],
+                            "description": "Choisissez le logement et le type de caution : un lien personnel sera créé pour le candidat. "
+                                           "Avec « Garant », le formulaire lui demandera l'identité du ou des garants (adresse, date et lieu "
+                                           "de naissance, n° de pièce d'identité et copie)."})]
+        anciens = {"adresse_actuelle"} if not obj.adresse_actuelle else set()
+        if not obj.garant_nom:
+            anciens |= {f.name for f in Candidature._meta.fields if f.name.startswith("garant_")}
+        reponses = [f.name for f in Candidature._meta.fields
+                    if f.name not in {"id", "lot", "jeton", "statut", "cree_le", "recue_le", "consentement", *anciens}]
         return [
             (None, {"fields": ["lot", "lien_a_envoyer", "statut", "recue_le", "taux_effort"]}),
             ("Réponses du candidat", {"fields": reponses}),
@@ -929,6 +981,9 @@ class CandidatureAdmin(admin.ModelAdmin):
         if obj is None:
             return []
         return ["lot", *self.readonly_fields]
+
+    def get_inlines(self, request, obj):
+        return self.inlines if obj else []
 
     @admin.display(description="taux d'effort")
     def taux_effort(self, obj):
