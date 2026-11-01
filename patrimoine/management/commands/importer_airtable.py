@@ -108,8 +108,9 @@ class Command(BaseCommand):
                 proprio.type = Proprietaire.Type.SCI_IS if fiscalite == "IS" else Proprietaire.Type.SCI_IR
             elif nom.lower().startswith("sarl"):
                 proprio.type = Proprietaire.Type.SARL_FAMILLE
-            proprio.adresse = "\n".join(filter(None, [_texte(ligne.get("Adresse_Propr")),
-                                                      f"{_texte(ligne.get('CP_Prop'))} {_texte(ligne.get('Ville_Prop'))}".strip()]))
+            proprio.adresse = _texte(ligne.get("Adresse_Propr")) or proprio.adresse
+            proprio.code_postal = _texte(ligne.get("CP_Prop")) or proprio.code_postal
+            proprio.ville = _texte(ligne.get("Ville_Prop")) or proprio.ville
             proprio.siret = re.sub(r"\D", "", ligne.get("SIRET", ""))[:14] or proprio.siret
             proprio.save()
             if proprio not in regimes:

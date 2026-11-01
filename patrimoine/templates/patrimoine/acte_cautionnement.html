@@ -17,7 +17,7 @@ p { text-align: justify; margin: 0 0 8pt; }
 
 <h2>Le bail garanti</h2>
 <table>
-  <tr><td class="l">Bailleur</td><td>{{ proprietaire.nom }}{% if proprietaire.representant %}, représenté par {{ proprietaire.representant }}{% endif %}<br>{{ proprietaire.adresse|linebreaksbr }}</td></tr>
+  <tr><td class="l">Bailleur</td><td>{{ proprietaire.nom }}{% if proprietaire.representant %}, représenté par {{ proprietaire.representant }}{% endif %}<br>{{ proprietaire.adresse_complete|linebreaksbr }}</td></tr>
   <tr><td class="l">Locataire garanti</td><td><strong>{{ g.locataire }}</strong></td></tr>
   <tr><td class="l">Logement</td><td>{{ lot.designation }}, {{ bien.adresse }}, {{ bien.code_postal }} {{ bien.ville }}</td></tr>
   <tr><td class="l">Type et durée du bail</td><td>{{ bail.get_type_display }}, à compter du {{ bail.date_debut|date:"d/m/Y" }}, pour {{ duree_texte }}</td></tr>

@@ -162,6 +162,48 @@ def document_recu_depot(request, pk):
     return _pdf(render_to_string("patrimoine/recu_depot.html", contexte), f"recu depot garantie {m.bail.lot}")
 
 
+CIVILITES_LONGUES = {"M.": "Monsieur", "Mme": "Madame"}
+
+
+def _montant_fr(montant):
+    texte = f"{montant:,.2f}".replace(",", " ").replace(".", ",")
+    return texte[:-3] if texte.endswith(",00") else texte
+
+
+def _recu_depot_word(bail, montant):
+    from .word import remplir_docx
+    proprio, bien = bail.lot.bien.proprietaire, bail.lot.bien
+    locataires = list(bail.locataires.all())
+    if len(locataires) == 1:
+        l = locataires[0]
+        civilite, prenom, nom = CIVILITES_LONGUES.get(l.civilite, ""), l.prenom, l.nom
+    else:
+        civilite, prenom, nom = "Madame, Monsieur", "", " et ".join(f"{l.prenom} {l.nom}".strip() for l in locataires)
+    valeurs = {
+        "Propriétaire": proprio.nom, "Adresse_Propr": proprio.adresse.replace("\n", ", "), "CP_Prop": proprio.code_postal,
+        "Ville_Prop": proprio.ville, "Ville_Propr": proprio.ville,
+        "Adresse_Appart": bien.adresse, "CP_Appart": bien.code_postal, "Ville_Appart": bien.ville,
+        "Civilité_Loc": civilite, "Prénom_Loc": prenom, "Nom_Loc": nom, "Dépôt_Gar": _montant_fr(montant),
+    }
+    contenu = remplir_docx("recu_depot_garantie.docx", valeurs)
+    reponse = HttpResponse(contenu, content_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document")
+    nom_fichier = f"Reçu dépôt de garantie {bail.lot} {nom}.docx".replace("/", "-")
+    reponse["Content-Disposition"] = f"attachment; filename*=UTF-8''{quote(nom_fichier)}"
+    return reponse
+
+
+@staff_member_required
+def recu_depot_mouvement(request, pk):
+    m = get_object_or_404(MouvementDepot.objects.select_related("bail__lot__bien__proprietaire"), pk=pk, type=MouvementDepot.Type.ENCAISSEMENT)
+    return _recu_depot_word(m.bail, m.montant)
+
+
+@staff_member_required
+def recu_depot_bail(request, pk):
+    bail = get_object_or_404(Bail.objects.select_related("lot__bien__proprietaire"), pk=pk)
+    return _recu_depot_word(bail, bail.depot_garantie)
+
+
 @staff_member_required
 def etat_endettement(request):
     try:

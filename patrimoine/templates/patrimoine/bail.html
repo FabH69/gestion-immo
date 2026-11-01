@@ -9,7 +9,7 @@
 
 <h2>I. Désignation des parties</h2>
 <table>
-  <tr><td class="l">Bailleur</td><td><strong>{{ proprietaire.nom }}</strong>{% if proprietaire.get_type_display != "Nom propre" %} ({{ proprietaire.get_type_display }}){% endif %}{% if proprietaire.siret %}, SIRET {{ proprietaire.siret }}{% endif %}<br>{{ proprietaire.adresse|linebreaksbr|default:'<span class="a-remplir">adresse à compléter</span>' }}{% if proprietaire.representant %}<br>Représenté par {{ proprietaire.representant }}{% endif %}</td></tr>
+  <tr><td class="l">Bailleur</td><td><strong>{{ proprietaire.nom }}</strong>{% if proprietaire.get_type_display != "Nom propre" %} ({{ proprietaire.get_type_display }}){% endif %}{% if proprietaire.siret %}, SIRET {{ proprietaire.siret }}{% endif %}{% if proprietaire.rcs %}, {{ proprietaire.rcs }}{% endif %}<br>{{ proprietaire.adresse_complete|linebreaksbr|default:'<span class="a-remplir">adresse à compléter</span>' }}{% if proprietaire.representant %}<br>Représenté par {{ proprietaire.representant }}{% endif %}</td></tr>
   {% for l in locataires %}
   <tr><td class="l">Locataire{% if locataires|length > 1 %} {{ forloop.counter }}{% endif %}</td><td><strong>{{ l }}</strong>{% if l.date_naissance %}, né(e) le {{ l.date_naissance|date:"d/m/Y" }}{% if l.lieu_naissance %} à {{ l.lieu_naissance }}{% endif %}{% endif %}{% if l.adresse_actuelle %}<br>Demeurant {{ l.adresse_actuelle|linebreaksbr }}{% endif %}{% if l.email %}<br>{{ l.email }}{% endif %}{% if l.telephone %} · {{ l.telephone }}{% endif %}</td></tr>
   {% endfor %}

@@ -18,8 +18,12 @@ class Proprietaire(models.Model):
     nom = models.CharField(max_length=200)
     type = models.CharField(max_length=20, choices=Type.choices)
     siret = models.CharField("SIRET", max_length=14, blank=True)
+    rcs = models.CharField("RCS", max_length=60, blank=True, help_text="ex. « RCS Lyon 123 456 789 »")
+    date_immatriculation = models.DateField("date d'immatriculation", null=True, blank=True)
     representant = models.CharField("représenté par", max_length=200, blank=True, help_text="Gérant de la SCI ou de la SARL, ex. « M. Fabien X, gérant »")
-    adresse = models.TextField(blank=True)
+    adresse = models.TextField(blank=True, help_text="Numéro et rue (et complément éventuel)")
+    code_postal = models.CharField("code postal", max_length=10, blank=True)
+    ville = models.CharField(max_length=100, blank=True)
     iban = models.CharField("IBAN", max_length=34, blank=True)
     notes = models.TextField(blank=True)
 
@@ -29,6 +33,10 @@ class Proprietaire(models.Model):
 
     def __str__(self):
         return self.nom
+
+    @property
+    def adresse_complete(self):
+        return "\n".join(filter(None, [self.adresse, f"{self.code_postal} {self.ville}".strip()]))
 
 
 class Bien(models.Model):
@@ -141,6 +149,7 @@ class Locataire(models.Model):
     telephone = models.CharField("téléphone", max_length=20, blank=True)
     date_naissance = models.DateField("date de naissance", null=True, blank=True)
     lieu_naissance = models.CharField("lieu de naissance", max_length=100, blank=True)
+    nationalite = models.CharField("nationalité", max_length=60, blank=True)
     adresse_actuelle = models.TextField("adresse actuelle", blank=True, help_text="Adresse avant l'entrée dans les lieux ou après le départ")
     garant = models.CharField(max_length=200, blank=True, help_text="Nom et coordonnées du garant")
     notes = models.TextField(blank=True)

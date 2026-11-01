@@ -13,7 +13,7 @@ class Command(BaseCommand):
     def handle(self, *args, **options):
         P = Proprietaire.Type
         nom_propre = Proprietaire.objects.create(nom="Nom propre", type=P.NOM_PROPRE)
-        sci1 = Proprietaire.objects.create(nom="SCI Démo 1", type=P.SCI_IR, adresse="1 place Bellecour\n69002 Lyon", siret="12345678900011", representant="M. Jean Exemple, gérant", iban="FR76 0000 0000 0000 0000 0000 000")
+        sci1 = Proprietaire.objects.create(nom="SCI Démo 1", type=P.SCI_IR, adresse="1 place Bellecour", code_postal="69002", ville="Lyon", rcs="RCS Lyon 123 456 789", siret="12345678900011", representant="M. Jean Exemple, gérant", iban="FR76 0000 0000 0000 0000 0000 000")
         sci2 = Proprietaire.objects.create(nom="SCI Démo 2", type=P.SCI_IS)
         sarl = Proprietaire.objects.create(nom="SARL de famille Démo", type=P.SARL_FAMILLE)
 

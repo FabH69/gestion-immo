@@ -170,3 +170,6 @@ fieldset.sortie-locataire.sortie-active { border-color: #f5c27a; background: #ff
 .change-list #content-main { max-width: none; }
 #changelist .changelist-form-container { flex: 1 1 auto; min-width: 0; }
 #changelist-filter { flex: 0 0 210px; width: 210px; margin-left: 16px; }
+
+/* Lien « Créer le reçu » dans les listes : discret, sur une ligne */
+a.bouton-recu { display: inline-block; padding: 2px 10px; border: 1px solid var(--primary); border-radius: 999px; font-size: .8rem; white-space: nowrap; }

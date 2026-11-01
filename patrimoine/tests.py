@@ -688,3 +688,33 @@ class FicheLocataireTests(TestCase):
         bail.refresh_from_db()
         self.assertTrue(bail.actif)
         self.assertEqual(list(bail.locataires.all()), [b])
+
+
+class RecuDepotWordTests(TestCase):
+    def setUp(self):
+        self.client.force_login(User.objects.create_superuser("admin", "a@a.fr", "x"))
+        proprio = Proprietaire.objects.create(nom="SCI ALFAB", type=Proprietaire.Type.SCI_IR, adresse="2 chemin du Bois", code_postal="69290", ville="Pollionnay")
+        bien = Bien.objects.create(proprietaire=proprio, nom="B", adresse="3 rue X", code_postal="69000", ville="Lyon")
+        lot = Lot.objects.create(bien=bien, designation="Apt 1")
+        self.bail = Bail.objects.create(lot=lot, type=Bail.Type.NU, date_debut=date(2025, 1, 1), loyer_hc=600, depot_garantie=Decimal("1200"))
+        self.bail.locataires.add(Locataire.objects.create(civilite="Mme", prenom="Léa", nom="DUPONT"))
+
+    def _texte(self, reponse):
+        import io, re, zipfile
+        xml = zipfile.ZipFile(io.BytesIO(reponse.content)).read("word/document.xml").decode()
+        return "".join(re.findall(r"<w:t[^>]*>([^<]*)</w:t>", xml))
+
+    def test_recu_depuis_le_bail(self):
+        texte = self._texte(self.client.get(f"/baux/{self.bail.pk}/recu-depot-garantie.docx"))
+        self.assertIn("Je soussigné SCI ALFAB, bailleur du bien situé au 3 rue X 69000 Lyon", texte)
+        self.assertIn("la somme de 1 200 euros", texte)
+        self.assertIn("Madame Léa DUPONT", texte)
+        self.assertIn("à Pollionnay", texte)
+        self.assertNotIn("{", texte)
+
+    def test_recu_depuis_un_encaissement(self):
+        m = MouvementDepot.objects.create(bail=self.bail, date=date(2025, 1, 1), montant=Decimal("1150.50"))
+        self.assertIn("1 150,50 euros", self._texte(self.client.get(f"/depots/{m.pk}/recu.docx")))
+        page = self.client.get("/admin/patrimoine/mouvementdepot/").content.decode()
+        self.assertIn("Mme Léa DUPONT", page)
+        self.assertIn("SCI ALFAB", page)

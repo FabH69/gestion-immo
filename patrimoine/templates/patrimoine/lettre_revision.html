@@ -8,7 +8,7 @@ p { margin: 0 0 9pt; text-align: justify; }
 table.calcul td { border: none; padding: 2pt 0; }
 </style></head>
 <body>
-<div class="expediteur"><strong>{{ proprietaire.nom }}</strong>{% if proprietaire.representant %}<br>{{ proprietaire.representant }}{% endif %}<br>{{ proprietaire.adresse|linebreaksbr }}</div>
+<div class="expediteur"><strong>{{ proprietaire.nom }}</strong>{% if proprietaire.representant %}<br>{{ proprietaire.representant }}{% endif %}<br>{{ proprietaire.adresse_complete|linebreaksbr }}</div>
 <div class="destinataire">{% for l in locataires %}{{ l }}<br>{% endfor %}{{ bien.adresse }}{% if lot.etage %}<br>{{ lot.etage }}{% endif %}<br>{{ bien.code_postal }} {{ bien.ville }}<br><br>Le {{ aujourdhui|date:"j F Y" }}</div>
 <div class="objet">Objet : révision annuelle du loyer – {{ lot.designation }}, {{ bien.adresse }}</div>
 <p>{% if locataires|length > 1 %}Madame, Monsieur,{% else %}{% if locataires.0.civilite == "Mme" %}Madame,{% elif locataires.0.civilite == "M." %}Monsieur,{% else %}Madame, Monsieur,{% endif %}{% endif %}</p>

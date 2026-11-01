@@ -84,7 +84,7 @@ class MouvementDepotInline(admin.TabularInline):
     @admin.display(description="reçu")
     def recu(self, obj):
         if obj.pk and obj.type == MouvementDepot.Type.ENCAISSEMENT:
-            return format_html('<a href="{}" target="_blank">Reçu PDF</a>', reverse("document_recu_depot", args=[obj.pk]))
+            return format_html('<a class="bouton-recu" href="{}">Créer le reçu</a>', reverse("recu_depot_mouvement", args=[obj.pk]))
         return "–"
 
 
@@ -97,9 +97,16 @@ class BailInline(admin.TabularInline):
 
 @admin.register(Proprietaire)
 class ProprietaireAdmin(admin.ModelAdmin):
-    list_display = ["nom", "type", "nb_biens"]
+    list_display = ["nom", "type", "siret", "ville", "nb_biens"]
     list_filter = ["type"]
     inlines = [BienInline]
+    fields = ["nom", "type", "representant", ("siret", "rcs", "date_immatriculation"), "adresse", ("code_postal", "ville"), "iban", "notes"]
+
+    def formfield_for_dbfield(self, db_field, request, **kwargs):
+        champ = super().formfield_for_dbfield(db_field, request, **kwargs)
+        if db_field.name == "adresse":
+            champ.widget.attrs.update(rows=2)
+        return champ
 
     @admin.display(description="biens")
     def nb_biens(self, obj):
@@ -234,7 +241,7 @@ class LocataireAdmin(admin.ModelAdmin):
         js = ["patrimoine/sortie_locataire.js"]
 
     def get_fieldsets(self, request, obj=None):
-        identite = (None, {"fields": ["civilite", "nom", "prenom", "email", "telephone", ("date_naissance", "lieu_naissance"), "adresse_actuelle", "notes"]})
+        identite = (None, {"fields": ["civilite", "nom", "prenom", "email", "telephone", ("date_naissance", "lieu_naissance"), "nationalite", "adresse_actuelle", "notes"]})
         logement = ("Logement", {"fields": ["lot", "date_entree"]})
         if obj and obj.baux.filter(actif=True).exists():
             sortie = ("Sortie du locataire", {"fields": ["sortie", "date_sortie"], "classes": ["sortie-locataire"],
@@ -332,16 +339,22 @@ class BailAdmin(admin.ModelAdmin):
     search_fields = ["lot__designation", "lot__bien__nom", "locataires__nom"]
     filter_horizontal = ["locataires"]
     date_hierarchy = "date_debut"
-    readonly_fields = ["documents"]
+    readonly_fields = ["documents", "recu_depot"]
     fieldsets = [
         (None, {"fields": ["lot", "locataires", "type", "destination", "date_debut", "date_fin", "actif"]}),
-        ("Conditions financières", {"fields": ["loyer_hc", "charges", "mode_charges", "depot_garantie", "jour_echeance", "paiement_a_echoir"]}),
+        ("Conditions financières", {"fields": ["loyer_hc", "charges", "mode_charges", ("depot_garantie", "recu_depot"), "jour_echeance", "paiement_a_echoir"]}),
         ("Garantie", {"fields": [("type_garantie", "detail_garantie")], "description": "Les garants se saisissent en bas de page."}),
         ("Révision annuelle et rappels", {"fields": ["revision_annuelle", ("irl_trimestre", "irl_valeur"), "indice_reference", "date_derniere_revision", ("date_attestation_assurance", "rappel_assurance")]}),
         ("Clauses particulières", {"fields": ["notes"]}),
         ("Documents pré-remplis", {"fields": ["documents"]}),
     ]
     inlines = [GarantBailInline, MouvementDepotInline]
+
+    @admin.display(description="reçu")
+    def recu_depot(self, obj):
+        if not obj.pk:
+            return "Enregistrez le bail pour créer le reçu."
+        return format_html('<a class="button" href="{}">Créer le reçu (Word)</a>', reverse("recu_depot_bail", args=[obj.pk]))
 
     @admin.display(description="documents")
     def documents(self, obj):
@@ -602,7 +615,20 @@ class EtatDesLieuxAdmin(admin.ModelAdmin):
 
 @admin.register(MouvementDepot)
 class MouvementDepotAdmin(admin.ModelAdmin):
-    list_display = ["date", "type", "montant_affiche", "bail", "mode", "recu"]
+    list_display = ["date", "type", "montant_affiche", "logement", "locataires", "proprietaire", "mode", "recu"]
+    list_select_related = ["bail__lot__bien__proprietaire"]
+
+    @admin.display(description="logement", ordering="bail__lot__bien__nom")
+    def logement(self, obj):
+        return str(obj.bail.lot)
+
+    @admin.display(description="locataire")
+    def locataires(self, obj):
+        return ", ".join(str(l) for l in obj.bail.locataires.all()) or "–"
+
+    @admin.display(description="propriétaire", ordering="bail__lot__bien__proprietaire__nom")
+    def proprietaire(self, obj):
+        return obj.bail.lot.bien.proprietaire
     list_filter = ["type", "bail__lot__bien__proprietaire"]
     search_fields = ["bail__lot__designation", "bail__locataires__nom"]
     date_hierarchy = "date"
@@ -615,7 +641,7 @@ class MouvementDepotAdmin(admin.ModelAdmin):
     @admin.display(description="reçu")
     def recu(self, obj):
         if obj.type == MouvementDepot.Type.ENCAISSEMENT:
-            return format_html('<a href="{}" target="_blank">Reçu PDF</a>', reverse("document_recu_depot", args=[obj.pk]))
+            return format_html('<a class="bouton-recu" href="{}">Créer le reçu</a>', reverse("recu_depot_mouvement", args=[obj.pk]))
         return "–"
 
     def changelist_view(self, request, extra_context=None):

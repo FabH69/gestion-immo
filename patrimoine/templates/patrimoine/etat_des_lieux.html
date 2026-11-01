@@ -12,7 +12,7 @@
 
 <h2>Parties et logement</h2>
 <table>
-  <tr><td class="l">Bailleur</td><td><strong>{{ proprietaire.nom }}</strong>{% if proprietaire.representant %}, représenté par {{ proprietaire.representant }}{% endif %}<br>{{ proprietaire.adresse|linebreaksbr }}</td></tr>
+  <tr><td class="l">Bailleur</td><td><strong>{{ proprietaire.nom }}</strong>{% if proprietaire.representant %}, représenté par {{ proprietaire.representant }}{% endif %}<br>{{ proprietaire.adresse_complete|linebreaksbr }}</td></tr>
   <tr><td class="l">Locataire{{ locataires|length|pluralize }}</td><td>{% for l in locataires %}<strong>{{ l }}</strong>{% if not forloop.last %}, {% endif %}{% endfor %}</td></tr>
   {% if edl.type == "sortie" %}<tr><td class="l">Nouvelle adresse du locataire</td><td>{{ edl.nouvelle_adresse|linebreaksbr|default:'&nbsp;' }}</td></tr>{% endif %}
   <tr><td class="l">Logement</td><td>{{ lot.get_type_display }} – {{ lot.designation }}{% if lot.etage %}, {{ lot.etage }}{% endif %}<br>{{ bien.adresse }}, {{ bien.code_postal }} {{ bien.ville }}</td></tr>
