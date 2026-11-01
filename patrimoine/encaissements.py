@@ -109,7 +109,7 @@ def enregistrer(proprietaire, annee, donnees):
     return modifies
 
 
-def loyers_dus_lot(lot, annee):
+def loyers_dus_lot(lot, annee, exclure_mois=()):
     """Loyers HC et charges dus selon les baux du lot, mois par mois (mêmes règles que le suivi des encaissements)."""
     debut, fin = date(annee, 1, 1), date(annee, 12, 31)
     baux = list(Bail.objects.filter(lot=lot, date_debut__lte=fin).filter(Q(actif=True) | Q(date_fin__gte=debut) | Q(date_fin__isnull=True))
@@ -117,6 +117,8 @@ def loyers_dus_lot(lot, annee):
     entrees = {b.date_debut for b in baux}
     loyers = charges = ZERO
     for m in range(1, 13):
+        if m in exclure_mois:
+            continue
         premier, dernier = date(annee, m, 1), date(annee, m, calendar.monthrange(annee, m)[1])
         for bail in baux:
             part = _part_du_mois(bail, premier, dernier, entrees)

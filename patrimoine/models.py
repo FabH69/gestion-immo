@@ -1061,6 +1061,25 @@ class ChargeLMNP(models.Model):
         return f"{self.get_categorie_display()} {self.annee} – {self.lot}"
 
 
+class EncaissementHistorique(models.Model):
+    """Loyer encaissé repris d'un ancien suivi (Excel) : montant du mois pour un logement, sans détail par échéance."""
+
+    lot = models.ForeignKey(Lot, on_delete=models.CASCADE, related_name="encaissements_historiques")
+    mois = models.DateField(help_text="Premier jour du mois")
+    montant = models.DecimalField("montant encaissé (€)", max_digits=10, decimal_places=2)
+    charges = models.DecimalField("dont charges (€)", max_digits=10, decimal_places=2, default=0)
+    note = models.CharField(max_length=255, blank=True)
+
+    class Meta:
+        verbose_name = "loyer encaissé (historique)"
+        verbose_name_plural = "loyers encaissés (historique)"
+        ordering = ["lot", "-mois"]
+        constraints = [models.UniqueConstraint(fields=["lot", "mois"], name="encaissement_historique_unique_par_mois")]
+
+    def __str__(self):
+        return f"{self.lot} – {self.mois:%m/%Y} : {self.montant} €"
+
+
 class ReservationLCD(models.Model):
     """Réservation de location courte durée importée depuis Airbnb, Booking ou saisie (réservation directe)."""
 

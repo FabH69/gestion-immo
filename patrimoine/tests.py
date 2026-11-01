@@ -835,3 +835,27 @@ class LmnpTests(TestCase):
         page = self.client.get("/lmnp/?annee=2026").content.decode()
         self.assertIn("Résultat fiscal", page)
         self.assertIn("Taxe foncière", page)
+
+    def test_historique_repris_avant_les_baux(self):
+        from .lmnp import bilan_lot
+        from .models import EncaissementHistorique
+        EncaissementHistorique.objects.create(lot=self.lot, mois=date(2026, 1, 1), montant=700, charges=50)
+        EncaissementHistorique.objects.create(lot=self.lot, mois=date(2026, 2, 1), montant=650, charges=50, note="remise")
+        b = bilan_lot(self.lot, 2026)
+        # 2 mois repris (1 350 €) + 10 mois selon le bail (10 x 700 €)
+        self.assertEqual(b["total_recettes"], Decimal("8350"))
+
+
+class EncaissementHistoriqueEtatTests(TestCase):
+    def test_mois_sans_paiement_repris_dans_l_etat(self):
+        from .etats import loyers_encaisses
+        from .models import EncaissementHistorique
+        proprio = Proprietaire.objects.create(nom="SCI A", type=Proprietaire.Type.SCI_IR)
+        bien = Bien.objects.create(proprietaire=proprio, nom="Lozanne", adresse="1 rue", code_postal="69380", ville="Lozanne")
+        lot = Lot.objects.create(bien=bien, designation="Loz1", vendu=True)
+        EncaissementHistorique.objects.create(lot=lot, mois=date(2019, 3, 1), montant=510)
+        EncaissementHistorique.objects.create(lot=lot, mois=date(2019, 4, 1), montant=520, charges=20)
+        etat = loyers_encaisses(2019)
+        self.assertEqual(etat["total"]["total"], Decimal("1030"))
+        self.assertEqual(etat["total"]["mois"][2], Decimal("510"))
+        self.assertEqual(etat["total"]["charges"], Decimal("20"))

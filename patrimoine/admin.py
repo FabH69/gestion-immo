@@ -8,7 +8,7 @@ from urllib.parse import quote
 from django.utils import timezone
 from django.utils.html import format_html, format_html_join
 
-from .models import ChargeLMNP, SiteUtile, Syndic, Annonce, ChargeLCD, ParametresLCD, ReservationLCD, Bail, Bien, Candidature, ChangementLocataire, Garant, PhotoLot, Echeance, EtatDesLieux, MouvementDepot, Pret, Rappel, RevisionLoyer, Locataire, Lot, Paiement, Proprietaire, Tache
+from .models import EncaissementHistorique, ChargeLMNP, SiteUtile, Syndic, Annonce, ChargeLCD, ParametresLCD, ReservationLCD, Bail, Bien, Candidature, ChangementLocataire, Garant, PhotoLot, Echeance, EtatDesLieux, MouvementDepot, Pret, Rappel, RevisionLoyer, Locataire, Lot, Paiement, Proprietaire, Tache
 
 admin.site.site_header = "Gestion immobilière"
 admin.site.enable_nav_sidebar = False  # remplacé par le menu du bandeau
@@ -135,6 +135,13 @@ class SyndicAdmin(admin.ModelAdmin):
     @admin.display(description="biens")
     def liste_biens(self, obj):
         return ", ".join(b.nom for b in obj.biens.all()) or "–"
+
+
+@admin.register(EncaissementHistorique)
+class EncaissementHistoriqueAdmin(admin.ModelAdmin):
+    list_display = ["mois", "lot", "montant", "charges", "note"]
+    list_filter = ["lot__bien__proprietaire", "lot"]
+    date_hierarchy = "mois"
 
 
 @admin.register(ChargeLMNP)

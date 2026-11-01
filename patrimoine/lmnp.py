@@ -37,10 +37,15 @@ def bilan_lot(lot, annee):
             recettes.append(_ligne("Loyers et charges encaissés", sum((p.montant for p in paiements), ZERO), "Paiements enregistrés"))
         else:
             from .encaissements import loyers_dus_lot
-            loyers, provisions = loyers_dus_lot(lot, annee)
-            recettes.append(_ligne("Loyers", loyers, "Selon les baux"))
+            from .models import EncaissementHistorique
+            historiques = list(EncaissementHistorique.objects.filter(lot=lot, mois__year=annee))
+            if historiques:
+                recettes.append(_ligne("Loyers et charges encaissés", sum((h.montant for h in historiques), ZERO), "Suivi repris"))
+            loyers, provisions = loyers_dus_lot(lot, annee, exclure_mois={h.mois.month for h in historiques})
+            if loyers:
+                recettes.append(_ligne("Loyers" + (" (mois restants)" if historiques else ""), loyers, "Selon les baux"))
             if provisions:
-                recettes.append(_ligne("Charges refacturées au locataire", provisions, "Selon les baux"))
+                recettes.append(_ligne("Charges refacturées au locataire" + (" (mois restants)" if historiques else ""), provisions, "Selon les baux"))
 
     interets = assurance = ZERO
     for pret in lot.bien.prets.all():

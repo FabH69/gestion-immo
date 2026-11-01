@@ -22,6 +22,15 @@ from .forms import CandidatureForm
 from .models import Bail, Candidature, Echeance, EtatDesLieux, Garant, JournalFait, Lot, MouvementDepot, Pret, Proprietaire, Rappel, RevisionLoyer, Tache
 
 
+def annees_disponibles():
+    """Années proposées dans les états : de la plus ancienne donnée (ancien suivi compris) à l'année prochaine."""
+    from .models import EncaissementHistorique
+    courante = timezone.localdate().year
+    premier = EncaissementHistorique.objects.order_by("mois").values_list("mois", flat=True).first()
+    debut = min(courante - 6, premier.year) if premier else courante - 6
+    return range(courante + 1, debut - 1, -1)
+
+
 @staff_member_required
 def document_echeance(request, pk):
     """Quittance si l'échéance est soldée, sinon avis d'échéance (une quittance ne se délivre que pour un loyer payé en entier)."""
@@ -67,7 +76,7 @@ def etat_loyers_encaisses(request):
         **etat,
         "proprietaire": proprietaire,
         "proprietaires_choix": Proprietaire.objects.all(),
-        "annees": range(timezone.localdate().year + 1, timezone.localdate().year - 6, -1),
+        "annees": annees_disponibles(),
         "aujourdhui": timezone.localdate(),
     }
     if format_ == "pdf":
@@ -575,5 +584,5 @@ def biens_lmnp(request):
     aujourdhui = timezone.localdate()
     annee = int(request.GET.get("annee") or aujourdhui.year)
     contexte = {**admin.site.each_context(request), "title": f"Biens en LMNP – {annee}", "annee": annee,
-                "annees": range(aujourdhui.year + 1, aujourdhui.year - 6, -1), **lmnp.bilan(annee)}
+                "annees": annees_disponibles(), **lmnp.bilan(annee)}
     return render(request, "patrimoine/lmnp.html", contexte)
