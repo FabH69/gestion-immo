@@ -5,7 +5,7 @@ from django.contrib.auth.models import User
 from django.test import TestCase
 from django.utils import timezone
 
-from .models import Bail, Bien, Echeance, Locataire, Lot, Paiement, Proprietaire
+from .models import Bail, Bien, Echeance, Locataire, Lot, MouvementDepot, Paiement, Proprietaire, Rappel
 
 
 class EcheanceTests(TestCase):
@@ -626,3 +626,65 @@ class PeriodiciteRappelsTests(TestCase):
         bail.rappel_assurance = False
         bail.save()
         self.assertNotIn("Assurance", [i["categorie"] for i in a_faire(date(2026, 10, 31))])
+
+
+class FicheLocataireTests(TestCase):
+    def setUp(self):
+        from django.contrib.auth.models import User
+        self.client.force_login(User.objects.create_superuser("admin", "a@a.fr", "x"))
+        proprio = Proprietaire.objects.create(nom="SCI Fiche", type=Proprietaire.Type.SCI_IR)
+        bien = Bien.objects.create(nom="Immeuble F", proprietaire=proprio, adresse="1 rue", code_postal="69000", ville="Lyon")
+        self.lot = Lot.objects.create(bien=bien, designation="Apt 1", meuble=True, loyer_propose=650)
+
+    def _donnees(self, **extra):
+        d = {"nom": "DUPONT", "prenom": "Jean", "garants-TOTAL_FORMS": "0", "garants-INITIAL_FORMS": "0"}
+        d.update(extra)
+        return d
+
+    def test_rattachement_cree_un_bail(self):
+        r = self.client.post("/admin/patrimoine/locataire/add/", self._donnees(lot=self.lot.pk, date_entree="2026-11-01"))
+        self.assertEqual(r.status_code, 302, r.content.decode()[:3000])
+        bail = Bail.objects.get(lot=self.lot)
+        self.assertEqual(bail.type, Bail.Type.MEUBLE)
+        self.assertEqual(bail.date_debut, date(2026, 11, 1))
+        self.assertEqual(list(bail.locataires.values_list("nom", flat=True)), ["DUPONT"])
+
+    def test_rattachement_au_bail_existant(self):
+        bail = Bail.objects.create(lot=self.lot, type=Bail.Type.NU, date_debut=date(2025, 1, 1), loyer_hc=600)
+        self.client.post("/admin/patrimoine/locataire/add/", self._donnees(lot=self.lot.pk))
+        self.assertEqual(Bail.objects.count(), 1)
+        self.assertEqual(bail.locataires.count(), 1)
+
+    def test_sortie_cree_les_rappels(self):
+        loc = Locataire.objects.create(nom="DUPONT", prenom="Jean")
+        bail = Bail.objects.create(lot=self.lot, type=Bail.Type.NU, date_debut=date(2025, 1, 1), loyer_hc=600, type_garantie="visale", detail_garantie="V123")
+        bail.locataires.add(loc)
+        MouvementDepot.objects.create(bail=bail, date=date(2025, 1, 1), montant=600)
+        page = self.client.get(f"/admin/patrimoine/locataire/{loc.pk}/change/").content.decode()
+        self.assertIn("Le locataire quitte le logement", page)
+        r = self.client.post(f"/admin/patrimoine/locataire/{loc.pk}/change/", self._donnees(lot=self.lot.pk, sortie="on", date_sortie="2026-11-15"))
+        self.assertEqual(r.status_code, 302, r.content.decode()[:3000])
+        bail.refresh_from_db()
+        self.assertFalse(bail.actif)
+        self.assertEqual(bail.date_fin, date(2026, 11, 15))
+        titres = list(Rappel.objects.values_list("titre", flat=True))
+        self.assertTrue(any("dépôt de garantie" in t and "600.00" in t for t in titres), titres)
+        self.assertTrue(any("Visale" in t for t in titres), titres)
+        self.assertEqual(Rappel.objects.get(titre__contains="dépôt").date, date(2026, 12, 15))
+
+    def test_sortie_sans_depot_ni_visale(self):
+        loc = Locataire.objects.create(nom="MARTIN")
+        bail = Bail.objects.create(lot=self.lot, type=Bail.Type.NU, date_debut=date(2025, 1, 1), loyer_hc=600, type_garantie="garant")
+        bail.locataires.add(loc)
+        self.client.post(f"/admin/patrimoine/locataire/{loc.pk}/change/", self._donnees(nom="MARTIN", lot=self.lot.pk, sortie="on", date_sortie="2026-11-15"))
+        self.assertFalse(Bail.objects.get().actif)
+        self.assertEqual(Rappel.objects.count(), 0)
+
+    def test_colocataire_qui_part(self):
+        a, b = Locataire.objects.create(nom="A"), Locataire.objects.create(nom="B")
+        bail = Bail.objects.create(lot=self.lot, type=Bail.Type.NU, date_debut=date(2025, 1, 1), loyer_hc=600)
+        bail.locataires.add(a, b)
+        self.client.post(f"/admin/patrimoine/locataire/{a.pk}/change/", self._donnees(nom="A", prenom="", lot=self.lot.pk, sortie="on", date_sortie="2026-11-15"))
+        bail.refresh_from_db()
+        self.assertTrue(bail.actif)
+        self.assertEqual(list(bail.locataires.all()), [b])
