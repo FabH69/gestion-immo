@@ -73,7 +73,7 @@ def etat_loyers_encaisses(request):
     if format_ == "pdf":
         html = render_to_string("patrimoine/etat_loyers_pdf.html", contexte)
         response = HttpResponse(HTML(string=html).write_pdf(), content_type="application/pdf")
-        response["Content-Disposition"] = f'inline; filename="{nom_fichier}.pdf"'
+        response["Content-Disposition"] = f'attachment; filename="{nom_fichier}.pdf"'
         return response
     return render(request, "patrimoine/etat_loyers.html", {**admin.site.each_context(request), **contexte, "title": f"Loyers encaissés en {annee}" + (f" – {proprietaire.nom}" if proprietaire else "")})
 
@@ -565,3 +565,15 @@ def suivi_encaissements(request):
     if proprietaire:
         contexte.update(encaissements.suivi(proprietaire, annee))
     return render(request, "patrimoine/suivi_encaissements.html", contexte)
+
+
+@staff_member_required
+def biens_lmnp(request):
+    """Courte durée › Biens en LMNP : recettes, charges et résultat de l'année par bien."""
+    from . import lmnp
+
+    aujourdhui = timezone.localdate()
+    annee = int(request.GET.get("annee") or aujourdhui.year)
+    contexte = {**admin.site.each_context(request), "title": f"Biens en LMNP – {annee}", "annee": annee,
+                "annees": range(aujourdhui.year + 1, aujourdhui.year - 6, -1), **lmnp.bilan(annee)}
+    return render(request, "patrimoine/lmnp.html", contexte)

@@ -19,8 +19,9 @@
       {% for p in proprietaires_choix %}<option value="{{ p.pk }}" {% if proprietaire.pk == p.pk %}selected{% endif %}>{{ p.nom }}</option>{% endfor %}
     </select>
   </label>
-  <a class="button" href="?annee={{ annee }}&proprietaire={{ proprietaire.pk|default:'' }}&format=pdf" target="_blank">Télécharger en PDF</a>
+  <a class="button" href="?annee={{ annee }}&proprietaire={{ proprietaire.pk|default:'' }}&format=pdf">Télécharger en PDF</a>
   <a class="button" href="?annee={{ annee }}&proprietaire={{ proprietaire.pk|default:'' }}&format=csv">Télécharger pour Excel</a>
+  <a class="button annuler" href="{% url 'admin:index' %}">← Retour à l'accueil</a>
 </form>
 <div class="etat-scroll">{% include "patrimoine/_tableau_etat.html" %}</div>
 {% endblock %}

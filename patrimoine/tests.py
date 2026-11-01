@@ -813,3 +813,25 @@ class SuiviEncaissementsTests(TestCase):
         page = self.client.get("/admin/patrimoine/bail/").content.decode()
         self.assertIn("MALGUID", page)
         self.assertNotIn("GAFSAOUI", page)
+
+
+class LmnpTests(TestCase):
+    def setUp(self):
+        self.client.force_login(User.objects.create_superuser("admin", "a@a.fr", "x"))
+        proprio = Proprietaire.objects.create(nom="Fabien & Alice", type=Proprietaire.Type.NOM_PROPRE)
+        bien = Bien.objects.create(proprietaire=proprio, nom="Chazay", adresse="7 place", code_postal="69380", ville="Chazay")
+        self.lot = Lot.objects.create(bien=bien, designation="Chazay", meuble=True, lmnp=True)
+        Bail.objects.create(lot=self.lot, type=Bail.Type.MEUBLE, date_debut=date(2025, 1, 1), loyer_hc=650, charges=50).locataires.add(Locataire.objects.create(nom="BOUVET"))
+
+    def test_bilan(self):
+        from .models import ChargeLMNP
+        ChargeLMNP.objects.create(lot=self.lot, annee=2026, categorie="taxe_fonciere", montant=400)
+        ChargeLMNP.objects.create(lot=self.lot, annee=2026, categorie="amortissement", montant=9000)
+        from .lmnp import bilan_lot
+        b = bilan_lot(self.lot, 2026)
+        self.assertEqual(b["total_recettes"], Decimal("8400"))
+        self.assertEqual(b["resultat"], Decimal("8000"))
+        self.assertEqual((b["amort_deduit"], b["amort_reporte"], b["resultat_fiscal"]), (Decimal("8000"), Decimal("1000"), Decimal("0")))
+        page = self.client.get("/lmnp/?annee=2026").content.decode()
+        self.assertIn("Résultat fiscal", page)
+        self.assertIn("Taxe foncière", page)

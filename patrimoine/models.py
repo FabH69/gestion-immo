@@ -142,6 +142,7 @@ class Lot(models.Model):
         choices=[("longue", "Location classique (bail)"), ("courte", "Location courte durée (Airbnb, Booking…)")],
         help_text="Courte durée : suivi dans Courte durée et bloc à compléter dans Finances › Suivi des encaissements",
     )
+    lmnp = models.BooleanField("exploité en LMNP", default=False, help_text="Location meublée non professionnelle : suivi dans Courte durée › Biens en LMNP")
     vendu = models.BooleanField(default=False, help_text="Lot vendu : conservé pour l'historique")
     date_vente = models.DateField("date de vente", null=True, blank=True)
     ref_import = models.CharField("référence d'import", max_length=40, blank=True, editable=False, help_text="Identifiant Airtable d'origine")
@@ -577,7 +578,7 @@ class MouvementDepot(models.Model):
     date = models.DateField()
     montant = models.DecimalField("montant (€)", max_digits=10, decimal_places=2, help_text="Toujours positif")
     mode = models.CharField(max_length=20, choices=Paiement.Mode.choices, default=Paiement.Mode.VIREMENT)
-    justification = models.CharField(max_length=255, blank=True, help_text="Pour une retenue : devis ou facture justificative")
+    justification = models.CharField("motif", max_length=255, blank=True, help_text="Motif de la retenue (ex. casse d'une lampe) et justificatif : devis ou facture")
 
     class Meta:
         verbose_name = "mouvement de dépôt de garantie"
@@ -1029,6 +1030,35 @@ class EncaissementLCD(models.Model):
     @property
     def versement(self):
         return self.ca + self.aircover + self.regul - self.menage - self.commission - self.frais
+
+
+class ChargeLMNP(models.Model):
+    """Charge annuelle ou amortissement d'un bien en LMNP (saisie manuelle, pour la déclaration 2031)."""
+
+    class Categorie(models.TextChoices):
+        TAXE_FONCIERE = "taxe_fonciere", "Taxe foncière"
+        CFE = "cfe", "CFE"
+        COPROPRIETE = "copropriete", "Charges de copropriété non récupérées"
+        ASSURANCE = "assurance", "Assurance PNO"
+        ENTRETIEN = "entretien", "Entretien et réparations"
+        GESTION = "gestion", "Frais de gestion, comptable, CGA"
+        ENERGIE = "energie", "Électricité, eau, internet (non refacturés)"
+        AUTRE = "autre", "Autre charge"
+        AMORTISSEMENT = "amortissement", "Amortissements (selon le comptable)"
+
+    lot = models.ForeignKey(Lot, on_delete=models.CASCADE, related_name="charges_lmnp")
+    annee = models.PositiveSmallIntegerField("année")
+    categorie = models.CharField("catégorie", max_length=20, choices=Categorie.choices)
+    libelle = models.CharField("précision", max_length=150, blank=True)
+    montant = models.DecimalField("montant (€)", max_digits=10, decimal_places=2)
+
+    class Meta:
+        verbose_name = "charge LMNP"
+        verbose_name_plural = "charges LMNP"
+        ordering = ["lot", "-annee", "categorie"]
+
+    def __str__(self):
+        return f"{self.get_categorie_display()} {self.annee} – {self.lot}"
 
 
 class ReservationLCD(models.Model):

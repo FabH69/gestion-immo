@@ -1,0 +1,73 @@
+{% extends "admin/base_site.html" %}
+{% block breadcrumbs %}<div class="breadcrumbs"><a href="{% url 'admin:index' %}">Accueil</a> › Courte durée › Biens en LMNP</div>{% endblock %}
+{% block extrastyle %}{{ block.super }}<style>
+.carte { background: var(--body-bg); border: 1px solid var(--hairline-color); border-radius: 12px; box-shadow: 0 1px 6px rgba(16,24,40,.06); padding: 16px 18px; margin-bottom: 18px; }
+.carte h2 { margin: 0 0 4px; font-size: 1.1rem; }
+.carte .sous { color: var(--body-quiet-color); font-size: .82rem; margin-bottom: 12px; }
+.barre { display: flex; flex-wrap: wrap; gap: 12px; align-items: end; }
+.barre label { display: block; font-size: .8rem; color: var(--body-quiet-color); margin-bottom: 3px; }
+.grille { display: grid; grid-template-columns: repeat(auto-fit, minmax(420px, 1fr)); gap: 18px; }
+@media (max-width: 600px) { .grille { grid-template-columns: 1fr; } }
+table.bilan { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
+table.bilan td { padding: 6px 4px; border-bottom: 1px solid var(--hairline-color); }
+table.bilan td.m { text-align: right; white-space: nowrap; }
+table.bilan td.src { color: var(--body-quiet-color); font-size: .74rem; white-space: nowrap; }
+table.bilan tr.titre td { padding-top: 12px; font-weight: 700; color: var(--secondary); border-bottom: 0; }
+table.bilan tr.total td { font-weight: 700; border-top: 2px solid var(--border-color); }
+table.bilan tr.fort td { font-size: 1.05rem; font-weight: 700; background: var(--darkened-bg); }
+.neg { color: #c62828; }
+.pos { color: #2e7d32; }
+.aide { font-size: .8rem; color: var(--body-quiet-color); line-height: 1.5; }
+.liens { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 12px; }
+</style>{% endblock %}
+{% block content %}
+<div class="carte">
+  <form method="get" class="barre">
+    <div><label for="annee">Année</label><select id="annee" name="annee" onchange="this.form.submit()">{% for a in annees %}<option{% if a == annee %} selected{% endif %}>{{ a }}</option>{% endfor %}</select></div>
+    <a class="button" href="{% url 'admin:patrimoine_chargelmnp_add' %}?annee={{ annee }}">+ Ajouter une charge ou un amortissement</a>
+    <a class="button annuler" href="{% url 'admin:index' %}">← Retour à l'accueil</a>
+  </form>
+</div>
+
+{% if not blocs %}
+<div class="carte"><p>Aucun bien n'est marqué en LMNP. Cochez « exploité en LMNP » dans la fiche du lot (Patrimoine › Lots).</p></div>
+{% else %}
+<div class="grille">
+{% for b in blocs %}
+  <div class="carte">
+    <h2>{{ b.lot.bien.nom }}{% if b.lot.designation != b.lot.bien.nom %} – {{ b.lot.designation }}{% endif %}</h2>
+    <div class="sous">{{ b.lot.bien.proprietaire.nom }} · {% if b.lot.exploitation == "courte" %}location courte durée{% else %}location meublée à l'année{% endif %}</div>
+    <table class="bilan">
+      <tr class="titre"><td colspan="3">Recettes</td></tr>
+      {% for r in b.recettes %}<tr><td>{{ r.libelle }}</td><td class="src">{{ r.source }}</td><td class="m">{{ r.montant|floatformat:"2g" }} €</td></tr>{% empty %}<tr><td colspan="3" class="aide">Aucune recette enregistrée.</td></tr>{% endfor %}
+      <tr class="total"><td colspan="2">Total des recettes</td><td class="m">{{ b.total_recettes|floatformat:"2g" }} €</td></tr>
+      <tr class="titre"><td colspan="3">Charges déductibles</td></tr>
+      {% for c in b.charges %}<tr><td>{{ c.libelle }}</td><td class="src">{{ c.source }}</td><td class="m">− {{ c.montant|floatformat:"2g" }} €</td></tr>{% empty %}<tr><td colspan="3" class="aide">Aucune charge enregistrée.</td></tr>{% endfor %}
+      <tr class="total"><td colspan="2">Total des charges</td><td class="m">− {{ b.total_charges|floatformat:"2g" }} €</td></tr>
+      <tr class="fort"><td colspan="2">Résultat avant amortissements</td><td class="m {% if b.resultat < 0 %}neg{% endif %}">{{ b.resultat|floatformat:"2g" }} €</td></tr>
+      <tr><td colspan="2">Amortissements de l'année{% if b.amort_reporte %} (dont {{ b.amort_reporte|floatformat:"2g" }} € reportés){% endif %}</td><td class="m">{% if b.amortissements %}− {{ b.amort_deduit|floatformat:"2g" }} €{% else %}<a href="{% url 'admin:patrimoine_chargelmnp_add' %}?lot={{ b.lot.pk }}&annee={{ annee }}&categorie=amortissement">à saisir</a>{% endif %}</td></tr>
+      <tr class="fort"><td colspan="2">Résultat fiscal (régime réel)</td><td class="m {% if b.resultat_fiscal < 0 %}neg{% endif %}">{{ b.resultat_fiscal|floatformat:"2g" }} €</td></tr>
+      <tr><td colspan="2" class="aide">Pour comparer : micro-BIC, abattement de {{ b.abattement_micro|floatformat:0 }} %</td><td class="m aide">{{ b.micro_imposable|floatformat:"0g" }} € imposables</td></tr>
+    </table>
+    <div class="liens">
+      <a href="{% url 'admin:patrimoine_chargelmnp_add' %}?lot={{ b.lot.pk }}&annee={{ annee }}">+ Charge</a>
+      <a href="{% url 'admin:patrimoine_chargelmnp_changelist' %}?lot__id__exact={{ b.lot.pk }}&annee={{ annee }}">Charges saisies</a>
+      {% if b.lot.exploitation == "courte" %}<a href="{% url 'suivi_lcd' %}?lot={{ b.lot.pk }}&annee={{ annee }}">Suivi courte durée</a>{% endif %}
+    </div>
+  </div>
+{% endfor %}
+</div>
+
+<div class="carte">
+  <h2>Total LMNP {{ annee }}</h2>
+  <table class="bilan">
+    <tr><td>Recettes</td><td class="m">{{ total.total_recettes|floatformat:"2g" }} €</td></tr>
+    <tr><td>Charges</td><td class="m">− {{ total.total_charges|floatformat:"2g" }} €</td></tr>
+    <tr><td>Amortissements déduits</td><td class="m">− {{ total.amort_deduit|floatformat:"2g" }} €</td></tr>
+    <tr class="fort"><td>Résultat fiscal (régime réel)</td><td class="m {% if total.resultat_fiscal < 0 %}neg{% endif %}">{{ total.resultat_fiscal|floatformat:"2g" }} €</td></tr>
+    <tr><td class="aide">Micro-BIC (pour comparer)</td><td class="m aide">{{ total.micro_imposable|floatformat:"0g" }} € imposables</td></tr>
+  </table>
+  <p class="aide" style="margin-top:12px">Les recettes viennent des baux (Chazay), du suivi des encaissements ou des réservations importées (Chasselay). Les intérêts et l'assurance des prêts sont calculés depuis Finances › Prêts. Les charges de la courte durée saisies dans « Charges mensuelles » (taxe foncière, copropriété, PNO…) sont déjà comptées : ne les ressaisissez pas ici. Les amortissements ne peuvent pas créer de déficit ; l'excédent se reporte sur les années suivantes. Le micro-BIC applique 50 % d'abattement en meublé classique et 30 % en meublé de tourisme non classé (règles 2025). Document d'aide : faites valider la déclaration 2031 par votre comptable.</p>
+</div>
+{% endif %}
+{% endblock %}

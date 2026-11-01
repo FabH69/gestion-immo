@@ -8,7 +8,7 @@ from urllib.parse import quote
 from django.utils import timezone
 from django.utils.html import format_html, format_html_join
 
-from .models import SiteUtile, Syndic, Annonce, ChargeLCD, ParametresLCD, ReservationLCD, Bail, Bien, Candidature, ChangementLocataire, Garant, PhotoLot, Echeance, EtatDesLieux, MouvementDepot, Pret, Rappel, RevisionLoyer, Locataire, Lot, Paiement, Proprietaire, Tache
+from .models import ChargeLMNP, SiteUtile, Syndic, Annonce, ChargeLCD, ParametresLCD, ReservationLCD, Bail, Bien, Candidature, ChangementLocataire, Garant, PhotoLot, Echeance, EtatDesLieux, MouvementDepot, Pret, Rappel, RevisionLoyer, Locataire, Lot, Paiement, Proprietaire, Tache
 
 admin.site.site_header = "Gestion immobilière"
 admin.site.enable_nav_sidebar = False  # remplacé par le menu du bandeau
@@ -137,6 +137,28 @@ class SyndicAdmin(admin.ModelAdmin):
         return ", ".join(b.nom for b in obj.biens.all()) or "–"
 
 
+@admin.register(ChargeLMNP)
+class ChargeLMNPAdmin(admin.ModelAdmin):
+    list_display = ["annee", "lot", "categorie", "libelle", "montant"]
+    list_filter = ["annee", "lot", "categorie"]
+    fields = ["lot", "annee", "categorie", "libelle", "montant"]
+
+    def formfield_for_foreignkey(self, db_field, request, **kwargs):
+        if db_field.name == "lot":
+            kwargs["queryset"] = Lot.objects.filter(lmnp=True).select_related("bien")
+        return super().formfield_for_foreignkey(db_field, request, **kwargs)
+
+    def get_changeform_initial_data(self, request):
+        initial = super().get_changeform_initial_data(request)
+        initial.setdefault("annee", timezone.localdate().year - 1)
+        return initial
+
+    def response_add(self, request, obj, post_url_continue=None):
+        if "_continue" not in request.POST and "_addanother" not in request.POST:
+            return redirect(f"{reverse('biens_lmnp')}?annee={obj.annee}")
+        return super().response_add(request, obj, post_url_continue)
+
+
 @admin.register(SiteUtile)
 class SiteUtileAdmin(admin.ModelAdmin):
     list_display = ["nom", "url", "ordre"]
@@ -160,7 +182,7 @@ class BienAdmin(admin.ModelAdmin):
 @admin.register(Lot)
 class LotAdmin(admin.ModelAdmin):
     list_display = ["designation", "bien", "type", "surface", "meuble", "exploitation", "locataire_actuel", "loyer_actuel", "vendu", "date_vente"]
-    list_filter = ["vendu", "exploitation", "bien__proprietaire", "bien", "type", "meuble"]
+    list_filter = ["vendu", "exploitation", "lmnp", "bien__proprietaire", "bien", "type", "meuble"]
     search_fields = ["designation", "bien__nom"]
     inlines = [BailInline, PhotoInline]
     readonly_fields = ["outils_relocation"]
@@ -178,7 +200,7 @@ class LotAdmin(admin.ModelAdmin):
         return format_html('<a class="button" href="{}">Créer une annonce</a> <a class="button" href="{}">Envoyer un formulaire de candidature</a>',
                            url_annonce, url_candidature)
     fieldsets = [
-        (None, {"fields": ["bien", "designation", "type", "surface", "nb_pieces", "meuble", "exploitation", "etage"]}),
+        (None, {"fields": ["bien", "designation", "type", "surface", "nb_pieces", "meuble", ("exploitation", "lmnp"), "etage"]}),
         ("Caractéristiques (reprises dans le bail)", {"fields": ["annee_construction", "regime_juridique", "chauffage", "eau_chaude", "classe_dpe", "zone_tendue", "equipements", "annexes"]}),
         ("Chaudière gaz", {"fields": ["chaudiere_gaz", "date_entretien_chaudiere"]}),
         ("Relocation et annonce", {"fields": ["loyer_propose", ("classe_ges", "energie_annee"), ("energie_min", "energie_max"), "outils_relocation"]}),
@@ -738,7 +760,7 @@ class DepotEnCoursFilter(admin.SimpleListFilter):
 
 @admin.register(MouvementDepot)
 class MouvementDepotAdmin(admin.ModelAdmin):
-    list_display = ["date", "type", "montant_affiche", "logement", "locataires", "proprietaire", "mode", "recu"]
+    list_display = ["date", "type", "montant_affiche", "logement", "locataires", "proprietaire", "mode", "justification", "recu"]
     list_select_related = ["bail__lot__bien__proprietaire"]
 
     @admin.display(description="logement", ordering="bail__lot__bien__nom")

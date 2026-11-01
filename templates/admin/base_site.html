@@ -41,6 +41,8 @@
     <div class="menu-liste">
       <a href="{% url 'suivi_lcd' %}">Suivi et import Airbnb / Booking</a>
       <a href="{% url 'admin:patrimoine_reservationlcd_changelist' %}">Réservations</a>
+      <a href="{% url 'biens_lmnp' %}" class="menu-section">Biens en LMNP</a>
+      <a href="{% url 'admin:patrimoine_chargelmnp_changelist' %}">Charges et amortissements LMNP</a>
       <a href="{% url 'admin:patrimoine_chargelcd_changelist' %}">Charges mensuelles</a>
       <a href="{% url 'admin:patrimoine_parametreslcd_changelist' %}">Frais de gestion (ménage, conciergerie)</a>
     </div>
