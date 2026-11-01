@@ -501,7 +501,7 @@ def suivi_lcd(request):
     from . import lcd
 
     lots = Lot.objects.filter(vendu=False).select_related("bien").order_by("bien__nom", "designation")
-    lots_lcd = [l for l in lots if l.reservations_lcd.exists() or hasattr(l, "parametres_lcd")]
+    lots_lcd = [l for l in lots if l.exploitation == "courte" or l.reservations_lcd.exists() or hasattr(l, "parametres_lcd")]
     lot = lots.filter(pk=request.GET.get("lot") or request.POST.get("lot")).first() if (request.GET.get("lot") or request.POST.get("lot")) else (lots_lcd[0] if lots_lcd else None)
     aujourdhui = timezone.localdate()
     annee = int(request.GET.get("annee") or aujourdhui.year)
@@ -520,7 +520,7 @@ def suivi_lcd(request):
                                           f"{creees} réservation(s) ajoutée(s), {maj} mise(s) à jour, {ignorees} ligne(s) ignorée(s).")
         return redirect(f"{reverse('suivi_lcd')}?lot={lot.pk}&annee={annee}")
 
-    contexte = {**admin.site.each_context(request), "title": "Suivi location courte durée", "lots": lots, "lot": lot, "annee": annee,
+    contexte = {**admin.site.each_context(request), "title": "Suivi location courte durée", "lots": lots_lcd or lots, "lot": lot, "annee": annee,
                 "annees": range(aujourdhui.year - 3, aujourdhui.year + 2)}
     if lot:
         mois = lcd.suivi_annuel(lot, annee)
@@ -538,3 +538,30 @@ def suivi_lcd(request):
             nb_reservations=lot.reservations_lcd.filter(arrivee__year=annee).count(),
         )
     return render(request, "patrimoine/suivi_lcd.html", contexte)
+
+
+@staff_member_required
+def suivi_encaissements(request):
+    """Finances › Suivi des encaissements : loyers dus selon les baux et bloc courte durée complété à la main."""
+    from . import encaissements
+
+    aujourdhui = timezone.localdate()
+    proprietaires = list(Proprietaire.objects.all())
+    choix = request.POST.get("proprietaire") or request.GET.get("proprietaire")
+    proprietaire = next((p for p in proprietaires if str(p.pk) == choix), None)
+    if not proprietaire:
+        avec_courte = Lot.objects.filter(exploitation="courte", vendu=False).values_list("bien__proprietaire", flat=True).first()
+        proprietaire = next((p for p in proprietaires if p.pk == avec_courte), proprietaires[0] if proprietaires else None)
+    annee = int(request.POST.get("annee") or request.GET.get("annee") or aujourdhui.year)
+
+    if request.method == "POST" and proprietaire:
+        n = encaissements.enregistrer(proprietaire, annee, request.POST)
+        messages.success(request, f"Courte durée {annee} enregistrée ({n} mois modifié{'s' if n > 1 else ''}).")
+        return redirect(f"{reverse('suivi_encaissements')}?proprietaire={proprietaire.pk}&annee={annee}")
+
+    contexte = {**admin.site.each_context(request), "title": "Suivi des encaissements", "proprietaires": proprietaires,
+                "proprietaire": proprietaire, "annee": annee, "annees": range(aujourdhui.year - 3, aujourdhui.year + 2),
+                "champs_lcd": [("ca", "CA"), ("aircover", "AirCover"), ("menage", "Ménage"), ("commission", "Commission"), ("frais", "Frais"), ("regul", "Régul.")]}
+    if proprietaire:
+        contexte.update(encaissements.suivi(proprietaire, annee))
+    return render(request, "patrimoine/suivi_encaissements.html", contexte)

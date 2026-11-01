@@ -137,6 +137,11 @@ class Lot(models.Model):
     )
     zone_tendue = models.BooleanField("zone tendue", default=False)
     pdl = models.CharField("n° PDL électricité", max_length=20, blank=True)
+    exploitation = models.CharField(
+        "mode d'exploitation", max_length=10, default="longue",
+        choices=[("longue", "Location classique (bail)"), ("courte", "Location courte durée (Airbnb, Booking…)")],
+        help_text="Courte durée : suivi dans Courte durée et bloc à compléter dans Finances › Suivi des encaissements",
+    )
     vendu = models.BooleanField(default=False, help_text="Lot vendu : conservé pour l'historique")
     date_vente = models.DateField("date de vente", null=True, blank=True)
     ref_import = models.CharField("référence d'import", max_length=40, blank=True, editable=False, help_text="Identifiant Airtable d'origine")
@@ -263,6 +268,13 @@ class Bail(models.Model):
     @property
     def loyer_cc(self):
         return self.loyer_hc + self.charges
+
+    def loyer_au(self, jour):
+        """Loyer HC en vigueur à une date : dernière révision appliquée avant cette date, sinon loyer initial."""
+        revision = self.revisions.filter(appliquee=True, date_effet__lte=jour).order_by("-date_effet").first()
+        if revision:
+            return revision.nouveau_loyer
+        return self.loyer_initial if self.loyer_initial is not None else self.loyer_hc
 
     def historique_revisions(self, aujourdhui=None):
         """Une ligne par date anniversaire depuis la signature, avec la révision faite ou l'année manquée."""
@@ -988,6 +1000,35 @@ class JournalFait(models.Model):
 
     def __str__(self):
         return f"{self.titre} ({self.date:%d/%m/%Y})"
+
+
+class EncaissementLCD(models.Model):
+    """Encaissements mensuels d'un logement en courte durée, saisis à la main (relevé de la plateforme ou de la conciergerie)."""
+
+    lot = models.ForeignKey(Lot, on_delete=models.CASCADE, related_name="encaissements_lcd")
+    mois = models.DateField(help_text="Premier jour du mois")
+    ca = models.DecimalField("chiffre d'affaires (€)", max_digits=10, decimal_places=2, default=0)
+    aircover = models.DecimalField("AirCover / indemnités (€)", max_digits=10, decimal_places=2, default=0)
+    menage = models.DecimalField("ménage (€)", max_digits=10, decimal_places=2, default=0)
+    commission = models.DecimalField("commission conciergerie (€)", max_digits=10, decimal_places=2, default=0)
+    frais = models.DecimalField("frais (€)", max_digits=10, decimal_places=2, default=0)
+    regul = models.DecimalField("régularisation (€)", max_digits=10, decimal_places=2, default=0, help_text="Positif si vous recevez, négatif si vous payez")
+    notes = models.CharField(max_length=255, blank=True)
+
+    CHAMPS = ["ca", "aircover", "menage", "commission", "frais", "regul"]
+
+    class Meta:
+        verbose_name = "encaissement courte durée"
+        verbose_name_plural = "encaissements courte durée"
+        ordering = ["lot", "-mois"]
+        constraints = [models.UniqueConstraint(fields=["lot", "mois"], name="encaissement_lcd_unique_par_mois")]
+
+    def __str__(self):
+        return f"{self.lot} – {self.mois:%m/%Y}"
+
+    @property
+    def versement(self):
+        return self.ca + self.aircover + self.regul - self.menage - self.commission - self.frais
 
 
 class ReservationLCD(models.Model):

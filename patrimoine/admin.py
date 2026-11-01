@@ -159,8 +159,8 @@ class BienAdmin(admin.ModelAdmin):
 
 @admin.register(Lot)
 class LotAdmin(admin.ModelAdmin):
-    list_display = ["designation", "bien", "type", "surface", "meuble", "locataire_actuel", "loyer_actuel", "vendu", "date_vente"]
-    list_filter = ["vendu", "bien__proprietaire", "bien", "type", "meuble"]
+    list_display = ["designation", "bien", "type", "surface", "meuble", "exploitation", "locataire_actuel", "loyer_actuel", "vendu", "date_vente"]
+    list_filter = ["vendu", "exploitation", "bien__proprietaire", "bien", "type", "meuble"]
     search_fields = ["designation", "bien__nom"]
     inlines = [BailInline, PhotoInline]
     readonly_fields = ["outils_relocation"]
@@ -178,7 +178,7 @@ class LotAdmin(admin.ModelAdmin):
         return format_html('<a class="button" href="{}">Créer une annonce</a> <a class="button" href="{}">Envoyer un formulaire de candidature</a>',
                            url_annonce, url_candidature)
     fieldsets = [
-        (None, {"fields": ["bien", "designation", "type", "surface", "nb_pieces", "meuble", "etage"]}),
+        (None, {"fields": ["bien", "designation", "type", "surface", "nb_pieces", "meuble", "exploitation", "etage"]}),
         ("Caractéristiques (reprises dans le bail)", {"fields": ["annee_construction", "regime_juridique", "chauffage", "eau_chaude", "classe_dpe", "zone_tendue", "equipements", "annexes"]}),
         ("Chaudière gaz", {"fields": ["chaudiere_gaz", "date_entretien_chaudiere"]}),
         ("Relocation et annonce", {"fields": ["loyer_propose", ("classe_ges", "energie_annee"), ("energie_min", "energie_max"), "outils_relocation"]}),
@@ -198,6 +198,8 @@ class LotAdmin(admin.ModelAdmin):
         if obj.vendu:
             return "–"
         bail = obj.bail_actif
+        if not bail and obj.exploitation == "courte":
+            return "Courte durée"
         return ", ".join(str(l) for l in bail.locataires.all()) if bail else "Vacant"
 
     @admin.display(description="loyer CC (€)")
@@ -225,6 +227,28 @@ class PresentFilter(admin.SimpleListFilter):
             return queryset.filter(baux__actif=True).distinct()
         if valeur == "non":
             return queryset.exclude(baux__actif=True)
+        return queryset
+
+
+class BailEnCoursFilter(admin.SimpleListFilter):
+    """Baux en cours affichés par défaut."""
+    title = "statut"
+    parameter_name = "statut"
+
+    def lookups(self, request, model_admin):
+        return [("actifs", "En cours"), ("termines", "Terminés"), ("tous", "Tous")]
+
+    def choices(self, changelist):
+        valeur = self.value() or "actifs"
+        for code, libelle in self.lookup_choices:
+            yield {"selected": valeur == code, "query_string": changelist.get_query_string({self.parameter_name: code}), "display": libelle}
+
+    def queryset(self, request, queryset):
+        valeur = self.value() or "actifs"
+        if valeur == "actifs":
+            return queryset.filter(actif=True)
+        if valeur == "termines":
+            return queryset.filter(actif=False)
         return queryset
 
 
@@ -375,7 +399,7 @@ class LocataireAdmin(admin.ModelAdmin):
 class BailAdmin(admin.ModelAdmin):
     list_display = ["liste_locataires", "lot", "type", "date_debut", "colonne_loyer_initial", "colonne_loyer_actuel", "charges", "loyer_cc", "actif"]
     list_display_links = ["liste_locataires", "lot"]
-    list_filter = ["actif", "type", "type_garantie", "lot__bien__proprietaire"]
+    list_filter = [BailEnCoursFilter, "type", "type_garantie", "lot__bien__proprietaire"]
     search_fields = ["lot__designation", "lot__bien__nom", "locataires__nom"]
     filter_horizontal = ["locataires"]
     date_hierarchy = "date_debut"

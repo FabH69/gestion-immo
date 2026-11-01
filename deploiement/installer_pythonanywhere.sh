@@ -30,6 +30,10 @@ fi
 if [ -f donnees/Copro.csv ] && [ ! -f "$HOME/.gestion-immo-syndics-importes" ]; then
   "$VENV/bin/python" manage.py importer_airtable --copros donnees/Copro.csv --appliquer | tail -1 && touch "$HOME/.gestion-immo-syndics-importes"
 fi
+# mises à jour de données ponctuelles (ne créent que ce qui manque)
+for maj in donnees/maj_*.py; do
+  [ -f "$maj" ] && "$VENV/bin/python" manage.py shell -c "exec(open('$maj', encoding='utf-8').read())"
+done
 if [ -f donnees/lcd/initialiser.sh ]; then
   bash donnees/lcd/initialiser.sh "$VENV/bin/python"
 fi

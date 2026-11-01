@@ -25,6 +25,7 @@ urlpatterns = [
     path("candidature/<str:jeton>/", views.candidature_publique, name="candidature_publique"),
     path("garants/<int:pk>/acte-de-cautionnement.pdf", views.acte_cautionnement, name="acte_cautionnement"),
     path("lots/<int:pk>/photos.zip", views.photos_zip, name="photos_zip"),
+    path("finances/encaissements/", views.suivi_encaissements, name="suivi_encaissements"),
     path("location-courte-duree/", views.suivi_lcd, name="suivi_lcd"),
     path("simulations/plus-value/", views.plus_value, name="plus_value"),
     path("", RedirectView.as_view(url="/admin/")),

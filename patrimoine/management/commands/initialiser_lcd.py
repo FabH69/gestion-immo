@@ -24,6 +24,9 @@ class Command(BaseCommand):
         if lots.count() != 1:
             raise CommandError(f"Lot « {lot} » introuvable ou ambigu.")
         lot = lots.get()
+        if lot.exploitation != "courte":
+            lot.exploitation = "courte"
+            lot.save(update_fields=["exploitation"])
         _, cree = ParametresLCD.objects.get_or_create(
             lot=lot, defaults={"menage_par_sejour": menage, "consommables_par_sejour": consommables, "commission_gestion": conciergerie})
         nouvelles = 0

@@ -772,4 +772,44 @@ class MenusNovembreTests(TestCase):
         page = self.client.get("/admin/").content.decode()
         self.assertIn("Sites utiles", page)
         self.assertIn("anil.org", page)  # créé par la migration
-        self.assertIn("Ajouter un site utile", page)
+        self.assertNotIn("Ajouter un site utile", page)  # bouton retiré de l'accueil, reste dans le menu
+        self.assertIn("+ Ajouter un site", page)
+
+
+class SuiviEncaissementsTests(TestCase):
+    def setUp(self):
+        self.client.force_login(User.objects.create_superuser("admin", "a@a.fr", "x"))
+        self.proprio = Proprietaire.objects.create(nom="H-INVEST", type=Proprietaire.Type.SARL_FAMILLE)
+        bien = Bien.objects.create(proprietaire=self.proprio, nom="Villeurbanne", adresse="68 rue", code_postal="69100", ville="Villeurbanne")
+        self.t1 = Lot.objects.create(bien=bien, designation="T1 bis", meuble=True)
+        self.t2 = Lot.objects.create(bien=bien, designation="T2", exploitation="courte")
+        a, b = Locataire.objects.create(nom="GAFSAOUI"), Locataire.objects.create(nom="MALGUID")
+        Bail.objects.create(lot=self.t1, type=Bail.Type.MEUBLE, date_debut=date(2025, 7, 10), date_fin=date(2026, 3, 20), actif=False,
+                            loyer_hc=700, charges=70).locataires.add(a)
+        nouveau = Bail.objects.create(lot=self.t1, type=Bail.Type.MEUBLE, date_debut=date(2026, 3, 20), loyer_hc=700, charges=70)
+        nouveau.locataires.add(b)
+        MouvementDepot.objects.create(bail=nouveau, date=date(2026, 3, 20), montant=1400)
+
+    def test_prorata_et_cautions(self):
+        from .encaissements import suivi
+        mars = suivi(self.proprio, 2026)["mois"][2]["longue"][0]
+        self.assertEqual(mars["loyer"], Decimal("429.03") + Decimal("270.97"))  # 19 jours Gafsaoui, 12 jours Malguid (pas de double loyer le 20)
+        self.assertEqual(mars["caution"], Decimal("1400"))
+        self.assertIn("GAFSAOUI", mars["occupants"])
+
+    def test_saisie_courte_duree(self):
+        from .models import EncaissementLCD
+        url = "/finances/encaissements/"
+        r = self.client.post(url, {"proprietaire": self.proprio.pk, "annee": 2026, f"lcd-{self.t2.pk}-6-ca": "1605,65",
+                                   f"lcd-{self.t2.pk}-6-menage": "-39", f"lcd-{self.t2.pk}-6-commission": "321.13", f"lcd-{self.t2.pk}-6-frais": "105"})
+        self.assertEqual(r.status_code, 302)
+        e = EncaissementLCD.objects.get()
+        self.assertEqual((e.mois, e.menage, e.versement), (date(2026, 6, 1), Decimal("39"), Decimal("1140.52")))
+        page = self.client.get(f"{url}?proprietaire={self.proprio.pk}&annee=2026").content.decode()
+        self.assertIn("1140,52", page)
+        self.assertIn("T2 · courte durée", page)
+
+    def test_baux_en_cours_par_defaut(self):
+        page = self.client.get("/admin/patrimoine/bail/").content.decode()
+        self.assertIn("MALGUID", page)
+        self.assertNotIn("GAFSAOUI", page)
