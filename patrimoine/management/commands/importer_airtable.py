@@ -16,7 +16,7 @@ from django.core.management import call_command
 from django.core.management.base import BaseCommand
 from django.db import transaction
 
-from patrimoine.models import Bail, Bien, Garant, Locataire, Lot, MouvementDepot, Proprietaire, _ajouter_mois
+from patrimoine.models import Syndic, Bail, Bien, Garant, Locataire, Lot, MouvementDepot, Proprietaire, _ajouter_mois
 
 from .importer_airtable_lots import _nombre, _texte
 
@@ -124,17 +124,33 @@ class Command(BaseCommand):
     def importer_copros(self, lignes):
         for ligne in lignes:
             nom = _texte(ligne.get("Nom"))
-            syndic = f"{nom} ({_texte(ligne.get('Ville_Corpo'))})" if _texte(ligne.get("Ville_Corpo")) else nom
-            contact = ", ".join(filter(None, [_texte(ligne.get(k)) for k in ("Nom Gestionnaire", "Mail Gestionnaire", "Tel Gestionnaire", "Adresse", "URL Espcae")]))
-            echeance = _texte(ligne.get("Date Echéance Contrat"))
             biens = {lot.bien for appart in _liens(ligne.get("Appartement")) for lot in self.lots_nommes(appart)}
-            if not biens:
+            if not nom or not biens:
                 self.stdout.write(f"  ignoré : {nom} (aucun bien importé ne correspond à « {_texte(ligne.get('Appartement'))} »)")
                 continue
+            ville = _texte(ligne.get("Ville_Corpo"))
+            # fiche déjà rattachée à l'un des biens (reprise de l'ancien champ texte), sinon même nom et ville
+            syndic = next((b.syndic for b in biens if b.syndic and b.syndic.nom.lower() == nom.lower()), None)
+            syndic = syndic or Syndic.objects.filter(nom__iexact=nom, ville__iexact=ville).first() or Syndic(nom=nom)
+            adresse = _texte(ligne.get("Adresse"))
+            cp = re.search(r"\b(\d{5})\b", adresse)
+            if cp:
+                syndic.code_postal = cp.group(1)
+                adresse = adresse.replace(cp.group(1), "").strip(" ,")
+            telephone = lambda v: re.sub(r"[\s.\-]+", " ", _texte(v)).strip()
+            syndic.ville = ville or syndic.ville
+            syndic.adresse = adresse or syndic.adresse
+            syndic.site = _texte(ligne.get("URL Espcae")) or syndic.site
+            syndic.contact_nom = _texte(ligne.get("Nom Gestionnaire")) or syndic.contact_nom
+            syndic.contact_email = _texte(ligne.get("Mail Gestionnaire")) or syndic.contact_email
+            syndic.contact_telephone = telephone(ligne.get("Tel Gestionnaire")) or syndic.contact_telephone
+            echeance = _texte(ligne.get("Date Echéance Contrat"))
+            _ajouter_note(syndic, f"Contrat de syndic : échéance le {echeance}" if echeance else "")
+            syndic.save()
             for bien in biens:
-                bien.syndic = syndic[:150]
-                _ajouter_note(bien, f"Syndic {nom} : {contact}" if contact else "")
-                _ajouter_note(bien, f"Contrat de syndic : échéance le {echeance}" if echeance else "")
+                bien.syndic = syndic
+                # les coordonnées notées dans le bien lors d'un import précédent sont maintenant dans la fiche syndic
+                bien.notes = "\n".join(l for l in bien.notes.splitlines() if not l.startswith((f"Syndic {nom} :", "Contrat de syndic :"))).strip()
                 bien.save()
                 self.stdout.write(f"  {bien.nom} › syndic {syndic}")
 

@@ -39,6 +39,44 @@ class Proprietaire(models.Model):
         return "\n".join(filter(None, [self.adresse, f"{self.code_postal} {self.ville}".strip()]))
 
 
+class Syndic(models.Model):
+    """Syndic de copropriété ou régie."""
+
+    nom = models.CharField(max_length=150)
+    adresse = models.CharField(max_length=255, blank=True)
+    code_postal = models.CharField("code postal", max_length=10, blank=True)
+    ville = models.CharField(max_length=100, blank=True)
+    email = models.EmailField("e-mail", blank=True)
+    telephone = models.CharField("téléphone", max_length=20, blank=True)
+    site = models.URLField("site internet / espace copropriétaire", blank=True)
+    contact_nom = models.CharField("contact principal", max_length=150, blank=True, help_text="Gestionnaire de la copropriété")
+    contact_email = models.EmailField("e-mail du contact", blank=True)
+    contact_telephone = models.CharField("téléphone du contact", max_length=20, blank=True)
+    notes = models.TextField(blank=True)
+
+    class Meta:
+        ordering = ["nom", "ville"]
+
+    def __str__(self):
+        return f"{self.nom} ({self.ville})" if self.ville else self.nom
+
+
+class SiteUtile(models.Model):
+    """Lien affiché dans le menu « Sites utiles »."""
+
+    nom = models.CharField(max_length=60, help_text="Texte affiché dans le menu")
+    url = models.URLField("adresse du site", max_length=500)
+    ordre = models.PositiveSmallIntegerField(default=0, help_text="Les plus petits en premier")
+
+    class Meta:
+        verbose_name = "site utile"
+        verbose_name_plural = "sites utiles"
+        ordering = ["ordre", "nom"]
+
+    def __str__(self):
+        return self.nom
+
+
 class Bien(models.Model):
     """Immeuble ou adresse physique, qui contient un ou plusieurs lots."""
 
@@ -49,7 +87,7 @@ class Bien(models.Model):
     adresse = models.CharField(max_length=255)
     code_postal = models.CharField(max_length=10)
     ville = models.CharField(max_length=100)
-    syndic = models.CharField(max_length=150, blank=True, help_text="Syndic de copropriété ou régie")
+    syndic = models.ForeignKey(Syndic, on_delete=models.SET_NULL, null=True, blank=True, related_name="biens", help_text="Syndic de copropriété ou régie")
     date_acquisition = models.DateField("date d'acquisition", null=True, blank=True)
     prix_acquisition = models.DecimalField(
         "prix d'acquisition (€)", max_digits=12, decimal_places=2, null=True, blank=True
@@ -180,7 +218,8 @@ class Bail(models.Model):
     type = models.CharField(max_length=20, choices=Type.choices)
     date_debut = models.DateField("date de début")
     date_fin = models.DateField("date de fin", null=True, blank=True)
-    loyer_hc = models.DecimalField("loyer hors charges (€)", max_digits=10, decimal_places=2)
+    loyer_initial = models.DecimalField("loyer initial hors charges (€)", max_digits=10, decimal_places=2, null=True, blank=True, help_text="Loyer à la signature du bail")
+    loyer_hc = models.DecimalField("loyer actuel hors charges (€)", max_digits=10, decimal_places=2, help_text="Mis à jour à chaque révision appliquée")
     charges = models.DecimalField("provision sur charges (€)", max_digits=10, decimal_places=2, default=0)
     depot_garantie = models.DecimalField("dépôt de garantie (€)", max_digits=10, decimal_places=2, default=0)
     type_garantie = models.CharField("type de garantie", max_length=10, blank=True, choices=TYPES_GARANTIE)
@@ -216,9 +255,41 @@ class Bail(models.Model):
     def __str__(self):
         return f"{self.lot} – {self.get_type_display()} depuis le {self.date_debut:%d/%m/%Y}"
 
+    def save(self, *args, **kwargs):
+        if self.loyer_initial is None:
+            self.loyer_initial = self.loyer_hc
+        super().save(*args, **kwargs)
+
     @property
     def loyer_cc(self):
         return self.loyer_hc + self.charges
+
+    def historique_revisions(self, aujourdhui=None):
+        """Une ligne par date anniversaire depuis la signature, avec la révision faite ou l'année manquée."""
+        aujourdhui = aujourdhui or date.today()
+        revisions = list(self.revisions.order_by("date_effet"))
+        lignes, n = [], 1
+        while True:
+            anniversaire = _ajouter_mois(self.date_debut, 12 * n)
+            if anniversaire > aujourdhui or (self.date_fin and not self.actif and anniversaire > self.date_fin):
+                break
+            fin_periode = _ajouter_mois(anniversaire, 12)
+            r = next((r for r in revisions if anniversaire <= r.date_effet < fin_periode), None)
+            ligne = {"anniversaire": anniversaire, "revision": r}
+            if r:
+                ligne["statut"] = "appliquee" if r.appliquee else "calculee"
+                ligne["pourcentage"] = (r.nouvel_irl / r.ancien_irl - 1) * 100 if r.ancien_irl else None
+            elif self.date_derniere_revision and anniversaire <= self.date_derniere_revision:
+                ligne["statut"] = "sans_detail"
+            elif not self.revision_annuelle:
+                ligne["statut"] = "pas_de_clause"
+            elif fin_periode > aujourdhui:
+                ligne["statut"] = "a_faire"
+            else:
+                ligne["statut"] = "manquee"
+            lignes.append(ligne)
+            n += 1
+        return lignes
 
     @property
     def depot_detenu(self):

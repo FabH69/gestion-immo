@@ -8,7 +8,7 @@ from urllib.parse import quote
 from django.utils import timezone
 from django.utils.html import format_html, format_html_join
 
-from .models import Annonce, ChargeLCD, ParametresLCD, ReservationLCD, Bail, Bien, Candidature, ChangementLocataire, Garant, PhotoLot, Echeance, EtatDesLieux, MouvementDepot, Pret, Rappel, RevisionLoyer, Locataire, Lot, Paiement, Proprietaire, Tache
+from .models import SiteUtile, Syndic, Annonce, ChargeLCD, ParametresLCD, ReservationLCD, Bail, Bien, Candidature, ChangementLocataire, Garant, PhotoLot, Echeance, EtatDesLieux, MouvementDepot, Pret, Rappel, RevisionLoyer, Locataire, Lot, Paiement, Proprietaire, Tache
 
 admin.site.site_header = "Gestion immobilière"
 admin.site.enable_nav_sidebar = False  # remplacé par le menu du bandeau
@@ -113,12 +113,44 @@ class ProprietaireAdmin(admin.ModelAdmin):
         return obj.biens.count()
 
 
+@admin.register(Syndic)
+class SyndicAdmin(admin.ModelAdmin):
+    list_display = ["nom", "ville", "telephone", "contact_nom", "contact_telephone", "lien_email", "lien_site", "liste_biens"]
+    search_fields = ["nom", "ville", "contact_nom"]
+    fieldsets = [
+        (None, {"fields": ["nom", "adresse", ("code_postal", "ville"), ("email", "telephone"), "site"]}),
+        ("Contact principal", {"fields": ["contact_nom", ("contact_email", "contact_telephone")]}),
+        (None, {"fields": ["notes"]}),
+    ]
+
+    @admin.display(description="e-mail du contact")
+    def lien_email(self, obj):
+        email = obj.contact_email or obj.email
+        return format_html('<a href="mailto:{}">{}</a>', email, email) if email else "–"
+
+    @admin.display(description="site")
+    def lien_site(self, obj):
+        return format_html('<a href="{}" target="_blank" rel="noopener">Ouvrir</a>', obj.site) if obj.site else "–"
+
+    @admin.display(description="biens")
+    def liste_biens(self, obj):
+        return ", ".join(b.nom for b in obj.biens.all()) or "–"
+
+
+@admin.register(SiteUtile)
+class SiteUtileAdmin(admin.ModelAdmin):
+    list_display = ["nom", "url", "ordre"]
+    list_editable = ["ordre"]
+    fields = ["nom", "url", "ordre"]
+
+
 @admin.register(Bien)
 class BienAdmin(admin.ModelAdmin):
-    list_display = ["nom", "ville", "proprietaire", "nb_lots"]
-    list_filter = ["proprietaire", "ville"]
+    list_display = ["nom", "ville", "proprietaire", "syndic", "nb_lots"]
+    list_filter = ["proprietaire", "ville", "syndic"]
     search_fields = ["nom", "adresse", "ville"]
     inlines = [LotInline]
+    fields = ["proprietaire", "nom", "adresse", ("code_postal", "ville"), "syndic", ("date_acquisition", "prix_acquisition"), "notes"]
 
     @admin.display(description="lots")
     def nb_lots(self, obj):
@@ -179,12 +211,19 @@ class PresentFilter(admin.SimpleListFilter):
     parameter_name = "present"
 
     def lookups(self, request, model_admin):
-        return [("oui", "Actifs (dans les lieux)"), ("non", "Anciens (partis)")]
+        return [("oui", "Actifs (dans les lieux)"), ("non", "Anciens (partis)"), ("tous", "Tous")]
+
+    def choices(self, changelist):
+        """« Actifs » est le choix par défaut : pas de lien « Tout » de Django, remplacé par « Tous »."""
+        valeur = self.value() or "oui"
+        for code, libelle in self.lookup_choices:
+            yield {"selected": valeur == code, "query_string": changelist.get_query_string({self.parameter_name: code}), "display": libelle}
 
     def queryset(self, request, queryset):
-        if self.value() == "oui":
+        valeur = self.value() or "oui"
+        if valeur == "oui":
             return queryset.filter(baux__actif=True).distinct()
-        if self.value() == "non":
+        if valeur == "non":
             return queryset.exclude(baux__actif=True)
         return queryset
 
@@ -334,17 +373,19 @@ class LocataireAdmin(admin.ModelAdmin):
 
 @admin.register(Bail)
 class BailAdmin(admin.ModelAdmin):
-    list_display = ["lot", "liste_locataires", "type", "date_debut", "loyer_hc", "charges", "loyer_cc", "actif"]
+    list_display = ["liste_locataires", "lot", "type", "date_debut", "colonne_loyer_initial", "colonne_loyer_actuel", "charges", "loyer_cc", "actif"]
+    list_display_links = ["liste_locataires", "lot"]
     list_filter = ["actif", "type", "type_garantie", "lot__bien__proprietaire"]
     search_fields = ["lot__designation", "lot__bien__nom", "locataires__nom"]
     filter_horizontal = ["locataires"]
     date_hierarchy = "date_debut"
-    readonly_fields = ["documents", "recu_depot"]
+    readonly_fields = ["documents", "recu_depot", "historique"]
     fieldsets = [
         (None, {"fields": ["lot", "locataires", "type", "destination", "date_debut", "date_fin", "actif"]}),
-        ("Conditions financières", {"fields": ["loyer_hc", "charges", "mode_charges", ("depot_garantie", "recu_depot"), "jour_echeance", "paiement_a_echoir"]}),
+        ("Conditions financières", {"fields": [("loyer_initial", "charges"), "loyer_hc", "mode_charges", ("depot_garantie", "recu_depot"), "jour_echeance", "paiement_a_echoir"]}),
         ("Garantie", {"fields": [("type_garantie", "detail_garantie")], "description": "Les garants se saisissent en bas de page."}),
         ("Révision annuelle et rappels", {"fields": ["revision_annuelle", ("irl_trimestre", "irl_valeur"), "indice_reference", "date_derniere_revision", ("date_attestation_assurance", "rappel_assurance")]}),
+        ("Historique des révisions", {"fields": ["historique"]}),
         ("Clauses particulières", {"fields": ["notes"]}),
         ("Documents pré-remplis", {"fields": ["documents"]}),
     ]
@@ -377,9 +418,53 @@ class BailAdmin(admin.ModelAdmin):
             format_html(" · ".join('<a href="{}" target="_blank">{}</a>' for _ in liens), *[x for l in liens for x in l]),
         )
 
-    @admin.display(description="locataires")
+    @admin.display(description="locataires", ordering="locataires__nom")
     def liste_locataires(self, obj):
-        return ", ".join(str(l) for l in obj.locataires.all())
+        return ", ".join(str(l) for l in obj.locataires.all()) or "(sans locataire)"
+
+    def get_queryset(self, request):
+        return super().get_queryset(request).select_related("lot__bien").prefetch_related("locataires")
+
+    @admin.display(description="loyer initial (€)", ordering="loyer_initial")
+    def colonne_loyer_initial(self, obj):
+        return obj.loyer_initial
+
+    @admin.display(description="loyer actuel (€)", ordering="loyer_hc")
+    def colonne_loyer_actuel(self, obj):
+        return obj.loyer_hc
+
+    STATUTS_REVISION = {
+        "appliquee": ("Appliquée", "ok"), "calculee": ("Calculée, pas encore appliquée", "attention"),
+        "sans_detail": ("Faite (détail non enregistré)", ""), "a_faire": ("À faire", "attention"),
+        "manquee": ("Non appliquée", "alerte"), "pas_de_clause": ("Pas de révision prévue au bail", ""),
+    }
+
+    @admin.display(description="")
+    def historique(self, obj):
+        if not obj.pk:
+            return "–"
+        lignes = obj.historique_revisions()
+        euros = lambda v: f"{v:,.2f} €".replace(",", " ").replace(".", ",") if v is not None else ""
+        corps = []
+        for l in reversed(lignes):
+            r, (statut, classe) = l["revision"], self.STATUTS_REVISION[l["statut"]]
+            if r:
+                cellules = (euros(r.ancien_loyer), f"{r.ancien_irl}", f"{r.nouvel_irl} ({r.trimestre})",
+                            f"+{l['pourcentage']:.2f} %".replace(".", ",") if l["pourcentage"] is not None else "", euros(r.nouveau_loyer), f"{r.date_effet:%d/%m/%Y}")
+            else:
+                cellules = ("", "", "", "", "", f"{l['anniversaire']:%d/%m/%Y}")
+            corps.append(format_html("<tr><td>{}</td>" + "<td>{}</td>" * 6 + '<td><span class="statut-revision {}">{}</span></td></tr>',
+                                     l["anniversaire"].year, *cellules, classe, statut))
+        if not corps:
+            return "Première révision à la date anniversaire du bail, le " + obj.prochaine_revision().strftime("%d/%m/%Y") if obj.prochaine_revision() else "Aucune révision."
+        tableau = format_html(
+            '<table class="historique-revisions"><thead><tr><th>Année</th><th>Loyer avant révision</th><th>Indice de référence</th>'
+            "<th>Nouvel indice</th><th>Hausse</th><th>Nouveau loyer</th><th>Date d'application</th><th>Statut</th></tr></thead><tbody>{}</tbody></table>",
+            format_html("".join(["{}"] * len(corps)), *corps),
+        )
+        lien = reverse("admin:patrimoine_revisionloyer_changelist") + f"?bail__id__exact={obj.pk}"
+        return format_html('{}<p class="help">Loyer initial {} · loyer actuel {}. <a href="{}">Voir les révisions enregistrées</a> · <a href="{}">Réviser le loyer</a></p>',
+                           tableau, euros(obj.loyer_initial), euros(obj.loyer_hc), lien, reverse("revision_loyer", args=[obj.pk]))
 
     @admin.display(description="loyer CC (€)")
     def loyer_cc(self, obj):
@@ -613,6 +698,20 @@ class EtatDesLieuxAdmin(admin.ModelAdmin):
         return format_html('<a href="{}" target="_blank">Fiche PDF pré-remplie</a>', reverse("document_edl", args=[obj.pk]))
 
 
+class DepotEnCoursFilter(admin.SimpleListFilter):
+    title = "garanties"
+    parameter_name = "en_cours"
+
+    def lookups(self, request, model_admin):
+        return [("oui", "En cours (encore détenues)"), ("non", "Soldées (restituées)")]
+
+    def queryset(self, request, queryset):
+        if not self.value():
+            return queryset
+        en_cours = [b.pk for b in Bail.objects.prefetch_related("mouvements_depot") if b.depot_detenu > 0]
+        return queryset.filter(bail__in=en_cours) if self.value() == "oui" else queryset.exclude(bail__in=en_cours)
+
+
 @admin.register(MouvementDepot)
 class MouvementDepotAdmin(admin.ModelAdmin):
     list_display = ["date", "type", "montant_affiche", "logement", "locataires", "proprietaire", "mode", "recu"]
@@ -629,7 +728,7 @@ class MouvementDepotAdmin(admin.ModelAdmin):
     @admin.display(description="propriétaire", ordering="bail__lot__bien__proprietaire__nom")
     def proprietaire(self, obj):
         return obj.bail.lot.bien.proprietaire
-    list_filter = ["type", "bail__lot__bien__proprietaire"]
+    list_filter = [DepotEnCoursFilter, "type", "bail__lot__bien__proprietaire"]
     search_fields = ["bail__lot__designation", "bail__locataires__nom"]
     date_hierarchy = "date"
     change_list_template = "admin/patrimoine/mouvementdepot/change_list.html"
@@ -651,7 +750,8 @@ class MouvementDepotAdmin(admin.ModelAdmin):
             solde = sum((m.montant_signe for m in mouvements), 0)
             if mouvements.exists():
                 soldes.append((proprio, solde))
-        extra_context = {**(extra_context or {}), "soldes": soldes, "total_detenu": sum(s for _, s in soldes)}
+        nb_en_cours = sum(1 for b in Bail.objects.prefetch_related("mouvements_depot") if b.depot_detenu > 0)
+        extra_context = {**(extra_context or {}), "soldes": soldes, "total_detenu": sum(s for _, s in soldes), "nb_en_cours": nb_en_cours}
         return super().changelist_view(request, extra_context)
 
 
@@ -727,8 +827,12 @@ class RappelAdmin(admin.ModelAdmin):
 
 @admin.register(RevisionLoyer)
 class RevisionLoyerAdmin(admin.ModelAdmin):
-    list_display = ["date_effet", "bail", "ancien_loyer", "nouveau_loyer", "trimestre", "appliquee", "liens"]
-    list_filter = ["appliquee", "bail__lot__bien__proprietaire"]
+    list_display = ["date_effet", "bail", "ancien_loyer", "ancien_irl", "nouvel_irl", "trimestre", "pourcentage", "nouveau_loyer", "appliquee", "liens"]
+    list_filter = ["appliquee", "bail__lot__bien__proprietaire", "bail"]
+
+    @admin.display(description="hausse")
+    def pourcentage(self, obj):
+        return f"+{(obj.nouvel_irl / obj.ancien_irl - 1) * 100:.2f} %".replace(".", ",") if obj.ancien_irl else "–"
 
     def has_add_permission(self, request):
         return False  # une révision se crée depuis la page « Réviser le loyer » du bail

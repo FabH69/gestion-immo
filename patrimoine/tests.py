@@ -415,7 +415,7 @@ class ImportAirtableTests(TestCase):
         finally:
             os.unlink(f.name)
         self.assertEqual(Lot.objects.count(), 2)
-        self.assertEqual(Bien.objects.get().syndic, "Syndic X")
+        self.assertEqual(Bien.objects.get().syndic.nom, "Syndic X")
         self.assertEqual(Proprietaire.objects.get().type, Proprietaire.Type.SCI_IR)
         garage = Lot.objects.get(ref_import="rec2")
         self.assertEqual((garage.type, garage.nb_pieces), (Lot.Type.PARKING, None))
@@ -718,3 +718,58 @@ class RecuDepotWordTests(TestCase):
         page = self.client.get("/admin/patrimoine/mouvementdepot/").content.decode()
         self.assertIn("Mme Léa DUPONT", page)
         self.assertIn("SCI ALFAB", page)
+
+
+class MenusNovembreTests(TestCase):
+    def setUp(self):
+        self.client.force_login(User.objects.create_superuser("admin", "a@a.fr", "x"))
+        proprio = Proprietaire.objects.create(nom="SCI M", type=Proprietaire.Type.SCI_IR)
+        self.bien = Bien.objects.create(proprietaire=proprio, nom="Pollionnay", adresse="1 rue", code_postal="69290", ville="Pollionnay")
+        self.lot = Lot.objects.create(bien=self.bien, designation="Pollionnay")
+
+    def test_historique_revisions(self):
+        from .models import RevisionLoyer
+        bail = Bail.objects.create(lot=self.lot, type=Bail.Type.NU, date_debut=date(2022, 7, 23), loyer_hc=Decimal("550"))
+        self.assertEqual(bail.loyer_initial, Decimal("550"))
+        RevisionLoyer.objects.create(bail=bail, date_effet=date(2024, 7, 23), ancien_loyer=550, ancien_irl=Decimal("140.59"),
+                                     nouvel_irl=Decimal("145.17"), trimestre="T2 2024", nouveau_loyer=Decimal("567.92"), appliquee=True)
+        lignes = bail.historique_revisions(date(2026, 11, 1))
+        self.assertEqual([l["anniversaire"].year for l in lignes], [2023, 2024, 2025, 2026])
+        self.assertEqual([l["statut"] for l in lignes], ["manquee", "appliquee", "manquee", "a_faire"])
+        self.assertAlmostEqual(float(lignes[1]["pourcentage"]), 3.26, places=2)
+        page = self.client.get(f"/admin/patrimoine/bail/{bail.pk}/change/").content.decode()
+        self.assertIn("Non appliquée", page)
+        self.assertIn("+3,26 %", page)
+        self.assertIn("Loyer initial", page)
+
+    def test_locataires_actifs_par_defaut(self):
+        parti, present = Locataire.objects.create(nom="PARTI"), Locataire.objects.create(nom="PRESENT")
+        Bail.objects.create(lot=self.lot, type=Bail.Type.NU, date_debut=date(2020, 1, 1), loyer_hc=500, actif=False).locataires.add(parti)
+        Bail.objects.create(lot=self.lot, type=Bail.Type.NU, date_debut=date(2023, 1, 1), loyer_hc=500).locataires.add(present)
+        page = self.client.get("/admin/patrimoine/locataire/").content.decode()
+        self.assertIn("PRESENT", page)
+        self.assertNotIn("PARTI", page)
+        self.assertIn("PARTI", self.client.get("/admin/patrimoine/locataire/?present=tous").content.decode())
+
+    def test_import_syndics(self):
+        import os, tempfile
+        from django.core.management import call_command
+        from .models import Syndic
+        with tempfile.NamedTemporaryFile("w", suffix=".csv", delete=False, encoding="utf-8") as f:
+            f.write("Nom,Adresse,Ville_Corpo,Nom Gestionnaire,Mail Gestionnaire,Tel Gestionnaire,Appartement,URL Espcae\n"
+                    "MERCIER Immobilier,4 Bld Jules Favre 69006,Lyon,ARCHIER David,d@x.fr,04-82-83-70-01,Pollionnay,https://m.fr/\n")
+        try:
+            call_command("importer_airtable", "--copros", f.name, "--appliquer", stdout=open(os.devnull, "w"))
+        finally:
+            os.unlink(f.name)
+        s = Syndic.objects.get()
+        self.assertEqual((s.adresse, s.code_postal, s.ville, s.contact_telephone), ("4 Bld Jules Favre", "69006", "Lyon", "04 82 83 70 01"))
+        self.bien.refresh_from_db()
+        self.assertEqual(self.bien.syndic, s)
+        self.assertIn("MERCIER", self.client.get("/admin/patrimoine/syndic/").content.decode())
+
+    def test_sites_utiles_dans_le_menu(self):
+        page = self.client.get("/admin/").content.decode()
+        self.assertIn("Sites utiles", page)
+        self.assertIn("anil.org", page)  # créé par la migration
+        self.assertIn("Ajouter un site utile", page)

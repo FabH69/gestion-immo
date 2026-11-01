@@ -173,3 +173,33 @@ fieldset.sortie-locataire.sortie-active { border-color: #f5c27a; background: #ff
 
 /* Lien « Créer le reçu » dans les listes : discret, sur une ligne */
 a.bouton-recu { display: inline-block; padding: 2px 10px; border: 1px solid var(--primary); border-radius: 999px; font-size: .8rem; white-space: nowrap; }
+
+/* Menu Sites utiles : liens de gestion séparés */
+#menu-principal .menu-liste a.menu-gerer { font-size: .8rem; color: var(--body-quiet-color); border-top: 1px solid var(--hairline-color); }
+#menu-principal .menu-liste a.menu-gerer + a.menu-gerer { border-top: 0; }
+
+/* En-têtes des listes : retour à la ligne plutôt que colonnes trop larges */
+#changelist table thead th { white-space: normal; vertical-align: bottom; line-height: 1.25; }
+#changelist table thead th .text a, #changelist table thead th .text span { white-space: normal; display: block; padding: 8px 8px 6px; }
+
+/* Listes déroulantes et champs : hauteur suffisante pour ne pas couper le texte */
+select, input[type=text], input[type=email], input[type=url], input[type=number], input[type=tel], input[type=date], .vTextField, .vDateField {
+  min-height: 36px; line-height: 1.35; box-sizing: border-box;
+}
+select { height: auto; padding-top: 6px; padding-bottom: 6px; }
+
+/* Cadres « Notes » plus bas (agrandissables avec la poignée) */
+textarea[name="notes"], textarea[name$="-notes"], .field-notes textarea { height: 5.5em; min-height: 3.5em; }
+
+/* Historique des révisions dans le bail */
+table.historique-revisions { border-collapse: collapse; margin-bottom: 6px; font-variant-numeric: tabular-nums; }
+table.historique-revisions th, table.historique-revisions td { padding: 5px 10px; border-bottom: 1px solid var(--hairline-color); text-align: right; white-space: nowrap; }
+table.historique-revisions th:first-child, table.historique-revisions td:first-child, table.historique-revisions td:last-child, table.historique-revisions th:last-child { text-align: left; }
+.statut-revision { display: inline-block; padding: 2px 9px; border-radius: 999px; font-size: .78rem; background: var(--darkened-bg); }
+.statut-revision.ok { background: #e3f4e6; color: #1e6b2c; }
+.statut-revision.attention { background: #fff1d6; color: #8a5a00; }
+.statut-revision.alerte { background: #fde3e3; color: #a12020; }
+.fieldBox.field-historique, .field-historique .readonly { overflow-x: auto; max-width: 100%; }
+.form-row.field-historique > div > .flex-container > label, .form-row.field-historique label { display: none; }
+.form-row.field-historique .readonly { margin-left: 0 !important; padding-left: 0; width: 100%; }
+table.historique-revisions { width: 100%; }

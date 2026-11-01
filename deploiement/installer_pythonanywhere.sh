@@ -26,6 +26,10 @@ echo "2/5 Base de données et fichiers de style…"
 if [ -f donnees/prets.csv ]; then
   "$VENV/bin/python" manage.py importer_prets donnees/prets.csv --appliquer | tail -1
 fi
+# fiches syndics complétées une seule fois (vos modifications ultérieures ne sont pas écrasées)
+if [ -f donnees/Copro.csv ] && [ ! -f "$HOME/.gestion-immo-syndics-importes" ]; then
+  "$VENV/bin/python" manage.py importer_airtable --copros donnees/Copro.csv --appliquer | tail -1 && touch "$HOME/.gestion-immo-syndics-importes"
+fi
 if [ -f donnees/lcd/initialiser.sh ]; then
   bash donnees/lcd/initialiser.sh "$VENV/bin/python"
 fi

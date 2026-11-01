@@ -34,3 +34,9 @@ def negatif(valeur):
     if not arrondi:
         return "0"
     return "−" + f"{arrondi:,}".replace(",", "\u202f")
+
+
+@register.simple_tag
+def sites_utiles():
+    from patrimoine.models import SiteUtile
+    return list(SiteUtile.objects.all())

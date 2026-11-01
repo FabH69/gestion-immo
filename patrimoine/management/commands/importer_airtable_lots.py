@@ -12,7 +12,7 @@ from decimal import Decimal, InvalidOperation
 from django.core.management.base import BaseCommand
 from django.db import transaction
 
-from patrimoine.models import Bien, Lot, Proprietaire
+from patrimoine.models import Syndic, Bien, Lot, Proprietaire
 
 
 def _texte(valeur):
@@ -77,8 +77,11 @@ class Command(BaseCommand):
                 bien, _ = Bien.objects.get_or_create(
                     proprietaire=proprio, adresse=adresse, ville=ville,
                     defaults={"nom": re.sub(r"\s*\d+$", "", _texte(ligne.get("Appartement"))) or adresse,
-                              "code_postal": _texte(ligne.get("CP_Appart")), "syndic": _texte(ligne.get("Copro"))},
+                              "code_postal": _texte(ligne.get("CP_Appart"))},
                 )
+                if _texte(ligne.get("Copro")) and not bien.syndic:
+                    bien.syndic, _ = Syndic.objects.get_or_create(nom=_texte(ligne.get("Copro")), defaults={"ville": ""})
+                    bien.save(update_fields=["syndic"])
                 etage = _texte(ligne.get("Etage")).replace("étgae", "étage")
                 type_lot = _type_lot(_texte(ligne.get("Tags")))
                 designation = _texte(ligne.get("Location 4")) or _texte(ligne.get("Appartement")) or f"{type_lot.label} {etage}".strip()
