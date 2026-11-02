@@ -43,7 +43,7 @@
   .actions { display:flex; flex-wrap:wrap; gap:8px; align-items:center; }
   form.inline { display:inline; margin:0; }
   .badge { display:inline-block; padding:3px 8px; font-size:.7rem; text-transform:uppercase; letter-spacing:.05em; background:var(--gris); border:1px solid var(--bord); font-family:system-ui,sans-serif; vertical-align:middle; }
-  .badge.ouverte { background:#fff; border-color:var(--noir); }
+  .badge.ferme { background:#fff; border-color:var(--noir); }
   .badge.passee { background:#fde3d9; border-color:#f6b9a2; }
   .badge.recue { background:var(--orange); border-color:var(--orange); color:#fff; }
   .badge.terminee { background:var(--jaune); border-color:var(--jaune); }
@@ -55,7 +55,7 @@
   .champ input:focus, .champ select:focus, .champ textarea:focus, .ajout select:focus, .ajout input:focus { outline:2px solid var(--orange); outline-offset:-1px; }
   .champ .aide { color:var(--doux); font-size:.85rem; margin-top:3px; }
   .champ .erreur { color:var(--rouge); font-size:.9rem; }
-  .ajout { display:grid; grid-template-columns:2fr 1fr auto; gap:8px; align-items:end; }
+  .ajout { display:grid; grid-template-columns:2fr 2fr 1fr 1fr auto; gap:8px; align-items:end; }
   @media (max-width:600px) { .ajout { grid-template-columns:1fr 1fr; } .ajout .btn { grid-column:1 / -1; } }
   .doux { color:var(--doux); }
   .msg-texte { white-space:pre-wrap; background:var(--gris); border-left:3px solid var(--orange); padding:10px; margin:8px 0; font-size:.95rem; }
@@ -68,6 +68,7 @@
   {% if user.is_authenticated %}
     <a href="{% url 'balles:accueil' %}">Commandes</a>
     <a href="{% url 'balles:joueurs' %}">Joueurs</a>
+    <a href="{% url 'balles:articles' %}">Articles</a>
     <a href="/admin/">← Gestion immo</a>
     <form class="inline" method="post" action="{% url 'admin:logout' %}">{% csrf_token %}<button>Déconnexion</button></form>
   {% endif %}

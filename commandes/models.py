@@ -1,14 +1,19 @@
 from decimal import Decimal
 
 from django.db import models
-from django.db.models import Sum
 from django.urls import reverse
 
 MESSAGE_PAR_DEFAUT = (
-    "Bonjour {prenom}, les balles sont arrivées ! "
-    "Tu as {nb_boites} boîte(s), soit {montant} €. "
+    "Bonjour {prenom}, ta commande est arrivée : {detail}, soit {montant} €. "
     "Remise : {lieu}. À bientôt !"
 )
+
+DEUX_DECIMALES = Decimal("0.01")
+
+
+def euros(montant):
+    """12.5 -> « 12,50 »."""
+    return f"{montant:.2f}".replace(".", ",")
 
 
 class Joueur(models.Model):
@@ -44,30 +49,46 @@ class Joueur(models.Model):
         return chiffres
 
 
+class Article(models.Model):
+    """Produit vendu : tube de balles, carton, raquette, accessoire..."""
+
+    nom = models.CharField(max_length=200, help_text="Ex. « Tube de 4 balles Pulse »")
+    reference = models.CharField("référence", max_length=50, blank=True)
+    prix_vente = models.DecimalField("prix de vente (€)", max_digits=8, decimal_places=2)
+    taux_commission = models.DecimalField(
+        "ma commission (%)", max_digits=5, decimal_places=2, default=Decimal("0")
+    )
+    actif = models.BooleanField(default=True, help_text="Décochez pour ne plus le proposer dans les commandes.")
+    notes = models.TextField(blank=True)
+
+    class Meta:
+        ordering = ["nom"]
+
+    def __str__(self):
+        return f"{self.nom} ({euros(self.prix_vente)} €)"
+
+    def get_absolute_url(self):
+        return reverse("balles:article_modifier", args=[self.pk])
+
+
 class Commande(models.Model):
     class Statut(models.TextChoices):
-        OUVERTE = "ouverte", "Ouverte (on prend les réservations)"
+        FERME = "ferme", "Ferme (validée)"
         PASSEE = "passee", "Passée au fournisseur"
         RECUE = "recue", "Reçue, à distribuer"
         TERMINEE = "terminee", "Terminée"
 
     nom = models.CharField(max_length=200, help_text="Ex. « Commande Pickblitz novembre »")
-    produit = models.CharField(max_length=200, default="Boîte de balles de tennis")
-    prix_boite = models.DecimalField("prix de vente d'une boîte (€)", max_digits=8, decimal_places=2)
-    taux_commission = models.DecimalField(
-        "ma commission (%)", max_digits=5, decimal_places=2, default=Decimal("0")
-    )
-    statut = models.CharField(max_length=20, choices=Statut.choices, default=Statut.OUVERTE)
+    statut = models.CharField(max_length=20, choices=Statut.choices, default=Statut.FERME)
     date_creation = models.DateField("créée le", auto_now_add=True)
-    date_limite = models.DateField("réservations jusqu'au", null=True, blank=True)
     date_reception = models.DateField("reçue le", null=True, blank=True)
     lieu_remise = models.CharField(
         "lieu / créneau de remise", max_length=255, blank=True,
         help_text="Ex. « au club samedi 10h-12h »",
     )
     message_arrivee = models.TextField(
-        "message « balles arrivées »", default=MESSAGE_PAR_DEFAUT,
-        help_text="Variables : {prenom}, {nom}, {nb_boites}, {montant}, {lieu}, {commande}",
+        "message « commande arrivée »", default=MESSAGE_PAR_DEFAUT,
+        help_text="Variables : {prenom}, {nom}, {detail}, {quantite}, {montant}, {lieu}, {commande}",
     )
     notes = models.TextField(blank=True)
 
@@ -80,57 +101,100 @@ class Commande(models.Model):
     def get_absolute_url(self):
         return reverse("balles:commande_detail", args=[self.pk])
 
+    def _lignes(self):
+        return list(self.lignes.all())
+
     @property
-    def total_boites(self):
-        return self.lignes.aggregate(t=Sum("nb_boites"))["t"] or 0
+    def total_quantite(self):
+        return sum(l.quantite for l in self._lignes())
+
+    @property
+    def nb_joueurs(self):
+        return len({l.joueur_id for l in self._lignes()})
 
     @property
     def montant_total(self):
-        return self.prix_boite * self.total_boites
+        return sum((l.montant for l in self._lignes()), Decimal("0"))
 
     @property
     def commission(self):
-        return (self.montant_total * self.taux_commission / 100).quantize(Decimal("0.01"))
+        return sum((l.commission for l in self._lignes()), Decimal("0"))
 
     @property
     def montant_encaisse(self):
-        return sum((l.montant for l in self.lignes.all() if l.paye), Decimal("0"))
+        return sum((l.montant for l in self._lignes() if l.paye), Decimal("0"))
+
+    def recap_articles(self):
+        """Quantité totale par article : ce qu'il faut commander au fournisseur."""
+        recap = {}
+        for l in self.lignes.select_related("article"):
+            r = recap.setdefault(l.article_id, {"article": l.article, "quantite": 0, "montant": Decimal("0")})
+            r["quantite"] += l.quantite
+            r["montant"] += l.montant
+        return sorted(recap.values(), key=lambda r: r["article"].nom)
+
+    def par_joueur(self):
+        """Lignes regroupées par joueur, avec le message « commande arrivée » de chacun."""
+        groupes = {}
+        for l in self.lignes.select_related("joueur", "article"):
+            groupes.setdefault(l.joueur_id, {"joueur": l.joueur, "lignes": []})["lignes"].append(l)
+        resultat = []
+        for g in sorted(groupes.values(), key=lambda g: str(g["joueur"])):
+            lignes = g["lignes"]
+            g["quantite"] = sum(l.quantite for l in lignes)
+            g["montant"] = sum((l.montant for l in lignes), Decimal("0"))
+            g["prevenu_le"] = min(l.prevenu_le for l in lignes) if all(l.prevenu_le for l in lignes) else None
+            g["detail"] = ", ".join(f"{l.quantite} × {l.article.nom}" for l in lignes)
+            g["texte"] = self._message(g)
+            resultat.append(g)
+        return resultat
+
+    def _message(self, g):
+        j = g["joueur"]
+        try:
+            return self.message_arrivee.format(
+                prenom=j.prenom, nom=j.nom, detail=g["detail"], quantite=g["quantite"],
+                nb_boites=g["quantite"], montant=euros(g["montant"]),
+                lieu=self.lieu_remise or "à convenir", commande=self.nom,
+            )
+        except (KeyError, IndexError, ValueError):
+            return self.message_arrivee
 
 
 class Ligne(models.Model):
-    """Ce qu'un joueur prend dans une commande."""
+    """Un article pris par un joueur dans une commande."""
 
     commande = models.ForeignKey(Commande, on_delete=models.CASCADE, related_name="lignes")
     joueur = models.ForeignKey(Joueur, on_delete=models.PROTECT, related_name="lignes")
-    nb_boites = models.PositiveIntegerField("nombre de boîtes", default=1)
+    article = models.ForeignKey(Article, on_delete=models.PROTECT, related_name="lignes")
+    quantite = models.PositiveIntegerField("quantité", default=1)
+    prix_unitaire = models.DecimalField("prix unitaire (€)", max_digits=8, decimal_places=2)
+    taux_commission = models.DecimalField(
+        "commission (%)", max_digits=5, decimal_places=2, default=Decimal("0")
+    )
     paye = models.BooleanField("payé", default=False)
     remis = models.BooleanField("remis", default=False)
     prevenu_le = models.DateTimeField("prévenu le", null=True, blank=True)
     notes = models.CharField(max_length=255, blank=True)
 
     class Meta:
-        ordering = ["joueur__prenom", "joueur__nom"]
-        constraints = [
-            models.UniqueConstraint(fields=["commande", "joueur"], name="une_ligne_par_joueur")
-        ]
+        ordering = ["joueur__prenom", "joueur__nom", "article__nom"]
 
     def __str__(self):
-        return f"{self.joueur} : {self.nb_boites} boîte(s)"
+        return f"{self.joueur} : {self.quantite} × {self.article.nom}"
+
+    def save(self, *args, **kwargs):
+        # Prix et commission repris de l'article s'ils ne sont pas précisés
+        if self.prix_unitaire is None:
+            self.prix_unitaire = self.article.prix_vente
+        if self._state.adding and not self.taux_commission:
+            self.taux_commission = self.article.taux_commission
+        super().save(*args, **kwargs)
 
     @property
     def montant(self):
-        return self.commande.prix_boite * self.nb_boites
+        return self.prix_unitaire * self.quantite
 
-    def message(self):
-        c = self.commande
-        try:
-            return c.message_arrivee.format(
-                prenom=self.joueur.prenom,
-                nom=self.joueur.nom,
-                nb_boites=self.nb_boites,
-                montant=f"{self.montant:.2f}".replace(".", ","),
-                lieu=c.lieu_remise or "à convenir",
-                commande=c.nom,
-            )
-        except (KeyError, IndexError, ValueError):
-            return c.message_arrivee
+    @property
+    def commission(self):
+        return (self.montant * self.taux_commission / 100).quantize(DEUX_DECIMALES)

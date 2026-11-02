@@ -6,8 +6,8 @@ from django.shortcuts import get_object_or_404, redirect, render
 from django.utils import timezone
 from django.views.decorators.http import require_POST
 
-from .forms import CommandeForm, JoueurForm, LigneForm
-from .models import Commande, Joueur, Ligne
+from .forms import ArticleForm, CommandeForm, JoueurForm, LigneForm
+from .models import Article, Commande, Joueur, Ligne, euros
 
 
 @login_required
@@ -47,6 +47,31 @@ def joueur_form(request, pk=None):
     })
 
 
+# ---------- Articles ----------
+
+@login_required
+def articles(request):
+    return render(request, "commandes/articles.html", {"articles": Article.objects.all()})
+
+
+@login_required
+def article_form(request, pk=None):
+    article = get_object_or_404(Article, pk=pk) if pk else None
+    form = ArticleForm(request.POST or None, instance=article)
+    if form.is_valid():
+        article = form.save()
+        messages.success(request, f"Article « {article.nom} » enregistré.")
+        suivant = request.GET.get("next")
+        if suivant and suivant.startswith("/"):
+            return redirect(suivant)
+        return redirect("balles:articles")
+    return render(request, "commandes/form.html", {
+        "form": form,
+        "titre": f"Modifier {article.nom}" if article else "Nouvel article",
+        "retour": "balles:articles",
+    })
+
+
 # ---------- Commandes ----------
 
 @login_required
@@ -67,21 +92,23 @@ def commande_form(request, pk=None):
 @login_required
 def commande_detail(request, pk):
     commande = get_object_or_404(Commande, pk=pk)
-    form = LigneForm(request.POST or None, commande=commande)
+    form = LigneForm(request.POST or None, initial={"quantite": 1})
     if request.method == "POST" and form.is_valid():
         ligne = form.save(commit=False)
         ligne.commande = commande
         ligne.save()
-        messages.success(request, f"{ligne.joueur} prend {ligne.nb_boites} boîte(s).")
+        messages.success(request, f"Ajouté : {ligne.joueur}, {ligne.quantite} × {ligne.article.nom}.")
         return redirect(commande)
-    lignes = commande.lignes.select_related("joueur")
+    lignes = list(commande.lignes.select_related("joueur", "article"))
     return render(request, "commandes/commande_detail.html", {
         "commande": commande,
         "lignes": lignes,
         "form": form,
+        "recap": commande.recap_articles(),
         "nb_payes": sum(1 for l in lignes if l.paye),
         "nb_remis": sum(1 for l in lignes if l.remis),
         "statuts": Commande.Statut.choices,
+        "prix_articles": {a.pk: str(a.prix_vente) for a in Article.objects.filter(actif=True)},
     })
 
 
@@ -115,13 +142,13 @@ def ligne_action(request, pk):
     elif action == "prevenu":
         ligne.prevenu_le = None if ligne.prevenu_le else timezone.now()
         ligne.save()
-    elif action == "boites":
+    elif action == "quantite":
         try:
-            nb = int(request.POST.get("nb_boites", ""))
+            nb = int(request.POST.get("quantite", ""))
         except ValueError:
             nb = 0
         if nb >= 1:
-            ligne.nb_boites = nb
+            ligne.quantite = nb
             ligne.save()
     elif action == "supprimer":
         ligne.delete()
@@ -133,6 +160,19 @@ def ligne_action(request, pk):
 
 
 @login_required
+@require_POST
+def joueur_prevenu(request, pk, joueur_pk):
+    """Marque (ou dé-marque) toutes les lignes d'un joueur comme prévenues."""
+    commande = get_object_or_404(Commande, pk=pk)
+    lignes = commande.lignes.filter(joueur_id=joueur_pk)
+    if lignes.filter(prevenu_le__isnull=True).exists():
+        lignes.filter(prevenu_le__isnull=True).update(prevenu_le=timezone.now())
+    else:
+        lignes.update(prevenu_le=None)
+    return redirect("balles:commande_messages", pk=pk)
+
+
+@login_required
 def commande_messages(request, pk):
     commande = get_object_or_404(Commande, pk=pk)
     if request.method == "POST" and request.POST.get("action") == "tous_prevenus":
@@ -140,28 +180,22 @@ def commande_messages(request, pk):
         messages.success(request, "Tous les joueurs sont marqués comme prévenus.")
         return redirect("balles:commande_messages", pk=pk)
 
-    envois = []
-    for ligne in commande.lignes.select_related("joueur"):
-        texte = ligne.message()
-        j = ligne.joueur
-        envois.append({
-            "ligne": ligne,
-            "texte": texte,
-            "whatsapp": f"https://wa.me/{j.telephone_international}?text={quote(texte)}" if j.telephone else "",
-            "sms": f"sms:{j.telephone.replace(' ', '')}?&body={quote(texte)}" if j.telephone else "",
-            "email": (
-                f"mailto:{j.email}?subject={quote('Balles de tennis : ' + commande.nom)}&body={quote(texte)}"
-                if j.email else ""
-            ),
-        })
+    envois = commande.par_joueur()
+    for e in envois:
+        j, texte = e["joueur"], e["texte"]
+        e["whatsapp"] = f"https://wa.me/{j.telephone_international}?text={quote(texte)}" if j.telephone else ""
+        e["sms"] = f"sms:{j.telephone.replace(' ', '')}?&body={quote(texte)}" if j.telephone else ""
+        e["email"] = (
+            f"mailto:{j.email}?subject={quote('Commande arrivée : ' + commande.nom)}&body={quote(texte)}"
+            if j.email else ""
+        )
 
-    recap = [f"🎾 Les balles de la commande « {commande.nom} » sont arrivées !"]
+    recap = [f"🎾 La commande « {commande.nom} » est arrivée !"]
     if commande.lieu_remise:
         recap.append(f"Remise : {commande.lieu_remise}")
     recap.append("")
     for e in envois:
-        l = e["ligne"]
-        recap.append(f"- {l.joueur} : {l.nb_boites} boîte(s), {l.montant:.2f} €".replace(".", ","))
+        recap.append(f"- {e['joueur']} : {e['detail']}, {euros(e['montant'])} €")
     message_groupe = "\n".join(recap)
 
     return render(request, "commandes/messages.html", {

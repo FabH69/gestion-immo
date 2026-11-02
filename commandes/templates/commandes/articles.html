@@ -1,0 +1,24 @@
+{% extends "commandes/base.html" %}
+{% block titre %}Articles{% endblock %}
+{% block contenu %}
+<div class="actions" style="justify-content:space-between">
+  <h1>Articles ({{ articles|length }})</h1>
+  <a class="btn" href="{% url 'balles:article_creer' %}">+ Nouvel article</a>
+</div>
+<div class="table-wrap">
+<table>
+  <tr><th>Article</th><th>Référence</th><th>Prix de vente</th><th>Ma commission</th><th></th></tr>
+  {% for a in articles %}
+  <tr{% if not a.actif %} class="doux"{% endif %}>
+    <td>{{ a.nom }}{% if not a.actif %} <span class="badge">inactif</span>{% endif %}</td>
+    <td>{{ a.reference|default:"—" }}</td>
+    <td>{{ a.prix_vente|floatformat:2 }} €</td>
+    <td>{{ a.taux_commission|floatformat:-2 }} %</td>
+    <td><a class="btn petit sec" href="{{ a.get_absolute_url }}">Modifier</a></td>
+  </tr>
+  {% empty %}
+  <tr><td colspan="5" class="doux">Aucun article. Commencez par créer vos produits (tubes, cartons…).</td></tr>
+  {% endfor %}
+</table>
+</div>
+{% endblock %}

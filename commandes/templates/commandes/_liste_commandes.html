@@ -1,12 +1,12 @@
 <div class="table-wrap">
 <table>
-  <tr><th>Commande</th><th>Statut</th><th>Joueurs</th><th>Boîtes</th><th>Montant</th><th>Commission</th></tr>
+  <tr><th>Commande</th><th>Statut</th><th>Joueurs</th><th>Articles</th><th>Montant</th><th>Commission</th></tr>
   {% for c in commandes %}
   <tr>
     <td><a href="{{ c.get_absolute_url }}"><b>{{ c.nom }}</b></a><br><span class="doux">créée le {{ c.date_creation|date:"d/m/Y" }}</span></td>
     <td><span class="badge {{ c.statut }}">{{ c.get_statut_display }}</span></td>
-    <td>{{ c.lignes.all|length }}</td>
-    <td>{{ c.total_boites }}</td>
+    <td>{{ c.nb_joueurs }}</td>
+    <td>{{ c.total_quantite }}</td>
     <td>{{ c.montant_total|floatformat:2 }} €</td>
     <td>{{ c.commission|floatformat:2 }} €</td>
   </tr>

@@ -19,19 +19,18 @@ Le texte se modifie dans <a href="{% url 'balles:commande_modifier' commande.pk 
 {% for e in envois %}
 <div class="carte">
   <div class="actions" style="justify-content:space-between">
-    <b>{{ e.ligne.joueur }} · {{ e.ligne.nb_boites }} boîte(s)</b>
-    {% if e.ligne.prevenu_le %}<span class="badge terminee">prévenu le {{ e.ligne.prevenu_le|date:"d/m à H:i" }}</span>{% endif %}
+    <b>{{ e.joueur }} · {{ e.detail }}</b>
+    {% if e.prevenu_le %}<span class="badge terminee">prévenu le {{ e.prevenu_le|date:"d/m à H:i" }}</span>{% endif %}
   </div>
-  <div class="msg-texte" id="msg{{ e.ligne.pk }}">{{ e.texte }}</div>
+  <div class="msg-texte" id="msg{{ e.joueur.pk }}">{{ e.texte }}</div>
   <div class="actions">
     {% if e.whatsapp %}<a class="btn" href="{{ e.whatsapp }}" target="_blank" rel="noopener">WhatsApp</a>{% endif %}
     {% if e.sms %}<a class="btn sec" href="{{ e.sms }}">SMS</a>{% endif %}
     {% if e.email %}<a class="btn sec" href="{{ e.email }}">E-mail</a>{% endif %}
-    {% if not e.whatsapp and not e.email %}<span class="doux">Pas de téléphone ni d'e-mail : <a href="{{ e.ligne.joueur.get_absolute_url }}?next={{ request.path|urlencode }}">compléter la fiche</a></span>{% endif %}
-    <button class="btn sec" type="button" onclick="copier('msg{{ e.ligne.pk }}', this)">Copier</button>
-    <form method="post" action="{% url 'balles:ligne_action' e.ligne.pk %}" class="inline">{% csrf_token %}
-      <input type="hidden" name="action" value="prevenu"><input type="hidden" name="next" value="{{ request.path }}">
-      {% if e.ligne.prevenu_le %}<button class="btn petit sec">Annuler « prévenu »</button>{% else %}<button class="btn petit ok">✔ Marquer prévenu</button>{% endif %}
+    {% if not e.whatsapp and not e.email %}<span class="doux">Pas de téléphone ni d'e-mail : <a href="{{ e.joueur.get_absolute_url }}?next={{ request.path|urlencode }}">compléter la fiche</a></span>{% endif %}
+    <button class="btn sec" type="button" onclick="copier('msg{{ e.joueur.pk }}', this)">Copier</button>
+    <form method="post" action="{% url 'balles:joueur_prevenu' commande.pk e.joueur.pk %}" class="inline">{% csrf_token %}
+      {% if e.prevenu_le %}<button class="btn petit sec">Annuler « prévenu »</button>{% else %}<button class="btn petit ok">✔ Marquer prévenu</button>{% endif %}
     </form>
   </div>
 </div>
