@@ -1,7 +1,7 @@
 import csv
 import io
 import zipfile
-from datetime import date
+from datetime import date, datetime
 from decimal import Decimal, InvalidOperation
 from urllib.parse import quote
 
@@ -615,3 +615,32 @@ def fichier_prive(request, chemin):
     except SuspiciousFileOperation:
         raise Http404
     return FileResponse(stockage.open(chemin, "rb"), filename=chemin.rsplit("/", 1)[-1])
+
+
+@staff_member_required
+def sauvegardes(request):
+    """Réglages › Sauvegardes : liste des sauvegardes du serveur, création et téléchargement."""
+    from . import sauvegarde
+
+    if request.method == "POST":
+        fichier = sauvegarde.creer()
+        messages.success(request, f"Sauvegarde créée : {fichier.name}. Elle se télécharge, gardez-la sur votre ordinateur.")
+        return redirect(f"{reverse('sauvegardes')}?telecharger={quote(fichier.name)}")
+    fichiers = [{"nom": f.name, "date": datetime.fromtimestamp(f.stat().st_mtime), "taille": f.stat().st_size}
+                for f in sauvegarde.liste()]
+    return render(request, "patrimoine/sauvegardes.html", {
+        **admin.site.each_context(request), "title": "Sauvegardes", "fichiers": fichiers, "a_garder": sauvegarde.A_GARDER,
+        "telecharger": request.GET.get("telecharger", ""),
+    })
+
+
+@staff_member_required
+def telecharger_sauvegarde(request, nom):
+    from django.http import FileResponse, Http404
+
+    from . import sauvegarde
+
+    fichier = next((f for f in sauvegarde.liste() if f.name == nom), None)
+    if fichier is None:
+        raise Http404
+    return FileResponse(fichier.open("rb"), as_attachment=True, filename=fichier.name)

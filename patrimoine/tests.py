@@ -2,7 +2,7 @@ from datetime import date
 from decimal import Decimal
 
 from django.contrib.auth.models import User
-from django.test import TestCase
+from django.test import TestCase, TransactionTestCase
 from django.utils import timezone
 
 from .models import Bail, Bien, Echeance, Locataire, Lot, MouvementDepot, Paiement, Proprietaire, Rappel
@@ -922,3 +922,37 @@ class CompteursEtDepotTests(TestCase):
         self.assertIn("600.00", str(form.errors["depot_garantie"]))
         form = BailForm({**donnees, "type": "meuble"})
         self.assertNotIn("depot_garantie", form.errors)
+
+
+class SauvegardeTests(TransactionTestCase):  # hors transaction, comme en production
+    def test_creation_rotation_et_telechargement(self):
+        import tempfile
+        import zipfile
+        from pathlib import Path
+
+        from django.test import override_settings
+
+        from . import sauvegarde
+        with tempfile.TemporaryDirectory() as tmp, override_settings(SAUVEGARDES_ROOT=Path(tmp) / "s", MEDIA_ROOT=Path(tmp) / "m",
+                                                                   PRIVE_ROOT=Path(tmp) / "p"):
+            (Path(tmp) / "p" / "pieces-identite").mkdir(parents=True)
+            (Path(tmp) / "p" / "pieces-identite" / "cni.pdf").write_bytes(b"%PDF")
+            for i in range(9):
+                f = sauvegarde.creer()
+                import os
+                os.utime(f, (1_700_000_000 + i, 1_700_000_000 + i))
+            self.assertEqual(len(sauvegarde.liste()), 7)
+            with zipfile.ZipFile(sauvegarde.liste()[0]) as z:
+                self.assertIn("db.sqlite3", z.namelist())
+                self.assertIn("prive/pieces-identite/cni.pdf", z.namelist())
+            nom = sauvegarde.liste()[0].name
+            self.assertEqual(self.client.get(f"/reglages/sauvegardes/{nom}").status_code, 302)  # connexion obligatoire
+            self.client.force_login(User.objects.create_superuser("admin", "a@example.com", "x"))
+            self.assertContains(self.client.get("/reglages/sauvegardes/"), nom)
+            r = self.client.post("/reglages/sauvegardes/")
+            self.assertEqual(r.status_code, 302)
+            self.assertEqual(self.client.get(r["Location"]).status_code, 200)
+            self.assertEqual(self.client.get("/reglages/sauvegardes/../db.sqlite3").status_code, 404)
+            # automatique : rien si la dernière a moins de 24 h
+            sauvegarde._derniere_verification = 0
+            self.assertIsNone(sauvegarde.si_necessaire())

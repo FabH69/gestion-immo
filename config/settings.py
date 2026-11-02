@@ -11,6 +11,7 @@ https://docs.djangoproject.com/en/5.1/ref/settings/
 """
 
 import os
+import sys
 from pathlib import Path
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
@@ -52,6 +53,7 @@ MIDDLEWARE = [
     "django.contrib.auth.middleware.AuthenticationMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
+    "patrimoine.sauvegarde.SauvegardeAutomatiqueMiddleware",
 ]
 
 ROOT_URLCONF = "config.urls"
@@ -133,6 +135,9 @@ MEDIA_URL = "media/"
 MEDIA_ROOT = BASE_DIR / "media"
 # pièces d'identité des garants : hors de media (non publié), servies seulement aux personnes connectées
 PRIVE_ROOT = BASE_DIR / "prive"
+# sauvegardes automatiques (les 7 dernières) : Réglages › Sauvegardes
+SAUVEGARDES_ROOT = BASE_DIR / "sauvegardes"
+SAUVEGARDE_AUTO = "test" not in sys.argv  # pas de sauvegarde automatique pendant les tests
 
 if not DEBUG:
     SESSION_COOKIE_SECURE = CSRF_COOKIE_SECURE = True
