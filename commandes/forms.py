@@ -1,6 +1,6 @@
 from django import forms
 
-from .models import Commande, Joueur, Ligne
+from .models import Article, Commande, Joueur, Ligne
 
 
 class JoueurForm(forms.ModelForm):
@@ -10,15 +10,18 @@ class JoueurForm(forms.ModelForm):
         widgets = {"notes": forms.Textarea(attrs={"rows": 3})}
 
 
+class ArticleForm(forms.ModelForm):
+    class Meta:
+        model = Article
+        fields = ["nom", "reference", "prix_vente", "taux_commission", "actif", "notes"]
+        widgets = {"notes": forms.Textarea(attrs={"rows": 3})}
+
+
 class CommandeForm(forms.ModelForm):
     class Meta:
         model = Commande
-        fields = [
-            "nom", "produit", "prix_boite", "taux_commission", "statut",
-            "date_limite", "date_reception", "lieu_remise", "message_arrivee", "notes",
-        ]
+        fields = ["nom", "statut", "date_reception", "lieu_remise", "message_arrivee", "notes"]
         widgets = {
-            "date_limite": forms.DateInput(attrs={"type": "date"}, format="%Y-%m-%d"),
             "date_reception": forms.DateInput(attrs={"type": "date"}, format="%Y-%m-%d"),
             "message_arrivee": forms.Textarea(attrs={"rows": 4}),
             "notes": forms.Textarea(attrs={"rows": 3}),
@@ -28,12 +31,13 @@ class CommandeForm(forms.ModelForm):
 class LigneForm(forms.ModelForm):
     class Meta:
         model = Ligne
-        fields = ["joueur", "nb_boites", "notes"]
+        fields = ["joueur", "article", "quantite", "prix_unitaire", "notes"]
 
-    def __init__(self, *args, commande=None, **kwargs):
+    def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        qs = Joueur.objects.filter(actif=True)
-        if commande is not None:
-            qs = qs.exclude(lignes__commande=commande)
-        self.fields["joueur"].queryset = qs
-        self.fields["nb_boites"].widget.attrs["min"] = 1
+        self.fields["joueur"].queryset = Joueur.objects.filter(actif=True)
+        self.fields["article"].queryset = Article.objects.filter(actif=True)
+        self.fields["quantite"].widget.attrs["min"] = 1
+        self.fields["prix_unitaire"].required = False
+        self.fields["prix_unitaire"].widget.attrs["placeholder"] = "auto"
+        self.fields["prix_unitaire"].help_text = "Laisser vide pour reprendre le prix de l'article."
