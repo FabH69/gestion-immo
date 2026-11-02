@@ -19,7 +19,7 @@ from weasyprint import HTML
 from .documents import ELEMENTS_PIECE, INVENTAIRE_MEUBLE, duree_texte
 from .etats import endettement, loyers_encaisses
 from .forms import CandidatureForm
-from .models import Bail, Candidature, Echeance, EtatDesLieux, Garant, JournalFait, Lot, MouvementDepot, Pret, Proprietaire, Rappel, RevisionLoyer, Tache
+from .models import PieceCandidature, Bail, Candidature, Echeance, EtatDesLieux, Garant, JournalFait, Lot, MouvementDepot, Pret, Proprietaire, Rappel, RevisionLoyer, Tache
 
 
 def annees_disponibles():
@@ -386,6 +386,20 @@ def lettre_revision(request, pk):
     return _pdf(render_to_string("patrimoine/lettre_revision.html", contexte), f"revision loyer {revision.bail.lot} {revision.date_effet:%Y}")
 
 
+def _verifier_pieces(request):
+    """Justificatifs : 10 Mo maximum par fichier, PDF ou photo ; renvoie les erreurs par type de pièce."""
+    from .forms import EXTENSIONS_PIECE, TAILLE_MAX_PIECE
+
+    erreurs = {}
+    for type_piece, _ in PieceCandidature.Type.choices:
+        for f in request.FILES.getlist(f"piece-{type_piece}"):
+            if f.size > TAILLE_MAX_PIECE:
+                erreurs[type_piece] = f"« {f.name} » est trop lourd : 10 Mo maximum par fichier."
+            elif not f.name.lower().endswith(EXTENSIONS_PIECE):
+                erreurs[type_piece] = f"« {f.name} » : formats acceptés PDF, JPG, PNG, HEIC."
+    return erreurs
+
+
 def candidature_publique(request, jeton):
     """Formulaire envoyé au futur locataire : accessible sans compte, via un lien personnel."""
     from .forms import GarantsFormSet
@@ -399,7 +413,8 @@ def candidature_publique(request, jeton):
         avec_garant = (candidature.type_garantie or request.POST.get("type_garantie")) == "garant"
         if avec_garant:
             garants.forms[0].empty_permitted = False
-        if form.is_valid() and (not avec_garant or garants.is_valid()):
+        erreurs_pieces = _verifier_pieces(request)
+        if form.is_valid() and (not avec_garant or garants.is_valid()) and not erreurs_pieces:
             candidature = form.save(commit=False)
             candidature.statut = Candidature.Statut.RECUE
             candidature.recue_le = timezone.now()
@@ -407,12 +422,21 @@ def candidature_publique(request, jeton):
             if avec_garant:
                 garants.instance = candidature
                 garants.save()
+            for type_piece, _ in PieceCandidature.Type.choices:
+                for f in request.FILES.getlist(f"piece-{type_piece}"):
+                    PieceCandidature.objects.create(candidature=candidature, type=type_piece, fichier=f)
+            from . import mails
+
+            mails.dossier_recu(candidature, request)
             return render(request, "patrimoine/candidature_merci.html", {"candidature": candidature, "lot": lot})
     else:
         form = CandidatureForm(instance=candidature)
         garants = GarantsFormSet(instance=candidature, prefix="garants")
+        erreurs_pieces = {}
+    types_pieces = [{"code": c, "libelle": l, "erreur": erreurs_pieces.get(c), "deja": candidature.pieces.filter(type=c).count()}
+                    for c, l in PieceCandidature.Type.choices]
     return render(request, "patrimoine/candidature_formulaire.html", {
-        "form": form, "garants": garants, "candidature": candidature, "lot": lot, "bien": lot.bien, "ferme": ferme,
+        "form": form, "garants": garants, "types_pieces": types_pieces, "candidature": candidature, "lot": lot, "bien": lot.bien, "ferme": ferme,
         "loyer_indicatif": lot.loyer_reference,
     })
 
@@ -644,3 +668,36 @@ def telecharger_sauvegarde(request, nom):
     if fichier is None:
         raise Http404
     return FileResponse(fichier.open("rb"), as_attachment=True, filename=fichier.name)
+
+
+@staff_member_required
+@require_POST
+def envoyer_lien_candidature(request, pk):
+    from . import mails
+
+    c = get_object_or_404(Candidature.objects.select_related("lot__bien"), pk=pk)
+    email = request.POST.get("email", "").strip() or c.email
+    if email and email != c.email:
+        c.email = email
+        c.save(update_fields=["email"])
+    if not email:
+        messages.error(request, "Renseignez d'abord l'e-mail du candidat.")
+    elif mails.envoyer([email], f"Votre dossier de candidature – {c.lot.designation}", mails.texte_invitation(c, mails.lien_candidature(c, request))):
+        messages.success(request, f"Lien envoyé à {email}.")
+    else:
+        messages.error(request, "Le mail n'est pas parti : vérifiez le réglage Réglages › Mails (adresse et mot de passe d'application).")
+    return redirect("admin:patrimoine_candidature_change", pk)
+
+
+@staff_member_required
+@require_POST
+def tester_mail(request):
+    from . import mails
+
+    r = mails.reglage()
+    try:
+        mails.envoyer([r.adresse], "Test – Gestion immobilière", "Ce mail confirme que l'application peut envoyer des mails.", r, lever=True)
+        messages.success(request, f"Mail de test envoyé à {r.adresse} : vérifiez votre boîte.")
+    except Exception as erreur:
+        messages.error(request, f"Échec de l'envoi ({erreur.__class__.__name__}). Vérifiez l'adresse et le mot de passe d'application (16 lettres).")
+    return redirect("admin:patrimoine_parametresmail_change", 1)

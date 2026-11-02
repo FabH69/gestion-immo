@@ -8,7 +8,7 @@ from urllib.parse import quote
 from django.utils import timezone
 from django.utils.html import format_html, format_html_join
 
-from .models import mois_depot_maximum, GarantCandidature, EncaissementHistorique, ChargeLMNP, SiteUtile, Syndic, Annonce, ChargeLCD, ParametresLCD, ReservationLCD, Bail, Bien, Candidature, ChangementLocataire, Garant, PhotoLot, Echeance, EtatDesLieux, MouvementDepot, Pret, Rappel, RevisionLoyer, Locataire, Lot, Paiement, Proprietaire, Tache
+from .models import ParametresMail, PieceCandidature, mois_depot_maximum, GarantCandidature, EncaissementHistorique, ChargeLMNP, SiteUtile, Syndic, Annonce, ChargeLCD, ParametresLCD, ReservationLCD, Bail, Bien, Candidature, ChangementLocataire, Garant, PhotoLot, Echeance, EtatDesLieux, MouvementDepot, Pret, Rappel, RevisionLoyer, Locataire, Lot, Paiement, Proprietaire, Tache
 
 admin.site.site_header = "Gestion immobilière"
 admin.site.enable_nav_sidebar = False  # remplacé par le menu du bandeau
@@ -953,9 +953,25 @@ class GarantCandidatureInline(admin.StackedInline):
               ("email", "telephone"), ("lien", "profession", "revenus_mensuels"), ("piece_identite_numero", "piece_identite_fichier")]
 
 
+class PieceCandidatureInline(admin.TabularInline):
+    model = PieceCandidature
+    extra = 0
+    can_delete = True
+    fields = ["type", "voir", "ajoute_le"]
+    readonly_fields = ["type", "voir", "ajoute_le"]
+    verbose_name_plural = "justificatifs déposés par le candidat"
+
+    def has_add_permission(self, request, obj=None):
+        return False
+
+    @admin.display(description="fichier")
+    def voir(self, obj):
+        return format_html('<a href="{}" target="_blank">{}</a>', obj.fichier.url, obj.fichier.name.rsplit("/", 1)[-1][17:])
+
+
 @admin.register(Candidature)
 class CandidatureAdmin(admin.ModelAdmin):
-    inlines = [GarantCandidatureInline]
+    inlines = [GarantCandidatureInline, PieceCandidatureInline]
     list_display = ["__str__", "statut", "situation", "revenus_mensuels", "taux_effort", "type_garantie", "recue_le"]
     list_filter = ["statut", "lot"]
     readonly_fields = ["lien_a_envoyer", "statut", "recue_le", "taux_effort"]
@@ -963,7 +979,7 @@ class CandidatureAdmin(admin.ModelAdmin):
 
     def get_fieldsets(self, request, obj=None):
         if obj is None:
-            return [(None, {"fields": ["lot", "type_garantie"],
+            return [(None, {"fields": ["lot", "type_garantie", "email"],
                             "description": "Choisissez le logement et le type de caution : un lien personnel sera créé pour le candidat. "
                                            "Avec « Garant », le formulaire lui demandera l'identité du ou des garants (adresse, date et lieu "
                                            "de naissance, n° de pièce d'identité et copie)."})]
@@ -999,11 +1015,16 @@ class CandidatureAdmin(admin.ModelAdmin):
         corps = (f"Bonjour,\n\nSuite à votre intérêt pour le logement {obj.lot.designation} ({obj.lot.bien.adresse}, {obj.lot.bien.ville}), "
                  f"voici le formulaire de candidature à remplir en ligne :\n{url}\n\nCordialement")
         mailto = f"mailto:{obj.email}?subject={quote('Votre dossier de candidature – ' + obj.lot.designation)}&body={quote(corps)}"
+        envoi = ""
+        if ParametresMail.objects.filter(pk=1).exists():
+            envoi = format_html(
+                ' <button type="submit" class="button default" formaction="{}" formnovalidate>Envoyer le lien par mail depuis l\'appli</button>',
+                reverse("envoyer_lien_candidature", args=[obj.pk]))
         return format_html(
             '<input type="text" value="{}" readonly style="width:100%;max-width:560px" onclick="this.select()"> '
-            '<p><a class="button" href="{}">Préparer le mail au candidat</a></p>'
-            "<p class='help'>Le lien ne fonctionnera pour le candidat qu'une fois l'application mise en ligne.</p>",
-            url, mailto,
+            '<p><a class="button" href="{}">Préparer le mail dans ma messagerie</a>{}</p>'
+            "<p class='help'>Pour envoyer directement depuis l'appli, renseignez l'e-mail du candidat et le réglage Réglages › Mails.</p>",
+            url, mailto, envoi,
         )
 
     def get_form(self, request, obj=None, **kwargs):
@@ -1096,3 +1117,29 @@ class ChargeLCDAdmin(admin.ModelAdmin):
 @admin.register(ParametresLCD)
 class ParametresLCDAdmin(admin.ModelAdmin):
     list_display = ["lot", "menage_par_sejour", "consommables_par_sejour", "commission_gestion"]
+
+
+@admin.register(ParametresMail)
+class ParametresMailAdmin(admin.ModelAdmin):
+    fields = ["adresse", "mot_de_passe", "nom_expediteur", "alerte_nouveau_dossier", "accuse_au_candidat", "test"]
+    readonly_fields = ["test"]
+
+    def get_form(self, request, obj=None, **kwargs):
+        form = super().get_form(request, obj, **kwargs)
+        form.base_fields["mot_de_passe"].widget = forms.PasswordInput(render_value=True)
+        return form
+
+    def changelist_view(self, request, extra_context=None):
+        if ParametresMail.objects.filter(pk=1).exists():
+            return redirect("admin:patrimoine_parametresmail_change", 1)
+        return redirect("admin:patrimoine_parametresmail_add")
+
+    def has_add_permission(self, request):
+        return not ParametresMail.objects.filter(pk=1).exists()
+
+    @admin.display(description="vérifier")
+    def test(self, obj):
+        if not obj or not obj.pk:
+            return "Enregistrez d'abord, puis envoyez-vous un mail de test."
+        return format_html('<button type="submit" class="button" formaction="{}" formnovalidate>M\'envoyer un mail de test</button>',
+                           reverse("tester_mail"))

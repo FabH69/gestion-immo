@@ -956,3 +956,43 @@ class SauvegardeTests(TransactionTestCase):  # hors transaction, comme en produc
             # automatique : rien si la dernière a moins de 24 h
             sauvegarde._derniere_verification = 0
             self.assertIsNone(sauvegarde.si_necessaire())
+
+
+class JustificatifsEtMailsTests(TestCase):
+    def test_justificatifs_et_mails(self):
+        import tempfile
+
+        from django.core import mail
+        from django.core.files.uploadedfile import SimpleUploadedFile
+        from django.test import override_settings
+
+        from .models import Candidature, ParametresMail
+        proprio = Proprietaire.objects.create(nom="SCI", type=Proprietaire.Type.SCI_IR)
+        bien = Bien.objects.create(proprietaire=proprio, nom="Immeuble", adresse="1 rue", code_postal="69000", ville="Lyon")
+        lot = Lot.objects.create(bien=bien, designation="Apt 3")
+        ParametresMail.objects.create(adresse="proprio@gmail.com", mot_de_passe="abcd efgh ijkl mnop", nom_expediteur="Fabien")
+        self.assertEqual(ParametresMail.objects.get().mot_de_passe, "abcdefghijklmnop")
+        c = Candidature.objects.create(lot=lot, type_garantie="visale", email="lea@example.com")
+        base = {"prenom": "Léa", "nom": "Durand", "email": "lea@example.com", "telephone": "06", "adresse_rue": "3 rue",
+                "adresse_code_postal": "69003", "adresse_ville": "Lyon", "situation": "cdi", "revenus_mensuels": "2400",
+                "consentement": "on", "garants-TOTAL_FORMS": "2", "garants-INITIAL_FORMS": "0", "garants-MIN_NUM_FORMS": "0",
+                "garants-MAX_NUM_FORMS": "2"}
+        with tempfile.TemporaryDirectory() as prive, override_settings(PRIVE_ROOT=prive, ENVOI_MAIL_BACKEND="django.core.mail.backends.locmem.EmailBackend"):
+            r = self.client.post(f"/candidature/{c.jeton}/", {**base, "piece-salaires": [SimpleUploadedFile("virus.exe", b"x")]})
+            self.assertContains(r, "formats acceptés")
+            r = self.client.post(f"/candidature/{c.jeton}/", {**base, "piece-salaires": [SimpleUploadedFile("p1.pdf", b"%PDF"), SimpleUploadedFile("p2.pdf", b"%PDF")],
+                                                              "piece-identite": [SimpleUploadedFile("cni.jpg", b"jpg")]})
+            self.assertContains(r, "Merci Léa")
+            self.assertEqual(c.pieces.count(), 3)
+            self.assertEqual(sorted(m.to[0] for m in mail.outbox), ["lea@example.com", "proprio@gmail.com"])
+            self.assertIn("Justificatifs déposés : 3", next(m.body for m in mail.outbox if m.to == ["proprio@gmail.com"]))
+            self.client.force_login(User.objects.create_superuser("admin", "a@example.com", "x"))
+            page = self.client.get(f"/admin/patrimoine/candidature/{c.pk}/change/")
+            self.assertContains(page, "cni.jpg")
+            self.assertContains(page, "Envoyer le lien par mail")
+            self.client.post(f"/candidatures/{c.pk}/envoyer-lien/", {"email": "autre@example.com"})
+            self.assertEqual(mail.outbox[-1].to, ["autre@example.com"])
+            self.assertIn(f"/candidature/{c.jeton}/", mail.outbox[-1].body)
+            self.client.post("/reglages/mails/test/")
+            self.assertEqual(mail.outbox[-1].subject, "Test – Gestion immobilière")
+            self.assertEqual(self.client.get("/admin/patrimoine/parametresmail/").status_code, 302)

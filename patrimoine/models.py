@@ -1290,3 +1290,52 @@ class ChargeLCD(models.Model):
 
     def active_en(self, premier_jour, dernier_jour):
         return (not self.debut or self.debut <= dernier_jour) and (not self.fin or self.fin >= premier_jour)
+
+
+class PieceCandidature(models.Model):
+    """Justificatif déposé par un candidat (liste limitée par le décret n° 2015-1437 du 5 novembre 2015)."""
+
+    class Type(models.TextChoices):
+        IDENTITE = "identite", "Pièce d'identité (carte d'identité, passeport ou titre de séjour)"
+        DOMICILE = "domicile", "Justificatif de domicile (3 dernières quittances, attestation d'hébergement ou taxe foncière)"
+        ACTIVITE = "activite", "Situation professionnelle (contrat de travail, attestation employeur, carte d'étudiant…)"
+        SALAIRES = "salaires", "3 derniers bulletins de salaire (ou justificatifs de ressources)"
+        IMPOTS = "impots", "Dernier avis d'imposition"
+        AUTRE = "autre", "Autre ressource (bourse, pension, aides au logement…)"
+
+    candidature = models.ForeignKey(Candidature, on_delete=models.CASCADE, related_name="pieces")
+    type = models.CharField(max_length=10, choices=Type.choices)
+    fichier = models.FileField(upload_to=_chemin_piece, storage=stockage_prive)
+    ajoute_le = models.DateTimeField("déposé le", auto_now_add=True)
+
+    class Meta:
+        verbose_name = "justificatif"
+        ordering = ["type", "pk"]
+
+    def __str__(self):
+        return f"{self.get_type_display()} – {self.fichier.name.rsplit('/', 1)[-1]}"
+
+
+class ParametresMail(models.Model):
+    """Envoi des mails depuis l'application, par votre compte Gmail (un seul réglage)."""
+
+    adresse = models.EmailField("adresse Gmail d'envoi", help_text="Les mails partiront de cette adresse")
+    mot_de_passe = models.CharField(
+        "mot de passe d'application", max_length=40,
+        help_text="Code de 16 lettres créé sur myaccount.google.com/apppasswords (validation en 2 étapes obligatoire). "
+                  "Ce n'est pas le mot de passe de votre compte Google.")
+    nom_expediteur = models.CharField("nom affiché", max_length=100, blank=True, help_text="ex. « Fabien Hunault »")
+    alerte_nouveau_dossier = models.BooleanField("me prévenir à chaque dossier de candidature reçu", default=True)
+    accuse_au_candidat = models.BooleanField("envoyer un accusé de réception au candidat", default=True)
+
+    class Meta:
+        verbose_name = "réglage des mails"
+        verbose_name_plural = "réglage des mails"
+
+    def __str__(self):
+        return f"Envoi par {self.adresse}"
+
+    def save(self, *args, **kwargs):
+        self.pk = 1  # un seul réglage
+        self.mot_de_passe = self.mot_de_passe.replace(" ", "")
+        super().save(*args, **kwargs)

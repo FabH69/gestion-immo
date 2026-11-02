@@ -12,7 +12,7 @@
     <span>{% if lot.meuble %}<strong>Meublé</strong>{% else %}<strong>Non meublé</strong>{% endif %}</span>
     {% if loyer_indicatif %}<span>Loyer indicatif <strong>{{ loyer_indicatif|floatformat:0 }} € charges comprises</strong></span>{% endif %}
   </div>
-  <p class="aide" style="margin-bottom:0">Remplissez ce formulaire en 5 minutes. Les justificatifs (pièce d'identité, justificatifs de revenus et de domicile) vous seront demandés ensuite, uniquement parmi la liste autorisée par la loi.</p>
+  <p class="aide" style="margin-bottom:0">Remplissez ce formulaire en 5 minutes. Vous pouvez joindre vos justificatifs en bas de page (uniquement ceux autorisés par la loi), ou les envoyer plus tard.</p>
 </div>
 <form method="post" enctype="multipart/form-data" novalidate>{% csrf_token %}
   {% if form.non_field_errors %}<div class="carte erreur">{{ form.non_field_errors }}</div>{% endif %}
@@ -42,6 +42,14 @@
     </div>
   </div>
   {% endfor %}
+  <div class="carte"><h2>Justificatifs <span class="aide">(facultatif)</span></h2>
+    <p class="aide">PDF ou photo, 10 Mo maximum par fichier. Vous pouvez choisir plusieurs fichiers à la fois. Ne joignez pas de RIB, d'extrait de casier judiciaire ni de relevé de compte : la loi interdit de les demander.</p>
+    {% for p in types_pieces %}
+    <div style="margin-top:12px"><label for="piece-{{ p.code }}">{{ p.libelle }}{% if p.deja %} <span class="aide">– {{ p.deja }} fichier{{ p.deja|pluralize }} déjà reçu{{ p.deja|pluralize }}</span>{% endif %}</label>
+      <input type="file" id="piece-{{ p.code }}" name="piece-{{ p.code }}" multiple accept=".pdf,.jpg,.jpeg,.png,.heic,.webp,image/*">
+      {% if p.erreur %}<div class="erreur">{{ p.erreur }}</div>{% endif %}</div>
+    {% endfor %}
+  </div>
   <div class="carte">
     {{ form.message.label_tag }}{{ form.message }}
     <label class="case" style="margin-top:14px">{{ form.consentement }} {{ form.consentement.label }}</label>
