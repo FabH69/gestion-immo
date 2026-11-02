@@ -1,0 +1,25 @@
+{% extends "commandes/base.html" %}
+{% block titre %}{{ titre }}{% endblock %}
+{% block contenu %}
+<h1>{{ titre }}</h1>
+<form method="post" class="carte">
+  {% csrf_token %}
+  {{ form.non_field_errors }}
+  {% for champ in form %}
+    <div class="champ">
+      {% if champ.field.widget.input_type == "checkbox" %}
+        <label>{{ champ }} {{ champ.label|capfirst }}</label>
+      {% else %}
+        <label for="{{ champ.id_for_label }}">{{ champ.label|capfirst }}</label>
+        {{ champ }}
+      {% endif %}
+      {% if champ.help_text %}<div class="aide">{{ champ.help_text }}</div>{% endif %}
+      {% for e in champ.errors %}<div class="erreur">{{ e }}</div>{% endfor %}
+    </div>
+  {% endfor %}
+  <div class="actions">
+    <button class="btn">Enregistrer</button>
+    <a class="btn sec" href="{% url retour %}">Annuler</a>
+  </div>
+</form>
+{% endblock %}

@@ -1,0 +1,24 @@
+{% extends "commandes/base.html" %}
+{% block titre %}Joueurs{% endblock %}
+{% block contenu %}
+<div class="actions" style="justify-content:space-between">
+  <h1>Joueurs ({{ joueurs|length }})</h1>
+  <a class="btn" href="{% url 'balles:joueur_creer' %}">+ Nouveau joueur</a>
+</div>
+<div class="table-wrap">
+<table>
+  <tr><th>Nom</th><th>Téléphone</th><th>E-mail</th><th>Club</th><th></th></tr>
+  {% for j in joueurs %}
+  <tr{% if not j.actif %} class="doux"{% endif %}>
+    <td>{{ j }}{% if not j.actif %} <span class="badge">inactif</span>{% endif %}</td>
+    <td>{{ j.telephone|default:"—" }}</td>
+    <td>{{ j.email|default:"—" }}</td>
+    <td>{{ j.club|default:"—" }}</td>
+    <td><a class="btn petit sec" href="{{ j.get_absolute_url }}">Modifier</a></td>
+  </tr>
+  {% empty %}
+  <tr><td colspan="5" class="doux">Aucun joueur pour l'instant.</td></tr>
+  {% endfor %}
+</table>
+</div>
+{% endblock %}

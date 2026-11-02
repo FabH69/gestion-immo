@@ -1,0 +1,58 @@
+{% extends "commandes/base.html" %}
+{% block titre %}Prévenir les joueurs{% endblock %}
+{% block contenu %}
+<p><a href="{{ commande.get_absolute_url }}">← {{ commande.nom }}</a></p>
+<h1>Prévenir les joueurs</h1>
+<p class="doux">Chaque bouton ouvre WhatsApp, les SMS ou votre messagerie avec le message déjà rempli : il ne reste qu'à appuyer sur Envoyer.
+Le texte se modifie dans <a href="{% url 'balles:commande_modifier' commande.pk %}">la commande</a> (champ « message balles arrivées » et « lieu / créneau de remise »).</p>
+
+<div class="carte">
+  <h2 style="margin-top:0">Message pour le groupe</h2>
+  <div class="msg-texte" id="groupe">{{ message_groupe }}</div>
+  <div class="actions">
+    <a class="btn" href="{{ whatsapp_groupe }}" target="_blank" rel="noopener">WhatsApp (choisir le groupe)</a>
+    <button class="btn sec" type="button" onclick="copier('groupe', this)">Copier le texte</button>
+  </div>
+</div>
+
+<h2>Messages individuels</h2>
+{% for e in envois %}
+<div class="carte">
+  <div class="actions" style="justify-content:space-between">
+    <b>{{ e.ligne.joueur }} · {{ e.ligne.nb_boites }} boîte(s)</b>
+    {% if e.ligne.prevenu_le %}<span class="badge terminee">prévenu le {{ e.ligne.prevenu_le|date:"d/m à H:i" }}</span>{% endif %}
+  </div>
+  <div class="msg-texte" id="msg{{ e.ligne.pk }}">{{ e.texte }}</div>
+  <div class="actions">
+    {% if e.whatsapp %}<a class="btn" href="{{ e.whatsapp }}" target="_blank" rel="noopener">WhatsApp</a>{% endif %}
+    {% if e.sms %}<a class="btn sec" href="{{ e.sms }}">SMS</a>{% endif %}
+    {% if e.email %}<a class="btn sec" href="{{ e.email }}">E-mail</a>{% endif %}
+    {% if not e.whatsapp and not e.email %}<span class="doux">Pas de téléphone ni d'e-mail : <a href="{{ e.ligne.joueur.get_absolute_url }}?next={{ request.path|urlencode }}">compléter la fiche</a></span>{% endif %}
+    <button class="btn sec" type="button" onclick="copier('msg{{ e.ligne.pk }}', this)">Copier</button>
+    <form method="post" action="{% url 'balles:ligne_action' e.ligne.pk %}" class="inline">{% csrf_token %}
+      <input type="hidden" name="action" value="prevenu"><input type="hidden" name="next" value="{{ request.path }}">
+      {% if e.ligne.prevenu_le %}<button class="btn petit sec">Annuler « prévenu »</button>{% else %}<button class="btn petit ok">✔ Marquer prévenu</button>{% endif %}
+    </form>
+  </div>
+</div>
+{% empty %}
+<p class="doux">Aucun joueur dans cette commande.</p>
+{% endfor %}
+
+{% if envois %}
+<form method="post">{% csrf_token %}
+  <input type="hidden" name="action" value="tous_prevenus">
+  <button class="btn sec">Marquer tout le monde comme prévenu</button>
+</form>
+{% endif %}
+
+<script>
+function copier(id, bouton) {
+  const texte = document.getElementById(id).innerText;
+  navigator.clipboard.writeText(texte).then(() => {
+    const avant = bouton.textContent; bouton.textContent = "Copié ✔";
+    setTimeout(() => bouton.textContent = avant, 1500);
+  });
+}
+</script>
+{% endblock %}
