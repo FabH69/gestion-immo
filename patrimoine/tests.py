@@ -1015,3 +1015,20 @@ class EcheanceApresRevisionTests(TestCase):
         RevisionLoyer.objects.all().delete()
         Echeance.generer_pour_mois(date(2026, 11, 1))
         self.assertEqual(bail.echeances.get(periode=date(2026, 11, 1)).loyer_hc, Decimal("595"))
+
+
+class FiltreLoyersTests(TestCase):
+    def test_non_regles_par_defaut(self):
+        proprio = Proprietaire.objects.create(nom="SCI", type=Proprietaire.Type.SCI_IR)
+        bien = Bien.objects.create(proprietaire=proprio, nom="Immeuble", adresse="1 rue", code_postal="69000", ville="Lyon")
+        for nom in ("Paye", "Attente"):
+            bail = Bail.objects.create(lot=Lot.objects.create(bien=bien, designation=nom), type=Bail.Type.NU, date_debut=date(2026, 1, 1), loyer_hc=500)
+            bail.locataires.add(Locataire.objects.create(nom=nom.upper()))
+        Echeance.generer_pour_mois(date(2026, 10, 1))
+        e = Echeance.objects.get(bail__lot__designation="Paye")
+        Paiement.objects.create(echeance=e, date=date(2026, 10, 2), montant=e.total)
+        self.client.force_login(User.objects.create_superuser("admin", "a@example.com", "x"))
+        page = self.client.get("/admin/patrimoine/echeance/").content.decode()
+        self.assertIn("ATTENTE", page)
+        self.assertNotIn("PAYE", page)
+        self.assertIn("PAYE", self.client.get("/admin/patrimoine/echeance/?reglement=tous").content.decode())

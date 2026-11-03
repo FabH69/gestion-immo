@@ -282,6 +282,29 @@ class BailEnCoursFilter(admin.SimpleListFilter):
         return queryset
 
 
+class EcheanceStatutFilter(admin.SimpleListFilter):
+    """Loyers pas encore réglés (à payer ou payés partiellement) affichés par défaut."""
+    title = "statut"
+    parameter_name = "reglement"
+
+    def lookups(self, request, model_admin):
+        return [("non_regles", "À payer ou payé partiellement"), ("a_payer", "À payer"), ("partiel", "Payé partiellement"),
+                ("paye", "Payé"), ("tous", "Tous")]
+
+    def choices(self, changelist):
+        valeur = self.value() or "non_regles"
+        for code, libelle in self.lookup_choices:
+            yield {"selected": valeur == code, "query_string": changelist.get_query_string({self.parameter_name: code}), "display": libelle}
+
+    def queryset(self, request, queryset):
+        valeur = self.value() or "non_regles"
+        if valeur == "non_regles":
+            return queryset.filter(statut__in=[Echeance.Statut.A_PAYER, Echeance.Statut.PARTIEL])
+        if valeur in ("a_payer", "partiel", "paye"):
+            return queryset.filter(statut=valeur)
+        return queryset
+
+
 class LocataireForm(forms.ModelForm):
     """Fiche locataire avec rattachement à un lot et déclaration de sortie."""
 
@@ -581,7 +604,7 @@ class EnRetardFilter(admin.SimpleListFilter):
 @admin.register(Echeance)
 class EcheanceAdmin(admin.ModelAdmin):
     list_display = ["mois", "lot", "liste_locataires", "total", "paye", "reste", "statut_colore", "document"]
-    list_filter = [EnRetardFilter, "statut", "bail__lot__bien__proprietaire", "bail__lot__bien"]
+    list_filter = [EcheanceStatutFilter, EnRetardFilter, "bail__lot__bien__proprietaire", "bail__lot__bien"]
     search_fields = ["bail__lot__designation", "bail__lot__bien__nom", "bail__locataires__nom"]
     date_hierarchy = "periode"
     readonly_fields = ["statut", "document"]
