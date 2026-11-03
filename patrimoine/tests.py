@@ -996,3 +996,22 @@ class JustificatifsEtMailsTests(TestCase):
             self.client.post("/reglages/mails/test/")
             self.assertEqual(mail.outbox[-1].subject, "Test – Gestion immobilière")
             self.assertEqual(self.client.get("/admin/patrimoine/parametresmail/").status_code, 302)
+
+
+class EcheanceApresRevisionTests(TestCase):
+    def test_echeance_suit_le_loyer_revise(self):
+        from .models import RevisionLoyer
+        proprio = Proprietaire.objects.create(nom="Nom propre", type=Proprietaire.Type.NOM_PROPRE)
+        bien = Bien.objects.create(proprietaire=proprio, nom="Pollionnay", adresse="1 rue", code_postal="69290", ville="Pollionnay")
+        bail = Bail.objects.create(lot=Lot.objects.create(bien=bien, designation="Apt"), type=Bail.Type.NU,
+                                   date_debut=date(2022, 7, 23), loyer_hc=Decimal("578"))
+        Echeance.generer_pour_mois(date(2026, 11, 1))  # générée avant la révision
+        r = RevisionLoyer.objects.create(bail=bail, date_effet=date(2026, 8, 1), ancien_loyer=Decimal("578"), ancien_irl=Decimal("145.17"),
+                                         nouvel_irl=Decimal("148.37"), trimestre="T2 2026", nouveau_loyer=Decimal("590"))
+        r.appliquer()
+        self.assertEqual(bail.echeances.get(periode=date(2026, 11, 1)).loyer_hc, Decimal("590"))
+        # un loyer modifié à la main sans révision est repris à la génération suivante
+        Bail.objects.filter(pk=bail.pk).update(loyer_hc=Decimal("595"), date_derniere_revision=None)
+        RevisionLoyer.objects.all().delete()
+        Echeance.generer_pour_mois(date(2026, 11, 1))
+        self.assertEqual(bail.echeances.get(periode=date(2026, 11, 1)).loyer_hc, Decimal("595"))

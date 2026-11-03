@@ -327,10 +327,17 @@ class Bail(models.Model):
 
     def loyer_au(self, jour):
         """Loyer HC en vigueur à une date : dernière révision appliquée avant cette date, sinon loyer initial."""
-        revision = self.revisions.filter(appliquee=True, date_effet__lte=jour).order_by("-date_effet").first()
+        appliquees = self.revisions.filter(appliquee=True)
+        revision = appliquees.filter(date_effet__lte=jour).order_by("-date_effet").first()
         if revision:
             return revision.nouveau_loyer
-        return self.loyer_initial if self.loyer_initial is not None else self.loyer_hc
+        suivante = appliquees.filter(date_effet__gt=jour).order_by("date_effet").first()
+        if suivante:
+            return suivante.ancien_loyer
+        # sans révision enregistrée : loyer initial avant la dernière révision connue, loyer actuel ensuite
+        if self.loyer_initial is not None and self.date_derniere_revision and jour < self.date_derniere_revision:
+            return self.loyer_initial
+        return self.loyer_hc
 
     def historique_revisions(self, aujourdhui=None):
         """Une ligne par date anniversaire depuis la signature, avec la révision faite ou l'année manquée."""
@@ -447,17 +454,31 @@ class Echeance(models.Model):
         baux = Bail.objects.filter(actif=True, date_debut__lte=fin).exclude(date_fin__lt=periode)
         for bail in baux:
             jour = min(bail.jour_echeance, fin.day)
-            _, cree = cls.objects.get_or_create(
+            loyer = bail.loyer_au(periode)
+            echeance, cree = cls.objects.get_or_create(
                 bail=bail,
                 periode=periode,
                 defaults={
-                    "loyer_hc": bail.loyer_hc,
+                    "loyer_hc": loyer,
                     "charges": bail.charges,
                     "date_exigibilite": periode.replace(day=jour),
                 },
             )
             crees += cree
+            if not cree:
+                echeance.actualiser_loyer()
         return crees
+
+    def actualiser_loyer(self):
+        """Échéance pas encore réglée : reprend le loyer en vigueur ce mois-là (après une révision) et les charges du bail."""
+        if self.paiements.exists():
+            return False
+        loyer, charges = self.bail.loyer_au(self.periode), self.bail.charges
+        if (self.loyer_hc, self.charges) == (loyer, charges):
+            return False
+        self.loyer_hc, self.charges = loyer, charges
+        self.save(update_fields=["loyer_hc", "charges"])
+        return True
 
 
 class Paiement(models.Model):
@@ -814,6 +835,9 @@ class RevisionLoyer(models.Model):
         bail.save()
         self.appliquee = True
         self.save(update_fields=["appliquee"])
+        # les échéances déjà générées et pas encore réglées passent au nouveau loyer
+        for e in bail.echeances.filter(periode__gte=self.date_effet.replace(day=1)):
+            e.actualiser_loyer()
 
 
 class Rappel(models.Model):
