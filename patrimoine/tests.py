@@ -1032,3 +1032,59 @@ class FiltreLoyersTests(TestCase):
         self.assertIn("ATTENTE", page)
         self.assertNotIn("PAYE", page)
         self.assertIn("PAYE", self.client.get("/admin/patrimoine/echeance/?reglement=tous").content.decode())
+
+
+class ModelesWordTests(TestCase):
+    def test_modeles_remplis_depuis_le_bail(self):
+        import io
+        import tempfile
+        import zipfile
+
+        from django.core.files.base import ContentFile
+        from django.test import override_settings
+
+        from .models import Garant, ModeleDocument
+        from .word import MODELES
+        proprio = Proprietaire.objects.create(nom="Fabien & Alice HUNAULT", type=Proprietaire.Type.NOM_PROPRE, adresse="89 avenue Marcel Mérieux",
+                                              code_postal="69290", ville="Grézieu-la-Varenne")
+        bien = Bien.objects.create(proprietaire=proprio, nom="Chazay", adresse="7 place du marché", code_postal="69380", ville="Chazay d'Azergues")
+        lot = Lot.objects.create(bien=bien, designation="Chazay", meuble=True, surface=Decimal("28.28"), nb_pieces=2)
+        bail = Bail.objects.create(lot=lot, type=Bail.Type.MEUBLE, date_debut=date(2026, 6, 3), loyer_hc=650, charges=50, depot_garantie=650,
+                                   irl_trimestre="T1", irl_valeur=Decimal("146.60"), indice_reference="IRL T1 2026 : 146,60", index_elec_entree="HP 1200 / HC 800")
+        loc = Locataire.objects.create(civilite="Mme", nom="BOUVET", prenom="Lucie", date_naissance=date(1993, 3, 21), lieu_naissance="Mayenne")
+        bail.locataires.add(loc)
+        Garant.objects.create(bail=bail, locataire=loc, civilite="M.", nom="Bouvet", prenom="Rodolphe", adresse="2 La Petite Marcillerie")
+        Garant.objects.create(bail=bail, locataire=loc, civilite="Mme", nom="Meziere", prenom="Isabelle", adresse="2 La Petite Marcillerie")
+        self.client.force_login(User.objects.create_superuser("admin", "a@example.com", "x"))
+
+        def texte(reponse):
+            with zipfile.ZipFile(io.BytesIO(reponse.content)) as z:
+                import re
+                return re.sub(r"<[^>]+>", "", z.read("word/document.xml").decode())
+
+        with tempfile.TemporaryDirectory() as prive, override_settings(PRIVE_ROOT=prive):
+            modeles = {}
+            for nom, type_doc, fichier in [("Bail meublé", "bail_meuble", "bail_meuble.docx"), ("Acte", "caution", "acte_cautionnement.docx"),
+                                           ("EDL", "edl", "etat_des_lieux.docx"), ("Bail nu", "bail_nu", "bail_meuble.docx")]:
+                m = ModeleDocument(nom=nom, type=type_doc)
+                m.fichier.save(fichier, ContentFile((MODELES / fichier).read_bytes()))
+                modeles[type_doc] = m
+            page = self.client.get(f"/admin/patrimoine/bail/{bail.pk}/change/").content.decode()
+            self.assertIn("Mes modèles Word", page)
+            self.assertIn("EDL – entrée", page)
+            self.assertNotIn("Bail nu", page)  # pas proposé pour un bail meublé
+            t = texte(self.client.get(f"/modeles/{modeles['bail_meuble'].pk}/bail/{bail.pk}/"))
+            self.assertIn("dépôt de garantie d'un montant de\xa0: 650 €", t)
+            self.assertIn("Monsieur Rodolphe BOUVET et Madame Isabelle MEZIERE se porte(nt) garant de Madame Lucie BOUVET", t)
+            self.assertIn("146,60 au 1er trimestre 2026", t)
+            self.assertNotIn("{", t.split("CONTRAT TYPE")[0])
+            t = texte(self.client.get(f"/modeles/{modeles['caution'].pk}/bail/{bail.pk}/"))
+            self.assertIn("650 euros (six-cent-cinquante euros) de loyer + 50 euros (cinquante euros)", t)
+            self.assertIn("Monsieur Rodolphe BOUVET, demeurant 2 La Petite Marcillerie ET Madame Isabelle MEZIERE", t)
+            t = texte(self.client.get(f"/modeles/{modeles['edl'].pk}/bail/{bail.pk}/?edl=entree"))
+            self.assertIn("☒ Entrée, le 03/06/2026", t)
+            self.assertIn("1200", t)
+            self.assertIn("800", t)
+            page = self.client.get(f"/admin/patrimoine/modeledocument/{modeles['edl'].pk}/change/").content.decode()
+            self.assertIn("{Index_HP_Entrée}", page)
+            self.assertContains(self.client.get(f"/modeles/champs/?bail={bail.pk}"), "six-cent-cinquante euros")

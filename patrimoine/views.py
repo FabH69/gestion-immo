@@ -182,25 +182,57 @@ def _montant_fr(montant):
 
 
 def _recu_depot_word(bail, montant):
+    from . import champs
+    from .models import ModeleDocument
     from .word import remplir_docx
-    proprio, bien = bail.lot.bien.proprietaire, bail.lot.bien
+
     locataires = list(bail.locataires.all())
-    if len(locataires) == 1:
-        l = locataires[0]
-        civilite, prenom, nom = CIVILITES_LONGUES.get(l.civilite, ""), l.prenom, l.nom
-    else:
-        civilite, prenom, nom = "Madame, Monsieur", "", " et ".join(f"{l.prenom} {l.nom}".strip() for l in locataires)
-    valeurs = {
-        "Propriétaire": proprio.nom, "Adresse_Propr": proprio.adresse.replace("\n", ", "), "CP_Prop": proprio.code_postal,
-        "Ville_Prop": proprio.ville, "Ville_Propr": proprio.ville,
-        "Adresse_Appart": bien.adresse, "CP_Appart": bien.code_postal, "Ville_Appart": bien.ville,
-        "Civilité_Loc": civilite, "Prénom_Loc": prenom, "Nom_Loc": nom, "Dépôt_Gar": _montant_fr(montant),
-    }
-    contenu = remplir_docx("recu_depot_garantie.docx", valeurs)
+    valeurs = champs.valeurs(bail)
+    if len(locataires) > 1:
+        valeurs.update({"Civilité_Loc": "Madame, Monsieur", "Prénom_Loc": "",
+                        "Nom_Loc": " et ".join(f"{l.prenom} {l.nom}".strip() for l in locataires)})
+    valeurs.update({"Dépôt_Gar": _montant_fr(montant), "Dépôt_Gar_lettres": champs.euros_en_lettres(montant)})
+    modele = ModeleDocument.objects.filter(type="recu_depot", actif=True).order_by("-modifie_le").first()
+    contenu = remplir_docx(modele.fichier.open("rb") if modele else "recu_depot_garantie.docx", valeurs)
+    return _reponse_docx(contenu, f"Reçu dépôt de garantie {bail.lot} {valeurs['Nom_Loc']}")
+
+
+def _reponse_docx(contenu, nom):
     reponse = HttpResponse(contenu, content_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document")
-    nom_fichier = f"Reçu dépôt de garantie {bail.lot} {nom}.docx".replace("/", "-")
+    nom_fichier = f"{nom}.docx".replace("/", "-")
     reponse["Content-Disposition"] = f"attachment; filename*=UTF-8''{quote(nom_fichier)}"
     return reponse
+
+
+@staff_member_required
+def remplir_modele(request, pk, bail_pk):
+    """Modèle Word de l'utilisateur rempli avec les données du bail (et du type d'état des lieux demandé)."""
+    from . import champs
+    from .models import ModeleDocument
+    from .word import remplir_docx
+
+    modele = get_object_or_404(ModeleDocument, pk=pk)
+    bail = get_object_or_404(Bail.objects.select_related("lot__bien__proprietaire"), pk=bail_pk)
+    type_edl = request.GET.get("edl") if request.GET.get("edl") in ("entree", "sortie") else None
+    with modele.fichier.open("rb") as f:
+        contenu = remplir_docx(f, champs.valeurs(bail, type_edl=type_edl))
+    noms = " ".join(l.nom for l in bail.locataires.all())
+    suffixe = {"entree": " entrée", "sortie": " sortie"}.get(type_edl, "")
+    return _reponse_docx(contenu, f"{modele.nom}{suffixe} {bail.lot} {noms}".strip())
+
+
+@staff_member_required
+def liste_champs(request):
+    """Modèles › Liste des champs : nom à écrire entre accolades, description, et valeur pour un bail choisi."""
+    from . import champs
+    from .word import normaliser
+
+    baux = Bail.objects.select_related("lot__bien").prefetch_related("locataires").order_by("-actif", "lot__bien__nom")
+    bail = baux.filter(pk=request.GET.get("bail")).first() if request.GET.get("bail") else baux.filter(actif=True).first()
+    exemple = {normaliser(k): v for k, v in champs.valeurs(bail).items()} if bail else {}
+    groupes = [(titre, [(nom, desc, exemple.get(normaliser(nom), "")) for nom, desc in liste]) for titre, liste in champs.CHAMPS]
+    return render(request, "patrimoine/liste_champs.html", {
+        **admin.site.each_context(request), "title": "Champs des modèles Word", "groupes": groupes, "baux": baux, "bail": bail})
 
 
 @staff_member_required

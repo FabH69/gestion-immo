@@ -2,6 +2,7 @@ import calendar
 from decimal import Decimal
 from datetime import date, timedelta
 
+from django.core.validators import FileExtensionValidator
 from django.db import models
 
 
@@ -1363,3 +1364,40 @@ class ParametresMail(models.Model):
         self.pk = 1  # un seul réglage
         self.mot_de_passe = self.mot_de_passe.replace(" ", "")
         super().save(*args, **kwargs)
+
+
+class ModeleDocument(models.Model):
+    """Modèle Word de l'utilisateur : les champs {Nom_Loc}, {Loyer}… sont remplis à partir du bail (Modèles › Liste des champs)."""
+
+    class Type(models.TextChoices):
+        BAIL_NU = "bail_nu", "Bail de location nue"
+        BAIL_MEUBLE = "bail_meuble", "Bail de location meublée"
+        CAUTION = "caution", "Acte de cautionnement"
+        EDL = "edl", "État des lieux (entrée / sortie)"
+        INVENTAIRE = "inventaire", "Inventaire du mobilier"
+        RECU_DEPOT = "recu_depot", "Reçu du dépôt de garantie"
+        AUTRE = "autre", "Autre document lié au bail"
+
+    nom = models.CharField(max_length=150)
+    type = models.CharField("type de document", max_length=15, choices=Type.choices,
+                            help_text="Détermine quand le modèle est proposé : un bail meublé n'apparaît que sur les baux meublés, etc.")
+    fichier = models.FileField("fichier Word (.docx)", upload_to="modeles-word/", storage=stockage_prive,
+                               validators=[FileExtensionValidator(["docx"], "Enregistrez le modèle au format Word .docx.")],
+                               help_text="Écrivez les champs entre accolades, ex. {Nom_Loc}. Liste complète : Modèles › Liste des champs.")
+    actif = models.BooleanField(default=True, help_text="Décochez pour ne plus le proposer sans le supprimer")
+    notes = models.TextField(blank=True)
+    modifie_le = models.DateTimeField("modifié le", auto_now=True)
+
+    TYPES_BAIL = {"bail_nu": ["nu"], "bail_meuble": ["meuble", "etudiant", "mobilite"], "inventaire": ["meuble", "etudiant", "mobilite"]}
+
+    class Meta:
+        verbose_name = "modèle de document"
+        verbose_name_plural = "modèles de documents"
+        ordering = ["type", "nom"]
+
+    def __str__(self):
+        return self.nom
+
+    def convient(self, bail):
+        types = self.TYPES_BAIL.get(self.type)
+        return types is None or bail.type in types

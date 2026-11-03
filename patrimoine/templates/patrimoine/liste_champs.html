@@ -1,0 +1,30 @@
+{% extends "admin/base_site.html" %}
+{% block breadcrumbs %}<div class="breadcrumbs"><a href="{% url 'admin:index' %}">Accueil</a> › Modèles › Liste des champs</div>{% endblock %}
+{% block extrastyle %}{{ block.super }}<style>
+.carte { background: var(--body-bg); border: 1px solid var(--hairline-color); border-radius: 12px; box-shadow: 0 1px 6px rgba(16,24,40,.06); padding: 16px 18px; margin-bottom: 18px; }
+.carte h2 { margin: 0 0 8px; font-size: 1.05rem; }
+.aide { font-size: .85rem; color: var(--body-quiet-color); line-height: 1.55; }
+table.champs { width: 100%; border-collapse: collapse; }
+table.champs td, table.champs th { padding: 6px; border-bottom: 1px solid var(--hairline-color); text-align: left; vertical-align: top; }
+table.champs td.nom { white-space: nowrap; font-family: ui-monospace, monospace; font-size: .85rem; }
+table.champs td.ex { color: var(--body-quiet-color); }
+.barre { display: flex; flex-wrap: wrap; gap: 12px; align-items: end; }
+@media (max-width: 700px) { table.champs td.ex { display: none; } }
+</style>{% endblock %}
+{% block content %}
+<div class="carte">
+  <p class="aide">Dans votre document Word, écrivez le nom du champ entre accolades, par exemple <strong>{Nom_Loc}</strong> ou <strong>{Loyer}</strong>. Les accents, majuscules et tirets bas n'ont pas d'importance ({nom loc} marche aussi). Vous pouvez colorer les champs en rouge ou les surligner en jaune pour les repérer : c'est retiré dans le document rempli. Un champ inconnu reste tel quel, pour que vous le voyiez.</p>
+  <form method="get" class="barre">
+    <div><label for="bail">Exemple avec le bail</label><br>
+      <select id="bail" name="bail" onchange="this.form.submit()">{% for b in baux %}<option value="{{ b.pk }}"{% if b == bail %} selected{% endif %}>{{ b.lot }} – {% for l in b.locataires.all %}{{ l.nom }}{% if not forloop.last %}, {% endif %}{% endfor %}{% if not b.actif %} (terminé){% endif %}</option>{% endfor %}</select></div>
+    <a class="button" href="{% url 'admin:patrimoine_modeledocument_changelist' %}">Mes modèles</a>
+  </form>
+</div>
+{% for titre, liste in groupes %}
+<div class="carte"><h2>{{ titre }}</h2>
+  <table class="champs">
+    {% for nom, desc, ex in liste %}<tr><td class="nom">{% templatetag openbrace %}{{ nom }}{% templatetag closebrace %}</td><td>{{ desc }}</td><td class="ex">{{ ex }}</td></tr>{% endfor %}
+  </table>
+</div>
+{% endfor %}
+{% endblock %}

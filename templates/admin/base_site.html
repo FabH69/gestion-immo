@@ -76,6 +76,13 @@
       <a href="{% url 'admin:patrimoine_siteutile_changelist' %}" class="menu-gerer">Gérer les sites</a>
     </div>
   </div>
+  <div class="menu" tabindex="0"><span class="menu-titre">Modèles ▾</span>
+    <div class="menu-liste">
+      <a href="{% url 'admin:patrimoine_modeledocument_changelist' %}">Mes modèles Word</a>
+      <a href="{% url 'admin:patrimoine_modeledocument_add' %}">Ajouter un modèle</a>
+      <a href="{% url 'liste_champs' %}">Liste des champs</a>
+    </div>
+  </div>
   <div class="menu" tabindex="0"><span class="menu-titre">Réglages ▾</span>
     <div class="menu-liste">
       <a href="{% url 'admin:auth_user_changelist' %}">Utilisateurs</a>

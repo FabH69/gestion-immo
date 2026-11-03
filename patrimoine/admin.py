@@ -8,7 +8,7 @@ from urllib.parse import quote
 from django.utils import timezone
 from django.utils.html import format_html, format_html_join
 
-from .models import ParametresMail, PieceCandidature, mois_depot_maximum, GarantCandidature, EncaissementHistorique, ChargeLMNP, SiteUtile, Syndic, Annonce, ChargeLCD, ParametresLCD, ReservationLCD, Bail, Bien, Candidature, ChangementLocataire, Garant, PhotoLot, Echeance, EtatDesLieux, MouvementDepot, Pret, Rappel, RevisionLoyer, Locataire, Lot, Paiement, Proprietaire, Tache
+from .models import ModeleDocument, ParametresMail, PieceCandidature, mois_depot_maximum, GarantCandidature, EncaissementHistorique, ChargeLMNP, SiteUtile, Syndic, Annonce, ChargeLCD, ParametresLCD, ReservationLCD, Bail, Bien, Candidature, ChangementLocataire, Garant, PhotoLot, Echeance, EtatDesLieux, MouvementDepot, Pret, Rappel, RevisionLoyer, Locataire, Lot, Paiement, Proprietaire, Tache
 
 admin.site.site_header = "Gestion immobilière"
 admin.site.enable_nav_sidebar = False  # remplacé par le menu du bandeau
@@ -523,10 +523,26 @@ class BailAdmin(admin.ModelAdmin):
                 (reverse("document_inventaire", args=[obj.pk, "entree"]), "Inventaire du mobilier (entrée)"),
                 (reverse("document_inventaire", args=[obj.pk, "sortie"]), "Inventaire du mobilier (sortie)"),
             ]
+        mes_modeles = []
+        for m in ModeleDocument.objects.filter(actif=True):
+            if not m.convient(obj):
+                continue
+            url = reverse("remplir_modele", args=[m.pk, obj.pk])
+            if m.type == ModeleDocument.Type.EDL:
+                mes_modeles += [(url + "?edl=entree", f"{m.nom} – entrée"), (url + "?edl=sortie", f"{m.nom} – sortie")]
+            elif m.type == ModeleDocument.Type.CAUTION and not obj.garants.exists():
+                continue
+            else:
+                mes_modeles.append((url, m.nom))
+        bloc_word = ""
+        if mes_modeles:
+            bloc_word = format_html(
+                "<p style='margin-top:10px'><strong>Mes modèles Word :</strong> {}</p>",
+                format_html(" · ".join('<a href="{}">{}</a>' for _ in mes_modeles), *[x for l in mes_modeles for x in l]))
         return format_html(
-            "{}<p class='help'>Les champs manquants apparaissent « à compléter » : complétez la fiche du lot, du locataire ou du propriétaire. "
-            "Vérifiez le bail avec le modèle officiel (décret n° 2015-587) avant signature.</p>",
-            format_html(" · ".join('<a href="{}" target="_blank">{}</a>' for _ in liens), *[x for l in liens for x in l]),
+            "{}{}<p class='help'>Les champs manquants apparaissent « à compléter » : complétez la fiche du lot, du locataire ou du propriétaire. "
+            "Vérifiez le bail avec le modèle officiel (décret n° 2015-587) avant signature. Vos modèles Word se gèrent dans le menu Modèles.</p>",
+            format_html(" · ".join('<a href="{}" target="_blank">{}</a>' for _ in liens), *[x for l in liens for x in l]), bloc_word,
         )
 
     @admin.display(description="locataires", ordering="locataires__nom")
@@ -1166,3 +1182,55 @@ class ParametresMailAdmin(admin.ModelAdmin):
             return "Enregistrez d'abord, puis envoyez-vous un mail de test."
         return format_html('<button type="submit" class="button" formaction="{}" formnovalidate>M\'envoyer un mail de test</button>',
                            reverse("tester_mail"))
+
+
+@admin.register(ModeleDocument)
+class ModeleDocumentAdmin(admin.ModelAdmin):
+    list_display = ["nom", "type", "actif", "nb_champs", "telecharger", "modifie_le"]
+    list_filter = ["type", "actif"]
+    fields = ["nom", "type", "fichier", "actif", "notes", "champs_trouves"]
+    readonly_fields = ["champs_trouves"]
+
+    def _champs(self, obj):
+        from .champs import CHAMPS
+        from .word import champs_du_modele, normaliser
+
+        connus = {normaliser(n) for _, liste in CHAMPS for n, _ in liste} | {normaliser(n) for n in (
+            "Adresse_Prop", "Ville_Propr", "Adresse_Appart", "CP_Appart", "Ville_Appart", "IRL de référence", "IRL référence Période",
+            "Index_Elec_Entrée", "Index_Elec_Sortie", "Index_Gaz_Sortie", "Index_Eau_froide_Sortie", "Index_Eau_chaude_Sortie",
+            "Nationalité_Loc", "Prénom_Garant2", "Civilité_Garant2", "Adresse_Garant2", "Date_naissance_Garant2", "Lieu_naissance_Garant2", "Lien_Garant2")}
+        try:
+            with obj.fichier.open("rb") as f:
+                noms = champs_du_modele(f)
+        except Exception:
+            return None, None
+        connus_loc = {normaliser(n) for n in noms if normaliser(n) in connus or normaliser(n).rstrip("234") in connus}
+        return noms, [n for n in noms if normaliser(n) not in connus_loc]
+
+    @admin.display(description="champs")
+    def nb_champs(self, obj):
+        noms, inconnus = self._champs(obj)
+        if noms is None:
+            return "fichier illisible"
+        if inconnus:
+            return format_html('{} <span style="color:#c62828">({} inconnu{})</span>', len(noms), len(inconnus), "s" if len(inconnus) > 1 else "")
+        return len(noms)
+
+    @admin.display(description="modèle")
+    def telecharger(self, obj):
+        return format_html('<a href="{}">Télécharger</a>', obj.fichier.url) if obj.fichier else "–"
+
+    @admin.display(description="champs trouvés dans le document")
+    def champs_trouves(self, obj):
+        if not obj or not obj.pk:
+            return "Enregistrez pour voir les champs reconnus dans le document."
+        noms, inconnus = self._champs(obj)
+        if noms is None:
+            return "Le fichier n'est pas un document Word (.docx) lisible."
+        if not noms:
+            return format_html("Aucun champ {{…}} trouvé. <a href=\"{}\">Voir la liste des champs</a>", reverse("liste_champs"))
+        rendu = format_html_join(" ", '<code style="{}">{{{}}}</code>', (
+            ("color:#c62828;font-weight:600" if n in inconnus else "", n) for n in noms))
+        aide = format_html(' <p class="help">En rouge : champs inconnus, ils resteront tels quels. <a href="{}">Liste des champs</a></p>',
+                           reverse("liste_champs")) if inconnus else ""
+        return format_html("{}{}", rendu, aide)
