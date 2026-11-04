@@ -86,6 +86,33 @@ class CommandeTests(TestCase):
         self.assertRedirects(r, reverse("balles:articles"))
         self.assertTrue(Article.objects.filter(nom="Surgrip").exists())
 
+    def test_dupliquer(self):
+        Ligne.objects.create(commande=self.c, joueur=self.julie, article=self.tube, quantite=2, paye=True, remis=True)
+        Ligne.objects.create(commande=self.c, joueur=self.tom, article=self.carton, quantite=1, prix_unitaire=Decimal("110"))
+        self.c.statut = Commande.Statut.TERMINEE
+        self.c.save()
+        r = self.client.post(reverse("balles:commande_dupliquer", args=[self.c.pk]))
+        copie = Commande.objects.exclude(pk=self.c.pk).get()
+        self.assertRedirects(r, copie.get_absolute_url())
+        self.assertEqual(copie.nom, "Novembre (copie)")
+        self.assertEqual(copie.statut, Commande.Statut.FERME)
+        self.assertEqual(copie.lieu_remise, "au club samedi")
+        self.assertEqual(copie.montant_total, self.c.montant_total)
+        self.assertFalse(copie.lignes.filter(paye=True).exists())
+        self.assertFalse(copie.lignes.filter(remis=True).exists())
+        self.assertEqual(self.c.lignes.count(), 2)
+
+    def test_reste_a_encaisser_et_joueurs_a_livrer(self):
+        Ligne.objects.create(commande=self.c, joueur=self.julie, article=self.tube, quantite=2, paye=True, remis=True)
+        Ligne.objects.create(commande=self.c, joueur=self.julie, article=self.carton, quantite=1)
+        Ligne.objects.create(commande=self.c, joueur=self.tom, article=self.tube, quantite=1, remis=True)
+        self.assertEqual(self.c.reste_a_encaisser, Decimal("125.10"))  # 117,60 + 7,50
+        self.assertEqual(self.c.nb_joueurs_a_livrer, 1)
+        r = self.client.get(reverse("balles:accueil"))
+        self.assertContains(r, "Reste à encaisser")
+        self.assertContains(r, "125,10 €")
+        self.assertNotContains(r, "<th>Commission</th>")
+
     def test_connexion_obligatoire(self):
         self.client.logout()
         r = self.client.get(reverse("balles:accueil"))

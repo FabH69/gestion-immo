@@ -124,6 +124,28 @@ class Commande(models.Model):
     def montant_encaisse(self):
         return sum((l.montant for l in self._lignes() if l.paye), Decimal("0"))
 
+    @property
+    def reste_a_encaisser(self):
+        return self.montant_total - self.montant_encaisse
+
+    @property
+    def nb_joueurs_a_livrer(self):
+        """Joueurs qui ont encore au moins une ligne non remise."""
+        return len({l.joueur_id for l in self._lignes() if not l.remis})
+
+    def dupliquer(self):
+        """Copie la commande et ses lignes ; paiements, remises et messages repartent de zéro."""
+        copie = Commande.objects.create(
+            nom=f"{self.nom} (copie)", lieu_remise=self.lieu_remise,
+            message_arrivee=self.message_arrivee, notes=self.notes,
+        )
+        Ligne.objects.bulk_create([
+            Ligne(commande=copie, joueur_id=l.joueur_id, article_id=l.article_id, quantite=l.quantite,
+                  prix_unitaire=l.prix_unitaire, taux_commission=l.taux_commission, notes=l.notes)
+            for l in self.lignes.all()
+        ])
+        return copie
+
     def recap_articles(self):
         """Quantité totale par article : ce qu'il faut commander au fournisseur."""
         recap = {}
