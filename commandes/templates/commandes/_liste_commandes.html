@@ -13,7 +13,7 @@
     <td class="centre">
       <form method="post" action="{% url 'balles:commande_supprimer' c.pk %}" class="inline"
             onsubmit="return confirm('Supprimer définitivement la commande « {{ c.nom|escapejs }} » et toutes ses lignes ?')">{% csrf_token %}
-        <button class="btn petit danger" title="Supprimer la commande">🗑 Supprimer</button>
+        <button class="btn petit danger" title="Supprimer la commande">🗑</button>
       </form>
     </td>
   </tr>
