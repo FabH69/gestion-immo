@@ -2,7 +2,7 @@ from datetime import date, timedelta
 
 from django import forms
 from django.contrib import admin, messages
-from django.shortcuts import redirect
+from django.shortcuts import redirect, render
 from django.urls import path, reverse
 from urllib.parse import quote
 from django.utils import timezone
@@ -617,16 +617,23 @@ class EnRetardFilter(admin.SimpleListFilter):
         return queryset
 
 
+class ModifierEcheancesForm(forms.Form):
+    loyer_hc = forms.DecimalField(label="Nouveau loyer HC (€)", required=False, max_digits=10, decimal_places=2, min_value=0)
+    charges = forms.DecimalField(label="Nouvelles charges (€)", required=False, max_digits=10, decimal_places=2, min_value=0)
+    date_exigibilite = forms.DateField(label="Nouvelle date d'exigibilité", required=False,
+                                       widget=forms.DateInput(attrs={"type": "date"}))
+
+
 @admin.register(Echeance)
 class EcheanceAdmin(admin.ModelAdmin):
-    list_display = ["mois", "lot", "liste_locataires", "total", "paye", "reste", "statut_colore", "document"]
+    list_display = ["mois", "lot", "liste_locataires", "total", "paye", "reste", "statut_colore", "document", "lien_modifier"]
     list_filter = [EcheanceStatutFilter, EnRetardFilter, "bail__lot__bien__proprietaire", "bail__lot__bien"]
     search_fields = ["bail__lot__designation", "bail__lot__bien__nom", "bail__locataires__nom"]
     date_hierarchy = "periode"
     readonly_fields = ["statut", "document"]
     fields = ["bail", "periode", "loyer_hc", "charges", "date_exigibilite", "statut", "document"]
     inlines = [PaiementInline]
-    actions = ["marquer_paye"]
+    actions = ["modifier", "marquer_paye"]
     change_list_template = "admin/patrimoine/echeance/change_list.html"
 
     def get_queryset(self, request):
@@ -701,6 +708,39 @@ class EcheanceAdmin(admin.ModelAdmin):
             return "–"
         libelle = "Quittance PDF" if obj.statut == "paye" else "Avis d'échéance PDF"
         return format_html('<a href="{}" target="_blank">{}</a>', reverse("document_echeance", args=[obj.pk]), libelle)
+
+    @admin.display(description="")
+    def lien_modifier(self, obj):
+        return format_html('<a href="{}">Modifier</a>', reverse("admin:patrimoine_echeance_change", args=[obj.pk]))
+
+    @admin.action(description="Modifier")
+    def modifier(self, request, queryset):
+        """Une échéance cochée : ouvre sa fiche. Plusieurs : formulaire pour changer loyer, charges ou date en une fois."""
+        if queryset.count() == 1:
+            return redirect("admin:patrimoine_echeance_change", queryset.first().pk)
+        form = ModifierEcheancesForm(request.POST if "appliquer" in request.POST else None)
+        if form.is_valid():
+            changements = {k: v for k, v in form.cleaned_data.items() if v is not None}
+            if not changements:
+                self.message_user(request, "Rien à changer : remplissez au moins une case.", messages.WARNING)
+                return None
+            n = 0
+            for e in queryset:
+                for champ, valeur in changements.items():
+                    setattr(e, champ, valeur)
+                e.save()
+                e.mettre_a_jour_statut()
+                n += 1
+            self.message_user(request, f"{n} échéance(s) modifiée(s).", messages.SUCCESS)
+            return None
+        return render(request, "admin/patrimoine/echeance/modifier.html", {
+            **self.admin_site.each_context(request),
+            "title": "Modifier les échéances cochées",
+            "opts": self.model._meta,
+            "echeances": queryset.select_related("bail__lot__bien").prefetch_related("bail__locataires"),
+            "form": form,
+            "action_checkbox_name": admin.helpers.ACTION_CHECKBOX_NAME,
+        })
 
     @admin.action(description="Marquer comme payé intégralement (virement, aujourd'hui)")
     def marquer_paye(self, request, queryset):

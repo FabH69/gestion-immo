@@ -1034,6 +1034,28 @@ class FiltreLoyersTests(TestCase):
         self.assertIn("PAYE", self.client.get("/admin/patrimoine/echeance/?reglement=tous").content.decode())
 
 
+class ModifierLoyersTests(TestCase):
+    def test_action_modifier(self):
+        proprio = Proprietaire.objects.create(nom="SCI", type=Proprietaire.Type.SCI_IR)
+        bien = Bien.objects.create(proprietaire=proprio, nom="Immeuble", adresse="1 rue", code_postal="69000", ville="Lyon")
+        bail = Bail.objects.create(lot=Lot.objects.create(bien=bien, designation="A"), type=Bail.Type.NU, date_debut=date(2026, 1, 1), loyer_hc=500)
+        bail.locataires.add(Locataire.objects.create(nom="DUPONT"))
+        Echeance.generer_pour_mois(date(2026, 10, 1))
+        Echeance.generer_pour_mois(date(2026, 11, 1))
+        e1, e2 = Echeance.objects.order_by("periode")
+        self.client.force_login(User.objects.create_superuser("admin", "a@example.com", "x"))
+        url = "/admin/patrimoine/echeance/"
+        self.assertIn("Modifier", self.client.get(url).content.decode())
+        r = self.client.post(url, {"action": "modifier", "_selected_action": [e1.pk]})
+        self.assertRedirects(r, f"/admin/patrimoine/echeance/{e1.pk}/change/", fetch_redirect_response=False)
+        r = self.client.post(url, {"action": "modifier", "_selected_action": [e1.pk, e2.pk]})
+        self.assertContains(r, "Appliquer aux 2 échéances")
+        self.client.post(url, {"action": "modifier", "_selected_action": [e1.pk, e2.pk], "appliquer": "1", "loyer_hc": "520", "charges": ""})
+        e1.refresh_from_db(); e2.refresh_from_db()
+        self.assertEqual((e1.loyer_hc, e2.loyer_hc), (520, 520))
+        self.assertEqual(e1.charges, 0)
+
+
 class ModelesWordTests(TestCase):
     def test_modeles_remplis_depuis_le_bail(self):
         import io
