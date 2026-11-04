@@ -1,6 +1,6 @@
 <div class="table-wrap">
 <table>
-  <tr><th>Commande</th><th>Statut</th><th class="centre">Joueurs</th><th class="centre">Articles</th><th class="centre">Montant</th><th class="centre">Reste à encaisser</th><th class="centre">Joueurs à livrer</th></tr>
+  <tr><th>Commande</th><th>Statut</th><th class="centre">Joueurs</th><th class="centre">Articles</th><th class="centre">Montant</th><th class="centre">Reste à encaisser</th><th class="centre">Joueurs à livrer</th><th></th></tr>
   {% for c in commandes %}
   <tr>
     <td><a href="{{ c.get_absolute_url }}"><b>{{ c.nom }}</b></a><br><span class="doux">créée le {{ c.date_creation|date:"d/m/Y" }}</span></td>
@@ -10,9 +10,15 @@
     <td class="centre">{{ c.montant_total|floatformat:2 }} €</td>
     <td class="centre">{% if c.reste_a_encaisser %}<b>{{ c.reste_a_encaisser|floatformat:2 }} €</b>{% else %}<span class="doux">—</span>{% endif %}</td>
     <td class="centre">{% if c.nb_joueurs_a_livrer %}<b>{{ c.nb_joueurs_a_livrer }}</b>{% else %}<span class="doux">—</span>{% endif %}</td>
+    <td class="centre">
+      <form method="post" action="{% url 'balles:commande_supprimer' c.pk %}" class="inline"
+            onsubmit="return confirm('Supprimer définitivement la commande « {{ c.nom|escapejs }} » et toutes ses lignes ?')">{% csrf_token %}
+        <button class="btn petit danger" title="Supprimer la commande">🗑 Supprimer</button>
+      </form>
+    </td>
   </tr>
   {% empty %}
-  <tr><td colspan="7" class="doux">Aucune commande.</td></tr>
+  <tr><td colspan="8" class="doux">Aucune commande.</td></tr>
   {% endfor %}
 </table>
 </div>
