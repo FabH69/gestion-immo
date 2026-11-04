@@ -16,6 +16,7 @@ urlpatterns = [
     path("commandes/nouvelle/", views.commande_form, name="commande_creer"),
     path("commandes/<int:pk>/", views.commande_detail, name="commande_detail"),
     path("commandes/<int:pk>/modifier/", views.commande_form, name="commande_modifier"),
+    path("commandes/<int:pk>/dupliquer/", views.commande_dupliquer, name="commande_dupliquer"),
     path("commandes/<int:pk>/statut/", views.commande_statut, name="commande_statut"),
     path("commandes/<int:pk>/messages/", views.commande_messages, name="commande_messages"),
     path("lignes/<int:pk>/", views.ligne_action, name="ligne_action"),

@@ -5,6 +5,9 @@
   <h1>{{ commande.nom }} <span class="badge {{ commande.statut }}">{{ commande.get_statut_display }}</span></h1>
   <div class="actions">
     <a class="btn sec" href="{% url 'balles:commande_modifier' commande.pk %}">Modifier</a>
+    <form method="post" action="{% url 'balles:commande_dupliquer' commande.pk %}" class="inline">{% csrf_token %}
+      <button class="btn sec" title="Créer une nouvelle commande avec les mêmes joueurs et articles">⧉ Dupliquer</button>
+    </form>
     <a class="btn" href="{% url 'balles:commande_messages' commande.pk %}">✉️ Prévenir les joueurs</a>
   </div>
 </div>

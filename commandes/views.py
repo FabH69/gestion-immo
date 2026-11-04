@@ -114,6 +114,14 @@ def commande_detail(request, pk):
 
 @login_required
 @require_POST
+def commande_dupliquer(request, pk):
+    copie = get_object_or_404(Commande, pk=pk).dupliquer()
+    messages.success(request, f"Commande dupliquée : « {copie.nom} ». Pensez à la renommer et à ajuster les quantités.")
+    return redirect(copie)
+
+
+@login_required
+@require_POST
 def commande_statut(request, pk):
     commande = get_object_or_404(Commande, pk=pk)
     statut = request.POST.get("statut")
