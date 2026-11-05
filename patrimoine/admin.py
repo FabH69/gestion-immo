@@ -213,10 +213,11 @@ class BienAdmin(admin.ModelAdmin):
             ("chauffage_collectif", "eau_chaude_collective", "antenne_tv", "fibre"),
             ("vide_ordures", "espaces_verts")]}),
         ("Zone tendue", {"classes": ["cases-a-cocher"], "fields": [("zone_tendue", "encadrement_loyers")],
-                         "description": "Zone tendue : commune où la hausse du loyer à la relocation est limitée (décret annuel). "
-                                        "Encadrement des loyers : loyer de référence majoré fixé par arrêté préfectoral (Lyon, Villeurbanne, Paris…). "
-                                        "Si l'une des cases est cochée, le bail contient le paragraphe « zone tendue » : les chiffres "
-                                        "(loyer de référence, complément, loyer du précédent locataire) se saisissent dans chaque bail."}),
+                         "description": format_html(
+                             "<b>Zone tendue</b> : commune où la hausse du loyer à la relocation est limitée (décret annuel).<br>"
+                             "<b>Encadrement des loyers</b> : loyer de référence majoré fixé par arrêté préfectoral (Lyon, Villeurbanne, Paris…).<br>"
+                             "Si l'une des cases est cochée, le bail contient le paragraphe « zone tendue » : les chiffres "
+                             "(loyer de référence, complément, loyer du précédent locataire) se saisissent dans chaque bail.")}),
         ("Vente", {"classes": ["cases-a-cocher"], "fields": [("vendu", "date_vente")],
                    "description": "Un bien vendu (et tous ses lots) n'est plus proposé pour les baux, candidatures et annonces, "
                                   "mais reste dans les états des loyers. La date de vente est facultative."}),
@@ -240,13 +241,10 @@ class BienAdmin(admin.ModelAdmin):
 
     def get_form(self, request, obj=None, **kwargs):
         form = super().get_form(request, obj, **kwargs)
-        for nom in ("zone_tendue", "encadrement_loyers"):
-            if nom in form.base_fields:
-                form.base_fields[nom].help_text = ""
         if "notes" in form.base_fields:
             form.base_fields["notes"].widget.attrs.update(rows=3)
-        if "vendu" in form.base_fields:
-            form.base_fields["vendu"].help_text = ""
+        if "date_vente" in form.base_fields:
+            form.base_fields["date_vente"].widget = forms.DateInput(attrs={"type": "date"}, format="%Y-%m-%d")
         return form
 
     @admin.display(description="lots")
