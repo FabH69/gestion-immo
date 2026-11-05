@@ -551,7 +551,7 @@ class ListesPresentVenduTests(TestCase):
         self.assertIn("30/06/2023", page)
         self.assertNotIn("PRESENT", page)
         Lot.objects.create(bien=bien, designation="Vieux", vendu=True, date_vente=date(2024, 3, 1))
-        page = self.client.get("/admin/patrimoine/lot/?vendu__exact=1").content.decode()
+        page = self.client.get("/admin/patrimoine/lot/?vente=oui").content.decode()
         self.assertIn("Vieux", page)
         self.assertNotIn(">A1<", page)
 
