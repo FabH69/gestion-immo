@@ -361,7 +361,62 @@ class Bail(models.Model):
             self.loyer_initial = self.loyer_hc
         if not self.pdl_electricite and self.lot_id and self.lot.pdl:
             self.pdl_electricite = self.lot.pdl
+        nouveau = self.pk is None
+        avant = None if nouveau else Bail.objects.filter(pk=self.pk).values("actif", "date_fin").first()
         super().save(*args, **kwargs)
+        if nouveau and self.lot_id and self.date_debut and self.date_debut <= date.today():
+            # nouveau locataire déjà entré : le bail précédent resté ouvert sur ce lot se termine la veille
+            for ancien in Bail.objects.filter(lot_id=self.lot_id, actif=True, date_fin__isnull=True,
+                                              date_debut__lt=self.date_debut).exclude(pk=self.pk):
+                ancien.date_fin, ancien.actif = self.date_debut - timedelta(days=1), False
+                ancien.save()
+        if not self.actif and self.date_fin and avant != {"actif": self.actif, "date_fin": self.date_fin}:
+            self.nettoyer_apres_depart()
+
+    PAIEMENT_SUPPOSE = "Supposé réglé"
+
+    def nettoyer_apres_depart(self):
+        """Locataire parti : retire les loyers des mois qui suivent son départ (non réglés, ou seulement « supposés
+        réglés » par un rattrapage automatique) et calcule le mois de départ au prorata. Un loyer réellement encaissé
+        après le départ passe au bail suivant du lot. Renvoie la liste de ce qui a été fait."""
+        if not self.date_fin:
+            return []
+        faits, a_verifier = [], []
+        auto = lambda e: all(p.notes.startswith(self.PAIEMENT_SUPPOSE) for p in e.paiements.all())
+        suivant = (Bail.objects.filter(lot_id=self.lot_id, date_debut__gt=self.date_debut).exclude(pk=self.pk)
+                   .order_by("date_debut").first())
+        for e in self.echeances.filter(periode__gt=self.date_fin).order_by("periode"):
+            if auto(e):
+                e.delete()
+                faits.append(f"{e.periode:%m/%Y} retiré")
+                continue
+            fin_mois = e.periode.replace(day=calendar.monthrange(e.periode.year, e.periode.month)[1])
+            autre = suivant.echeances.filter(periode=e.periode).first() if suivant and suivant.date_debut <= fin_mois else None
+            if suivant and suivant.date_debut <= fin_mois and (autre is None or (not autre.ajustee and auto(autre))):
+                if autre:
+                    autre.delete()
+                e.bail = suivant
+                e.save(update_fields=["bail"])
+                faits.append(f"{e.periode:%m/%Y} encaissé rattaché au locataire suivant")
+            else:
+                a_verifier.append(f"{e.periode:%m/%Y}")
+        e = self.echeances.filter(periode=self.date_fin.replace(day=1)).first()
+        if e and not e.ajustee:
+            paiements = list(e.paiements.all())
+            if not paiements:
+                if e.actualiser_loyer():
+                    faits.append(f"{e.periode:%m/%Y} au prorata")
+            elif len(paiements) == 1 and auto(e):
+                loyer, charges = self.montants_du_mois(e.periode)
+                if (e.loyer_hc, e.charges) != (loyer, charges):
+                    e.loyer_hc, e.charges = loyer, charges
+                    e.save(update_fields=["loyer_hc", "charges"])
+                    paiements[0].montant = loyer + charges
+                    paiements[0].save(update_fields=["montant"])
+                    faits.append(f"{e.periode:%m/%Y} au prorata")
+        if a_verifier:
+            faits.append("encaissé après le départ, à vérifier : " + ", ".join(a_verifier))
+        return faits
 
     @property
     def depot_maximum(self):

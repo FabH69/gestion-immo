@@ -166,14 +166,14 @@ class SyndicAdmin(admin.ModelAdmin):
 @admin.register(EncaissementHistorique)
 class EncaissementHistoriqueAdmin(admin.ModelAdmin):
     list_display = ["mois", "lot", "montant", "charges", "note"]
-    list_filter = ["lot__bien__proprietaire", "lot"]
+    list_filter = ["lot__bien__proprietaire", "lot__bien__ville"]
     date_hierarchy = "mois"
 
 
 @admin.register(ChargeLMNP)
 class ChargeLMNPAdmin(admin.ModelAdmin):
     list_display = ["annee", "lot", "categorie", "libelle", "montant"]
-    list_filter = ["annee", "lot", "categorie"]
+    list_filter = ["annee", "lot__bien__proprietaire", "lot__bien__ville"]
     fields = ["lot", "annee", "categorie", "libelle", "montant"]
 
     def formfield_for_foreignkey(self, db_field, request, **kwargs):
@@ -226,7 +226,7 @@ class VenduFilter(admin.SimpleListFilter):
 @admin.register(Bien)
 class BienAdmin(admin.ModelAdmin):
     list_display = ["nom", "ville", "proprietaire", "syndic", "nb_lots", "vendu", "date_vente"]
-    list_filter = [VenduFilter, "proprietaire", "ville", "syndic"]
+    list_filter = [VenduFilter, "proprietaire", "ville"]
     search_fields = ["nom", "adresse", "ville"]
     inlines = [LotInline]
     fieldsets = [
@@ -279,7 +279,7 @@ class BienAdmin(admin.ModelAdmin):
 @admin.register(Lot)
 class LotAdmin(admin.ModelAdmin):
     list_display = ["designation", "bien_nom", "type_lot", "surface", "exploitation_pill", "locataire_actuel", "loyer_actuel"]
-    list_filter = [VenduFilter, "exploitation", "lmnp", "bien__proprietaire", "bien", "type", "meuble"]
+    list_filter = [VenduFilter, "bien__proprietaire", "bien__ville"]
     search_fields = ["designation", "bien__nom"]
     inlines = [BailInline, PhotoInline]
     readonly_fields = ["outils_relocation"]
@@ -465,7 +465,7 @@ class LocataireAdmin(admin.ModelAdmin):
     form = LocataireForm
     list_display = ["fiche", "statut_present", "contact", "liste_garants"]
     list_display_links = ["fiche"]
-    list_filter = [PresentFilter]
+    list_filter = [PresentFilter, "baux__lot__bien__proprietaire", "baux__lot__bien__ville", "baux__type"]
     search_fields = ["nom", "prenom", "email"]
     inlines = [DocumentLocataireInline, GarantInline]
     readonly_fields = ["encart_documents"]
@@ -687,7 +687,7 @@ class BailAdmin(LotsALouerMixin, admin.ModelAdmin):
         js = ["patrimoine/depot_garantie.js"]
     list_display = ["liste_locataires", "lot", "type", "date_debut", "colonne_loyer_initial", "colonne_loyer_actuel", "charges", "loyer_cc", "actif"]
     list_display_links = ["liste_locataires", "lot"]
-    list_filter = [BailEnCoursFilter, "type", "type_garantie", "lot__bien__proprietaire"]
+    list_filter = [BailEnCoursFilter, "lot__bien__proprietaire", "lot__bien__ville", "type"]
     search_fields = ["lot__designation", "lot__bien__nom", "locataires__nom"]
     filter_horizontal = ["locataires"]
     date_hierarchy = "date_debut"
@@ -846,7 +846,8 @@ class ModifierEcheancesForm(forms.Form):
 class EcheanceAdmin(admin.ModelAdmin):
     list_display = ["locataire_et_logement", "echeance_le", "total", "paye", "reste", "statut_colore", "actions_ligne"]
     list_display_links = ["locataire_et_logement"]
-    list_filter = [EcheanceStatutFilter, EnRetardFilter, "bail__lot__bien__proprietaire", "bail__lot__bien"]
+    list_filter = [EcheanceStatutFilter, EnRetardFilter, "bail__lot__bien__proprietaire", "bail__lot__bien__ville", "bail__type"]
+    filtres_caches = ("reglement", "retard")  # remplacés par les raccourcis en haut de la liste
     search_fields = ["bail__lot__designation", "bail__lot__bien__nom", "bail__locataires__nom"]
     date_hierarchy = "periode"
     readonly_fields = ["statut", "document"]
@@ -1086,7 +1087,7 @@ class TacheEntreeInline(TacheInlineBase):
 @admin.register(ChangementLocataire)
 class ChangementLocataireAdmin(LotsALouerMixin, admin.ModelAdmin):
     list_display = ["lot", "locataire_sortant", "date_conge", "date_depart", "date_arrivee", "avancement_affiche", "prochaine_tache", "termine"]
-    list_filter = ["termine", "lot__bien__proprietaire", "lot__bien"]
+    list_filter = ["termine", "lot__bien__proprietaire", "lot__bien__ville"]
     fields = ["lot", "bail_sortant", "date_conge", "date_depart", "date_arrivee", "termine", "notes"]
     inlines = [TacheSortieInline, TacheEntreeInline]
 
@@ -1132,7 +1133,7 @@ class TacheEnRetardFilter(admin.SimpleListFilter):
 class TacheAdmin(admin.ModelAdmin):
     list_display = ["echeance", "libelle", "changement", "phase", "faite"]
     list_editable = ["faite"]
-    list_filter = [TacheEnRetardFilter, "faite", "phase", "changement__lot__bien__proprietaire"]
+    list_filter = [TacheEnRetardFilter, "faite", "changement__lot__bien__proprietaire", "changement__lot__bien__ville"]
     list_display_links = ["libelle"]
     search_fields = ["libelle", "changement__lot__designation", "changement__lot__bien__nom"]
     ordering = ["faite", "echeance"]
@@ -1147,7 +1148,7 @@ class TacheAdmin(admin.ModelAdmin):
 @admin.register(EtatDesLieux)
 class EtatDesLieuxAdmin(admin.ModelAdmin):
     list_display = ["date", "type", "bail", "document"]
-    list_filter = ["type", "bail__lot__bien__proprietaire"]
+    list_filter = ["type", "bail__lot__bien__proprietaire", "bail__lot__bien__ville"]
     readonly_fields = ["document"]
     fields = ["bail", "type", "date", ("compteur_electricite", "compteur_gaz"), ("compteur_eau_froide", "compteur_eau_chaude"), "nb_cles", "nouvelle_adresse", "observations", "document"]
 
@@ -1188,7 +1189,7 @@ class MouvementDepotAdmin(admin.ModelAdmin):
     @admin.display(description="propriétaire", ordering="bail__lot__bien__proprietaire__nom")
     def proprietaire(self, obj):
         return obj.bail.lot.bien.proprietaire
-    list_filter = [DepotEnCoursFilter, "type", "bail__lot__bien__proprietaire"]
+    list_filter = [DepotEnCoursFilter, "bail__lot__bien__proprietaire", "bail__lot__bien__ville"]
     search_fields = ["bail__lot__designation", "bail__locataires__nom"]
     date_hierarchy = "date"
     change_list_template = "admin/patrimoine/mouvementdepot/change_list.html"
@@ -1219,7 +1220,7 @@ class MouvementDepotAdmin(admin.ModelAdmin):
 class PretAdmin(admin.ModelAdmin):
     list_display = ["fiche_pret", "proprietaire", "bien", "taux_affiche", "mensualite", "fin", "restant_du", "amortissement"]
     list_display_links = ["fiche_pret"]
-    list_filter = ["proprietaire", "banque", "type"]
+    list_filter = ["proprietaire", "bien__ville"]
     readonly_fields = ["calculs"]
     fieldsets = [
         (None, {"fields": ["proprietaire", "bien", "banque", "reference", "type"]}),
@@ -1270,7 +1271,7 @@ class PretAdmin(admin.ModelAdmin):
 class RappelAdmin(admin.ModelAdmin):
     list_display = ["date", "titre", "categorie", "bien", "periodicite", "actif", "fait"]
     list_editable = ["actif", "fait"]
-    list_filter = ["actif", "fait", "periodicite", "categorie", "bien"]
+    list_filter = ["fait", "bien__proprietaire", "bien__ville"]
     fields = ["titre", "date", "periodicite", "categorie", "bien", "actif", "fait", "notes"]
     list_display_links = ["titre"]
     search_fields = ["titre", "notes"]
@@ -1294,7 +1295,7 @@ class RappelAdmin(admin.ModelAdmin):
 @admin.register(RevisionLoyer)
 class RevisionLoyerAdmin(admin.ModelAdmin):
     list_display = ["date_effet", "bail", "ancien_loyer", "ancien_irl", "nouvel_irl", "trimestre", "pourcentage", "nouveau_loyer", "appliquee", "liens"]
-    list_filter = ["appliquee", "bail__lot__bien__proprietaire", "bail"]
+    list_filter = ["appliquee", "bail__lot__bien__proprietaire", "bail__lot__bien__ville"]
 
     @admin.display(description="hausse")
     def pourcentage(self, obj):
@@ -1312,7 +1313,7 @@ class RevisionLoyerAdmin(admin.ModelAdmin):
 @admin.register(Garant)
 class GarantAdmin(admin.ModelAdmin):
     list_display = ["__str__", "locataire", "bail", "type_caution", "montant_max", "acte"]
-    list_filter = ["type_caution"]
+    list_filter = ["bail__lot__bien__proprietaire", "bail__lot__bien__ville", "bail__type"]
     search_fields = ["nom", "prenom", "locataire__nom"]
 
     @admin.display(description="acte")
@@ -1351,7 +1352,7 @@ class PieceCandidatureInline(admin.TabularInline):
 class CandidatureAdmin(LotsALouerMixin, admin.ModelAdmin):
     inlines = [GarantCandidatureInline, PieceCandidatureInline]
     list_display = ["__str__", "statut", "situation", "revenus_mensuels", "taux_effort", "type_garantie", "recue_le"]
-    list_filter = ["statut", "lot"]
+    list_filter = ["statut", "lot__bien__proprietaire", "lot__bien__ville"]
     readonly_fields = ["lien_a_envoyer", "statut", "recue_le", "taux_effort"]
     actions = ["retenir", "refuser"]
 
@@ -1427,7 +1428,7 @@ class CandidatureAdmin(LotsALouerMixin, admin.ModelAdmin):
 @admin.register(Annonce)
 class AnnonceAdmin(LotsALouerMixin, admin.ModelAdmin):
     list_display = ["titre", "lot", "loyer_cc", "disponible_le", "cree_le"]
-    list_filter = ["lot__bien"]
+    list_filter = ["lot__bien__proprietaire", "lot__bien__ville"]
     readonly_fields = ["a_copier"]
     actions = ["regenerer"]
 

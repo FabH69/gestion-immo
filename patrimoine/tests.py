@@ -1276,3 +1276,40 @@ class ZoneTendueEtConditionsTests(TestCase):
         form = BailForm(data={**donnees, "complement_loyer": "223.80", "complement_loyer_motif": "local supplémentaire"}, instance=self.bail)
         self.assertNotIn("loyer_reference_majore", form.errors)
         self.assertNotIn("complement_loyer_motif", form.errors)
+
+
+class LocatairePartiTests(TestCase):
+    def setUp(self):
+        proprio = Proprietaire.objects.create(nom="SCI", type=Proprietaire.Type.SCI_IR)
+        bien = Bien.objects.create(proprietaire=proprio, nom="Immeuble", adresse="1 rue", code_postal="69000", ville="Lyon")
+        self.lot = Lot.objects.create(bien=bien, designation="A")
+        self.ancien = Bail.objects.create(lot=self.lot, type=Bail.Type.NU, date_debut=date(2022, 7, 1), loyer_hc=Decimal("600"))
+        for m in range(1, 6):
+            e = Echeance.objects.create(bail=self.ancien, periode=date(2026, m, 1), loyer_hc=Decimal("600"), charges=0,
+                                        date_exigibilite=date(2026, m, 1))
+            if m in (1, 2, 3):
+                Paiement.objects.create(echeance=e, date=e.date_exigibilite, montant=600,
+                                        notes="Repris du suivi Excel" if m == 3 else "Supposé réglé (rattrapage 2026)")
+
+    def test_depart_retire_les_loyers_suivants(self):
+        self.ancien.date_fin, self.ancien.actif = date(2026, 1, 15), False
+        self.ancien.save()
+        restants = list(self.ancien.echeances.order_by("periode"))
+        # janvier au prorata, février / avril / mai retirés, mars réellement encaissé : gardé (pas de locataire suivant)
+        self.assertEqual([e.periode.month for e in restants], [1, 3])
+        self.assertEqual(restants[0].loyer_hc, Decimal("290.32"))
+        self.assertEqual(restants[0].paiements.get().montant, Decimal("290.32"))
+
+    def test_nouveau_bail_cloture_le_precedent(self):
+        nouveau = Bail.objects.create(lot=self.lot, type=Bail.Type.NU, date_debut=date(2026, 3, 1), loyer_hc=Decimal("650"))
+        self.ancien.refresh_from_db()
+        self.assertEqual((self.ancien.actif, self.ancien.date_fin), (False, date(2026, 2, 28)))
+        self.assertEqual([e.periode.month for e in self.ancien.echeances.order_by("periode")], [1, 2])
+        self.assertEqual(list(nouveau.echeances.values_list("periode", flat=True)), [date(2026, 3, 1)])
+
+    def test_filtres_en_haut(self):
+        self.client.force_login(User.objects.create_superuser("admin", "a@example.com", "x"))
+        r = self.client.get("/admin/patrimoine/bail/")
+        self.assertContains(r, 'class="filtres-haut"')
+        self.assertContains(r, "Type de bail")
+        self.assertNotContains(r, 'id="changelist-filter"')

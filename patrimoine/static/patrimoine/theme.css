@@ -422,3 +422,26 @@ a.ligne-carte:hover { background: var(--selected-bg); text-decoration: none; }
 .login #header { background: var(--lateral-bg, #174547); }
 .login #header #site-name a { color: #fff; }
 .login .submit-row { border: 0; box-shadow: none; background: none; padding: 8px 0 0; }
+
+/* --- Listes : filtres en haut, recherche et ajout à droite --- */
+#changelist-filter { display: none !important; }
+.barre-liste { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px 16px; margin: 0 0 14px; }
+.filtres-haut { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; flex: 1 1 360px; min-width: 0; }
+.groupe-filtre { display: inline-flex; flex-wrap: wrap; gap: 4px; }
+.groupe-filtre .chip { padding: 4px 12px; font-size: .85rem; }
+.groupe-filtre + .groupe-filtre { padding-left: 12px; border-left: 1px solid var(--border-color); }
+.filtre-select { display: inline-flex; align-items: center; gap: 6px; padding: 2px 4px 2px 12px; border: 1px solid var(--border-color); border-radius: 999px; background: var(--body-bg); font-size: .85rem; color: var(--body-quiet-color); }
+.filtre-select.actif { border-color: var(--primary); color: var(--primary); }
+.filtre-select select { width: auto !important; min-width: 0 !important; border: 0 !important; background-color: transparent; padding: 3px 4px; height: 28px !important; min-height: 0; box-shadow: none !important; font-size: .85rem; color: var(--body-fg); max-width: 190px; }
+.effacer-filtres { font-size: .85rem; white-space: nowrap; }
+.outils-droite { display: flex; align-items: center; align-self: flex-start; gap: 10px; margin-left: auto; flex-wrap: wrap; justify-content: flex-end; }
+.outils-droite #toolbar { margin: 0; padding: 0; background: transparent; border: 0; }
+.outils-droite #toolbar form input[type=text] { width: 220px; }
+.outils-droite #toolbar .small.quiet { display: none; }
+.outils-droite ul.object-tools { float: none; margin: 0; padding: 0; position: static; display: flex; gap: 6px; flex-wrap: wrap; }
+.outils-droite ul.object-tools li { margin: 0; }
+@media (max-width: 767px) {
+  .outils-droite { width: 100%; justify-content: stretch; }
+  .outils-droite #toolbar { flex: 1 1 auto; }
+  .outils-droite #toolbar form input[type=text] { width: 100%; }
+}

@@ -220,3 +220,24 @@ def euros(valeur, decimales=0):
     v = Decimal(valeur).quantize(Decimal(1) if not decimales else Decimal("0.01"), ROUND_HALF_UP)
     texte = f"{abs(v):,.{int(decimales)}f}".replace(",", " ").replace(".", ",")
     return ("−" if v < 0 else "") + texte + " €"
+
+
+@register.simple_tag
+def filtres_haut(cl):
+    """Filtres d'une liste à afficher en haut : boutons quand il y a peu de choix, sinon liste déroulante.
+    Les filtres nommés dans `filtres_caches` de l'admin restent actifs mais ne s'affichent pas."""
+    caches = set(getattr(cl.model_admin, "filtres_caches", ()))
+    filtres = []
+    for spec in cl.filter_specs:
+        if caches & set(spec.expected_parameters()):
+            continue
+        choix = [{"libelle": str(c["display"]), "url": c["query_string"], "actif": c["selected"]} for c in spec.choices(cl)]
+        if len(choix) <= 1:
+            continue
+        titre = str(spec.title)
+        champ = getattr(spec, "field", None)
+        if champ is not None and champ.name == "type" and champ.model._meta.model_name == "bail":
+            titre = "type de bail"
+        filtres.append({"titre": titre[:1].upper() + titre[1:], "choix": choix, "boutons": len(choix) <= 5,
+                        "tous": choix[0]["actif"]})
+    return filtres
