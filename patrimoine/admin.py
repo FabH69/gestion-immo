@@ -278,7 +278,7 @@ class BienAdmin(admin.ModelAdmin):
 
 @admin.register(Lot)
 class LotAdmin(admin.ModelAdmin):
-    list_display = ["designation", "bien", "type_lot", "surface", "exploitation_pill", "locataire_actuel", "loyer_actuel"]
+    list_display = ["designation", "bien_nom", "type_lot", "surface", "exploitation_pill", "locataire_actuel", "loyer_actuel"]
     list_filter = [VenduFilter, "exploitation", "lmnp", "bien__proprietaire", "bien", "type", "meuble"]
     search_fields = ["designation", "bien__nom"]
     inlines = [BailInline, PhotoInline]
@@ -327,6 +327,10 @@ class LotAdmin(admin.ModelAdmin):
     def loyer_actuel(self, obj):
         bail = obj.bail_actif
         return euros_liste(bail.loyer_cc) if bail else "–"
+
+    @admin.display(description="bien", ordering="bien__nom")
+    def bien_nom(self, obj):
+        return obj.bien.nom
 
     @admin.display(description="type", ordering="type")
     def type_lot(self, obj):
@@ -1213,7 +1217,8 @@ class MouvementDepotAdmin(admin.ModelAdmin):
 
 @admin.register(Pret)
 class PretAdmin(admin.ModelAdmin):
-    list_display = ["__str__", "proprietaire", "bien", "taux_affiche", "mensualite", "fin", "restant_du", "amortissement"]
+    list_display = ["fiche_pret", "proprietaire", "bien", "taux_affiche", "mensualite", "fin", "restant_du", "amortissement"]
+    list_display_links = ["fiche_pret"]
     list_filter = ["proprietaire", "banque", "type"]
     readonly_fields = ["calculs"]
     fieldsets = [
@@ -1228,17 +1233,22 @@ class PretAdmin(admin.ModelAdmin):
     def taux_affiche(self, obj):
         return f"{obj.taux:.3f} %".replace(".", ",")
 
-    @admin.display(description="mensualité + assur. (€)")
+    @admin.display(description="prêt", ordering="banque")
+    def fiche_pret(self, obj):
+        return format_html('<span class="cellule-personne"><span><b>{}</b><small>n° {} · {}</small></span></span>',
+                           obj.banque, obj.reference or "–", euros_liste(obj.montant))
+
+    @admin.display(description="mensualité")
     def mensualite(self, obj):
-        return obj.mensualite_totale
+        return euros_liste(obj.mensualite_totale)
 
     @admin.display(description="fin")
     def fin(self, obj):
         return obj.date_derniere_echeance.strftime("%m/%Y")
 
-    @admin.display(description="restant dû aujourd'hui (€)")
+    @admin.display(description="restant dû")
     def restant_du(self, obj):
-        return obj.capital_restant_du(timezone.localdate())
+        return format_html("<b>{}</b>", euros_liste(obj.capital_restant_du(timezone.localdate())))
 
     @admin.display(description="tableau")
     def amortissement(self, obj):

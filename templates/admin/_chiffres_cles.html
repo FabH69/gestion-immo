@@ -3,7 +3,7 @@
   <a class="kpi" href="{% url 'admin:patrimoine_echeance_changelist' %}">
     <div class="kpi-l">Loyers de {{ tb.mois }}</div>
     <div class="kpi-v">{{ tb.encaisse|euros }} <small>/ {{ tb.attendu|euros }}</small></div>
-    <div class="barre"><i style="width:{{ tb.pourcentage }}%"></i></div>
+    <div class="kpi-barre"><i style="width:{{ tb.pourcentage }}%"></i></div>
     <div class="kpi-d">{{ tb.nb_payes }} payé{{ tb.nb_payes|pluralize }} sur {{ tb.nb_echeances }}</div>
   </a>
   <a class="kpi" href="{% url 'admin:patrimoine_echeance_changelist' %}?retard=oui">

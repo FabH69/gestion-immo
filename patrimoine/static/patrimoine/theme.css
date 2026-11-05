@@ -352,8 +352,8 @@ td.montant, th.montant, .column-total, .column-paye, .column-reste { text-align:
 .kpi-v small { font-size: 15px; color: var(--body-quiet-color); font-weight: 500; }
 .kpi-v.rouge { color: var(--rouge); } .kpi-v.vert { color: var(--ok); }
 .kpi-d { font-size: 12.5px; color: var(--body-quiet-color); }
-.barre { height: 7px; background: var(--hairline-color); border-radius: 5px; overflow: hidden; margin: 4px 0 8px; }
-.barre i { display: block; height: 100%; background: var(--ok); border-radius: 5px; min-width: 4px; }
+.kpi-barre { height: 7px; background: var(--hairline-color); border-radius: 5px; overflow: hidden; margin: 4px 0 8px; }
+.kpi-barre i { display: block; height: 100%; background: var(--ok); border-radius: 5px; min-width: 4px; }
 .grille-accueil { display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr); gap: 20px; align-items: start; }
 .colonne-cartes .module { margin-bottom: 20px; }
 .carte h2 { display: flex; align-items: center; }
@@ -417,3 +417,8 @@ a.ligne-carte:hover { background: var(--selected-bg); text-decoration: none; }
 .cellule-contact { display: flex; flex-direction: column; } .cellule-contact small { color: var(--body-quiet-color); }
 #result_list th a, #result_list td.field-__str__ a { font-weight: 600; }
 .menu-sous a.menu-ajout { font-size: 12px; opacity: .8; }
+.etat-scroll { overflow-x: auto !important; max-width: 100%; }
+#result_list .field-mensualite, #result_list .field-restant_du, #result_list .field-loyer_actuel { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.login #header { background: var(--lateral-bg, #174547); }
+.login #header #site-name a { color: #fff; }
+.login .submit-row { border: 0; box-shadow: none; background: none; padding: 8px 0 0; }
