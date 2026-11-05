@@ -199,10 +199,34 @@ class SiteUtileAdmin(admin.ModelAdmin):
     fields = ["nom", "url", "ordre"]
 
 
+class VenduFilter(admin.SimpleListFilter):
+    """Biens et lots non vendus affichés par défaut ; les vendus restent consultables (historique conservé)."""
+    title = "vente"
+    parameter_name = "vente"
+
+    def lookups(self, request, model_admin):
+        return [("non", "Non vendus"), ("oui", "Vendus"), ("tous", "Tous")]
+
+    def choices(self, changelist):
+        valeur = self.value() or "non"
+        for code, libelle in self.lookup_choices:
+            yield {"selected": valeur == code, "query_string": changelist.get_query_string({self.parameter_name: code}), "display": libelle}
+
+    def queryset(self, request, queryset):
+        from django.db.models import Q
+        vendu = Q(vendu=True) | Q(bien__vendu=True) if queryset.model is Lot else Q(vendu=True)
+        valeur = self.value() or "non"
+        if valeur == "non":
+            return queryset.exclude(vendu)
+        if valeur == "oui":
+            return queryset.filter(vendu)
+        return queryset
+
+
 @admin.register(Bien)
 class BienAdmin(admin.ModelAdmin):
     list_display = ["nom", "ville", "proprietaire", "syndic", "nb_lots", "vendu", "date_vente"]
-    list_filter = ["vendu", "proprietaire", "ville", "syndic"]
+    list_filter = [VenduFilter, "proprietaire", "ville", "syndic"]
     search_fields = ["nom", "adresse", "ville"]
     inlines = [LotInline]
     fieldsets = [
@@ -255,7 +279,7 @@ class BienAdmin(admin.ModelAdmin):
 @admin.register(Lot)
 class LotAdmin(admin.ModelAdmin):
     list_display = ["designation", "bien", "type", "surface", "meuble", "exploitation", "locataire_actuel", "loyer_actuel", "vendu", "date_vente"]
-    list_filter = ["vendu", "exploitation", "lmnp", "bien__proprietaire", "bien", "type", "meuble"]
+    list_filter = [VenduFilter, "exploitation", "lmnp", "bien__proprietaire", "bien", "type", "meuble"]
     search_fields = ["designation", "bien__nom"]
     inlines = [BailInline, PhotoInline]
     readonly_fields = ["outils_relocation"]

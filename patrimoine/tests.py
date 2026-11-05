@@ -1083,6 +1083,12 @@ class BienVenduTests(TestCase):
         self.assertNotIn("Appart vendu", page)
         # la fiche d'un ancien bail garde son logement
         self.assertIn("Appart vendu", self.client.get(f"/admin/patrimoine/bail/{bail.pk}/change/").content.decode())
+        # liste des biens : non vendus par défaut, vendus sur demande
+        liste = self.client.get("/admin/patrimoine/bien/").content.decode()
+        self.assertIn("Gardé", liste)
+        self.assertNotIn(">Vendu<", liste)
+        self.assertIn(">Vendu<", self.client.get("/admin/patrimoine/bien/?vente=oui").content.decode())
+        self.assertNotIn("Appart vendu", self.client.get("/admin/patrimoine/lot/").content.decode())
         # décocher annule la vente des lots
         vendu.vendu, vendu.date_vente = False, None
         admin_bien.save_model(requete, vendu, None, True)
