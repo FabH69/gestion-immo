@@ -11,10 +11,9 @@
   {% for bp in proprietaires %}
     <tr class="proprio"><td colspan="16">{{ bp.proprietaire.nom }} <span class="type">({{ bp.proprietaire.get_type_display }})</span></td></tr>
     {% for bb in bp.biens %}
-      <tr class="bien"><td colspan="16">{{ bb.bien.nom }} – {{ bb.bien.ville }}</td></tr>
       {% for l in bb.lots %}
       <tr>
-        <td class="libelle lot">{{ l.lot.designation }}</td>
+        <td class="libelle lot">{% if l.lot.designation|lower != bb.bien.nom|lower %}{{ bb.bien.nom }} – {% endif %}{{ l.lot.designation }}</td>
         {% for v in l.mois %}<td>{% if v %}{{ v|floatformat:"2g" }}{% else %}–{% endif %}</td>{% endfor %}
         <td class="fort">{{ l.total|floatformat:"2g" }}</td><td>{{ l.loyers_hc|floatformat:"2g" }}</td><td>{{ l.charges|floatformat:"2g" }}</td>
       </tr>
