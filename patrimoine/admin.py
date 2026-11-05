@@ -28,6 +28,20 @@ def _changelist_view_titre_simple(self, request, extra_context=None):
 admin.ModelAdmin.changelist_view = _changelist_view_titre_simple
 
 
+class LotsALouerMixin:
+    """Ne propose que les lots non vendus ; un lot vendu déjà choisi reste affiché sur sa fiche."""
+
+    def formfield_for_foreignkey(self, db_field, request, **kwargs):
+        if db_field.name == "lot":
+            from django.db.models import Q
+            actuel = None
+            object_id = request.resolver_match.kwargs.get("object_id") if request.resolver_match else None
+            if object_id:
+                actuel = self.model.objects.filter(pk=object_id).values_list("lot_id", flat=True).first()
+            kwargs["queryset"] = Lot.objects.filter(Q(vendu=False, bien__vendu=False) | Q(pk=actuel)).select_related("bien")
+        return super().formfield_for_foreignkey(db_field, request, **kwargs)
+
+
 class BienInline(admin.TabularInline):
     model = Bien
     fields = ["nom", "ville"]
@@ -187,8 +201,8 @@ class SiteUtileAdmin(admin.ModelAdmin):
 
 @admin.register(Bien)
 class BienAdmin(admin.ModelAdmin):
-    list_display = ["nom", "ville", "proprietaire", "syndic", "nb_lots"]
-    list_filter = ["proprietaire", "ville", "syndic"]
+    list_display = ["nom", "ville", "proprietaire", "syndic", "nb_lots", "vendu", "date_vente"]
+    list_filter = ["vendu", "proprietaire", "ville", "syndic"]
     search_fields = ["nom", "adresse", "ville"]
     inlines = [LotInline]
     fieldsets = [
@@ -203,8 +217,26 @@ class BienAdmin(admin.ModelAdmin):
                                         "Encadrement des loyers : loyer de référence majoré fixé par arrêté préfectoral (Lyon, Villeurbanne, Paris…). "
                                         "Si l'une des cases est cochée, le bail contient le paragraphe « zone tendue » : les chiffres "
                                         "(loyer de référence, complément, loyer du précédent locataire) se saisissent dans chaque bail."}),
+        ("Vente", {"classes": ["cases-a-cocher"], "fields": [("vendu", "date_vente")],
+                   "description": "Un bien vendu (et tous ses lots) n'est plus proposé pour les baux, candidatures et annonces, "
+                                  "mais reste dans les états des loyers. La date de vente est facultative."}),
         ("Notes", {"fields": ["notes"]}),
     ]
+
+    def save_model(self, request, obj, form, change):
+        if obj.date_vente:
+            obj.vendu = True
+        avant = Bien.objects.filter(pk=obj.pk).values("vendu", "date_vente").first() if change else None
+        super().save_model(request, obj, form, change)
+        if obj.vendu:
+            # tous les lots du bien passent en vendu ; la date du bien complète celles qui manquent
+            obj.lots.filter(vendu=False).update(vendu=True)
+            if obj.date_vente:
+                obj.lots.filter(date_vente__isnull=True).update(date_vente=obj.date_vente)
+        elif avant and avant["vendu"]:
+            # case décochée : on annule ce que la vente du bien avait fait (sans toucher aux lots vendus à part)
+            lots = obj.lots.filter(date_vente=avant["date_vente"]) if avant["date_vente"] else obj.lots.filter(date_vente__isnull=True)
+            lots.update(vendu=False, date_vente=None)
 
     def get_form(self, request, obj=None, **kwargs):
         form = super().get_form(request, obj, **kwargs)
@@ -213,6 +245,8 @@ class BienAdmin(admin.ModelAdmin):
                 form.base_fields[nom].help_text = ""
         if "notes" in form.base_fields:
             form.base_fields["notes"].widget.attrs.update(rows=3)
+        if "vendu" in form.base_fields:
+            form.base_fields["vendu"].help_text = ""
         return form
 
     @admin.display(description="lots")
@@ -344,7 +378,7 @@ class LocataireForm(forms.ModelForm):
     """Fiche locataire avec rattachement à un lot et déclaration de sortie."""
 
     lot = forms.ModelChoiceField(
-        Lot.objects.filter(vendu=False).select_related("bien"), required=False, label="logement loué",
+        Lot.objects.filter(vendu=False, bien__vendu=False).select_related("bien"), required=False, label="logement loué",
         help_text="Rattache le locataire au bail en cours de ce lot. S'il n'y en a pas, un bail est créé : complétez-le ensuite.",
     )
     date_entree = forms.DateField(
@@ -588,7 +622,7 @@ class BailForm(forms.ModelForm):
 
 
 @admin.register(Bail)
-class BailAdmin(admin.ModelAdmin):
+class BailAdmin(LotsALouerMixin, admin.ModelAdmin):
     form = BailForm
 
     class Media:
@@ -911,7 +945,7 @@ class TacheEntreeInline(TacheInlineBase):
 
 
 @admin.register(ChangementLocataire)
-class ChangementLocataireAdmin(admin.ModelAdmin):
+class ChangementLocataireAdmin(LotsALouerMixin, admin.ModelAdmin):
     list_display = ["lot", "locataire_sortant", "date_conge", "date_depart", "date_arrivee", "avancement_affiche", "prochaine_tache", "termine"]
     list_filter = ["termine", "lot__bien__proprietaire", "lot__bien"]
     fields = ["lot", "bail_sortant", "date_conge", "date_depart", "date_arrivee", "termine", "notes"]
@@ -1169,7 +1203,7 @@ class PieceCandidatureInline(admin.TabularInline):
 
 
 @admin.register(Candidature)
-class CandidatureAdmin(admin.ModelAdmin):
+class CandidatureAdmin(LotsALouerMixin, admin.ModelAdmin):
     inlines = [GarantCandidatureInline, PieceCandidatureInline]
     list_display = ["__str__", "statut", "situation", "revenus_mensuels", "taux_effort", "type_garantie", "recue_le"]
     list_filter = ["statut", "lot"]
@@ -1246,7 +1280,7 @@ class CandidatureAdmin(admin.ModelAdmin):
 
 
 @admin.register(Annonce)
-class AnnonceAdmin(admin.ModelAdmin):
+class AnnonceAdmin(LotsALouerMixin, admin.ModelAdmin):
     list_display = ["titre", "lot", "loyer_cc", "disponible_le", "cree_le"]
     list_filter = ["lot__bien"]
     readonly_fields = ["a_copier"]
@@ -1292,7 +1326,7 @@ class AnnonceAdmin(admin.ModelAdmin):
 
 
 @admin.register(ReservationLCD)
-class ReservationLCDAdmin(admin.ModelAdmin):
+class ReservationLCDAdmin(LotsALouerMixin, admin.ModelAdmin):
     list_display = ["arrivee", "depart", "nuits", "voyageur", "plateforme", "lot", "montant_brut", "commission", "frais_service", "taxe_sejour", "net", "annulee"]
     list_filter = ["plateforme", "lot", "annulee"]
     search_fields = ["voyageur", "reference"]
@@ -1314,7 +1348,7 @@ class ChargeLCDAdmin(admin.ModelAdmin):
 
 
 @admin.register(ParametresLCD)
-class ParametresLCDAdmin(admin.ModelAdmin):
+class ParametresLCDAdmin(LotsALouerMixin, admin.ModelAdmin):
     list_display = ["lot", "menage_par_sejour", "consommables_par_sejour", "commission_gestion"]
 
 

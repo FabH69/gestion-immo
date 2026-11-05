@@ -577,7 +577,7 @@ def suivi_lcd(request):
     """Suivi mensuel d'un logement en location courte durée, avec import des exports Airbnb et Booking."""
     from . import lcd
 
-    lots = Lot.objects.filter(vendu=False).select_related("bien").order_by("bien__nom", "designation")
+    lots = Lot.objects.filter(vendu=False, bien__vendu=False).select_related("bien").order_by("bien__nom", "designation")
     lots_lcd = [l for l in lots if l.exploitation == "courte" or l.reservations_lcd.exists() or hasattr(l, "parametres_lcd")]
     lot = lots.filter(pk=request.GET.get("lot") or request.POST.get("lot")).first() if (request.GET.get("lot") or request.POST.get("lot")) else (lots_lcd[0] if lots_lcd else None)
     aujourdhui = timezone.localdate()

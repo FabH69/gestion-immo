@@ -115,6 +115,9 @@ class Bien(models.Model):
                                       help_text="Commune où l'évolution du loyer à la relocation est limitée (décret annuel)")
     encadrement_loyers = models.BooleanField("encadrement des loyers", default=False,
                                              help_text="Loyer de référence majoré fixé par arrêté préfectoral (Lyon, Villeurbanne, Paris…)")
+    vendu = models.BooleanField("bien vendu", default=False,
+                                help_text="Bien vendu : il n'est plus proposé à la location mais reste dans les états des loyers")
+    date_vente = models.DateField("date de vente", null=True, blank=True)
     notes = models.TextField(blank=True)
 
     EQUIPEMENTS_COMMUNS = ["gardiennage", "ascenseur", "chauffage_collectif", "antenne_tv", "vide_ordures", "interphone",

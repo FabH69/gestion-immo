@@ -1060,6 +1060,36 @@ class ModifierLoyersTests(TestCase):
         self.assertEqual(e1.charges, 0)
 
 
+class BienVenduTests(TestCase):
+    def test_bien_vendu_masque_a_la_location(self):
+        from django.contrib.admin.sites import site
+        from django.test import RequestFactory
+        proprio = Proprietaire.objects.create(nom="SCI", type=Proprietaire.Type.SCI_IR)
+        vendu = Bien.objects.create(proprietaire=proprio, nom="Vendu", adresse="1 rue", code_postal="69000", ville="Lyon")
+        garde = Bien.objects.create(proprietaire=proprio, nom="Gardé", adresse="2 rue", code_postal="69000", ville="Lyon")
+        lot_vendu = Lot.objects.create(bien=vendu, designation="Appart vendu")
+        Lot.objects.create(bien=garde, designation="Appart gardé")
+        bail = Bail.objects.create(lot=lot_vendu, type=Bail.Type.NU, date_debut=date(2025, 1, 1), loyer_hc=500)
+        admin_bien = site._registry[Bien]
+        requete = RequestFactory().post("/")
+        vendu.date_vente = date(2026, 6, 30)
+        admin_bien.save_model(requete, vendu, None, True)
+        lot_vendu.refresh_from_db()
+        self.assertTrue(vendu.vendu)
+        self.assertEqual((lot_vendu.vendu, lot_vendu.date_vente), (True, date(2026, 6, 30)))
+        self.client.force_login(User.objects.create_superuser("admin", "a@example.com", "x"))
+        page = self.client.get("/admin/patrimoine/candidature/add/").content.decode()
+        self.assertIn("Appart gardé", page)
+        self.assertNotIn("Appart vendu", page)
+        # la fiche d'un ancien bail garde son logement
+        self.assertIn("Appart vendu", self.client.get(f"/admin/patrimoine/bail/{bail.pk}/change/").content.decode())
+        # décocher annule la vente des lots
+        vendu.vendu, vendu.date_vente = False, None
+        admin_bien.save_model(requete, vendu, None, True)
+        lot_vendu.refresh_from_db()
+        self.assertFalse(lot_vendu.vendu)
+
+
 class ModelesWordTests(TestCase):
     def test_modeles_remplis_depuis_le_bail(self):
         import io
