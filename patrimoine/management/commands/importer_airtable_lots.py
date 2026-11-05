@@ -82,6 +82,9 @@ class Command(BaseCommand):
                 if _texte(ligne.get("Copro")) and not bien.syndic:
                     bien.syndic, _ = Syndic.objects.get_or_create(nom=_texte(ligne.get("Copro")), defaults={"ville": ""})
                     bien.save(update_fields=["syndic"])
+                if _texte(ligne.get("Copro")) and not bien.regime_juridique:
+                    bien.regime_juridique = "copropriete"
+                    bien.save(update_fields=["regime_juridique"])
                 etage = _texte(ligne.get("Etage")).replace("étgae", "étage")
                 type_lot = _type_lot(_texte(ligne.get("Tags")))
                 designation = _texte(ligne.get("Location 4")) or _texte(ligne.get("Appartement")) or f"{type_lot.label} {etage}".strip()
@@ -92,7 +95,6 @@ class Command(BaseCommand):
                     "bien": bien, "designation": designation, "type": type_lot, "etage": etage,
                     "surface": _nombre(ligne.get("Superficie", "")), "nb_pieces": None if type_lot == Lot.Type.PARKING else _nombre(ligne.get("Nb_Pièce", ""), int),
                     "chauffage": chauffage.lower() and f"{chauffage}", "eau_chaude": eau,
-                    "regime_juridique": "copropriete" if _texte(ligne.get("Copro")) else "",
                     "pdl": _texte(ligne.get("PDL")), "vendu": vendu, "notes": "\n".join(notes),
                 }
                 ref = _texte(ligne.get("Record ID"))

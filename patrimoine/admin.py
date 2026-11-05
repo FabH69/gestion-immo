@@ -1,4 +1,5 @@
 from datetime import date, timedelta
+from decimal import Decimal
 
 from django import forms
 from django.contrib import admin, messages
@@ -8,7 +9,7 @@ from urllib.parse import quote
 from django.utils import timezone
 from django.utils.html import format_html, format_html_join
 
-from .models import ModeleDocument, ParametresMail, PieceCandidature, mois_depot_maximum, GarantCandidature, EncaissementHistorique, ChargeLMNP, SiteUtile, Syndic, Annonce, ChargeLCD, ParametresLCD, ReservationLCD, Bail, Bien, Candidature, ChangementLocataire, Garant, PhotoLot, Echeance, EtatDesLieux, MouvementDepot, Pret, Rappel, RevisionLoyer, Locataire, Lot, Paiement, Proprietaire, Tache
+from .models import DocumentLocataire, ModeleDocument, ParametresMail, PieceCandidature, mois_depot_maximum, GarantCandidature, EncaissementHistorique, ChargeLMNP, SiteUtile, Syndic, Annonce, ChargeLCD, ParametresLCD, ReservationLCD, Bail, Bien, Candidature, ChangementLocataire, Garant, PhotoLot, Echeance, EtatDesLieux, MouvementDepot, Pret, Rappel, RevisionLoyer, Locataire, Lot, Paiement, Proprietaire, Tache
 
 admin.site.site_header = "Gestion immobilière"
 admin.site.enable_nav_sidebar = False  # remplacé par le menu du bandeau
@@ -58,6 +59,16 @@ class LotInline(admin.TabularInline):
 class GarantInline(admin.StackedInline):
     model = Garant
     extra = 0
+    classes = ["fiche-compacte"]
+
+    def get_formset(self, request, obj=None, **kwargs):
+        formset = super().get_formset(request, obj, **kwargs)
+        champs = formset.form.base_fields
+        if "adresse" in champs:
+            champs["adresse"].widget.attrs.update(rows=2)
+        if "date_naissance" in champs:
+            champs["date_naissance"].widget = forms.DateInput(attrs={"type": "date"}, format="%Y-%m-%d")
+        return formset
     fields = [("civilite", "prenom", "nom"), ("date_naissance", "lieu_naissance"), "adresse", ("email", "telephone"),
               ("lien", "profession", "revenus_mensuels"), ("piece_identite_numero", "piece_identite_fichier"),
               ("type_caution", "montant_max", "duree_mois"), "acte"]
@@ -101,7 +112,7 @@ class ProprietaireAdmin(admin.ModelAdmin):
     list_display = ["nom", "type", "siret", "ville", "nb_biens"]
     list_filter = ["type"]
     inlines = [BienInline]
-    fields = ["nom", "type", "representant", ("siret", "rcs", "date_immatriculation"), "adresse", ("code_postal", "ville"), "iban", "notes"]
+    fields = ["nom", "type", "representant", ("siret", "rcs", "date_immatriculation"), "adresse", ("code_postal", "ville"), ("email", "telephone"), "iban", "notes"]
 
     def formfield_for_dbfield(self, db_field, request, **kwargs):
         champ = super().formfield_for_dbfield(db_field, request, **kwargs)
@@ -180,7 +191,29 @@ class BienAdmin(admin.ModelAdmin):
     list_filter = ["proprietaire", "ville", "syndic"]
     search_fields = ["nom", "adresse", "ville"]
     inlines = [LotInline]
-    fields = ["proprietaire", "nom", "adresse", ("code_postal", "ville"), "syndic", ("date_acquisition", "prix_acquisition"), "notes"]
+    fieldsets = [
+        (None, {"fields": ["proprietaire", "nom", "adresse", ("code_postal", "ville"), "syndic", ("date_acquisition", "prix_acquisition")]}),
+        ("L'immeuble (repris dans les baux)", {"fields": [("type_habitat", "regime_juridique")]}),
+        ("Équipements à usage commun", {"classes": ["cases-a-cocher"], "fields": [
+            ("gardiennage", "ascenseur", "interphone", "local_velos"),
+            ("chauffage_collectif", "eau_chaude_collective", "antenne_tv", "fibre"),
+            ("vide_ordures", "espaces_verts")]}),
+        ("Zone tendue", {"classes": ["cases-a-cocher"], "fields": [("zone_tendue", "encadrement_loyers")],
+                         "description": "Zone tendue : commune où la hausse du loyer à la relocation est limitée (décret annuel). "
+                                        "Encadrement des loyers : loyer de référence majoré fixé par arrêté préfectoral (Lyon, Villeurbanne, Paris…). "
+                                        "Si l'une des cases est cochée, le bail contient le paragraphe « zone tendue » : les chiffres "
+                                        "(loyer de référence, complément, loyer du précédent locataire) se saisissent dans chaque bail."}),
+        ("Notes", {"fields": ["notes"]}),
+    ]
+
+    def get_form(self, request, obj=None, **kwargs):
+        form = super().get_form(request, obj, **kwargs)
+        for nom in ("zone_tendue", "encadrement_loyers"):
+            if nom in form.base_fields:
+                form.base_fields[nom].help_text = ""
+        if "notes" in form.base_fields:
+            form.base_fields["notes"].widget.attrs.update(rows=3)
+        return form
 
     @admin.display(description="lots")
     def nb_lots(self, obj):
@@ -209,7 +242,9 @@ class LotAdmin(admin.ModelAdmin):
                            url_annonce, url_candidature)
     fieldsets = [
         (None, {"fields": ["bien", "designation", "type", "surface", "nb_pieces", "meuble", ("exploitation", "lmnp"), "etage"]}),
-        ("Caractéristiques (reprises dans le bail)", {"fields": ["annee_construction", "regime_juridique", "chauffage", "eau_chaude", "classe_dpe", "zone_tendue", "equipements", "annexes"]}),
+        ("Caractéristiques (reprises dans le bail)", {"fields": ["annee_construction", ("mode_chauffage", "chauffage"), ("mode_eau_chaude", "eau_chaude"),
+                                                              ("code_porte", "cave", "parking"), "classe_dpe", "equipements", "annexes", "clause_particuliere"],
+                                                   "description": "Le régime de copropriété, les équipements communs et la zone tendue se règlent sur la fiche du bien."}),
         ("Chaudière gaz", {"fields": ["chaudiere_gaz", "date_entretien_chaudiere"]}),
         ("Relocation et annonce", {"fields": ["loyer_propose", ("classe_ges", "energie_annee"), ("energie_min", "energie_max"), "outils_relocation"]}),
         ("État des lieux", {"fields": ["pieces"]}),
@@ -318,6 +353,9 @@ class LocataireForm(forms.ModelForm):
     )
     sortie = forms.BooleanField(label="Le locataire quitte le logement", required=False)
     date_sortie = forms.DateField(label="date de sortie", required=False, widget=forms.DateInput(attrs={"type": "date"}, format="%Y-%m-%d"))
+    nouvelle_rue = forms.CharField(label="nouvelle adresse", required=False, max_length=200)
+    nouveau_code_postal = forms.CharField(label="code postal", required=False, max_length=10)
+    nouvelle_ville = forms.CharField(label="ville", required=False, max_length=100)
 
     class Meta:
         model = Locataire
@@ -345,31 +383,97 @@ class LocataireForm(forms.ModelForm):
         return donnees
 
 
+class DocumentLocataireInline(admin.TabularInline):
+    model = DocumentLocataire
+    extra = 0
+    fields = ["type", "titre", "date", "fichier"]
+    verbose_name_plural = "Ranger un document (bail signé, attestation d'assurance…)"
+
+
 @admin.register(Locataire)
 class LocataireAdmin(admin.ModelAdmin):
     form = LocataireForm
     list_display = ["__str__", "present", "logement", "date_sortie", "email", "telephone", "liste_garants"]
     list_filter = [PresentFilter]
     search_fields = ["nom", "prenom", "email"]
-    inlines = [GarantInline]
+    inlines = [DocumentLocataireInline, GarantInline]
+    readonly_fields = ["encart_documents"]
 
     class Media:
         js = ["patrimoine/sortie_locataire.js"]
 
+    def get_form(self, request, obj=None, **kwargs):
+        form = super().get_form(request, obj, **kwargs)
+        for nom in ("adresse_actuelle", "notes"):
+            if nom in form.base_fields:
+                form.base_fields[nom].widget.attrs.update(rows=2)
+        if "date_naissance" in form.base_fields:
+            form.base_fields["date_naissance"].widget = forms.DateInput(attrs={"type": "date"}, format="%Y-%m-%d")
+        return form
+
     def get_fieldsets(self, request, obj=None):
-        identite = (None, {"fields": ["civilite", "nom", "prenom", "email", "telephone", ("date_naissance", "lieu_naissance"), "nationalite", "adresse_actuelle", "notes"]})
-        logement = ("Logement", {"fields": ["lot", "date_entree"]})
-        if obj and obj.baux.filter(actif=True).exists():
-            sortie = ("Sortie du locataire", {"fields": ["sortie", "date_sortie"], "classes": ["sortie-locataire"],
+        identite = ("Identité", {"classes": ["fiche-compacte"], "fields": [
+            ("civilite", "prenom", "nom"), ("email", "telephone"), ("date_naissance", "lieu_naissance", "nationalite"), "adresse_actuelle"]})
+        logement = ("Logement", {"classes": ["fiche-compacte"], "fields": [("lot", "date_entree")]})
+        notes = ("Notes", {"classes": ["fiche-compacte"], "fields": ["notes"]})
+        if not obj:
+            return [identite, logement, notes]
+        documents = ("Documents", {"classes": ["encart-documents"], "fields": ["encart_documents"]})
+        if obj.baux.filter(actif=True).exists():
+            sortie = ("Sortie du locataire", {"fields": ["sortie", "date_sortie", ("nouvelle_rue", "nouveau_code_postal", "nouvelle_ville")],
+                                              "classes": ["sortie-locataire", "fiche-compacte"],
                                               "description": "Cochez pour enregistrer le départ : le bail est clôturé et les rappels de fin de bail sont créés (restitution du dépôt de garantie, fin de la garantie Visale)."})
-            return [sortie, identite, logement]
-        return [identite, logement]
+            return [documents, identite, logement, notes, sortie]
+        return [documents, identite, logement, notes]
+
+    @admin.display(description="")
+    def encart_documents(self, obj):
+        """Encart : documents à générer pour chaque bail, puis documents rangés sur la fiche."""
+        if not obj.pk:
+            return ""
+        blocs = []
+        for bail in obj.baux.select_related("lot__bien").order_by("-actif", "-date_debut")[:3]:
+            liens = [(reverse("admin:patrimoine_bail_change", args=[bail.pk]), "Fiche du bail", "")]
+            for m in ModeleDocument.objects.filter(actif=True):
+                if not m.convient(bail) or (m.type == ModeleDocument.Type.CAUTION and not bail.garants.exists()):
+                    continue
+                url = reverse("remplir_modele", args=[m.pk, bail.pk])
+                if m.type == ModeleDocument.Type.EDL:
+                    liens += [(url + "?edl=entree", f"{m.nom} – entrée", "W"), (url + "?edl=sortie", f"{m.nom} – sortie", "W")]
+                else:
+                    liens.append((url, m.nom, "W"))
+            liens.append((reverse("document_bail", args=[bail.pk]), "Bail PDF (modèle de l'appli)", "PDF"))
+            derniere = bail.echeances.order_by("-periode").first()
+            if derniere:
+                libelle = "Quittance" if derniere.statut == "paye" else "Avis d'échéance"
+                liens.append((reverse("document_echeance", args=[derniere.pk]), f"{libelle} {derniere.periode:%m/%Y}", "PDF"))
+            titre = f"{'Bail en cours' if bail.actif else 'Ancien bail'} – {bail.lot} – depuis le {bail.date_debut:%d/%m/%Y}"
+            blocs.append(format_html('<div class="doc-bail"><div class="doc-titre">{}</div><ul>{}</ul></div>', titre, format_html_join(
+                "", '<li><span class="doc-type">{}</span><a href="{}"{}>{}</a></li>',
+                ((type_ or "↗", url, format_html(' target="_blank"') if type_ == "PDF" else "", libelle) for url, libelle, type_ in liens))))
+        ranges = list(obj.documents.all())
+        if ranges:
+            blocs.append(format_html('<div class="doc-bail"><div class="doc-titre">Documents rangés</div><ul>{}</ul></div>', format_html_join(
+                "", '<li><span class="doc-type">{}</span><a href="{}" target="_blank">{}</a> <span class="doc-date">{}</span></li>',
+                ((d.fichier.name.rsplit(".", 1)[-1].upper()[:4], d.fichier.url, d, d.date.strftime("%d/%m/%Y")) for d in ranges))))
+        else:
+            blocs.append(format_html('<p class="help">Aucun document rangé : ajoutez le bail signé, l\'attestation d\'assurance… dans « Ranger un document » plus bas.</p>'))
+        return format_html("{}", format_html_join("", "{}", ((b,) for b in blocs)))
 
     def save_model(self, request, obj, form, change):
         super().save_model(request, obj, form, change)
         donnees = form.cleaned_data
         bail = form.bail_actif()
         if donnees.get("sortie") and bail:
+            rue, cp, ville = (donnees.get(k, "").strip() for k in ("nouvelle_rue", "nouveau_code_postal", "nouvelle_ville"))
+            if rue or cp or ville:
+                adresse = "\n".join(x for x in (rue, f"{cp} {ville}".strip()) if x)
+                obj.adresse_actuelle = adresse
+                obj.save(update_fields=["adresse_actuelle"])
+                edl = bail.etats_des_lieux.filter(type="sortie").first()
+                if edl and not edl.nouvelle_adresse:
+                    edl.nouvelle_adresse = adresse
+                    edl.save(update_fields=["nouvelle_adresse"])
             self._enregistrer_sortie(request, obj, bail, donnees["date_sortie"])
             return
         lot = donnees.get("lot")
@@ -452,6 +556,7 @@ class BailForm(forms.ModelForm):
     class Meta:
         model = Bail
         fields = "__all__"
+        widgets = {nom: forms.DateInput(attrs={"type": "date"}, format="%Y-%m-%d") for nom in ("date_loyer_precedent", "date_revision_precedente")}
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -468,6 +573,17 @@ class BailForm(forms.ModelForm):
             self.add_error("depot_garantie", f"Le dépôt ne peut pas dépasser {maximum:.2f} € pour ce type de bail "
                                              f"({mois} mois de loyer hors charges)." if mois else
                                              "Le dépôt de garantie est interdit en bail mobilité.")
+        lot = donnees.get("lot")
+        majore = donnees.get("loyer_reference_majore")
+        if lot and lot.bien.encadrement_loyers and majore and lot.surface and loyer is not None:
+            plafond = (majore * lot.surface).quantize(Decimal("0.01"))
+            complement = donnees.get("complement_loyer") or Decimal(0)
+            if loyer - complement > plafond + Decimal("0.01"):
+                self.add_error("loyer_reference_majore",
+                               f"Le loyer hors complément ({loyer - complement:.2f} €) dépasse le loyer de référence majoré "
+                               f"× surface ({majore} € × {lot.surface} m² = {plafond:.2f} €). Baissez le loyer ou justifiez un complément de loyer.")
+            if complement and not donnees.get("complement_loyer_motif"):
+                self.add_error("complement_loyer_motif", "Indiquez ce qui justifie le complément de loyer (obligatoire).")
         return donnees
 
 
@@ -495,6 +611,10 @@ class BailAdmin(admin.ModelAdmin):
                                    "classes": ["releves-compteurs"],
                                    "description": "Index relevés à l'entrée et à la sortie : ils sont repris automatiquement dans les états des lieux "
                                                   "(et inversement, un index saisi dans un état des lieux complète le bail)."}),
+        ("Zone tendue", {"classes": ["collapse"], "fields": [("loyer_reference", "loyer_reference_majore"), ("complement_loyer", "complement_loyer_motif"),
+                                                            ("loyer_precedent", "date_loyer_precedent", "date_revision_precedente")],
+                         "description": "À remplir si le bien est en zone tendue ou soumis à l'encadrement des loyers (cases sur la fiche du bien). "
+                                        "Loyer de référence : sur le site de la préfecture ou de la métropole (ex. Lyon : loyers.grandlyon.com)."}),
         ("Révision annuelle et rappels", {"fields": ["revision_annuelle", ("irl_trimestre", "irl_valeur"), "indice_reference", "date_derniere_revision", ("date_attestation_assurance", "rappel_assurance")]}),
         ("Historique des révisions", {"fields": ["historique"]}),
         ("Clauses particulières", {"fields": ["notes"]}),
@@ -1235,7 +1355,12 @@ class ModeleDocumentAdmin(admin.ModelAdmin):
         from .champs import CHAMPS
         from .word import champs_du_modele, normaliser
 
-        connus = {normaliser(n) for _, liste in CHAMPS for n, _ in liste} | {normaliser(n) for n in (
+        import inspect
+        import re as _re
+
+        from .champs import valeurs as _valeurs
+        connus = {normaliser(n) for n in _re.findall(r'"([^"{}]+)":', inspect.getsource(_valeurs))}
+        connus |= {normaliser(n) for _, liste in CHAMPS for n, _ in liste} | {normaliser(n) for n in (
             "Adresse_Prop", "Ville_Propr", "Adresse_Appart", "CP_Appart", "Ville_Appart", "IRL de référence", "IRL référence Période",
             "Index_Elec_Entrée", "Index_Elec_Sortie", "Index_Gaz_Sortie", "Index_Eau_froide_Sortie", "Index_Eau_chaude_Sortie",
             "Nationalité_Loc", "Prénom_Garant2", "Civilité_Garant2", "Adresse_Garant2", "Date_naissance_Garant2", "Lieu_naissance_Garant2", "Lien_Garant2")}

@@ -26,6 +26,8 @@ class Proprietaire(models.Model):
     code_postal = models.CharField("code postal", max_length=10, blank=True)
     ville = models.CharField(max_length=100, blank=True)
     iban = models.CharField("IBAN", max_length=34, blank=True)
+    email = models.EmailField("adresse électronique", blank=True, help_text="Indiquée dans les baux")
+    telephone = models.CharField("téléphone", max_length=30, blank=True)
     notes = models.TextField(blank=True)
 
     class Meta:
@@ -93,10 +95,37 @@ class Bien(models.Model):
     prix_acquisition = models.DecimalField(
         "prix d'acquisition (€)", max_digits=12, decimal_places=2, null=True, blank=True
     )
+    # caractéristiques de l'immeuble, reprises dans les baux
+    type_habitat = models.CharField("type d'habitat", max_length=12, blank=True,
+                                    choices=[("collectif", "Immeuble collectif"), ("individuel", "Immeuble individuel (maison)")])
+    regime_juridique = models.CharField("régime juridique", max_length=15, blank=True,
+                                        choices=[("copropriete", "Copropriété"), ("monopropriete", "Monopropriété")])
+    gardiennage = models.BooleanField(default=False)
+    ascenseur = models.BooleanField(default=False)
+    chauffage_collectif = models.BooleanField("chauffage collectif", default=False)
+    antenne_tv = models.BooleanField("antenne TV collective", default=False)
+    vide_ordures = models.BooleanField("vide-ordures", default=False)
+    interphone = models.BooleanField("interphone / digicode", default=False)
+    espaces_verts = models.BooleanField("espace(s) vert(s)", default=False)
+    eau_chaude_collective = models.BooleanField("eau chaude collective", default=False)
+    local_velos = models.BooleanField("local vélos", default=False)
+    fibre = models.BooleanField("fibre optique", default=False)
+    # zone tendue
+    zone_tendue = models.BooleanField("zone tendue", default=False,
+                                      help_text="Commune où l'évolution du loyer à la relocation est limitée (décret annuel)")
+    encadrement_loyers = models.BooleanField("encadrement des loyers", default=False,
+                                             help_text="Loyer de référence majoré fixé par arrêté préfectoral (Lyon, Villeurbanne, Paris…)")
     notes = models.TextField(blank=True)
+
+    EQUIPEMENTS_COMMUNS = ["gardiennage", "ascenseur", "chauffage_collectif", "antenne_tv", "vide_ordures", "interphone",
+                           "espaces_verts", "eau_chaude_collective", "local_velos", "fibre"]
 
     class Meta:
         ordering = ["proprietaire__nom", "nom"]
+
+    @property
+    def equipements_communs(self):
+        return [self._meta.get_field(c).verbose_name for c in self.EQUIPEMENTS_COMMUNS if getattr(self, c)]
 
     def __str__(self):
         return f"{self.nom} ({self.ville})"
@@ -122,9 +151,15 @@ class Lot(models.Model):
     meuble = models.BooleanField("meublé", default=False)
     etage = models.CharField("étage / porte", max_length=50, blank=True)
     annee_construction = models.CharField("période de construction", max_length=30, blank=True, help_text="ex. « avant 1949 », « 1975 »")
-    regime_juridique = models.CharField("régime juridique", max_length=30, blank=True, choices=[("monopropriete", "Monopropriété"), ("copropriete", "Copropriété")])
-    chauffage = models.CharField(max_length=100, blank=True, help_text="ex. « individuel gaz », « collectif »")
-    eau_chaude = models.CharField("eau chaude", max_length=100, blank=True, help_text="ex. « individuelle électrique »")
+    mode_chauffage = models.CharField("chauffage", max_length=10, blank=True, choices=[("individuel", "Individuel"), ("collectif", "Collectif")])
+    chauffage = models.CharField("précision chauffage", max_length=100, blank=True, help_text="ex. « gaz », « électrique »")
+    mode_eau_chaude = models.CharField("eau chaude", max_length=12, blank=True, choices=[("individuelle", "Individuelle"), ("collective", "Collective")])
+    eau_chaude = models.CharField("précision eau chaude", max_length=100, blank=True, help_text="ex. « électrique (ballon) »")
+    code_porte = models.CharField("code porte", max_length=30, blank=True)
+    cave = models.CharField("cave n°", max_length=30, blank=True, help_text="Vide s'il n'y en a pas")
+    parking = models.CharField("parking n°", max_length=30, blank=True, help_text="Vide s'il n'y en a pas")
+    clause_particuliere = models.TextField("clause particulière du bail", blank=True,
+                                           help_text="Reprise dans le bail, ex. WC broyeur : ne rien jeter d'autre que du papier toilette…")
     classe_dpe = models.CharField("classe DPE", max_length=1, blank=True, choices=[(c, c) for c in "ABCDEFG"])
     classe_ges = models.CharField("classe GES", max_length=1, blank=True, choices=[(c, c) for c in "ABCDEFG"])
     energie_min = models.PositiveIntegerField("dépenses d'énergie annuelles estimées, min (€)", null=True, blank=True, help_text="Indiquées sur le DPE")
@@ -136,7 +171,6 @@ class Lot(models.Model):
         "pièces (pour l'état des lieux)", blank=True,
         help_text="Une pièce par ligne. Si vide, une liste standard est proposée selon le nombre de pièces.",
     )
-    zone_tendue = models.BooleanField("zone tendue", default=False)
     pdl = models.CharField("n° PDL électricité", max_length=20, blank=True)
     exploitation = models.CharField(
         "mode d'exploitation", max_length=10, default="longue",
@@ -294,6 +328,17 @@ class Bail(models.Model):
     compteur_eau_chaude = models.CharField("eau chaude : n° de compteur", max_length=30, blank=True, help_text="S'il y a un compteur d'eau chaude séparé")
     index_eau_chaude_entree = models.CharField("index à l'entrée", max_length=50, blank=True)
     index_eau_chaude_sortie = models.CharField("index à la sortie", max_length=50, blank=True)
+    # zone tendue (à remplir si le bien est en zone tendue ou soumis à l'encadrement des loyers)
+    loyer_reference = models.DecimalField("loyer de référence (€/m²)", max_digits=6, decimal_places=2, null=True, blank=True,
+                                          help_text="Selon l'arrêté préfectoral : type de logement, nombre de pièces, époque, meublé ou non")
+    loyer_reference_majore = models.DecimalField("loyer de référence majoré (€/m²)", max_digits=6, decimal_places=2, null=True, blank=True)
+    complement_loyer = models.DecimalField("complément de loyer (€)", max_digits=10, decimal_places=2, null=True, blank=True,
+                                           help_text="Seulement si le logement a des caractéristiques exceptionnelles")
+    complement_loyer_motif = models.CharField("justification du complément", max_length=255, blank=True)
+    loyer_precedent = models.DecimalField("dernier loyer du locataire précédent (€)", max_digits=10, decimal_places=2, null=True, blank=True,
+                                          help_text="Obligatoire si le précédent locataire est parti depuis moins de 18 mois")
+    date_loyer_precedent = models.DateField("date de son dernier versement", null=True, blank=True)
+    date_revision_precedente = models.DateField("date de sa dernière révision", null=True, blank=True)
     notes = models.TextField(blank=True)
     ref_import = models.CharField("référence d'import", max_length=40, blank=True, editable=False, help_text="Identifiant Airtable d'origine")
 
@@ -1339,6 +1384,33 @@ class PieceCandidature(models.Model):
 
     def __str__(self):
         return f"{self.get_type_display()} – {self.fichier.name.rsplit('/', 1)[-1]}"
+
+
+class DocumentLocataire(models.Model):
+    """Document rangé sur la fiche du locataire : bail signé, état des lieux signé, attestation d'assurance…"""
+
+    class Type(models.TextChoices):
+        BAIL = "bail", "Bail signé"
+        EDL = "edl", "État des lieux signé"
+        CAUTION = "caution", "Acte de cautionnement signé"
+        ASSURANCE = "assurance", "Attestation d'assurance"
+        IDENTITE = "identite", "Pièce d'identité"
+        JUSTIFICATIF = "justificatif", "Justificatif (revenus, domicile…)"
+        COURRIER = "courrier", "Courrier"
+        AUTRE = "autre", "Autre"
+
+    locataire = models.ForeignKey(Locataire, on_delete=models.CASCADE, related_name="documents")
+    type = models.CharField(max_length=15, choices=Type.choices, default=Type.AUTRE)
+    titre = models.CharField(max_length=150, blank=True, help_text="Facultatif, ex. « Attestation MAIF 2026 »")
+    fichier = models.FileField(upload_to=_chemin_piece, storage=stockage_prive)
+    date = models.DateField(default=date.today)
+
+    class Meta:
+        verbose_name = "document"
+        ordering = ["-date", "-pk"]
+
+    def __str__(self):
+        return self.titre or self.get_type_display()
 
 
 class ParametresMail(models.Model):

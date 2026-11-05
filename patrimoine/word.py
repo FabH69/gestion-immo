@@ -61,6 +61,49 @@ def _remplacer_paragraphe(xml, trouver):
     return "".join(resultat)
 
 
+_SI = re.compile(r"^\{\s*SI\s+([^{}]+?)\s*\}$", re.I)
+_FIN_SI = re.compile(r"^\{\s*FIN\s*SI\s*\}$", re.I)
+FAUX = {"", "non", "☐", "0", "aucun", "aucune", "false", "none"}
+
+
+def _texte_paragraphe(xml):
+    return "".join(unescape(m.group(2)) for m in _TEXTE.finditer(xml)).strip()
+
+
+def appliquer_conditions(xml, valeurs):
+    """Paragraphes conditionnels : tout ce qui est entre une ligne {SI Champ} et une ligne {FIN SI} est gardé si le champ
+    est rempli (et différent de « Non »), supprimé sinon. Les lignes {SI …} et {FIN SI} disparaissent toujours. Imbrication possible."""
+    normalisees = {normaliser(k): v for k, v in valeurs.items()}
+    while True:
+        marques = []
+        for m in _PARAGRAPHE.finditer(xml):
+            texte = _texte_paragraphe(m.group(0))
+            si, fin = _SI.match(texte), _FIN_SI.match(texte)
+            if si:
+                marques.append(("si", m.start(), m.end(), si.group(1)))
+            elif fin:
+                marques.append(("fin", m.start(), m.end(), None))
+        ouverture = None
+        for marque in marques:
+            if marque[0] == "si":
+                ouverture = marque
+            elif ouverture:
+                _, debut, fin_debut, nom = ouverture
+                _, debut_fin, fin, _ = marque
+                valeur = valeurs.get(nom, normalisees.get(normaliser(nom)))
+                vrai = valeur is not None and str(valeur).strip().lower() not in FAUX
+                if vrai:
+                    xml = xml[:debut] + xml[fin_debut:debut_fin] + xml[fin:]
+                else:
+                    xml = xml[:debut] + xml[fin:]
+                break
+        else:
+            # marques orphelines : on retire les lignes seules
+            for marque in reversed(marques):
+                xml = xml[:marque[1]] + xml[marque[2]:]
+            return xml
+
+
 def _remplir_paragraphe(xml, valeurs):
     normalisees = {normaliser(k): v for k, v in valeurs.items()}
 
@@ -87,7 +130,11 @@ def champs_du_modele(source):
                 xml = z.read(nom).decode("utf-8")
                 for p in _PARAGRAPHE.finditer(xml):
                     texte = "".join(unescape(m.group(2)) for m in _TEXTE.finditer(p.group(0)))
-                    noms += [c.group(1).strip() for c in _CHAMP.finditer(texte)]
+                    for c in _CHAMP.finditer(texte):
+                        nom = c.group(1).strip()
+                        if re.fullmatch(r"FIN\s*SI", nom, re.I):
+                            continue
+                        noms.append(re.sub(r"^SI\s+", "", nom, flags=re.I))  # {SI Zone_tendue} : le champ testé est Zone_tendue
     return list(dict.fromkeys(noms))
 
 
@@ -123,6 +170,7 @@ def remplir_docx(modele, valeurs, couleur_champs="FF0000"):
         modele = MODELES / modele
 
     def transformer(xml):
+        xml = appliquer_conditions(xml, valeurs)
         xml = _PARAGRAPHE.sub(lambda m: _remplir_paragraphe(m.group(0), valeurs), xml)
         if couleur_champs:
             xml = xml.replace(f'<w:color w:val="{couleur_champs}"/>', "")

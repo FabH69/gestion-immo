@@ -660,7 +660,7 @@ class FicheLocataireTests(TestCase):
         self.lot = Lot.objects.create(bien=bien, designation="Apt 1", meuble=True, loyer_propose=650)
 
     def _donnees(self, **extra):
-        d = {"nom": "DUPONT", "prenom": "Jean", "garants-TOTAL_FORMS": "0", "garants-INITIAL_FORMS": "0"}
+        d = {"nom": "DUPONT", "prenom": "Jean", "garants-TOTAL_FORMS": "0", "garants-INITIAL_FORMS": "0", "documents-TOTAL_FORMS": "0", "documents-INITIAL_FORMS": "0"}
         d.update(extra)
         return d
 
@@ -685,8 +685,12 @@ class FicheLocataireTests(TestCase):
         MouvementDepot.objects.create(bail=bail, date=date(2025, 1, 1), montant=600)
         page = self.client.get(f"/admin/patrimoine/locataire/{loc.pk}/change/").content.decode()
         self.assertIn("Le locataire quitte le logement", page)
-        r = self.client.post(f"/admin/patrimoine/locataire/{loc.pk}/change/", self._donnees(lot=self.lot.pk, sortie="on", date_sortie="2026-11-15"))
+        self.assertIn("Documents", page)
+        r = self.client.post(f"/admin/patrimoine/locataire/{loc.pk}/change/", self._donnees(
+            lot=self.lot.pk, sortie="on", date_sortie="2026-11-15", nouvelle_rue="5 rue Neuve", nouveau_code_postal="69003", nouvelle_ville="Lyon"))
         self.assertEqual(r.status_code, 302, r.content.decode()[:3000])
+        loc.refresh_from_db()
+        self.assertEqual(loc.adresse_actuelle, "5 rue Neuve\n69003 Lyon")
         bail.refresh_from_db()
         self.assertFalse(bail.actif)
         self.assertEqual(bail.date_fin, date(2026, 11, 15))
@@ -729,7 +733,7 @@ class RecuDepotWordTests(TestCase):
 
     def test_recu_depuis_le_bail(self):
         texte = self._texte(self.client.get(f"/baux/{self.bail.pk}/recu-depot-garantie.docx"))
-        self.assertIn("Je soussigné SCI ALFAB, bailleur du bien situé au 3 rue X 69000 Lyon", texte)
+        self.assertIn("Je soussigné SCI ALFAB, bailleur du bien situé 3 rue X 69000 Lyon", texte)
         self.assertIn("la somme de 1 200 euros", texte)
         self.assertIn("Madame Léa DUPONT", texte)
         self.assertIn("à Pollionnay", texte)
@@ -1096,17 +1100,76 @@ class ModelesWordTests(TestCase):
             self.assertIn("EDL – entrée", page)
             self.assertNotIn("Bail nu", page)  # pas proposé pour un bail meublé
             t = texte(self.client.get(f"/modeles/{modeles['bail_meuble'].pk}/bail/{bail.pk}/"))
-            self.assertIn("dépôt de garantie d'un montant de\xa0: 650 €", t)
+            self.assertIn("dépôt de garantie d’un montant de 650 €", t)
             self.assertIn("Monsieur Rodolphe BOUVET et Madame Isabelle MEZIERE se porte(nt) garant de Madame Lucie BOUVET", t)
             self.assertIn("146,60 au 1er trimestre 2026", t)
             self.assertNotIn("{", t.split("CONTRAT TYPE")[0])
             t = texte(self.client.get(f"/modeles/{modeles['caution'].pk}/bail/{bail.pk}/"))
-            self.assertIn("650 euros (six-cent-cinquante euros) de loyer + 50 euros (cinquante euros)", t)
+            self.assertIn("Loyer : 650 euros (six-cent-cinquante euros) ; charges : 50 euros (cinquante euros)", t)
             self.assertIn("Monsieur Rodolphe BOUVET, demeurant 2 La Petite Marcillerie ET Madame Isabelle MEZIERE", t)
             t = texte(self.client.get(f"/modeles/{modeles['edl'].pk}/bail/{bail.pk}/?edl=entree"))
-            self.assertIn("☒ Entrée, le 03/06/2026", t)
+            self.assertIn("☒ ENTRÉE", t)
+            self.assertIn("03/06/2026", t)
             self.assertIn("1200", t)
             self.assertIn("800", t)
             page = self.client.get(f"/admin/patrimoine/modeledocument/{modeles['edl'].pk}/change/").content.decode()
             self.assertIn("{Index_HP_Entrée}", page)
             self.assertContains(self.client.get(f"/modeles/champs/?bail={bail.pk}"), "six-cent-cinquante euros")
+
+
+class ZoneTendueEtConditionsTests(TestCase):
+    def setUp(self):
+        proprio = Proprietaire.objects.create(nom="SCI TATA", type=Proprietaire.Type.SCI_IR)
+        self.bien = Bien.objects.create(proprietaire=proprio, nom="Thibaudière", adresse="39 rue de la Thibaudière", code_postal="69007", ville="Lyon",
+                                        type_habitat="collectif", regime_juridique="copropriete", interphone=True)
+        self.lot = Lot.objects.create(bien=self.bien, designation="T1", surface=19, nb_pieces=1, mode_chauffage="individuel",
+                                      clause_particuliere="WC de type broyeur.")
+        self.bail = Bail.objects.create(lot=self.lot, type=Bail.Type.NU, date_debut=date(2026, 2, 1), loyer_hc=600, loyer_initial=600, charges=20)
+        self.bail.locataires.add(Locataire.objects.create(nom="VU", prenom="Alain", civilite="M."))
+
+    def _texte(self, valeurs):
+        import io, re, zipfile
+        from .word import remplir_docx
+        xml = zipfile.ZipFile(io.BytesIO(remplir_docx("bail_nu.docx", valeurs))).read("word/document.xml").decode()
+        return "".join(re.findall(r"<w:t[^>]*>([^<]*)</w:t>", xml))
+
+    def test_paragraphes_conditionnels_et_cases(self):
+        from .champs import valeurs
+        t = self._texte(valeurs(self.bail))
+        self.assertNotIn("LOYER EN ZONE TENDUE", t)
+        self.assertNotIn("GARANT SOLIDAIRE", t)
+        self.assertIn("WC de type broyeur.", t)
+        self.assertIn("☒ Immeuble collectif", t)
+        self.assertIn("☒ Copropriété", t)
+        self.assertIn("☒ Interphone", t)
+        self.assertIn("☐ Ascenseur", t)
+        self.assertNotIn("{", t)
+        self.bien.zone_tendue = self.bien.encadrement_loyers = True
+        self.bien.save()
+        self.bail.loyer_reference, self.bail.loyer_reference_majore, self.bail.complement_loyer = 16.5, 19.8, 223.8
+        self.bail.complement_loyer_motif = "local supplémentaire"
+        self.bail.save()
+        self.bail.refresh_from_db()
+        t = self._texte(valeurs(self.bail))
+        self.assertIn("LOYER EN ZONE TENDUE", t)
+        self.assertIn("19,80 €/m²", t)
+        self.assertIn("376,20 €", t)  # loyer de base = 600 - 223,80
+        self.assertNotIn("LOYER DU PRÉCÉDENT LOCATAIRE", t)
+        self.assertNotIn("{", t)
+
+    def test_controle_loyer_de_reference_majore(self):
+        from .admin import BailForm
+        self.bien.encadrement_loyers = True
+        self.bien.save()
+        donnees = {"lot": self.lot.pk, "locataires": [l.pk for l in self.bail.locataires.all()], "type": "nu", "date_debut": "2026-02-01",
+                   "loyer_initial": "600", "loyer_hc": "600", "charges": "20", "depot_garantie": "600", "jour_echeance": 1, "mode_charges": "forfait",
+                   "destination": "habitation", "loyer_reference_majore": "19.80"}
+        form = BailForm(data=donnees, instance=self.bail)
+        self.assertFalse(form.is_valid())
+        self.assertIn("loyer_reference_majore", form.errors)
+        form = BailForm(data={**donnees, "complement_loyer": "223.80"}, instance=self.bail)
+        self.assertFalse(form.is_valid())
+        self.assertIn("complement_loyer_motif", form.errors)
+        form = BailForm(data={**donnees, "complement_loyer": "223.80", "complement_loyer_motif": "local supplémentaire"}, instance=self.bail)
+        self.assertNotIn("loyer_reference_majore", form.errors)
+        self.assertNotIn("complement_loyer_motif", form.errors)

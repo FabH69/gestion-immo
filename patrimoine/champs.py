@@ -117,7 +117,8 @@ CHAMPS = [
         ("Adresse_Propr", "Adresse du propriétaire (rue)"),
         ("CP_Prop", "Code postal du propriétaire"),
         ("Ville_Prop", "Ville du propriétaire"),
-        ("SIRET", "SIRET du propriétaire"),
+        ("SIRET", "SIRET du propriétaire"), ("Email_Prop", "Adresse électronique du propriétaire"),
+        ("Tel_Prop", "Téléphone du propriétaire"), ("IBAN", "IBAN pour le virement du loyer"),
     ]),
     ("Logement", [
         ("Adresse", "Adresse du logement (rue)"), ("CP", "Code postal du logement"), ("Ville", "Ville du logement"),
@@ -125,10 +126,34 @@ CHAMPS = [
         ("Superficie", "Surface habitable en m²"), ("Nb_Pièce", "Nombre de pièces principales"),
         ("Type_Chauffage", "Chauffage"), ("Type_eau", "Eau chaude"), ("Année_construction", "Année de construction"),
         ("Équipements", "Équipements du logement"), ("Annexes", "Annexes privatives"), ("DPE", "Classe DPE"),
+        ("Code_porte", "Code porte"), ("Cave", "Cave n° (ou « néant »)"), ("Parking", "Parking n° (ou « néant »)"),
+        ("Type_habitat", "Immeuble collectif / individuel"), ("Régime_juridique", "Copropriété / monopropriété"),
+        ("Équipements_communs", "Liste des équipements communs cochés sur le bien"),
+        ("Clause_particulière", "Clause particulière saisie sur la fiche du lot (ex. WC broyeur)"),
+    ]),
+    ("Cases à cocher (☒ ou ☐)", [
+        ("Case_Collectif", "Immeuble collectif ; idem Case_Individuel"), ("Case_Copropriété", "Copropriété ; idem Case_Monopropriété"),
+        ("Case_Chauffage_individuel", "idem Case_Chauffage_collectif"), ("Case_ECS_individuelle", "Eau chaude ; idem Case_ECS_collective"),
+        ("Case_Habitation", "Usage d'habitation ; idem Case_Mixte"),
+        ("Case_Gardiennage", "Équipements communs : idem Case_Ascenseur, Case_Interphone, Case_Local_vélos, Case_Antenne_TV, "
+                             "Case_Fibre, Case_Vide_ordures, Case_Espaces_verts, Case_Chauffage_collectif_commun, Case_Eau_chaude_collective"),
+        ("Case_Zone_tendue_Oui", "Soumis au décret d'évolution des loyers ; idem Case_Zone_tendue_Non"),
+        ("Case_Encadrement_Oui", "Soumis au loyer de référence majoré ; idem Case_Encadrement_Non"),
+    ]),
+    ("Zone tendue", [
+        ("Loyer_référence", "Loyer de référence (€/m²)"), ("Loyer_référence_majoré", "Loyer de référence majoré (€/m²)"),
+        ("Loyer_base", "Loyer hors complément"), ("Complément_loyer", "Complément de loyer (€)"), ("Complément_loyer_motif", "Sa justification"),
+        ("Loyer_précédent", "Dernier loyer du locataire précédent"), ("Date_loyer_précédent", "Date de son dernier versement"),
+        ("Date_révision_précédente", "Date de sa dernière révision"),
+    ]),
+    ("Paragraphes conditionnels", [
+        ("SI Zone_tendue", "Écrire {SI Zone_tendue} seul sur une ligne, le paragraphe, puis {FIN SI} : gardé seulement si le bien est en zone tendue ou encadré"),
+        ("SI Complément_loyer", "Idem, gardé seulement s'il y a un complément de loyer ; aussi {SI Loyer_précédent}, {SI Garants}, {SI Clause_particulière}, {SI Meublé}, {SI Colocation}"),
     ]),
     ("Bail", [
         ("Type_Bail", "Location nue, meublée…"), ("Date_début_Bail", "Date de prise d'effet"), ("Date_fin_Bail", "Date de fin (si connue)"),
-        ("Durée_bail", "Durée (1 an, 3 ans…)"), ("Loyer", "Loyer actuel hors charges, en chiffres"),
+        ("Durée_bail", "Durée (1 an, 3 ans…)"), ("Date_fin_prévue", "Fin de la période en cours (début + durée)"),
+        ("Dépenses_énergie", "Dépenses annuelles d'énergie estimées (DPE)"), ("Année_énergie", "Année de référence des prix de l'énergie"), ("Loyer", "Loyer actuel hors charges, en chiffres"),
         ("Loyer_lettres", "Loyer hors charges en toutes lettres"), ("Charges", "Charges mensuelles"),
         ("Charges_lettres", "Charges en toutes lettres"), ("Loyer_CC", "Loyer charges comprises"),
         ("Mode_charges", "Provisions, forfait…"), ("Dépôt_Gar", "Dépôt de garantie"), ("Dépôt_Gar_lettres", "Dépôt de garantie en lettres"),
@@ -177,7 +202,8 @@ def valeurs(bail, garants=None, type_edl=None, aujourdhui=None):
     v = {
         "Propriétaire": proprio.nom, "Représentant": proprio.representant, "Adresse_Propr": proprio.adresse.replace("\n", ", "),
         "Adresse_Prop": proprio.adresse.replace("\n", ", "), "CP_Prop": proprio.code_postal, "Ville_Prop": proprio.ville,
-        "Ville_Propr": proprio.ville, "SIRET": proprio.siret,
+        "Ville_Propr": proprio.ville, "SIRET": proprio.siret, "Email_Prop": proprio.email, "Tel_Prop": proprio.telephone,
+        "IBAN": proprio.iban,
         "Adresse": bien.adresse, "Adresse_Appart": bien.adresse, "CP": bien.code_postal, "CP_Appart": bien.code_postal,
         "Ville": bien.ville, "Ville_Appart": bien.ville, "Désignation": lot.designation, "Type_Logement": lot.get_type_display(),
         "Étage": lot.etage, "Superficie": montant(lot.surface) if lot.surface else "", "Nb_Pièce": lot.nb_pieces or "",
@@ -187,16 +213,68 @@ def valeurs(bail, garants=None, type_edl=None, aujourdhui=None):
         "Loyer": montant(bail.loyer_hc), "Loyer_lettres": euros_en_lettres(bail.loyer_hc), "Charges": montant(bail.charges),
         "Charges_lettres": euros_en_lettres(bail.charges), "Loyer_CC": montant(bail.loyer_cc), "Mode_charges": bail.get_mode_charges_display(),
         "Dépôt_Gar": montant(bail.depot_garantie), "Dépôt_Gar_lettres": euros_en_lettres(bail.depot_garantie),
-        "Jour_paiement": bail.jour_echeance, "IRL_Ref": str(bail.irl_valeur or "").replace(".", ","),
+        "Jour_paiement": "1er" if bail.jour_echeance == 1 else bail.jour_echeance, "IRL_Ref": str(bail.irl_valeur or "").replace(".", ","),
         "IRL_Ref_Période": _trimestre_texte(bail), "IRL_Trimestre": re.sub(r"\s*\d{4}$", "", _trimestre_texte(bail)),
         "Date_revision": f"{bail.date_debut.day} {MOIS[bail.date_debut.month - 1]}", "Nb_exemplaire_bail": 2,
         "Date_jour": date_longue(aujourdhui), "Date_jour_courte": date_fr(aujourdhui),
     }
     v["IRL de référence"], v["IRL référence Période"] = v["IRL_Ref"], v["IRL_Ref_Période"]
+
+    # immeuble, équipements communs et cases à cocher
+    def case(oui):
+        return "☒" if oui else "☐"
+
+    collectif = bien.type_habitat == "collectif" if bien.type_habitat else bien.lots.count() > 1
+    v.update({
+        "Type_habitat": "Immeuble collectif" if collectif else "Immeuble individuel",
+        "Régime_juridique": bien.get_regime_juridique_display() if bien.regime_juridique else "",
+        "Équipements_communs": ", ".join(bien.equipements_communs) or "néant",
+        "Code_porte": lot.code_porte or "–", "Cave": lot.cave or "néant", "Parking": lot.parking or "néant",
+        "Case_Collectif": case(collectif), "Case_Individuel": case(not collectif),
+        "Case_Copropriété": case(bien.regime_juridique == "copropriete"), "Case_Monopropriété": case(bien.regime_juridique == "monopropriete"),
+        "Case_Chauffage_individuel": case(lot.mode_chauffage == "individuel"), "Case_Chauffage_collectif": case(lot.mode_chauffage == "collectif"),
+        "Case_ECS_individuelle": case(lot.mode_eau_chaude == "individuelle"), "Case_ECS_collective": case(lot.mode_eau_chaude == "collective"),
+        "Case_Habitation": case(bail.destination == "habitation"), "Case_Mixte": case(bail.destination == "mixte"),
+        "Case_Gardiennage": case(bien.gardiennage), "Case_Ascenseur": case(bien.ascenseur), "Case_Interphone": case(bien.interphone),
+        "Case_Local_vélos": case(bien.local_velos), "Case_Antenne_TV": case(bien.antenne_tv), "Case_Fibre": case(bien.fibre),
+        "Case_Vide_ordures": case(bien.vide_ordures), "Case_Espaces_verts": case(bien.espaces_verts),
+        "Case_Chauffage_collectif_commun": case(bien.chauffage_collectif), "Case_Eau_chaude_collective": case(bien.eau_chaude_collective),
+        "Case_Zone_tendue_Oui": case(bien.zone_tendue), "Case_Zone_tendue_Non": case(not bien.zone_tendue),
+        "Case_Encadrement_Oui": case(bien.encadrement_loyers), "Case_Encadrement_Non": case(not bien.encadrement_loyers),
+        "Type_Chauffage": " ".join(x for x in (lot.get_mode_chauffage_display() if lot.mode_chauffage else "", lot.chauffage) if x),
+        "Type_eau": " ".join(x for x in (lot.get_mode_eau_chaude_display() if lot.mode_eau_chaude else "", lot.eau_chaude) if x),
+    })
+    if lot.energie_min and lot.energie_max:
+        v["Dépenses_énergie"] = f"entre {montant(lot.energie_min)} € et {montant(lot.energie_max)} €"
+    elif lot.energie_min or lot.energie_max:
+        v["Dépenses_énergie"] = f"{montant(lot.energie_min or lot.energie_max)} €"
+    else:
+        v["Dépenses_énergie"] = ""
+    v["Année_énergie"] = lot.energie_annee or ""
+    loyer_signature = bail.loyer_initial or bail.loyer_hc
+    v.update({
+        "Loyer_référence": montant(bail.loyer_reference), "Loyer_référence_majoré": montant(bail.loyer_reference_majore),
+        "Complément_loyer": montant(bail.complement_loyer) if bail.complement_loyer else "", "Complément_loyer_motif": bail.complement_loyer_motif,
+        "Loyer_base": montant(loyer_signature - (bail.complement_loyer or 0)) if loyer_signature is not None else "",
+        "Loyer_précédent": montant(bail.loyer_precedent) if bail.loyer_precedent else "",
+        "Date_loyer_précédent": date_fr(bail.date_loyer_precedent), "Date_révision_précédente": date_fr(bail.date_revision_precedente) or "aucune",
+        "Clause_particulière": lot.clause_particuliere.strip(),
+        # conditions des paragraphes {SI …}
+        "Zone_tendue": "Oui" if bien.zone_tendue or bien.encadrement_loyers else "",
+        "Meublé": "Oui" if bail.type in ("meuble", "etudiant", "mobilite") else "",
+        "Colocation": "Oui" if len(locataires) > 1 else "",
+    })
     try:
         from .documents import duree_texte
 
         v["Durée_bail"] = duree_texte(bail)
+        mois = bail.duree_mois
+        a, m = divmod(bail.date_debut.month - 1 + mois, 12)
+        import calendar as _cal
+
+        annee = bail.date_debut.year + a
+        jour = min(bail.date_debut.day, _cal.monthrange(annee, m + 1)[1])
+        v["Date_fin_prévue"] = date_fr(bail.date_fin or bail.date_debut.replace(year=annee, month=m + 1, day=jour))
     except Exception:
         v["Durée_bail"] = ""
 

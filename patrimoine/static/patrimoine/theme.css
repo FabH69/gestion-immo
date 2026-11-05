@@ -212,3 +212,41 @@ fieldset.releves-compteurs .form-multiline label { width: auto; padding: 0 0 3px
 fieldset.releves-compteurs .form-multiline input { width: 100%; box-sizing: border-box; }
 fieldset.releves-compteurs .form-multiline .help { margin: 3px 0 0; padding: 0; }
 @media (max-width: 767px) { fieldset.releves-compteurs .form-multiline { grid-template-columns: 1fr; } }
+/* cases à cocher de la fiche bien : en grille, la case avant le libellé */
+fieldset.cases-a-cocher .form-multiline { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 4px 18px; width: 100%; }
+fieldset.cases-a-cocher .form-multiline > div, fieldset.cases-a-cocher .form-multiline .fieldBox { margin: 0; display: flex; align-items: center; gap: 6px; }
+fieldset.cases-a-cocher .form-multiline label { width: auto; padding: 0; float: none; }
+fieldset.cases-a-cocher .form-multiline input[type=checkbox] { order: -1; margin: 0; }
+fieldset.cases-a-cocher .help { margin-left: 0; }
+@media (max-width: 767px) { fieldset.cases-a-cocher .form-multiline { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+/* fiche locataire : saisie compacte à gauche, encart Documents à droite */
+@media (min-width: 1024px) {
+  body.model-locataire.change-form #locataire_form > div { display: grid; grid-template-columns: minmax(0, 1fr) 360px; gap: 0 20px; align-items: start; }
+  body.model-locataire.change-form #locataire_form > div > * { grid-column: 1; min-width: 0; }
+  body.model-locataire.change-form #locataire_form fieldset.encart-documents { grid-column: 2; grid-row: 1 / span 8; align-self: start; position: sticky; top: 12px; }
+}
+fieldset.fiche-compacte .form-row { padding: 6px 10px; }
+fieldset.fiche-compacte .form-multiline { display: grid !important; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 4px 16px; align-items: start; }
+fieldset.fiche-compacte .form-multiline > div { margin: 0; min-width: 0; }
+fieldset.fiche-compacte .flex-container, fieldset.fiche-compacte .fieldBox { display: flex; flex-direction: column; align-items: stretch; margin: 0 !important; }
+fieldset.fiche-compacte .form-row label { width: auto !important; float: none; padding: 0 0 2px !important; font-weight: 600; font-size: .8rem; color: var(--body-quiet-color); }
+fieldset.fiche-compacte .form-row label.vCheckboxLabel { font-size: .9rem; color: var(--body-fg); }
+fieldset.fiche-compacte .field-sortie .flex-container { flex-direction: row; align-items: center; gap: 8px; }
+fieldset.fiche-compacte input[type=text], fieldset.fiche-compacte input[type=email], fieldset.fiche-compacte input[type=date],
+fieldset.fiche-compacte select, fieldset.fiche-compacte textarea { width: 100% !important; max-width: none; box-sizing: border-box; }
+fieldset.fiche-compacte .help, fieldset.fiche-compacte div.help { margin: 2px 0 0 !important; padding: 0 !important; font-size: .75rem; }
+fieldset.fiche-compacte .related-widget-wrapper { width: 100%; }
+fieldset.encart-documents { background: var(--body-bg); border: 1px solid var(--hairline-color); border-radius: 12px; overflow: hidden; }
+fieldset.encart-documents .form-row { padding: 8px 12px; }
+fieldset.encart-documents .form-row label { display: none; }
+fieldset.encart-documents .flex-container { display: block; }
+fieldset.encart-documents .readonly { margin: 0 !important; padding: 0 !important; width: 100%; }
+.doc-bail { margin-bottom: 12px; }
+.doc-bail .doc-titre { font-weight: 700; font-size: .85rem; color: var(--header-bg, #235A5E); margin-bottom: 4px; }
+.doc-bail ul, fieldset.encart-documents ul { list-style: none; margin: 0 !important; padding: 0 !important; }
+fieldset.encart-documents p.help { margin: 4px 0 0 !important; padding: 0 !important; }
+.doc-bail li { list-style: none; display: flex; align-items: center; gap: 8px; padding: 4px 0; border-bottom: 1px solid var(--hairline-color); font-size: .85rem; }
+.doc-bail li:last-child { border-bottom: 0; }
+.doc-type { display: inline-block; min-width: 30px; text-align: center; font-size: .65rem; font-weight: 700; border-radius: 4px; padding: 2px 4px;
+  background: #E8F1F1; color: #235A5E; }
+.doc-date { margin-left: auto; color: var(--body-quiet-color); font-size: .75rem; white-space: nowrap; }

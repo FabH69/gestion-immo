@@ -13,7 +13,7 @@ Loyer : {{ a.loyer_cc|floatformat:"-2" }} € par mois charges comprises, dont {
 Dépôt de garantie : {{ a.depot_garantie|floatformat:"-2" }} €.
 Location {% if lot.meuble %}meublée{% else %}vide{% endif %}{% if lot.surface %} – surface habitable {{ lot.surface|floatformat:"-2" }} m²{% endif %}.
 Pas de frais d'agence : location directe de particulier à particulier.
-{% if lot.zone_tendue %}Logement situé en zone tendue.
+{% if lot.bien.zone_tendue %}Logement situé en zone tendue.
 {% endif %}
 Classe énergie : {{ lot.classe_dpe|default:"à compléter" }} – Classe climat : {{ lot.classe_ges|default:"à compléter" }}.
 {% if lot.energie_min and lot.energie_max %}Montant estimé des dépenses annuelles d'énergie pour un usage standard : entre {{ lot.energie_min }} € et {{ lot.energie_max }} € par an{% if lot.energie_annee %} (prix moyens des énergies indexés au 1er janvier {{ lot.energie_annee|unlocalize }}){% endif %}.{% endif %}
