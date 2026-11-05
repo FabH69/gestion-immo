@@ -278,7 +278,7 @@ class BienAdmin(admin.ModelAdmin):
 
 @admin.register(Lot)
 class LotAdmin(admin.ModelAdmin):
-    list_display = ["designation", "bien", "type", "surface", "meuble", "exploitation", "locataire_actuel", "loyer_actuel", "vendu", "date_vente"]
+    list_display = ["designation", "bien", "type_lot", "surface", "exploitation_pill", "locataire_actuel", "loyer_actuel"]
     list_filter = [VenduFilter, "exploitation", "lmnp", "bien__proprietaire", "bien", "type", "meuble"]
     search_fields = ["designation", "bien__nom"]
     inlines = [BailInline, PhotoInline]
@@ -316,17 +316,27 @@ class LotAdmin(admin.ModelAdmin):
 
     @admin.display(description="locataire")
     def locataire_actuel(self, obj):
-        if obj.vendu:
-            return "–"
+        if obj.vendu or obj.bien.vendu:
+            return format_html('<span class="pill gris">Vendu{}</span>', f" le {obj.date_vente:%d/%m/%Y}" if obj.date_vente else "")
         bail = obj.bail_actif
         if not bail and obj.exploitation == "courte":
-            return "Courte durée"
-        return ", ".join(str(l) for l in bail.locataires.all()) if bail else "Vacant"
+            return format_html('<span class="pill bleu">Courte durée</span>')
+        return ", ".join(str(l) for l in bail.locataires.all()) if bail else format_html('<span class="pill orange">Vacant</span>')
 
-    @admin.display(description="loyer CC (€)")
+    @admin.display(description="loyer CC")
     def loyer_actuel(self, obj):
         bail = obj.bail_actif
-        return bail.loyer_cc if bail else "–"
+        return euros_liste(bail.loyer_cc) if bail else "–"
+
+    @admin.display(description="type", ordering="type")
+    def type_lot(self, obj):
+        return f"{obj.get_type_display()}{' meublé' if obj.meuble else ''}"
+
+    @admin.display(description="exploitation", ordering="exploitation")
+    def exploitation_pill(self, obj):
+        if obj.exploitation == "courte":
+            return format_html('<span class="pill bleu">Courte durée</span>{}', format_html(' <span class="pill gris">LMNP</span>') if obj.lmnp else "")
+        return format_html('<span class="pill gris">Bail</span>{}', format_html(' <span class="pill gris">LMNP</span>') if obj.lmnp else "")
 
 
 class PresentFilter(admin.SimpleListFilter):
@@ -449,7 +459,8 @@ class DocumentLocataireInline(admin.TabularInline):
 @admin.register(Locataire)
 class LocataireAdmin(admin.ModelAdmin):
     form = LocataireForm
-    list_display = ["__str__", "present", "logement", "date_sortie", "email", "telephone", "liste_garants"]
+    list_display = ["fiche", "statut_present", "contact", "liste_garants"]
+    list_display_links = ["fiche"]
     list_filter = [PresentFilter]
     search_fields = ["nom", "prenom", "email"]
     inlines = [DocumentLocataireInline, GarantInline]
@@ -605,7 +616,28 @@ class LocataireAdmin(admin.ModelAdmin):
 
     @admin.display(description="garants")
     def liste_garants(self, obj):
-        return ", ".join(str(g) for g in obj.garants.all()) or "–"
+        return ", ".join(dict.fromkeys(str(g) for g in obj.garants.all())) or "–"
+
+    @admin.display(description="locataire", ordering="nom")
+    def fiche(self, obj):
+        initiales = f"{obj.prenom[:1]}{obj.nom[:1]}".upper() or "?"
+        return format_html('<span class="cellule-personne"><span class="avatar-rond">{}</span><span><b>{}</b><small>{}</small></span></span>',
+                           initiales, obj, self.logement(obj))
+
+    @admin.display(description="statut")
+    def statut_present(self, obj):
+        if self.present(obj):
+            return format_html('<span class="pill ok">Dans les lieux</span>')
+        sortie = self.date_sortie(obj)
+        return format_html('<span class="pill gris">{}</span>', f"Parti le {sortie}" if sortie[:1].isdigit() else "Parti")
+
+    @admin.display(description="contact")
+    def contact(self, obj):
+        if not obj.email and not obj.telephone:
+            return "–"
+        return format_html('<span class="cellule-contact">{}{}</span>',
+                           format_html('<a href="mailto:{}">{}</a>', obj.email, obj.email) if obj.email else "",
+                           format_html('<small>{}</small>', obj.telephone) if obj.telephone else "")
 
 
 class BailForm(forms.ModelForm):
@@ -780,6 +812,12 @@ class PaiementInline(admin.TabularInline):
     extra = 1
 
 
+def euros_liste(montant):
+    """Montant pour les listes : « 1 234,50 € »."""
+    texte = f"{montant:,.2f}".replace(",", "\u202f").replace(".", ",")
+    return f"{texte}\u00a0€"
+
+
 class EnRetardFilter(admin.SimpleListFilter):
     title = "retard"
     parameter_name = "retard"
@@ -802,7 +840,8 @@ class ModifierEcheancesForm(forms.Form):
 
 @admin.register(Echeance)
 class EcheanceAdmin(admin.ModelAdmin):
-    list_display = ["mois", "lot", "liste_locataires", "total", "paye", "reste", "statut_colore", "document", "lien_modifier"]
+    list_display = ["locataire_et_logement", "echeance_le", "total", "paye", "reste", "statut_colore", "actions_ligne"]
+    list_display_links = ["locataire_et_logement"]
     list_filter = [EcheanceStatutFilter, EnRetardFilter, "bail__lot__bien__proprietaire", "bail__lot__bien"]
     search_fields = ["bail__lot__designation", "bail__lot__bien__nom", "bail__locataires__nom"]
     date_hierarchy = "periode"
@@ -818,7 +857,19 @@ class EcheanceAdmin(admin.ModelAdmin):
     def get_urls(self):
         return [
             path("generer/", self.admin_site.admin_view(self.generer_view), name="patrimoine_echeance_generer"),
+            path("<int:pk>/encaisser/", self.admin_site.admin_view(self.encaisser_view), name="patrimoine_echeance_encaisser"),
         ] + super().get_urls()
+
+    def encaisser_view(self, request, pk):
+        """Bouton « Encaisser » d'une ligne : enregistre le reste dû comme payé aujourd'hui, par virement."""
+        if request.method != "POST":
+            return redirect("admin:patrimoine_echeance_change", pk)
+        e = Echeance.objects.get(pk=pk)
+        if e.reste_du > 0:
+            Paiement.objects.create(echeance=e, date=timezone.localdate(), montant=e.reste_du)
+            self.message_user(request, f"{e} : {e.total} € encaissés aujourd'hui (virement). Pour un autre mode ou une autre date, ouvrez le loyer.",
+                              messages.SUCCESS)
+        return redirect(request.POST.get("retour") or "admin:patrimoine_echeance_changelist")
 
     def generer_view(self, request):
         aujourdhui = timezone.localdate()
@@ -840,7 +891,30 @@ class EcheanceAdmin(admin.ModelAdmin):
             "mois_courant": aujourdhui,
             "mois_suivant": suivant,
         }
-        return super().changelist_view(request, extra_context)
+        reponse = super().changelist_view(request, extra_context)
+        cl = getattr(reponse, "context_data", {}).get("cl") if hasattr(reponse, "context_data") else None
+        if cl is not None:
+            # résumé des loyers affichés (filtres compris)
+            lignes = list(cl.queryset.prefetch_related("paiements"))
+            du = sum((e.total for e in lignes), Decimal(0))
+            paye = sum((sum((p.montant for p in e.paiements.all()), Decimal(0)) for e in lignes), Decimal(0))
+            jour = timezone.localdate()
+            retard = [e for e in lignes if e.statut != Echeance.Statut.PAYE and e.date_exigibilite < jour]
+            reponse.context_data["resume"] = {
+                "du": du, "paye": paye, "reste": du - paye, "nb": len(lignes),
+                "retard": sum((e.total - sum((p.montant for p in e.paiements.all()), Decimal(0)) for e in retard), Decimal(0)),
+                "nb_retard": len(retard),
+            }
+            params = request.GET.copy()
+            for cle in ("reglement", "retard", "p"):
+                params.pop(cle, None)
+            base = params.urlencode()
+            actuel = "retard" if request.GET.get("retard") == "oui" else request.GET.get("reglement", "non_regles")
+            reponse.context_data["raccourcis"] = [
+                {"libelle": libelle, "url": "?" + "&".join(x for x in (base, q) if x), "actif": actuel == code}
+                for code, libelle, q in [("non_regles", "À encaisser", ""), ("retard", "En retard", "retard=oui"),
+                                         ("paye", "Payés", "reglement=paye"), ("tous", "Tous", "reglement=tous")]]
+        return reponse
 
     def save_model(self, request, obj, form, change):
         if change and {"loyer_hc", "charges"} & set(form.changed_data):
@@ -855,6 +929,32 @@ class EcheanceAdmin(admin.ModelAdmin):
     def mois(self, obj):
         return obj.periode.strftime("%m/%Y")
 
+    @admin.display(description="locataire et logement", ordering="bail__lot__bien__nom")
+    def locataire_et_logement(self, obj):
+        noms = [str(l) for l in obj.bail.locataires.all()]
+        initiales = "".join(n[:1] for n in (obj.bail.locataires.all()[0].prenom, obj.bail.locataires.all()[0].nom)).upper() if noms else "?"
+        return format_html('<span class="cellule-personne"><span class="avatar-rond">{}</span><span><b>{}</b><small>{}</small></span></span>',
+                           initiales or "?", ", ".join(noms) or "–", obj.bail.lot)
+
+    @admin.display(description="échéance", ordering="date_exigibilite")
+    def echeance_le(self, obj):
+        return obj.date_exigibilite.strftime("%d/%m/%Y")
+
+    @admin.display(description="")
+    def actions_ligne(self, obj):
+        libelle = "Quittance" if obj.statut == "paye" else "Avis PDF"
+        pdf = format_html('<a class="lien-action" href="{}" target="_blank">{}</a>', reverse("document_echeance", args=[obj.pk]), libelle)
+        if obj.statut == "paye":
+            return pdf
+        return format_html('<form method="post" action="{}" class="form-encaisser"><input type="hidden" name="csrfmiddlewaretoken" value="{}">'
+                           '<button type="submit" class="bouton-encaisser" title="Enregistrer le paiement du reste dû, aujourd\'hui, par virement">Encaisser</button></form>{}',
+                           reverse("admin:patrimoine_echeance_encaisser", args=[obj.pk]), self._csrf, pdf)
+
+    def get_changelist_instance(self, request):
+        from django.middleware.csrf import get_token
+        self._csrf = get_token(request)
+        return super().get_changelist_instance(request)
+
     @admin.display(description="lot", ordering="bail__lot__bien__nom")
     def lot(self, obj):
         return obj.bail.lot
@@ -863,25 +963,31 @@ class EcheanceAdmin(admin.ModelAdmin):
     def liste_locataires(self, obj):
         return ", ".join(str(l) for l in obj.bail.locataires.all())
 
-    @admin.display(description="dû (€)")
+    @admin.display(description="dû")
     def total(self, obj):
-        return obj.total
+        return euros_liste(obj.total)
 
-    @admin.display(description="payé (€)")
+    def _paye(self, obj):
+        return sum((p.montant for p in obj.paiements.all()), Decimal(0))
+
+    @admin.display(description="payé")
     def paye(self, obj):
-        return sum(p.montant for p in obj.paiements.all())
+        return euros_liste(self._paye(obj))
 
-    @admin.display(description="reste (€)")
+    @admin.display(description="reste dû")
     def reste(self, obj):
-        return obj.total - self.paye(obj)
+        reste = obj.total - self._paye(obj)
+        return format_html("<b>{}</b>", euros_liste(reste)) if reste else "–"
 
     @admin.display(description="statut", ordering="statut")
     def statut_colore(self, obj):
-        couleurs = {"paye": "#2e7d32", "partiel": "#ef6c00", "a_payer": "#c62828"}
-        libelle = obj.get_statut_display()
-        if obj.statut != "paye" and obj.date_exigibilite < timezone.localdate():
-            libelle += " (en retard)"
-        return format_html('<strong style="color:{}">{}</strong>', couleurs[obj.statut], libelle)
+        if obj.statut == "paye":
+            return format_html('<span class="pill ok">✓ Payé</span>')
+        retard = (timezone.localdate() - obj.date_exigibilite).days
+        libelle = "Partiel" if obj.statut == "partiel" else "À payer"
+        if retard > 0:
+            return format_html('<span class="pill rouge" title="{} – {} jour(s) de retard">Retard · {} j</span>', libelle, retard, retard)
+        return format_html('<span class="pill orange">{}</span>', libelle)
 
     @admin.display(description="document")
     def document(self, obj):

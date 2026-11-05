@@ -1,0 +1,23 @@
+{% extends "admin/base_site.html" %}
+{% block breadcrumbs %}{% endblock %}
+{% block content %}
+<div id="content-main" class="page-recherche">
+  <form method="get" class="recherche-page">
+    <input type="search" name="q" value="{{ q }}" placeholder="Nom, ville, adresse, n° de prêt…" autofocus>
+    <button type="submit" class="button">Rechercher</button>
+  </form>
+  {% if q|length < 2 %}
+    <p class="vide">Tapez au moins deux lettres.</p>
+  {% elif not groupes %}
+    <p class="vide">Aucun résultat pour « {{ q }} ».</p>
+  {% else %}
+    <p class="sous-titre">{{ nb }} résultat{{ nb|pluralize }}</p>
+    {% for g in groupes %}
+    <div class="module carte-resultats">
+      <h2>{{ g.titre }} <span class="compte">{{ g.lignes|length }}</span></h2>
+      {% for l in g.lignes %}<a class="resultat" href="{{ l.url }}"><span class="r-titre">{{ l.titre }}</span>{% if l.detail %}<span class="r-detail">{{ l.detail }}</span>{% endif %}</a>{% endfor %}
+    </div>
+    {% endfor %}
+  {% endif %}
+</div>
+{% endblock %}

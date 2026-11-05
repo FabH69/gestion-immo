@@ -733,3 +733,52 @@ def tester_mail(request):
     except Exception as erreur:
         messages.error(request, f"Échec de l'envoi ({erreur.__class__.__name__}). Vérifiez l'adresse et le mot de passe d'application (16 lettres).")
     return redirect("admin:patrimoine_parametresmail_change", 1)
+
+
+@staff_member_required
+def recherche(request):
+    """Recherche globale (barre du haut) : locataires, biens et lots, baux, garants, candidatures, prêts, syndics."""
+    from django.db.models import Q
+
+    from .models import Bien, Garant, Locataire, Lot, Pret, Syndic
+
+    q = (request.GET.get("q") or "").strip()
+    groupes = []
+    if len(q) >= 2:
+        mots = q.split()
+
+        def filtre(champs):
+            condition = Q()
+            for mot in mots:
+                sous = Q()
+                for c in champs:
+                    sous |= Q(**{f"{c}__icontains": mot})
+                condition &= sous
+            return condition
+
+        def ajouter(titre, objets, lien, detail=lambda o: ""):
+            lignes = [{"titre": str(o), "detail": detail(o), "url": reverse(lien, args=[o.pk])} for o in objets[:15]]
+            if lignes:
+                groupes.append({"titre": titre, "lignes": lignes})
+
+        ajouter("Locataires", Locataire.objects.filter(filtre(["nom", "prenom", "email", "telephone"])).prefetch_related("baux__lot__bien"),
+                "admin:patrimoine_locataire_change",
+                lambda o: " · ".join(dict.fromkeys(str(b.lot) for b in o.baux.all())) or o.email)
+        ajouter("Biens", Bien.objects.filter(filtre(["nom", "adresse", "ville", "code_postal"])).select_related("proprietaire"),
+                "admin:patrimoine_bien_change", lambda o: f"{o.adresse}, {o.ville} · {o.proprietaire}{' · vendu' if o.vendu else ''}")
+        ajouter("Lots", Lot.objects.filter(filtre(["designation", "bien__nom", "bien__ville"])).select_related("bien"),
+                "admin:patrimoine_lot_change", lambda o: f"{o.get_type_display()}{' · vendu' if o.vendu else ''}")
+        ajouter("Baux", Bail.objects.filter(filtre(["locataires__nom", "locataires__prenom", "lot__designation", "lot__bien__nom"]))
+                .distinct().select_related("lot__bien").prefetch_related("locataires"),
+                "admin:patrimoine_bail_change", lambda o: ", ".join(str(l) for l in o.locataires.all()) + ("" if o.actif else " · terminé"))
+        ajouter("Garants", Garant.objects.filter(filtre(["nom", "prenom", "email"])).select_related("locataire"),
+                "admin:patrimoine_garant_change", lambda o: f"garant de {o.locataire}")
+        ajouter("Candidatures", Candidature.objects.filter(filtre(["nom", "prenom", "email"])).select_related("lot__bien"),
+                "admin:patrimoine_candidature_change", lambda o: f"{o.lot} · {o.get_statut_display()}")
+        ajouter("Prêts", Pret.objects.filter(filtre(["banque", "reference", "bien__nom"])).select_related("proprietaire"),
+                "admin:patrimoine_pret_change", lambda o: str(o.proprietaire))
+        ajouter("Syndics", Syndic.objects.filter(filtre(["nom", "ville"])), "admin:patrimoine_syndic_change")
+    return render(request, "patrimoine/recherche.html", {
+        **admin.site.each_context(request), "title": f"Recherche : {q}" if q else "Recherche", "q": q, "groupes": groupes,
+        "nb": sum(len(g["lignes"]) for g in groupes),
+    })

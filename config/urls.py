@@ -36,6 +36,7 @@ urlpatterns = [
     path("lmnp/", views.biens_lmnp, name="biens_lmnp"),
     path("location-courte-duree/", views.suivi_lcd, name="suivi_lcd"),
     path("simulations/plus-value/", views.plus_value, name="plus_value"),
+    path("recherche/", views.recherche, name="recherche"),
     path("balles/", include("commandes.urls")),
     path("", RedirectView.as_view(url="/admin/")),
 ]

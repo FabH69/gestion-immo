@@ -1123,6 +1123,31 @@ class ProrataEtAjustementTests(TestCase):
         self.assertEqual(e.loyer_hc, Decimal("550"))
 
 
+class NouveauLookTests(TestCase):
+    def setUp(self):
+        self.client.force_login(User.objects.create_superuser("admin", "a@example.com", "x"))
+        proprio = Proprietaire.objects.create(nom="SCI", type=Proprietaire.Type.SCI_IR)
+        bien = Bien.objects.create(proprietaire=proprio, nom="Immeuble", adresse="1 rue", code_postal="69000", ville="Lyon")
+        self.bail = Bail.objects.create(lot=Lot.objects.create(bien=bien, designation="A"), type=Bail.Type.NU, date_debut=date(2025, 1, 1), loyer_hc=500)
+        self.bail.locataires.add(Locataire.objects.create(nom="DUPONT", prenom="Jean"))
+
+    def test_pages_principales(self):
+        Echeance.generer_pour_mois(timezone.localdate().replace(day=1))
+        for url in ["/admin/", "/admin/patrimoine/echeance/", "/admin/patrimoine/locataire/", "/admin/patrimoine/lot/",
+                    "/admin/patrimoine/bail/", "/recherche/?q=dupont", "/admin/patrimoine/echeance/?retard=oui"]:
+            self.assertEqual(self.client.get(url).status_code, 200, url)
+        self.assertContains(self.client.get("/recherche/?q=dup"), "DUPONT")
+        self.assertContains(self.client.get("/admin/"), "Loyers de")
+
+    def test_bouton_encaisser(self):
+        Echeance.generer_pour_mois(date(2026, 10, 1))
+        e = Echeance.objects.get()
+        self.client.post(f"/admin/patrimoine/echeance/{e.pk}/encaisser/")
+        e.refresh_from_db()
+        self.assertEqual(e.statut, Echeance.Statut.PAYE)
+        self.assertEqual(e.paiements.get().montant, 500)
+
+
 class AFaireTests(TestCase):
     def test_loyer_en_retard_et_assurance_recente(self):
         from patrimoine.rappels import a_faire

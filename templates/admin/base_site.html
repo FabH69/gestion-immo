@@ -10,87 +10,27 @@
 <div id="site-name"><a href="{% url 'admin:index' %}"><span class="logo">⌂</span> {{ site_header|default:_('Django administration') }}</a></div>
 {% if user.is_anonymous %}{% include "admin/color_theme_toggle.html" %}{% endif %}
 {% endblock %}
-{% block nav-global %}{% if user.is_active and user.is_staff %}
-<nav id="menu-principal" aria-label="Menu principal">
-  <a class="menu-lien" href="{% url 'admin:index' %}">Accueil</a>
-  <div class="menu" tabindex="0"><span class="menu-titre">Patrimoine ▾</span>
-    <div class="menu-liste">
-      <a href="{% url 'admin:patrimoine_proprietaire_changelist' %}">Propriétaires</a>
-      <a href="{% url 'admin:patrimoine_bien_changelist' %}">Biens</a>
-      <a href="{% url 'admin:patrimoine_lot_changelist' %}">Lots</a>
-      <a href="{% url 'admin:patrimoine_syndic_changelist' %}">Syndics</a>
-    </div>
-  </div>
-  <div class="menu" tabindex="0"><span class="menu-titre">Locations ▾</span>
-    <div class="menu-liste">
-      <a href="{% url 'admin:patrimoine_bail_changelist' %}">Baux</a>
-      <a href="{% url 'admin:patrimoine_locataire_changelist' %}">Locataires</a>
-      <a href="{% url 'admin:patrimoine_garant_changelist' %}">Garants</a>
-      <a href="{% url 'admin:patrimoine_etatdeslieux_changelist' %}">États des lieux</a>
-      <a href="{% url 'admin:patrimoine_changementlocataire_changelist' %}">Changements de locataire</a>
-    </div>
-  </div>
-  <div class="menu" tabindex="0"><span class="menu-titre">Loyers ▾</span>
-    <div class="menu-liste">
-      <a href="{% url 'admin:patrimoine_echeance_changelist' %}">Loyers du mois</a>
-      <a href="{% url 'admin:patrimoine_revisionloyer_changelist' %}">Révisions de loyer</a>
-      <a href="{% url 'admin:patrimoine_mouvementdepot_changelist' %}">Dépôts de garantie</a>
-    </div>
-  </div>
-  <div class="menu" tabindex="0"><span class="menu-titre">Courte durée ▾</span>
-    <div class="menu-liste">
-      <a href="{% url 'suivi_lcd' %}">Suivi et import Airbnb / Booking</a>
-      <a href="{% url 'admin:patrimoine_reservationlcd_changelist' %}">Réservations</a>
-      <a href="{% url 'biens_lmnp' %}" class="menu-section">Biens en LMNP</a>
-      <a href="{% url 'admin:patrimoine_chargelmnp_changelist' %}">Charges et amortissements LMNP</a>
-      <a href="{% url 'admin:patrimoine_chargelcd_changelist' %}">Charges mensuelles</a>
-      <a href="{% url 'admin:patrimoine_parametreslcd_changelist' %}">Frais de gestion (ménage, conciergerie)</a>
-    </div>
-  </div>
-  <div class="menu" tabindex="0"><span class="menu-titre">Relocation ▾</span>
-    <div class="menu-liste">
-      <a href="{% url 'admin:patrimoine_candidature_changelist' %}">Candidatures</a>
-      <a href="{% url 'admin:patrimoine_annonce_changelist' %}">Annonces</a>
-    </div>
-  </div>
-  <div class="menu" tabindex="0"><span class="menu-titre">Finances ▾</span>
-    <div class="menu-liste">
-      <a href="{% url 'suivi_encaissements' %}">Suivi des encaissements</a>
-      <a href="{% url 'admin:patrimoine_pret_changelist' %}">Prêts</a>
-    </div>
-  </div>
-  <div class="menu" tabindex="0"><span class="menu-titre">États ▾</span>
-    <div class="menu-liste">
-      <a href="{% url 'etat_loyers_encaisses' %}">Loyers encaissés par mois et par année</a>
-      <a href="{% url 'etat_endettement' %}">Endettement : capital restant dû à une date</a>
-      <a href="{% url 'plus_value' %}">Simulation de plus-value à la revente</a>
-    </div>
-  </div>
-  <a class="menu-lien" href="{% url 'admin:patrimoine_rappel_changelist' %}">Rappels</a>
-  <a class="menu-lien" href="{% url 'balles:accueil' %}">🎾 Balles</a>
-  {% sites_utiles as liens_utiles %}
-  <div class="menu" tabindex="0"><span class="menu-titre">Sites utiles ▾</span>
-    <div class="menu-liste">
-      {% for site in liens_utiles %}<a href="{{ site.url }}" target="_blank" rel="noopener">{{ site.nom }} ↗</a>{% endfor %}
-      <a href="{% url 'admin:patrimoine_siteutile_add' %}" class="menu-gerer">+ Ajouter un site</a>
-      <a href="{% url 'admin:patrimoine_siteutile_changelist' %}" class="menu-gerer">Gérer les sites</a>
-    </div>
-  </div>
-  <div class="menu" tabindex="0"><span class="menu-titre">Modèles ▾</span>
-    <div class="menu-liste">
-      <a href="{% url 'admin:patrimoine_modeledocument_changelist' %}">Mes modèles Word</a>
-      <a href="{% url 'admin:patrimoine_modeledocument_add' %}">Ajouter un modèle</a>
-      <a href="{% url 'liste_champs' %}">Liste des champs</a>
-    </div>
-  </div>
-  <div class="menu" tabindex="0"><span class="menu-titre">Réglages ▾</span>
-    <div class="menu-liste">
-      <a href="{% url 'admin:auth_user_changelist' %}">Utilisateurs</a>
-      <a href="{% url 'admin:auth_group_changelist' %}">Groupes</a>
-      <a href="{% url 'admin:password_change' %}">Changer mon mot de passe</a>
-      <a href="{% url 'sauvegardes' %}">Sauvegardes</a>
-      <a href="{% url 'admin:patrimoine_parametresmail_changelist' %}">Mails (Gmail)</a>
-    </div>
-  </div>
-</nav>
+{% block usertools %}{% if has_permission %}
+<form id="recherche-globale" action="{% url 'recherche' %}" method="get" role="search">
+  <input type="search" name="q" value="{{ request.GET.q|default:'' }}" placeholder="Rechercher un locataire, un bien, un garant…" aria-label="Rechercher">
+</form>
+<div id="user-tools">{% include "admin/color_theme_toggle.html" %}</div>
 {% endif %}{% endblock %}
+{% block nav-global %}{% if user.is_active and user.is_staff %}
+<button type="button" id="bouton-menu" aria-label="Ouvrir le menu" onclick="document.body.classList.toggle('menu-ouvert')">{% icone "menu" 22 %}</button>
+{% menu_lateral %}
+<nav id="barre-onglets" aria-label="Navigation rapide">
+  <a href="{% url 'admin:index' %}">{% icone "accueil" 22 %}<span>Accueil</span></a>
+  <a href="{% url 'admin:patrimoine_echeance_changelist' %}">{% icone "loyers" 22 %}<span>Loyers</span></a>
+  <a href="{% url 'admin:patrimoine_locataire_changelist' %}">{% icone "locataires" 22 %}<span>Locataires</span></a>
+  <a href="{% url 'admin:patrimoine_bien_changelist' %}">{% icone "biens" 22 %}<span>Biens</span></a>
+  <a href="#" onclick="document.body.classList.add('menu-ouvert');return false">{% icone "menu" 22 %}<span>Plus</span></a>
+</nav>
+<script>
+  document.querySelectorAll('#barre-onglets a[href^="/"]').forEach(function (a) {
+    var h = a.getAttribute('href'), p = location.pathname;
+    if (h === '/admin/' ? p === h : p.indexOf(h) === 0) a.classList.add('actif');
+  });
+</script>
+{% endif %}{% endblock %}
+{% block nav-sidebar %}{% endblock %}
