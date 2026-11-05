@@ -1123,6 +1123,21 @@ class ProrataEtAjustementTests(TestCase):
         self.assertEqual(e.loyer_hc, Decimal("550"))
 
 
+class AFaireTests(TestCase):
+    def test_loyer_en_retard_et_assurance_recente(self):
+        from patrimoine.rappels import a_faire
+        proprio = Proprietaire.objects.create(nom="SCI", type=Proprietaire.Type.SCI_IR)
+        bien = Bien.objects.create(proprietaire=proprio, nom="Chazay", adresse="1 rue", code_postal="69000", ville="Lyon")
+        lot = Lot.objects.create(bien=bien, designation="Chazay")
+        self.assertEqual(str(lot), "Chazay")
+        Bail.objects.create(lot=lot, type=Bail.Type.NU, date_debut=date(2004, 3, 1), loyer_hc=500)
+        Echeance.generer_pour_mois(date(2026, 10, 1))
+        items = a_faire(date(2026, 11, 5))
+        self.assertIn("Loyer de 10/2026 non réglé : 500,00 €", [i["titre"] for i in items])
+        assurance = next(i for i in items if i["categorie"] == "Assurance")
+        self.assertEqual(assurance["date"], date(2026, 3, 1))  # pas le 01/03/2005
+
+
 class ModelesWordTests(TestCase):
     def test_modeles_remplis_depuis_le_bail(self):
         import io

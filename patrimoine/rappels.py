@@ -3,10 +3,19 @@ from datetime import timedelta
 
 from django.urls import reverse
 
-from .models import Bail, JournalFait, Rappel, RevisionLoyer, Tache, _ajouter_mois
+from .models import Bail, Echeance, JournalFait, Rappel, RevisionLoyer, Tache, _ajouter_mois
 
 PREAVIS_JOURS = 30
 HISTORIQUE_JOURS = 90
+DELAI_RETARD_JOURS = 5  # un loyer apparaît dans « À faire » après 5 jours de retard
+
+
+def _anniversaire_recent(depart, aujourdhui):
+    """Échéance annuelle à partir d'une date : la plus récente passée (pas une date d'il y a dix ans), ou la prochaine."""
+    echeance = _ajouter_mois(depart, 12)
+    while _ajouter_mois(echeance, 12) <= aujourdhui:
+        echeance = _ajouter_mois(echeance, 12)
+    return echeance
 
 
 def a_faire(aujourdhui, horizon_jours=PREAVIS_JOURS):
@@ -30,17 +39,27 @@ def a_faire(aujourdhui, horizon_jours=PREAVIS_JOURS):
             ajouter(revision, "Réviser le loyer (IRL)", lieu, "Révision", reverse("revision_loyer", args=[bail.pk]),
                     action=reverse("rappel_fait", args=["revision", bail.pk]))
 
-        echeance = _ajouter_mois(bail.date_attestation_assurance or bail.date_debut, 12)
+        echeance = _anniversaire_recent(bail.date_attestation_assurance or bail.date_debut, aujourdhui)
         if bail.rappel_assurance:
             ajouter(echeance, "Demander l'attestation d'assurance habitation", lieu, "Assurance",
                     reverse("admin:patrimoine_bail_change", args=[bail.pk]),
                     action=reverse("rappel_fait", args=["assurance", bail.pk]))
 
         if bail.lot.chaudiere_gaz:
-            echeance = _ajouter_mois(bail.lot.date_entretien_chaudiere or bail.date_debut, 12)
+            echeance = _anniversaire_recent(bail.lot.date_entretien_chaudiere or bail.date_debut, aujourdhui)
             ajouter(echeance, "Demander l'attestation d'entretien de la chaudière", lieu, "Chaudière",
                     reverse("admin:patrimoine_lot_change", args=[bail.lot.pk]),
                     action=reverse("rappel_fait", args=["chaudiere", bail.lot.pk]))
+
+    # loyers en retard de plus de 5 jours (12 derniers mois) : un rappel par loyer, réglé dès que le paiement est saisi
+    impayes = (Echeance.objects.exclude(statut=Echeance.Statut.PAYE)
+               .filter(date_exigibilite__lt=aujourdhui - timedelta(days=DELAI_RETARD_JOURS), date_exigibilite__gte=_ajouter_mois(aujourdhui, -12))
+               .select_related("bail__lot__bien").prefetch_related("bail__locataires", "paiements"))
+    for e in impayes:
+        noms = ", ".join(str(l) for l in e.bail.locataires.all())
+        ajouter(e.date_exigibilite, f"Loyer de {e.periode:%m/%Y} non réglé : {e.reste_du:.2f} €".replace(".", ","),
+                f"{e.bail.lot} – {noms}" if noms else str(e.bail.lot), "Loyer",
+                reverse("admin:patrimoine_echeance_change", args=[e.pk]))
 
     for rappel in Rappel.objects.filter(fait=False, actif=True).select_related("bien"):
         ajouter(rappel.date, rappel.titre, str(rappel.bien or ""), rappel.get_categorie_display(),

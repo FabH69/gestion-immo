@@ -193,6 +193,8 @@ class Lot(models.Model):
         ordering = ["bien__nom", "designation"]
 
     def __str__(self):
+        if self.designation.strip().lower() == self.bien.nom.strip().lower():
+            return self.designation  # « Chazay » plutôt que « Chazay – Chazay »
         return f"{self.bien.nom} – {self.designation}"
 
     @property
