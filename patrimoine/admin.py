@@ -842,6 +842,11 @@ class EcheanceAdmin(admin.ModelAdmin):
         }
         return super().changelist_view(request, extra_context)
 
+    def save_model(self, request, obj, form, change):
+        if change and {"loyer_hc", "charges"} & set(form.changed_data):
+            obj.ajustee = True
+        super().save_model(request, obj, form, change)
+
     def save_related(self, request, form, formsets, change):
         super().save_related(request, form, formsets, change)
         form.instance.mettre_a_jour_statut()
@@ -904,6 +909,8 @@ class EcheanceAdmin(admin.ModelAdmin):
             for e in queryset:
                 for champ, valeur in changements.items():
                     setattr(e, champ, valeur)
+                if {"loyer_hc", "charges"} & set(changements):
+                    e.ajustee = True
                 e.save()
                 e.mettre_a_jour_statut()
                 n += 1

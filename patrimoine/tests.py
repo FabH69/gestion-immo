@@ -1096,6 +1096,33 @@ class BienVenduTests(TestCase):
         self.assertFalse(lot_vendu.vendu)
 
 
+class ProrataEtAjustementTests(TestCase):
+    def setUp(self):
+        proprio = Proprietaire.objects.create(nom="SCI", type=Proprietaire.Type.SCI_IR)
+        bien = Bien.objects.create(proprietaire=proprio, nom="Immeuble", adresse="1 rue", code_postal="69000", ville="Lyon")
+        self.bail = Bail.objects.create(lot=Lot.objects.create(bien=bien, designation="A"), type=Bail.Type.MEUBLE,
+                                        date_debut=date(2026, 9, 16), loyer_hc=Decimal("600"), charges=Decimal("60"))
+
+    def test_premier_mois_au_prorata(self):
+        Echeance.generer_pour_mois(date(2026, 9, 1))
+        Echeance.generer_pour_mois(date(2026, 10, 1))
+        sept, octo = Echeance.objects.order_by("periode")
+        self.assertEqual((sept.loyer_hc, sept.charges), (Decimal("300.00"), Decimal("30.00")))  # 15 jours sur 30
+        self.assertEqual((octo.loyer_hc, octo.charges), (Decimal("600"), Decimal("60")))
+
+    def test_correction_manuelle_conservee(self):
+        Echeance.generer_pour_mois(date(2026, 10, 1))
+        Echeance.generer_pour_mois(date(2026, 11, 1))
+        e, e2 = Echeance.objects.order_by("periode")
+        self.client.force_login(User.objects.create_superuser("admin", "a@example.com", "x"))
+        self.client.post("/admin/patrimoine/echeance/", {"action": "modifier", "_selected_action": [e.pk, e2.pk], "appliquer": "1", "loyer_hc": "550"})
+        e.refresh_from_db()
+        self.assertTrue(e.ajustee)
+        Echeance.generer_pour_mois(date(2026, 10, 1))  # nouvelle génération : la correction reste
+        e.refresh_from_db()
+        self.assertEqual(e.loyer_hc, Decimal("550"))
+
+
 class ModelesWordTests(TestCase):
     def test_modeles_remplis_depuis_le_bail(self):
         import io

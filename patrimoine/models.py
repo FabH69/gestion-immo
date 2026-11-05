@@ -432,6 +432,20 @@ class Bail(models.Model):
             prochaine = _ajouter_mois(prochaine, 12)
         return prochaine
 
+    def montants_du_mois(self, periode):
+        """Loyer HC et charges dus pour un mois : au prorata des jours occupés le mois d'entrée et le mois de sortie."""
+        debut = periode.replace(day=1)
+        nb_jours = calendar.monthrange(debut.year, debut.month)[1]
+        fin = debut.replace(day=nb_jours)
+        loyer, charges = self.loyer_au(debut), self.charges
+        premier = max(debut, self.date_debut)
+        dernier = min(fin, self.date_fin) if self.date_fin else fin
+        jours = (dernier - premier).days + 1
+        if 0 < jours < nb_jours:
+            ratio = Decimal(jours) / Decimal(nb_jours)
+            loyer, charges = (loyer * ratio).quantize(Decimal("0.01")), (charges * ratio).quantize(Decimal("0.01"))
+        return loyer, charges
+
     DUREES_MOIS = {"nu": 36, "meuble": 12, "etudiant": 9, "mobilite": 10, "commercial": 108, "professionnel": 72, "parking": 12}
 
     @property
@@ -455,6 +469,8 @@ class Echeance(models.Model):
     charges = models.DecimalField("charges (€)", max_digits=10, decimal_places=2, default=0)
     date_exigibilite = models.DateField("date d'exigibilité")
     statut = models.CharField(max_length=10, choices=Statut.choices, default=Statut.A_PAYER, editable=False)
+    ajustee = models.BooleanField("montant modifié à la main", default=False, editable=False,
+                                  help_text="Le loyer ou les charges ont été corrigés à la main : ils ne sont plus recalculés automatiquement")
 
     class Meta:
         verbose_name = "loyer"
@@ -500,13 +516,13 @@ class Echeance(models.Model):
         baux = Bail.objects.filter(actif=True, date_debut__lte=fin).exclude(date_fin__lt=periode)
         for bail in baux:
             jour = min(bail.jour_echeance, fin.day)
-            loyer = bail.loyer_au(periode)
+            loyer, charges = bail.montants_du_mois(periode)
             echeance, cree = cls.objects.get_or_create(
                 bail=bail,
                 periode=periode,
                 defaults={
                     "loyer_hc": loyer,
-                    "charges": bail.charges,
+                    "charges": charges,
                     "date_exigibilite": periode.replace(day=jour),
                 },
             )
@@ -516,10 +532,11 @@ class Echeance(models.Model):
         return crees
 
     def actualiser_loyer(self):
-        """Échéance pas encore réglée : reprend le loyer en vigueur ce mois-là (après une révision) et les charges du bail."""
-        if self.paiements.exists():
+        """Échéance pas encore réglée ni corrigée à la main : reprend le loyer en vigueur ce mois-là (après une révision)
+        et les charges du bail."""
+        if self.ajustee or self.paiements.exists():
             return False
-        loyer, charges = self.bail.loyer_au(self.periode), self.bail.charges
+        loyer, charges = self.bail.montants_du_mois(self.periode)
         if (self.loyer_hc, self.charges) == (loyer, charges):
             return False
         self.loyer_hc, self.charges = loyer, charges
