@@ -57,6 +57,7 @@ ICONES = {
     "encaissements": '<path d="M3 3v18h18"/><path d="M7 15l4-4 3 3 5-6"/>',
     "prets": '<path d="M3 10 12 4l9 6M5 10v8M9.5 10v8M14.5 10v8M19 10v8M3 21h18"/>',
     "etats": '<path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/>',
+    "compta": '<rect x="4" y="2" width="16" height="20" rx="2"/><path d="M8 6h8M8 10h8M8 14h2M12 14h4M8 18h2M12 18h4"/>',
     "rappels": '<path d="M6 8a6 6 0 1 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/>',
     "modeles": '<path d="M12 20h9M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4z"/>',
     "reglages": '<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>',
@@ -102,6 +103,8 @@ def _menu():
         ("Finances", [
             ("encaissements", "Encaissements", r("suivi_encaissements"), [r("suivi_encaissements")], []),
             ("prets", "Prêts et endettement", a("pret"), [a("pret"), r("etat_endettement")], [("Endettement à une date", r("etat_endettement"))]),
+            ("compta", "Comptabilité SCI", a("piececomptable"), [a("piececomptable"), r("annexe_2072")],
+             [("Factures et pièces", a("piececomptable")), ("Annexe 2072-S-A1", r("annexe_2072"))]),
             ("etats", "États et LMNP", r("etat_loyers_encaisses"),
              [r("etat_loyers_encaisses"), r("biens_lmnp"), a("chargelmnp"), r("plus_value")],
              [("Loyers encaissés", r("etat_loyers_encaisses")), ("Biens en LMNP", r("biens_lmnp")),

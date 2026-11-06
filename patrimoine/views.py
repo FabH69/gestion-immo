@@ -782,3 +782,26 @@ def recherche(request):
         **admin.site.each_context(request), "title": f"Recherche : {q}" if q else "Recherche", "q": q, "groupes": groupes,
         "nb": sum(len(g["lignes"]) for g in groupes),
     })
+
+
+@staff_member_required
+def annexe_2072(request):
+    """Annexe 2072-S-A1-SD pré-remplie : SCI, immeubles et année au choix ; détail des sources sous le tableau."""
+    from django.db.models import Q
+
+    from . import annexe2072
+
+    aujourdhui = timezone.localdate()
+    scis = list(Proprietaire.objects.filter(type=Proprietaire.Type.SCI_IR).order_by("nom")) or \
+        list(Proprietaire.objects.exclude(type=Proprietaire.Type.NOM_PROPRE).order_by("nom"))
+    sci = next((p for p in scis if str(p.pk) == request.GET.get("sci")), scis[0] if scis else None)
+    annee = int(request.GET.get("annee") or aujourdhui.year - 1)
+    biens_sci = list(sci.biens.filter(Q(vendu=False) | Q(date_vente__year__gte=annee)).order_by("nom")) if sci else []
+    choisis = request.GET.getlist("bien")
+    biens = [b for b in biens_sci if str(b.pk) in choisis] if choisis else biens_sci
+    contexte = {"sci": sci, "scis": scis, "annee": annee, "annees": range(aujourdhui.year - 4, aujourdhui.year + 1),
+                "biens_sci": biens_sci, "biens": biens, "choisis": [b.pk for b in biens], **annexe2072.annexe(biens, annee)}
+    if request.GET.get("format") == "pdf":
+        return _pdf(render_to_string("patrimoine/annexe_2072_pdf.html", contexte), f"2072-S-A1 {annee} {sci.nom if sci else ''}")
+    return render(request, "patrimoine/annexe_2072.html",
+                  {**admin.site.each_context(request), **contexte, "title": f"Annexe 2072-S-A1 – revenus {annee}"})

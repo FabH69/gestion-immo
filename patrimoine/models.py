@@ -1564,3 +1564,55 @@ class ModeleDocument(models.Model):
     def convient(self, bail):
         types = self.TYPES_BAIL.get(self.type)
         return types is None or bail.type in types
+
+
+def _chemin_facture(instance, nom):
+    import secrets
+
+    return f"factures/{instance.date:%Y}/{secrets.token_hex(6)}-{nom}"
+
+
+class PieceComptable(models.Model):
+    """Facture ou recette d'un bien (comptabilité interne) : codée sur une ligne de l'annexe 2072-S-A1-SD."""
+
+    class Ligne(models.TextChoices):
+        L2 = "2", "2 · Dépenses du propriétaire mises à la charge des locataires"
+        L3 = "3", "3 · Recettes diverses (subventions ANAH, indemnités d'assurance)"
+        L6 = "6", "6 · Frais d'administration et de gestion (syndic, comptable, honoraires)"
+        L8 = "8", "8 · Primes d'assurance (PNO…)"
+        L9 = "9", "9 · Travaux de réparation, d'entretien et d'amélioration"
+        L9B = "9b", "9 bis · Travaux de rénovation énergétique (passage E/F/G vers A–D)"
+        L10 = "10", "10 · Charges récupérables non récupérées au départ du locataire"
+        L11 = "11", "11 · Indemnités d'éviction, frais de relogement"
+        L12 = "12", "12 · Impôts (taxe foncière, CRL…)"
+        L13 = "13", "13 · Provisions pour charges de copropriété"
+        L14 = "14", "14 · Régularisation des provisions de copropriété de l'année précédente"
+        L15 = "15", "15 · Déduction spécifique"
+        L17 = "17", "17 · Frais d'emprunt (dossier, garantie, assurance hors échéancier)"
+        NON = "non", "Non déductible (capital d'emprunt, agrandissement, mobilier…)"
+
+    RECETTES = {"2", "3"}
+
+    bien = models.ForeignKey(Bien, on_delete=models.PROTECT, related_name="pieces_comptables")
+    date = models.DateField("date de la facture")
+    date_paiement = models.DateField("payée le", null=True, blank=True,
+                                     help_text="Année fiscale = année du paiement (date de la facture si vide)")
+    fournisseur = models.CharField(max_length=150, blank=True)
+    libelle = models.CharField("objet", max_length=200)
+    montant = models.DecimalField("montant TTC (€)", max_digits=10, decimal_places=2)
+    ligne = models.CharField("ligne de l'annexe 2072", max_length=4, choices=Ligne.choices)
+    fichier = models.FileField("facture (PDF ou photo)", upload_to=_chemin_facture, storage=stockage_prive, blank=True,
+                               validators=[FileExtensionValidator(["pdf", "jpg", "jpeg", "png", "heic"])])
+    notes = models.TextField(blank=True)
+
+    class Meta:
+        verbose_name = "facture / pièce comptable"
+        verbose_name_plural = "factures et pièces comptables"
+        ordering = ["-date"]
+
+    def __str__(self):
+        return f"{self.date:%d/%m/%Y} – {self.fournisseur or self.libelle} – {self.montant} €"
+
+    @property
+    def annee(self):
+        return (self.date_paiement or self.date).year

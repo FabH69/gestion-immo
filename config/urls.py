@@ -34,6 +34,7 @@ urlpatterns = [
     path("lots/<int:pk>/photos.zip", views.photos_zip, name="photos_zip"),
     path("finances/encaissements/", views.suivi_encaissements, name="suivi_encaissements"),
     path("lmnp/", views.biens_lmnp, name="biens_lmnp"),
+    path("comptabilite/2072/", views.annexe_2072, name="annexe_2072"),
     path("location-courte-duree/", views.suivi_lcd, name="suivi_lcd"),
     path("simulations/plus-value/", views.plus_value, name="plus_value"),
     path("recherche/", views.recherche, name="recherche"),

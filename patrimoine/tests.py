@@ -1396,3 +1396,45 @@ class ReductionTemporaireTests(TestCase):
         self.assertEqual(loyers[3], Decimal("551.61"))  # 15 jours sur 31 réduits
         self.assertEqual(loyers[4], Decimal("600"))
         self.assertEqual(bail.echeances.get(periode=date(2026, 2, 1)).charges, Decimal("50"))
+
+
+class Annexe2072Tests(TestCase):
+    def setUp(self):
+        from .models import PieceComptable, Pret
+
+        self.sci = Proprietaire.objects.create(nom="SCI TEST", type=Proprietaire.Type.SCI_IR)
+        self.bien = Bien.objects.create(proprietaire=self.sci, nom="Immeuble", adresse="1 rue", code_postal="69000", ville="Lyon")
+        lot_a, _ = Lot.objects.create(bien=self.bien, designation="A"), Lot.objects.create(bien=self.bien, designation="B")
+        bail = Bail.objects.create(lot=lot_a, type=Bail.Type.NU, date_debut=date(2024, 1, 1), loyer_hc=Decimal("500"), charges=Decimal("50"))
+        for m in (1, 2):
+            Echeance.generer_pour_mois(date(2025, m, 1))
+            Paiement.objects.create(echeance=bail.echeances.get(periode=date(2025, m, 1)), date=date(2025, m, 5), montant=550)
+        PieceComptable.objects.create(bien=self.bien, date=date(2025, 3, 1), libelle="Taxe foncière", montant=Decimal("800"), ligne="12")
+        PieceComptable.objects.create(bien=self.bien, date=date(2024, 12, 20), date_paiement=date(2025, 1, 10), libelle="Chaudière",
+                                      montant=Decimal("1200"), ligne="9b")
+        PieceComptable.objects.create(bien=self.bien, date=date(2025, 5, 1), libelle="Mobilier", montant=Decimal("300"), ligne="non")
+        PieceComptable.objects.create(bien=self.bien, date=date(2024, 5, 1), libelle="Autre année", montant=Decimal("99"), ligne="6")
+
+    def test_calcul(self):
+        from .annexe2072 import colonne
+
+        v = colonne(self.bien, 2025)["valeurs"]
+        self.assertEqual(v["1"], Decimal("1000.00"))
+        self.assertEqual(v["7"], Decimal("40"))  # 2 locaux
+        self.assertEqual(v["9"], Decimal("1200"))
+        self.assertEqual(v["9b"], Decimal("1200"))
+        self.assertEqual(v["12"], Decimal("800"))
+        self.assertEqual(v["6"], Decimal("0"))
+        self.assertEqual(v["16"], Decimal("2040"))
+        self.assertEqual(v["18"], Decimal("-1040.00"))
+
+    def test_pages(self):
+        self.client.force_login(User.objects.create_superuser("admin", "a@example.com", "x"))
+        r = self.client.get(f"/comptabilite/2072/?sci={self.sci.pk}&annee=2025")
+        self.assertContains(r, "Immeuble")
+        self.assertContains(r, "Taxe foncière")
+        r = self.client.get(f"/comptabilite/2072/?sci={self.sci.pk}&annee=2025&format=pdf")
+        self.assertEqual(r["Content-Type"], "application/pdf")
+        self.assertEqual(self.client.get("/admin/patrimoine/piececomptable/").status_code, 200)
+        self.assertEqual(self.client.get("/admin/patrimoine/piececomptable/add/").status_code, 200)
+        self.assertContains(self.client.get("/admin/patrimoine/mouvementdepot/"), "Restituées")

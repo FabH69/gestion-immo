@@ -1,0 +1,24 @@
+{% load tableau_bord %}
+{% for page in pages %}
+<table class="annexe-2072">
+  <thead>
+    <tr><th rowspan="3" colspan="2" class="recettes">RECETTES</th><th colspan="6" class="centre">Immeubles</th></tr>
+    <tr><th colspan="6" class="centre">Montant en €</th></tr>
+    <tr>{% for c in page.colonnes %}<th class="immeuble">{{ c.bien.nom }}<small>{{ c.bien.adresse }}{% if c.bien.ville %}, {{ c.bien.code_postal }} {{ c.bien.ville }}{% endif %}</small></th>{% endfor %}{% for v in page.vides %}<th class="immeuble">IV …</th>{% endfor %}</tr>
+  </thead>
+  <tbody>
+    {% for l in page.lignes %}
+      {% if l.genre == "titre" %}
+        <tr class="titre"><td></td><td colspan="7">{{ l.libelle }}</td></tr>
+      {% else %}
+        <tr class="{{ l.genre }}{% if l.code == '9b' %} dont{% endif %}"><td class="num">{{ l.numero }}</td><td class="libelle">{{ l.libelle }}</td>
+          {% for m in l.montants %}<td class="montant">{% if m %}{{ m|euros:2 }}{% endif %}</td>{% endfor %}{% for v in page.vides %}<td class="montant"></td>{% endfor %}</tr>
+      {% endif %}
+    {% endfor %}
+    {% if forloop.last %}
+      <tr><td class="num">22</td><td class="libelle">Revenus ou déficits relatifs aux parts détenues dans d'autres sociétés immobilières non passibles de l'impôt sur les sociétés</td><td colspan="6"></td></tr>
+      <tr class="total"><td class="num">23</td><td class="libelle">REVENU NET (+) OU DÉFICIT (−) À RÉPARTIR ENTRE LES ASSOCIÉS (lignes 21 + 22)</td><td colspan="6" class="montant">{{ total_23|euros:2 }}</td></tr>
+    {% endif %}
+  </tbody>
+</table>
+{% endfor %}

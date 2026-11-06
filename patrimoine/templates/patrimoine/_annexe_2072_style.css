@@ -1,0 +1,13 @@
+.annexe-2072 { border-collapse: collapse; width: 100%; font-size: 12px; margin-bottom: 18px; background: #fff; }
+.annexe-2072 th, .annexe-2072 td { border: 1px solid #9aa5b1; padding: 4px 6px; vertical-align: middle; }
+.annexe-2072 thead th { background: #e5e9ec; color: #1f2933; text-transform: none; letter-spacing: 0; font-size: 12px; }
+.annexe-2072 th.centre, .annexe-2072 th.recettes { text-align: center; font-weight: 700; }
+.annexe-2072 th.immeuble { width: 11%; text-align: center; font-weight: 700; }
+.annexe-2072 th.immeuble small { display: block; font-weight: 400; color: #52606d; font-size: 10px; }
+.annexe-2072 td.num { width: 26px; text-align: center; font-weight: 700; background: #f5f7f8; }
+.annexe-2072 td.libelle { width: 30%; }
+.annexe-2072 td.montant { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.annexe-2072 tr.total td { font-weight: 700; background: #f5f7f8; }
+.annexe-2072 tr.titre td { font-weight: 700; background: #e5e9ec; }
+.annexe-2072 tr.dont td.libelle { padding-left: 18px; font-style: italic; }
+.annexe-2072 tr.auto td.montant { background: #f2f8f7; }

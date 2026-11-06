@@ -9,7 +9,7 @@ from urllib.parse import quote
 from django.utils import timezone
 from django.utils.html import format_html, format_html_join
 
-from .models import DocumentLocataire, ModeleDocument, ParametresMail, PieceCandidature, mois_depot_maximum, GarantCandidature, EncaissementHistorique, ChargeLMNP, SiteUtile, Syndic, Annonce, ChargeLCD, ParametresLCD, ReservationLCD, Bail, Bien, Candidature, ChangementLocataire, Garant, PhotoLot, Echeance, EtatDesLieux, MouvementDepot, Pret, Rappel, RevisionLoyer, Locataire, Lot, Paiement, Proprietaire, Tache
+from .models import PieceComptable, DocumentLocataire, ModeleDocument, ParametresMail, PieceCandidature, mois_depot_maximum, GarantCandidature, EncaissementHistorique, ChargeLMNP, SiteUtile, Syndic, Annonce, ChargeLCD, ParametresLCD, ReservationLCD, Bail, Bien, Candidature, ChangementLocataire, Garant, PhotoLot, Echeance, EtatDesLieux, MouvementDepot, Pret, Rappel, RevisionLoyer, Locataire, Lot, Paiement, Proprietaire, Tache
 
 admin.site.site_header = "Gestion immobilière"
 admin.site.enable_nav_sidebar = False  # remplacé par le menu du bandeau
@@ -1215,7 +1215,7 @@ class DepotEnCoursFilter(admin.SimpleListFilter):
     parameter_name = "en_cours"
 
     def lookups(self, request, model_admin):
-        return [("oui", "En cours (encore détenues)"), ("non", "Soldées (restituées)")]
+        return [("oui", "En cours"), ("non", "Restituées")]
 
     def queryset(self, request, queryset):
         if not self.value():
@@ -1662,3 +1662,73 @@ class ModeleDocumentAdmin(admin.ModelAdmin):
         aide = format_html(' <p class="help">En rouge : champs inconnus, ils resteront tels quels. <a href="{}">Liste des champs</a></p>',
                            reverse("liste_champs")) if inconnus else ""
         return format_html("{}{}", rendu, aide)
+
+
+class AnneeFiscaleFilter(admin.SimpleListFilter):
+    title = "année fiscale"
+    parameter_name = "annee"
+
+    def lookups(self, request, model_admin):
+        annees = sorted({p.annee for p in PieceComptable.objects.only("date", "date_paiement")}, reverse=True)
+        return [(str(a), str(a)) for a in annees]
+
+    def queryset(self, request, queryset):
+        if self.value():
+            a = int(self.value())
+            from django.db.models import Q
+            return queryset.filter(Q(date_paiement__year=a) | Q(date_paiement__isnull=True, date__year=a))
+        return queryset
+
+
+class PieceComptableForm(forms.ModelForm):
+    class Meta:
+        model = PieceComptable
+        fields = "__all__"
+        widgets = {"date": forms.DateInput(attrs={"type": "date"}, format="%Y-%m-%d"),
+                   "date_paiement": forms.DateInput(attrs={"type": "date"}, format="%Y-%m-%d"),
+                   "notes": forms.Textarea(attrs={"rows": 2})}
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        if "bien" in self.fields:
+            # biens des sociétés (l'annexe 2072 concerne les SCI)
+            self.fields["bien"].queryset = Bien.objects.exclude(proprietaire__type=Proprietaire.Type.NOM_PROPRE).order_by("proprietaire__nom", "nom")
+            self.fields["bien"].label_from_instance = lambda b: f"{b.proprietaire.nom} – {b.nom}"
+
+
+@admin.register(PieceComptable)
+class PieceComptableAdmin(admin.ModelAdmin):
+    form = PieceComptableForm
+    list_display = ["date_affichee", "bien", "fournisseur", "libelle", "ligne_courte", "montant_affiche", "piece"]
+    list_display_links = ["date_affichee", "libelle"]
+    list_filter = [AnneeFiscaleFilter, "bien__proprietaire", "ligne"]
+    search_fields = ["fournisseur", "libelle", "bien__nom", "notes"]
+    date_hierarchy = "date"
+    navigation_par = "mois"
+    fieldsets = [
+        (None, {"classes": ["identite-lot"], "fields": ["bien", ("date", "date_paiement"), ("fournisseur", "montant"), "libelle", "ligne", "fichier", "notes"],
+                "description": "Chaque facture alimente la ligne choisie de l'annexe 2072-S-A1 (Comptabilité SCI › Annexe 2072), "
+                               "pour l'année de son paiement. Les loyers, le forfait de 20 € par local et les intérêts d'emprunt "
+                               "sont calculés automatiquement : inutile de les saisir ici."}),
+    ]
+
+    @admin.display(description="date", ordering="date")
+    def date_affichee(self, obj):
+        return obj.date.strftime("%d/%m/%Y")
+
+    @admin.display(description="ligne 2072", ordering="ligne")
+    def ligne_courte(self, obj):
+        return format_html('<span class="pill gris" title="{}">{}</span>', obj.get_ligne_display(),
+                           "non déd." if obj.ligne == "non" else ("9 bis" if obj.ligne == "9b" else obj.ligne))
+
+    @admin.display(description="montant", ordering="montant")
+    def montant_affiche(self, obj):
+        return euros_liste(obj.montant)
+
+    @admin.display(description="facture")
+    def piece(self, obj):
+        return format_html('<a href="{}" target="_blank">PDF</a>', obj.fichier.url) if obj.fichier else "–"
+
+    def changelist_view(self, request, extra_context=None):
+        extra_context = {**(extra_context or {}), "lien_2072": reverse("annexe_2072")}
+        return super().changelist_view(request, extra_context)
