@@ -238,6 +238,7 @@ def filtres_haut(cl):
         champ = getattr(spec, "field", None)
         if champ is not None and champ.name == "type" and champ.model._meta.model_name == "bail":
             titre = "type de bail"
+        chemin = getattr(spec, "field_path", "")
         filtres.append({"titre": titre[:1].upper() + titre[1:], "choix": choix, "boutons": len(choix) <= 5,
-                        "tous": choix[0]["actif"]})
+                        "tous": choix[0]["actif"], "droite": chemin.split("__")[-1] == "proprietaire"})
     return filtres

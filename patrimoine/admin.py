@@ -297,7 +297,7 @@ class LotAdmin(admin.ModelAdmin):
         return format_html('<a class="button" href="{}">Créer une annonce</a> <a class="button" href="{}">Envoyer un formulaire de candidature</a>',
                            url_annonce, url_candidature)
     fieldsets = [
-        (None, {"fields": ["bien", "designation", "type", "surface", "nb_pieces", "meuble", ("exploitation", "lmnp"), "etage"]}),
+        (None, {"classes": ["identite-lot"], "fields": ["bien", "designation", ("type", "surface", "nb_pieces", "meuble"), "etage", ("exploitation", "lmnp")]}),
         ("Caractéristiques (reprises dans le bail)", {"fields": ["annee_construction", ("mode_chauffage", "chauffage"), ("mode_eau_chaude", "eau_chaude"),
                                                               ("code_porte", "cave", "parking"), "classe_dpe", "equipements", "annexes", "clause_particuliere"],
                                                    "description": "Le régime de copropriété, les équipements communs et la zone tendue se règlent sur la fiche du bien."}),
@@ -972,9 +972,7 @@ class EcheanceAdmin(admin.ModelAdmin):
     @admin.display(description="locataire et logement", ordering="bail__lot__bien__nom")
     def locataire_et_logement(self, obj):
         noms = [str(l) for l in obj.bail.locataires.all()]
-        initiales = "".join(n[:1] for n in (obj.bail.locataires.all()[0].prenom, obj.bail.locataires.all()[0].nom)).upper() if noms else "?"
-        return format_html('<span class="cellule-personne"><span class="avatar-rond">{}</span><span><b>{}</b><small>{}</small></span></span>',
-                           initiales or "?", ", ".join(noms) or "–", obj.bail.lot)
+        return format_html('<span class="cellule-personne"><span><b>{}</b><small>{}</small></span></span>', ", ".join(noms) or "–", obj.bail.lot)
 
     @admin.display(description="échéance", ordering="date_exigibilite")
     def echeance_le(self, obj):

@@ -1,19 +1,13 @@
 {% extends "admin/patrimoine/change_list.html" %}
 {% load tableau_bord %}
 {% block object-tools-items %}
-  <li><a href="{% url 'admin:patrimoine_echeance_generer' %}?mois={{ mois_courant|date:'Y-m' }}">Générer les loyers de {{ mois_courant|date:"F Y" }}</a></li>
-  <li><a href="{% url 'admin:patrimoine_echeance_generer' %}?mois={{ mois_suivant|date:'Y-m' }}">Générer les loyers de {{ mois_suivant|date:"F Y" }}</a></li>
-  <li><a href="{% url 'etat_loyers_encaisses' %}">État des loyers encaissés</a></li>
+  <li><a href="{% url 'admin:patrimoine_echeance_generer' %}?mois={{ mois_courant|date:'Y-m' }}">Générer {{ mois_courant|date:"F" }}</a></li>
+  <li><a href="{% url 'admin:patrimoine_echeance_generer' %}?mois={{ mois_suivant|date:'Y-m' }}">Générer {{ mois_suivant|date:"F" }}</a></li>
+  <li><a href="{% url 'etat_loyers_encaisses' %}">État encaissé</a></li>
   {{ block.super }}
 {% endblock %}
 {% block search %}
 {% if resume %}
-<div class="resume-liste">
-  <div><span>Dû</span><b>{{ resume.du|euros:2 }}</b></div>
-  <div><span>Encaissé</span><b class="vert">{{ resume.paye|euros:2 }}</b></div>
-  <div><span>Reste à encaisser</span><b>{{ resume.reste|euros:2 }}</b></div>
-  <div><span>Dont en retard</span><b class="{% if resume.nb_retard %}rouge{% endif %}">{{ resume.retard|euros:2 }}{% if resume.nb_retard %} · {{ resume.nb_retard }} loyer{{ resume.nb_retard|pluralize }}{% endif %}</b></div>
-</div>
 <div class="raccourcis">{% for r in raccourcis %}<a href="{{ r.url }}" class="chip{% if r.actif %} actif{% endif %}">{{ r.libelle }}</a>{% endfor %}</div>
 {% endif %}
 {{ block.super }}
