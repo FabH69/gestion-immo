@@ -482,3 +482,4 @@ body.change-list #recherche-globale { visibility: hidden; }
 .identite-lot .form-multiline > div { margin-right: 18px; }
 .identite-lot .form-multiline > div:last-child .fieldBox { align-items: center; }
 .identite-lot .form-multiline > div + div label { width: auto !important; min-width: 0 !important; padding-right: 8px !important; }
+.filtres-haut .groupe-filtre.raccourcis { padding: 0; gap: 4px; }

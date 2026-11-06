@@ -6,9 +6,3 @@
   <li><a href="{% url 'etat_loyers_encaisses' %}">État encaissé</a></li>
   {{ block.super }}
 {% endblock %}
-{% block search %}
-{% if resume %}
-<div class="raccourcis">{% for r in raccourcis %}<a href="{{ r.url }}" class="chip{% if r.actif %} actif{% endif %}">{{ r.libelle }}</a>{% endfor %}</div>
-{% endif %}
-{{ block.super }}
-{% endblock %}
