@@ -168,6 +168,7 @@ class EncaissementHistoriqueAdmin(admin.ModelAdmin):
     list_display = ["mois", "lot", "montant", "charges", "note"]
     list_filter = ["lot__bien__proprietaire"]
     date_hierarchy = "mois"
+    navigation_par = "mois"
 
 
 @admin.register(ChargeLMNP)
@@ -885,6 +886,7 @@ class EcheanceAdmin(admin.ModelAdmin):
     filtres_caches = ("reglement", "retard")  # remplacés par les raccourcis en haut de la liste
     search_fields = ["bail__lot__designation", "bail__lot__bien__nom", "bail__locataires__nom"]
     date_hierarchy = "periode"
+    navigation_par = "mois"
     readonly_fields = ["statut", "document"]
     fields = ["bail", "periode", ("loyer_hc", "charges"), "date_exigibilite", "statut", "document"]
     inlines = [PaiementInline]
@@ -1532,6 +1534,7 @@ class ReservationLCDAdmin(LotsALouerMixin, admin.ModelAdmin):
     list_filter = ["plateforme", "lot", "annulee"]
     search_fields = ["voyageur", "reference"]
     date_hierarchy = "arrivee"
+    navigation_par = "mois"
 
     @admin.display(description="nuits")
     def nuits(self, obj):
