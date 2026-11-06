@@ -11,3 +11,8 @@
 .annexe-2072 tr.titre td { font-weight: 700; background: #e5e9ec; }
 .annexe-2072 tr.dont td.libelle { padding-left: 18px; font-style: italic; }
 .annexe-2072 tr.auto td.montant { background: #f2f8f7; }
+.annexe-2072.cadre-i { max-width: 900px; }
+.annexe-2072.cadre-i td.libelle { width: auto; }
+.annexe-2072.cadre-i td.montant { width: 150px; }
+.annexe-2072 td.part { background: #fff8e1; font-weight: 700; }
+.annexe-2072 tr.total td.part { background: #fdefc3; }

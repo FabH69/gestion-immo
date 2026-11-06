@@ -26,6 +26,9 @@
   </div>
 </form>
 <p class="legende">À reporter sur l'annexe 2072-S-A1-SD des revenus {{ annee }}. Cases sur fond vert : calculées automatiquement (loyers encaissés, forfait de 20 € par local, intérêts et assurance des prêts rattachés au bien). Les autres lignes viennent des factures codées, prises dans l'année de leur paiement. Vérifiez avec votre comptable avant de déclarer.</p>
+<div class="etat-scroll">{% include "patrimoine/_cadre_i_2072.html" %}</div>
+{% if not tous_les_biens %}<p class="legende" style="color:#b54708">Attention : le cadre I ne totalise que les immeubles cochés. Cochez-les tous pour la déclaration.</p>{% endif %}
+<p class="legende">« Votre part » = montant de la SCI × votre % de détention (réglé sur la fiche du propriétaire). Il sert uniquement à reporter votre quote-part dans votre déclaration personnelle.</p>
 <div class="etat-scroll">{% include "patrimoine/_annexe_2072_tableau.html" %}</div>
 <div class="module detail-2072" style="padding:14px 16px">
   <h2 style="margin:0">Détail par immeuble</h2>

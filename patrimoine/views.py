@@ -801,6 +801,8 @@ def annexe_2072(request):
     biens = [b for b in biens_sci if str(b.pk) in choisis] if choisis else biens_sci
     contexte = {"sci": sci, "scis": scis, "annee": annee, "annees": range(aujourdhui.year - 4, aujourdhui.year + 1),
                 "biens_sci": biens_sci, "biens": biens, "choisis": [b.pk for b in biens], **annexe2072.annexe(biens, annee)}
+    contexte["cadre_i"] = annexe2072.part_personnelle(contexte["resultat"], sci.pourcentage_detention if sci else 100)
+    contexte["tous_les_biens"] = len(biens) == len(biens_sci)
     if request.GET.get("format") == "pdf":
         return _pdf(render_to_string("patrimoine/annexe_2072_pdf.html", contexte), f"2072-S-A1 {annee} {sci.nom if sci else ''}")
     return render(request, "patrimoine/annexe_2072.html",

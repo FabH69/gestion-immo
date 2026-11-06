@@ -105,4 +105,18 @@ def annexe(biens, annee):
         lignes = [{"code": code, "numero": "9 bis" if code == "9b" else code, "libelle": libelle, "genre": genre,
                    "montants": [c["valeurs"].get(code, ZERO) for c in cols]} for code, libelle, genre in LIGNES]
         pages.append({"colonnes": cols, "lignes": lignes, "vides": range(vides)})
-    return {"colonnes": colonnes, "pages": pages, "total_23": total_23, "annee": annee}
+    somme = lambda *codes: sum((c["valeurs"].get(k, ZERO) * signe for c in colonnes for k, signe in codes), ZERO)
+    resultat = [  # cadre I de la 2072-S-SD
+        ("R1", "Revenus bruts", "total des lignes 5 + 19 − 20 + 22 des immeubles", somme(("5", 1), ("19", 1), ("20", -1))),
+        ("R2", "Paiement sur travaux", "total des lignes 9", somme(("9", 1))),
+        ("R3", "Frais et charges autres qu'intérêts d'emprunts", "total des lignes 16", somme(("16", 1))),
+        ("R4", "Intérêts d'emprunts", "total des lignes 17", somme(("17", 1))),
+        ("R5", "Revenu net (+) ou déficit net (−)", "total des lignes 23", total_23),
+    ]
+    return {"colonnes": colonnes, "pages": pages, "total_23": total_23, "annee": annee, "resultat": resultat}
+
+
+def part_personnelle(resultat, pourcentage):
+    """Cadre I × % de détention du foyer : seul usage de ce pourcentage dans l'application."""
+    taux = Decimal(pourcentage or 0) / 100
+    return [(code, libelle, aide, montant, (montant * taux).quantize(Decimal("0.01"))) for code, libelle, aide, montant in resultat]

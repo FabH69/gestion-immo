@@ -1,0 +1,10 @@
+{% load tableau_bord %}
+<table class="annexe-2072 cadre-i">
+  <thead><tr><th colspan="2" style="text-align:left">I – RÉSULTAT NET À RÉPARTIR ENTRE LES ASSOCIÉS (2072-S-SD)</th><th class="centre">{{ sci.nom }}</th><th class="centre">Votre part ({{ sci.pourcentage_detention|floatformat:"-2" }} %)</th></tr></thead>
+  <tbody>
+    {% for code, libelle, aide, montant, part in cadre_i %}
+      <tr class="{% if code == 'R5' %}total{% endif %}"><td class="num">{{ code }}</td><td class="libelle"><b>{{ libelle }}</b><br><small>{{ aide }}</small></td>
+        <td class="montant">{{ montant|euros:2 }}</td><td class="montant part">{{ part|euros:2 }}</td></tr>
+    {% endfor %}
+  </tbody>
+</table>

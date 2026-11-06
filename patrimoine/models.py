@@ -28,6 +28,10 @@ class Proprietaire(models.Model):
     iban = models.CharField("IBAN", max_length=34, blank=True)
     email = models.EmailField("adresse électronique", blank=True, help_text="Indiquée dans les baux")
     telephone = models.CharField("téléphone", max_length=30, blank=True)
+    pourcentage_detention = models.DecimalField(
+        "% de détention (foyer fiscal)", max_digits=5, decimal_places=2, default=100,
+        help_text="Part détenue personnellement : sert uniquement à calculer la part à reporter dans votre déclaration de revenus "
+                  "(page Annexe 2072).")
     notes = models.TextField(blank=True)
 
     class Meta:

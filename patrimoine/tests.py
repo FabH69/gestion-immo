@@ -1438,3 +1438,14 @@ class Annexe2072Tests(TestCase):
         self.assertEqual(self.client.get("/admin/patrimoine/piececomptable/").status_code, 200)
         self.assertEqual(self.client.get("/admin/patrimoine/piececomptable/add/").status_code, 200)
         self.assertContains(self.client.get("/admin/patrimoine/mouvementdepot/"), "Restituées")
+
+    def test_cadre_i_et_part_personnelle(self):
+        self.sci.pourcentage_detention = 50
+        self.sci.save()
+        self.client.force_login(User.objects.create_superuser("admin", "a@example.com", "x"))
+        r = self.client.get(f"/comptabilite/2072/?sci={self.sci.pk}&annee=2025")
+        cadre = {code: (montant, part) for code, _, _, montant, part in r.context["cadre_i"]}
+        self.assertEqual(cadre["R1"], (Decimal("1000.00"), Decimal("500.00")))
+        self.assertEqual(cadre["R2"][1], Decimal("600.00"))
+        self.assertEqual(cadre["R5"], (Decimal("-1040.00"), Decimal("-520.00")))
+        self.assertContains(r, "Votre part (50 %)")

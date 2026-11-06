@@ -126,7 +126,7 @@ class ProprietaireAdmin(admin.ModelAdmin):
     list_display = ["nom", "type", "siret", "ville", "nb_biens"]
     list_filter = ["type"]
     inlines = [BienInline]
-    fields = ["nom", "type", "representant", ("siret", "rcs", "date_immatriculation"), "adresse", ("code_postal", "ville"), ("email", "telephone"), "iban", "notes"]
+    fields = ["nom", ("type", "pourcentage_detention"), "representant", ("siret", "rcs", "date_immatriculation"), "adresse", ("code_postal", "ville"), ("email", "telephone"), "iban", "notes"]
 
     def formfield_for_dbfield(self, db_field, request, **kwargs):
         champ = super().formfield_for_dbfield(db_field, request, **kwargs)
