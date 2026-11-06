@@ -1342,3 +1342,21 @@ class LocatairePartiTests(TestCase):
         r = self.client.get(f"/admin/patrimoine/locataire/{loc.pk}/contacter/")
         self.assertContains(r, "Relance de loyer impayé")
         self.assertContains(r, "05/2026")  # loyer impayé repris dans le message de relance
+
+
+class LoyersAutomatiquesTests(TestCase):
+    def test_loyers_du_mois_crees_a_la_premiere_visite(self):
+        from django.test import override_settings
+
+        from . import loyers_auto
+
+        proprio = Proprietaire.objects.create(nom="SCI", type=Proprietaire.Type.SCI_IR)
+        bien = Bien.objects.create(proprietaire=proprio, nom="Immeuble", adresse="1 rue", code_postal="69000", ville="Lyon")
+        Bail.objects.create(lot=Lot.objects.create(bien=bien, designation="A"), type=Bail.Type.NU, date_debut=date(2025, 1, 1), loyer_hc=500)
+        self.client.force_login(User.objects.create_superuser("admin", "a@example.com", "x"))
+        loyers_auto._dernier_jour = None
+        with override_settings(LOYERS_AUTO=True):
+            r = self.client.get("/admin/patrimoine/echeance/")
+            self.client.get("/admin/")
+        self.assertEqual(Echeance.objects.filter(periode=timezone.localdate().replace(day=1)).count(), 1)
+        self.assertNotContains(r, "Générer ")

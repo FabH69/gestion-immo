@@ -55,6 +55,7 @@ MIDDLEWARE = [
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
     "patrimoine.sauvegarde.SauvegardeAutomatiqueMiddleware",
+    "patrimoine.loyers_auto.LoyersAutomatiquesMiddleware",
 ]
 
 ROOT_URLCONF = "config.urls"
@@ -141,6 +142,7 @@ PRIVE_ROOT = BASE_DIR / "prive"
 # sauvegardes automatiques (les 7 dernières) : Réglages › Sauvegardes
 SAUVEGARDES_ROOT = BASE_DIR / "sauvegardes"
 SAUVEGARDE_AUTO = CHARGER_MODELES = "test" not in sys.argv  # pas de sauvegarde automatique pendant les tests
+LOYERS_AUTO = "test" not in sys.argv  # loyers du mois créés automatiquement (pas pendant les tests)
 
 if not DEBUG:
     SESSION_COOKIE_SECURE = CSRF_COOKIE_SECURE = True

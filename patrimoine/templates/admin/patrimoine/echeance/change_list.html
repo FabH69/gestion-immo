@@ -1,8 +1,6 @@
 {% extends "admin/patrimoine/change_list.html" %}
 {% load tableau_bord %}
 {% block object-tools-items %}
-  <li><a href="{% url 'admin:patrimoine_echeance_generer' %}?mois={{ mois_courant|date:'Y-m' }}">Générer {{ mois_courant|date:"F" }}</a></li>
-  <li><a href="{% url 'admin:patrimoine_echeance_generer' %}?mois={{ mois_suivant|date:'Y-m' }}">Générer {{ mois_suivant|date:"F" }}</a></li>
   <li><a href="{% url 'etat_loyers_encaisses' %}">État encaissé</a></li>
   {{ block.super }}
 {% endblock %}
