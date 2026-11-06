@@ -548,7 +548,7 @@ class ListesPresentVenduTests(TestCase):
         Bail.objects.create(lot=lot, type=Bail.Type.NU, date_debut=date(2023, 7, 1), loyer_hc=500).locataires.add(present)
         page = self.client.get("/admin/patrimoine/locataire/?present=non").content.decode()
         self.assertIn("PARTI", page)
-        self.assertIn("30/06/2023", page)
+        self.assertIn("Parti", page)
         self.assertNotIn("PRESENT", page)
         Lot.objects.create(bien=bien, designation="Vieux", vendu=True, date_vente=date(2024, 3, 1))
         page = self.client.get("/admin/patrimoine/lot/?vente=oui").content.decode()
@@ -1311,5 +1311,34 @@ class LocatairePartiTests(TestCase):
         self.client.force_login(User.objects.create_superuser("admin", "a@example.com", "x"))
         r = self.client.get("/admin/patrimoine/bail/")
         self.assertContains(r, 'class="filtres-haut"')
-        self.assertContains(r, "Type de bail")
+        self.assertNotContains(r, "Type de bail")
         self.assertNotContains(r, 'id="changelist-filter"')
+        self.assertContains(r, 'class="titre-liste"')
+
+    def test_garants_actifs_par_defaut(self):
+        from .models import Garant
+        self.client.force_login(User.objects.create_superuser("admin", "a@example.com", "x"))
+        loc = Locataire.objects.create(nom="ANCIEN")
+        self.ancien.locataires.add(loc)
+        Garant.objects.create(bail=self.ancien, locataire=loc, nom="GARANTACTIF")
+        self.ancien.date_fin, self.ancien.actif = date(2026, 1, 31), False
+        self.ancien.save()
+        self.assertNotContains(self.client.get("/admin/patrimoine/garant/"), "GARANTACTIF")
+        self.assertContains(self.client.get("/admin/patrimoine/garant/?actif=tous"), "GARANTACTIF")
+
+    def test_bail_ne_propose_que_les_locataires_sans_bail(self):
+        from .admin import BailForm
+        loge = Locataire.objects.create(nom="LOGE")
+        self.ancien.locataires.add(loge)
+        libre = Locataire.objects.create(nom="LIBRE")
+        self.assertEqual(list(BailForm().fields["locataires"].queryset), [libre])
+        self.assertEqual(set(BailForm(instance=self.ancien).fields["locataires"].queryset), {loge, libre})
+
+    def test_contacter(self):
+        self.client.force_login(User.objects.create_superuser("admin", "a@example.com", "x"))
+        loc = Locataire.objects.create(nom="DURAND", email="d@example.com")
+        self.ancien.locataires.add(loc)
+        self.assertContains(self.client.get("/admin/patrimoine/locataire/"), "Contacter")
+        r = self.client.get(f"/admin/patrimoine/locataire/{loc.pk}/contacter/")
+        self.assertContains(r, "Relance de loyer impayé")
+        self.assertContains(r, "05/2026")  # loyer impayé repris dans le message de relance

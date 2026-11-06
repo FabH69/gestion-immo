@@ -445,3 +445,15 @@ a.ligne-carte:hover { background: var(--selected-bg); text-decoration: none; }
   .outils-droite #toolbar { flex: 1 1 auto; }
   .outils-droite #toolbar form input[type=text] { width: 100%; }
 }
+
+/* Titre de liste : recherche en haut à droite, lancée par Entrée */
+.titre-liste { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.titre-liste h1 { margin: 0; }
+.titre-liste #toolbar { margin: 0 0 0 auto; padding: 0; background: transparent; border: 0; }
+.titre-liste #toolbar form > div { display: flex; align-items: center; gap: 6px; }
+.titre-liste #toolbar input[type=submit], .titre-liste #toolbar .small.quiet { display: none; }
+.titre-liste #toolbar input[type=text] { width: 260px; border-radius: 999px; padding-left: 14px; }
+.titre-liste + .messagelist, .titre-liste { margin-bottom: 12px; }
+@media (max-width: 767px) { .titre-liste #toolbar { width: 100%; } .titre-liste #toolbar input[type=text] { width: 100%; } }
+.cellule-personne small { display: block; }
+#result_list a.bouton-encaisser, a.bouton-encaisser { color: #fff !important; text-decoration: none; }

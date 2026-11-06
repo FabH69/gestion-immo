@@ -4,7 +4,6 @@
 <div id="content-main" class="page-recherche">
   <form method="get" class="recherche-page">
     <input type="search" name="q" value="{{ q }}" placeholder="Nom, ville, adresse, n° de prêt…" autofocus>
-    <button type="submit" class="button">Rechercher</button>
   </form>
   {% if q|length < 2 %}
     <p class="vide">Tapez au moins deux lettres.</p>
