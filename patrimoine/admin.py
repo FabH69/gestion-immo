@@ -680,7 +680,7 @@ class BailForm(forms.ModelForm):
     class Meta:
         model = Bail
         fields = "__all__"
-        widgets = {nom: forms.DateInput(attrs={"type": "date"}, format="%Y-%m-%d") for nom in ("date_loyer_precedent", "date_revision_precedente")}
+        widgets = {nom: forms.DateInput(attrs={"type": "date"}, format="%Y-%m-%d") for nom in ("date_loyer_precedent", "date_revision_precedente", "reduction_debut", "reduction_fin")}
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -694,6 +694,13 @@ class BailForm(forms.ModelForm):
 
     def clean(self):
         donnees = super().clean()
+        r_montant, r_debut, r_fin = donnees.get("reduction_montant"), donnees.get("reduction_debut"), donnees.get("reduction_fin")
+        if r_montant and not r_debut:
+            self.add_error("reduction_debut", "Indiquez à partir de quand la réduction s'applique.")
+        if (r_debut or r_fin) and not r_montant:
+            self.add_error("reduction_montant", "Indiquez le montant de la réduction.")
+        if r_debut and r_fin and r_fin < r_debut:
+            self.add_error("reduction_fin", "La fin doit être après le début.")
         mois = mois_depot_maximum(donnees.get("type"))
         loyer, depot = donnees.get("loyer_initial") or donnees.get("loyer_hc"), donnees.get("depot_garantie")
         if mois is not None and loyer is not None and depot is not None and depot > loyer * mois:
@@ -731,6 +738,9 @@ class BailAdmin(LotsALouerMixin, admin.ModelAdmin):
     fieldsets = [
         (None, {"fields": ["lot", "locataires", ("type", "destination"), ("date_debut", "date_fin"), "actif"]}),
         ("Conditions financières", {"fields": [("loyer_initial", "loyer_hc"), ("charges", "mode_charges"), ("depot_garantie", "recu_depot"), "jour_echeance", "paiement_a_echoir"]}),
+        ("Réduction temporaire", {"classes": ["identite-lot"], "fields": [("reduction_montant", "reduction_debut", "reduction_fin")],
+                                  "description": "Montant déduit du loyer hors charges chaque mois entre ces deux dates (au prorata des jours si la période "
+                                                 "commence ou finit en cours de mois). Les loyers non encore réglés sont recalculés à l'enregistrement."}),
         ("Garantie", {"fields": [("type_garantie", "detail_garantie")], "description": "Les garants se saisissent en bas de page."}),
         ("Relevés des compteurs", {"fields": [("pdl_electricite", "index_elec_entree", "index_elec_sortie"),
                                               ("pce_gaz", "index_gaz_entree", "index_gaz_sortie"),
@@ -1121,6 +1131,8 @@ class TacheEntreeInline(TacheInlineBase):
 
 @admin.register(ChangementLocataire)
 class ChangementLocataireAdmin(LotsALouerMixin, admin.ModelAdmin):
+    date_hierarchy = "date_depart"
+    navigation_par = "annee"
     list_display = ["lot", "locataire_sortant", "date_conge", "date_depart", "date_arrivee", "avancement_affiche", "prochaine_tache", "termine"]
     list_filter = ["termine", "lot__bien__proprietaire"]
     fields = ["lot", "bail_sortant", "date_conge", "date_depart", "date_arrivee", "termine", "notes"]
@@ -1166,6 +1178,8 @@ class TacheEnRetardFilter(admin.SimpleListFilter):
 
 @admin.register(Tache)
 class TacheAdmin(admin.ModelAdmin):
+    date_hierarchy = "echeance"
+    navigation_par = "mois"
     list_display = ["echeance", "libelle", "changement", "phase", "faite"]
     list_editable = ["faite"]
     list_filter = [TacheEnRetardFilter, "faite", "changement__lot__bien__proprietaire"]
@@ -1182,6 +1196,8 @@ class TacheAdmin(admin.ModelAdmin):
 
 @admin.register(EtatDesLieux)
 class EtatDesLieuxAdmin(admin.ModelAdmin):
+    date_hierarchy = "date"
+    navigation_par = "annee"
     list_display = ["date", "type", "bail", "document"]
     list_filter = ["type", "bail__lot__bien__proprietaire"]
     readonly_fields = ["document"]
@@ -1210,6 +1226,7 @@ class DepotEnCoursFilter(admin.SimpleListFilter):
 
 @admin.register(MouvementDepot)
 class MouvementDepotAdmin(admin.ModelAdmin):
+    navigation_par = "annee"
     list_display = ["date", "type", "montant_affiche", "logement", "locataires", "proprietaire", "mode", "justification", "recu"]
     list_select_related = ["bail__lot__bien__proprietaire"]
 
@@ -1304,6 +1321,8 @@ class PretAdmin(admin.ModelAdmin):
 
 @admin.register(Rappel)
 class RappelAdmin(admin.ModelAdmin):
+    date_hierarchy = "date"
+    navigation_par = "mois"
     list_display = ["date", "titre", "categorie", "bien", "periodicite", "actif", "fait"]
     list_editable = ["actif", "fait"]
     list_filter = ["fait", "bien__proprietaire"]
@@ -1329,6 +1348,8 @@ class RappelAdmin(admin.ModelAdmin):
 
 @admin.register(RevisionLoyer)
 class RevisionLoyerAdmin(admin.ModelAdmin):
+    date_hierarchy = "date_effet"
+    navigation_par = "annee"
     list_display = ["date_effet", "bail", "ancien_loyer", "ancien_irl", "nouvel_irl", "trimestre", "pourcentage", "nouveau_loyer", "appliquee", "liens"]
     list_filter = ["appliquee", "bail__lot__bien__proprietaire"]
 
@@ -1407,6 +1428,8 @@ class PieceCandidatureInline(admin.TabularInline):
 
 @admin.register(Candidature)
 class CandidatureAdmin(LotsALouerMixin, admin.ModelAdmin):
+    date_hierarchy = "recue_le"
+    navigation_par = "mois"
     inlines = [GarantCandidatureInline, PieceCandidatureInline]
     list_display = ["__str__", "statut", "situation", "revenus_mensuels", "taux_effort", "type_garantie", "recue_le"]
     list_filter = ["statut", "lot__bien__proprietaire"]
@@ -1547,6 +1570,8 @@ class ReservationLCDAdmin(LotsALouerMixin, admin.ModelAdmin):
 
 @admin.register(ChargeLCD)
 class ChargeLCDAdmin(admin.ModelAdmin):
+    date_hierarchy = "debut"
+    navigation_par = "mois"
     list_display = ["libelle", "lot", "montant_mensuel", "debut", "fin"]
     list_filter = ["lot"]
 

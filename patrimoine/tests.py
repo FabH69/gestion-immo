@@ -1377,3 +1377,22 @@ class NavigationPeriodeTests(TestCase):
         r = self.client.get("/admin/patrimoine/echeance/?reglement=tous&periode__gte=2026-03-01&periode__lte=2026-03-31")
         self.assertEqual(r.context["cl"].result_count, 1)
         self.assertContains(r, "periode-libre\" open")
+
+
+class ReductionTemporaireTests(TestCase):
+    def test_reduction_deduite_au_prorata(self):
+        proprio = Proprietaire.objects.create(nom="SCI", type=Proprietaire.Type.SCI_IR)
+        bien = Bien.objects.create(proprietaire=proprio, nom="Immeuble", adresse="1 rue", code_postal="69000", ville="Lyon")
+        bail = Bail.objects.create(lot=Lot.objects.create(bien=bien, designation="A"), type=Bail.Type.NU, date_debut=date(2025, 1, 1),
+                                   loyer_hc=Decimal("600"), charges=Decimal("50"))
+        for m in (1, 2, 3, 4):
+            Echeance.generer_pour_mois(date(2026, m, 1))
+        Paiement.objects.create(echeance=bail.echeances.get(periode=date(2026, 1, 1)), date=date(2026, 1, 5), montant=650)
+        bail.reduction_montant, bail.reduction_debut, bail.reduction_fin = Decimal("100"), date(2026, 1, 1), date(2026, 3, 15)
+        bail.save()
+        loyers = {e.periode.month: e.loyer_hc for e in bail.echeances.all()}
+        self.assertEqual(loyers[1], Decimal("600"))  # déjà réglé : inchangé
+        self.assertEqual(loyers[2], Decimal("500.00"))
+        self.assertEqual(loyers[3], Decimal("551.61"))  # 15 jours sur 31 réduits
+        self.assertEqual(loyers[4], Decimal("600"))
+        self.assertEqual(bail.echeances.get(periode=date(2026, 2, 1)).charges, Decimal("50"))

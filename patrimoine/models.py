@@ -317,6 +317,10 @@ class Bail(models.Model):
     date_attestation_assurance = models.DateField("dernière attestation d'assurance reçue", null=True, blank=True)
     rappel_assurance = models.BooleanField("rappel annuel de l'attestation d'assurance", default=True)
     actif = models.BooleanField(default=True)
+    # réduction temporaire du loyer (geste commercial, travaux…) : déduite du loyer HC des mois concernés, au prorata des jours
+    reduction_montant = models.DecimalField("réduction mensuelle (€)", max_digits=10, decimal_places=2, null=True, blank=True)
+    reduction_debut = models.DateField("du", null=True, blank=True)
+    reduction_fin = models.DateField("au", null=True, blank=True)
     # relevés des compteurs (repris dans les états des lieux d'entrée et de sortie)
     pdl_electricite = models.CharField("électricité : n° PDL", max_length=20, blank=True, help_text="Point de livraison, 14 chiffres (facture ou compteur Linky)")
     index_elec_entree = models.CharField("index à l'entrée", max_length=50, blank=True, help_text="En heures pleines / creuses : « HP 12345 / HC 6789 »")
@@ -363,6 +367,8 @@ class Bail(models.Model):
             self.pdl_electricite = self.lot.pdl
         nouveau = self.pk is None
         avant = None if nouveau else Bail.objects.filter(pk=self.pk).values("actif", "date_fin").first()
+        reduction = lambda b: (b.get("reduction_montant"), b.get("reduction_debut"), b.get("reduction_fin"))
+        reduction_avant = None if nouveau else Bail.objects.filter(pk=self.pk).values("reduction_montant", "reduction_debut", "reduction_fin").first()
         super().save(*args, **kwargs)
         if nouveau and self.lot_id and self.date_debut and self.date_debut <= date.today():
             # nouveau locataire déjà entré : le bail précédent resté ouvert sur ce lot se termine la veille
@@ -372,6 +378,10 @@ class Bail(models.Model):
                 ancien.save()
         if not self.actif and self.date_fin and avant != {"actif": self.actif, "date_fin": self.date_fin}:
             self.nettoyer_apres_depart()
+        if reduction_avant is not None and reduction(reduction_avant) != (self.reduction_montant, self.reduction_debut, self.reduction_fin):
+            # réduction ajoutée ou modifiée : les loyers non réglés (et non corrigés à la main) sont recalculés
+            for e in self.echeances.all():
+                e.actualiser_loyer()
 
     PAIEMENT_SUPPOSE = "Supposé réglé"
 
@@ -501,6 +511,13 @@ class Bail(models.Model):
         if 0 < jours < nb_jours:
             ratio = Decimal(jours) / Decimal(nb_jours)
             loyer, charges = (loyer * ratio).quantize(Decimal("0.01")), (charges * ratio).quantize(Decimal("0.01"))
+        if self.reduction_montant and self.reduction_debut:
+            # réduction temporaire, au prorata des jours du mois couverts à la fois par la réduction et par le bail
+            r_debut, r_fin = max(premier, self.reduction_debut), min(dernier, self.reduction_fin or dernier)
+            jours_reduits = (r_fin - r_debut).days + 1
+            if jours_reduits > 0:
+                reduction = (self.reduction_montant * Decimal(jours_reduits) / Decimal(nb_jours)).quantize(Decimal("0.01"))
+                loyer = max(loyer - reduction, Decimal(0))
         return loyer, charges
 
     DUREES_MOIS = {"nu": 36, "meuble": 12, "etudiant": 9, "mobilite": 10, "commercial": 108, "professionnel": 72, "parking": 12}

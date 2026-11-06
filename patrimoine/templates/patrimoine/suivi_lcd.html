@@ -26,7 +26,7 @@ table.suivi td.total, table.suivi th.total { background: var(--darkened-bg); fon
 <div class="carte">
   <form method="get" class="barre">
     <div><label for="lot">Logement</label><select id="lot" name="lot" onchange="this.form.submit()">{% for l in lots %}<option value="{{ l.pk }}"{% if l == lot %} selected{% endif %}>{{ l }}</option>{% endfor %}</select></div>
-    <div><label for="annee">Année</label><select id="annee" name="annee" onchange="this.form.submit()">{% for a in annees %}<option{% if a == annee %} selected{% endif %}>{{ a }}</option>{% endfor %}</select></div>
+    <div><label>Année</label>{% boutons_annees annees annee %}<input type="hidden" name="annee" value="{{ annee }}"></div>
     {% if lot %}<div><label for="mois">Mois comparé à l'an dernier</label><select id="mois" name="mois" onchange="this.form.submit()">{% for m in mois %}<option value="{{ m.mois }}"{% if m.mois == mois_ref %} selected{% endif %}>{{ m.mois }}/{{ annee }}</option>{% endfor %}</select></div>{% endif %}
   </form>
 </div>

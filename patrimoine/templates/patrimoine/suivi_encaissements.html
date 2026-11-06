@@ -28,7 +28,7 @@ table.enc .occupant { display: block; font-size: .68rem; color: var(--body-quiet
 <div class="carte">
   <form method="get" class="barre">
     <div><label for="proprietaire">Propriétaire</label><select id="proprietaire" name="proprietaire" onchange="this.form.submit()">{% for p in proprietaires %}<option value="{{ p.pk }}"{% if p == proprietaire %} selected{% endif %}>{{ p.nom }}</option>{% endfor %}</select></div>
-    <div><label for="annee">Année</label><select id="annee" name="annee" onchange="this.form.submit()">{% for a in annees %}<option{% if a == annee %} selected{% endif %}>{{ a }}</option>{% endfor %}</select></div>
+    <div><label>Année</label>{% boutons_annees annees annee %}<input type="hidden" name="annee" value="{{ annee }}"></div>
   </form>
 </div>
 

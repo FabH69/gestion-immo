@@ -240,7 +240,7 @@ def filtres_haut(cl):
             titre = "type de bail"
         chemin = getattr(spec, "field_path", "")
         filtres.append({"titre": titre[:1].upper() + titre[1:], "choix": choix, "boutons": len(choix) <= 5,
-                        "tous": choix[0]["actif"], "droite": chemin.split("__")[-1] == "proprietaire"})
+                        "tous": choix[0]["actif"], "avec_titre": any(c["libelle"] in ("Oui", "Non") for c in choix), "droite": chemin.split("__")[-1] == "proprietaire"})
     return filtres
 
 
@@ -277,3 +277,15 @@ def navigation_periode(cl):
     perso = not aucun and not any(b["actif"] for b in boutons)
     autres = [(k, v[-1] if isinstance(v, list) else v) for k, v in cl.params.items() if k not in retire]
     return {"boutons": boutons, "perso": perso, "du": du, "au": au, "p_du": p_du, "p_au": p_au, "autres": autres}
+
+
+@register.inclusion_tag("patrimoine/_annees.html", takes_context=True)
+def boutons_annees(context, annees, annee):
+    """Années en boutons (à la place d'une liste déroulante) ; les autres paramètres de la page sont conservés."""
+    request = context.get("request")
+    boutons = []
+    for a in sorted(annees, reverse=True):
+        params = request.GET.copy() if request else {}
+        params["annee"] = a
+        boutons.append({"libelle": a, "url": "?" + params.urlencode(), "actif": a == annee})
+    return {"boutons": boutons}

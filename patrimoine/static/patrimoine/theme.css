@@ -494,3 +494,5 @@ body.change-list #recherche-globale { visibility: hidden; }
 .periode-form label { color: var(--body-quiet-color); font-size: .85rem; display: inline-flex; align-items: center; gap: 6px; }
 .periode-form input[type=date] { height: 32px; border-radius: 999px; padding: 0 10px; }
 .periode-form button.chip { cursor: pointer; }
+.titre-filtre { font-size: .82rem; color: var(--body-quiet-color); align-self: center; margin-right: 2px; }
+.identite-lot #id_reduction_montant { width: 8em; }
