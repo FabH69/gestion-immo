@@ -28,8 +28,15 @@
 {% block search %}{% endblock %}
 {% block date_hierarchy %}{% navigation_periode cl as nav %}{% if nav %}
 <div class="navigation-periode">
-  {% if nav.precedent %}<a class="chip" href="{{ nav.precedent.url }}" title="{{ nav.precedent.libelle }}">‹ {{ nav.precedent.libelle }}</a>{% else %}<span class="chip inactif">‹</span>{% endif %}
-  <select onchange="window.location.href=this.value" aria-label="Période">{% for o in nav.options %}<option value="{{ o.url }}"{% if o.actif %} selected{% endif %}>{{ o.libelle }}</option>{% endfor %}</select>
-  {% if nav.suivant %}<a class="chip" href="{{ nav.suivant.url }}" title="{{ nav.suivant.libelle }}">{{ nav.suivant.libelle }} ›</a>{% else %}<span class="chip inactif">›</span>{% endif %}
+  {% for b in nav.boutons %}<a class="chip{% if b.actif %} actif{% endif %}" href="{{ b.url }}">{{ b.libelle }}</a>{% endfor %}
+  <details class="periode-libre"{% if nav.perso %} open{% endif %}>
+    <summary class="chip{% if nav.perso %} actif{% endif %}">Période…</summary>
+    <form method="get" class="periode-form">
+      {% for k, v in nav.autres %}<input type="hidden" name="{{ k }}" value="{{ v }}">{% endfor %}
+      <label>Du <input type="date" name="{{ nav.p_du }}" value="{{ nav.du }}"></label>
+      <label>au <input type="date" name="{{ nav.p_au }}" value="{{ nav.au }}"></label>
+      <button type="submit" class="chip actif">Afficher</button>
+    </form>
+  </details>
 </div>{% endif %}{% endblock %}
 {% block filters %}{% endblock %}

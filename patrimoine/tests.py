@@ -1360,3 +1360,20 @@ class LoyersAutomatiquesTests(TestCase):
             self.client.get("/admin/")
         self.assertEqual(Echeance.objects.filter(periode=timezone.localdate().replace(day=1)).count(), 1)
         self.assertNotContains(r, "Générer ")
+
+
+class NavigationPeriodeTests(TestCase):
+    def test_boutons_et_periode_libre(self):
+        proprio = Proprietaire.objects.create(nom="SCI", type=Proprietaire.Type.SCI_IR)
+        bien = Bien.objects.create(proprietaire=proprio, nom="Immeuble", adresse="1 rue", code_postal="69000", ville="Lyon")
+        bail = Bail.objects.create(lot=Lot.objects.create(bien=bien, designation="A"), type=Bail.Type.NU, date_debut=date(2025, 1, 1), loyer_hc=500)
+        bail.locataires.add(Locataire.objects.create(nom="DUPONT"))
+        Echeance.generer_pour_mois(date(2026, 3, 1))
+        Echeance.generer_pour_mois(date(2026, 5, 1))
+        self.client.force_login(User.objects.create_superuser("admin", "a@example.com", "x"))
+        r = self.client.get("/admin/patrimoine/echeance/?reglement=tous")
+        for libelle in ("Ce mois", "Mois dernier", "3 derniers mois", "Cette année", "Période…"):
+            self.assertContains(r, libelle)
+        r = self.client.get("/admin/patrimoine/echeance/?reglement=tous&periode__gte=2026-03-01&periode__lte=2026-03-31")
+        self.assertEqual(r.context["cl"].result_count, 1)
+        self.assertContains(r, "periode-libre\" open")

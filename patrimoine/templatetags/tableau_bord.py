@@ -244,50 +244,36 @@ def filtres_haut(cl):
     return filtres
 
 
-MOIS_FR = ["janvier", "février", "mars", "avril", "mai", "juin", "juillet", "août", "septembre", "octobre", "novembre", "décembre"]
-
 
 @register.simple_tag
 def navigation_periode(cl):
-    """Remplace la ligne des dates de Django : « ‹ mois précédent | menu | mois suivant › » (ou par année selon l'admin,
-    attribut `navigation_par` = "mois" ou "annee")."""
+    """Remplace la ligne des dates de Django : boutons de période rapides + « Période… » (du … au …).
+    Filtre par `<champ>__gte` / `<champ>__lte`. Par mois (Loyers…) ou par année (Baux…) selon `navigation_par`."""
+    import calendar
+    from datetime import date, timedelta
+
     champ = cl.date_hierarchy
     if not champ:
         return None
-    from django.db.models import Max, Min
-
-    par_mois = getattr(cl.model_admin, "navigation_par", "annee") == "mois"
-    p_annee, p_mois, p_jour = f"{champ}__year", f"{champ}__month", f"{champ}__day"
-    bornes = cl.root_queryset.aggregate(debut=Min(champ), fin=Max(champ))
-    if not bornes["debut"]:
-        return None
-    debut, fin = bornes["debut"], bornes["fin"]
-    annee, mois = cl.params.get(p_annee), cl.params.get(p_mois)
-    annee = int(annee[-1] if isinstance(annee, list) else annee) if annee else None
-    mois = int(mois[-1] if isinstance(mois, list) else mois) if mois and par_mois else None
-
-    def url(a=None, m=None):
-        nouveaux = {}
-        if a:
-            nouveaux[p_annee] = a
-        if m:
-            nouveaux[p_mois] = m
-        return cl.get_query_string(nouveaux, remove=[p_annee, p_mois, p_jour])
-
-    if par_mois:
-        periodes, a, m = [], fin.year, fin.month
-        while (a, m) >= (debut.year, debut.month):
-            periodes.append((a, m))
-            a, m = (a, m - 1) if m > 1 else (a - 1, 12)
-        libelle = lambda a, m: f"{MOIS_FR[m - 1]} {a}".capitalize()
-        options = [{"libelle": libelle(a, m), "url": url(a, m), "actif": (a, m) == (annee, mois)} for a, m in periodes]
-        courant = (annee, mois) if annee and mois else None
-        i = periodes.index(courant) if courant in periodes else None
+    p_du, p_au = f"{champ}__gte", f"{champ}__lte"
+    retire = [p_du, p_au, f"{champ}__year", f"{champ}__month", f"{champ}__day"]
+    valeur = lambda cle: (lambda v: v[-1] if isinstance(v, list) else v)(cl.params.get(cle)) or ""
+    du, au = valeur(p_du), valeur(p_au)
+    t = timezone.localdate()
+    fin_mois = lambda d: d.replace(day=calendar.monthrange(d.year, d.month)[1])
+    debut_mois = t.replace(day=1)
+    mois_dernier = (debut_mois - timedelta(days=1)).replace(day=1)
+    il_y_a_2_mois = (mois_dernier - timedelta(days=1)).replace(day=1)
+    if getattr(cl.model_admin, "navigation_par", "annee") == "mois":
+        raccourcis = [("Ce mois", debut_mois, fin_mois(t)), ("Mois dernier", mois_dernier, fin_mois(mois_dernier)),
+                      ("3 derniers mois", il_y_a_2_mois, fin_mois(t)), ("Cette année", date(t.year, 1, 1), date(t.year, 12, 31))]
     else:
-        periodes = list(range(fin.year, debut.year - 1, -1))
-        options = [{"libelle": str(a), "url": url(a), "actif": a == annee} for a in periodes]
-        i = periodes.index(annee) if annee in periodes else None
-    options.insert(0, {"libelle": "Toutes les périodes", "url": url(), "actif": i is None})
-    precedent = options[i + 2] if i is not None and i + 1 < len(periodes) else None  # liste du plus récent au plus ancien
-    suivant = options[i] if i is not None and i > 0 else None
-    return {"options": options, "precedent": precedent, "suivant": suivant}
+        raccourcis = [("Cette année", date(t.year, 1, 1), date(t.year, 12, 31)),
+                      ("Année dernière", date(t.year - 1, 1, 1), date(t.year - 1, 12, 31))]
+    boutons = [{"libelle": l, "url": cl.get_query_string({p_du: a.isoformat(), p_au: b.isoformat()}, remove=retire),
+                "actif": (du, au) == (a.isoformat(), b.isoformat())} for l, a, b in raccourcis]
+    aucun = not du and not au
+    boutons.append({"libelle": "Tout", "url": cl.get_query_string({}, remove=retire), "actif": aucun})
+    perso = not aucun and not any(b["actif"] for b in boutons)
+    autres = [(k, v[-1] if isinstance(v, list) else v) for k, v in cl.params.items() if k not in retire]
+    return {"boutons": boutons, "perso": perso, "du": du, "au": au, "p_du": p_du, "p_au": p_au, "autres": autres}
