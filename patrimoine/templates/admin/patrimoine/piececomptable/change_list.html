@@ -5,3 +5,38 @@
   <li><a href="{{ lien_2072 }}">Annexe 2072</a></li>
   {{ block.super }}
 {% endblock %}
+{% block footer %}{{ block.super }}
+<div id="apercu-piece" hidden></div>
+<style>
+#apercu-piece { position: fixed; z-index: 1000; width: 440px; height: 600px; max-height: 80vh; background: #fff; border: 1px solid var(--border-color, #ccc);
+  border-radius: 10px; box-shadow: 0 8px 30px rgba(0,0,0,.25); overflow: hidden; }
+#apercu-piece iframe { width: 100%; height: 100%; border: 0; }
+#apercu-piece img { width: 100%; height: 100%; object-fit: contain; background: #fff; }
+</style>
+<script>
+(function () {
+  // Aperçu de la facture au survol du lien PDF / Photo (le clic ouvre toujours la pièce dans un nouvel onglet).
+  var boite = document.getElementById("apercu-piece"), minuteur = null, courant = null;
+  function placer(lien) {
+    var r = lien.getBoundingClientRect(), l = 440, h = Math.min(600, window.innerHeight * 0.8);
+    var x = r.right + 12; if (x + l > window.innerWidth - 8) x = Math.max(8, r.left - l - 12);
+    var y = Math.min(Math.max(8, r.top - h / 3), window.innerHeight - h - 8);
+    boite.style.left = x + "px"; boite.style.top = y + "px";
+  }
+  function montrer(lien) {
+    if (courant !== lien) {
+      boite.innerHTML = lien.dataset.image ? '<img alt="">' : '<iframe title="Aperçu de la facture"></iframe>';
+      boite.firstChild.src = lien.dataset.image ? lien.href : lien.href + "#toolbar=0&navpanes=0&view=FitH";
+      courant = lien;
+    }
+    placer(lien); boite.hidden = false;
+  }
+  document.querySelectorAll("a.apercu-piece").forEach(function (lien) {
+    lien.addEventListener("mouseenter", function () { clearTimeout(minuteur); minuteur = setTimeout(function () { montrer(lien); }, 250); });
+    lien.addEventListener("mouseleave", function () { clearTimeout(minuteur); minuteur = setTimeout(function () { boite.hidden = true; }, 200); });
+  });
+  boite.addEventListener("mouseenter", function () { clearTimeout(minuteur); });
+  boite.addEventListener("mouseleave", function () { boite.hidden = true; });
+})();
+</script>
+{% endblock %}

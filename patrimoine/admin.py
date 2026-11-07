@@ -1755,7 +1755,7 @@ class PieceComptableAdmin(admin.ModelAdmin):
     list_filter = [ACodifierFilter, AnneeFiscaleFilter, "bien__proprietaire", "ligne"]
     search_fields = ["fournisseur", "libelle", "bien__nom", "notes"]
     # mode « codifier » (liste filtrée sur les pièces à codifier) : tout se complète directement dans le tableau
-    LISTE_CODIFIER = ["piece", "modifier", "bien", "date", "date_paiement", "fournisseur", "libelle", "montant", "ligne"]
+    LISTE_CODIFIER = ["piece", "bien", "date", "date_paiement", "fournisseur", "libelle", "montant", "ligne"]
     fieldsets = [
         (None, {"classes": ["identite-lot"], "fields": ["bien", ("date", "date_paiement"), ("fournisseur", "montant"), "libelle", "ligne", "fichier", "notes"],
                 "description": "Chaque facture alimente la ligne choisie de l'annexe 2072-S-A1 (Comptabilité SCI › Annexe 2072), "
@@ -1770,20 +1770,16 @@ class PieceComptableAdmin(admin.ModelAdmin):
         return self.LISTE_CODIFIER if self._codifier(request) else self.list_display
 
     def get_list_display_links(self, request, list_display):
-        return ["modifier"] if self._codifier(request) else self.list_display_links
+        return None if self._codifier(request) else self.list_display_links
 
     def get_changelist_instance(self, request):
-        self.list_editable = self.LISTE_CODIFIER[2:] if self._codifier(request) else ()
+        self.list_editable = self.LISTE_CODIFIER[1:] if self._codifier(request) else ()
         return super().get_changelist_instance(request)
 
     def get_changelist_formset(self, request, **kwargs):
         # tableau de codification : listes simples (sans les icônes d'ajout / modification du bien)
-        self.list_editable = self.LISTE_CODIFIER[2:] if self._codifier(request) else ()
+        self.list_editable = self.LISTE_CODIFIER[1:] if self._codifier(request) else ()
         return forms.modelformset_factory(self.model, form=PieceComptableForm, fields=self.list_editable, extra=0)
-
-    @admin.display(description="")
-    def modifier(self, obj):
-        return "Fiche"
 
     def get_urls(self):
         from django.urls import path
@@ -1836,7 +1832,11 @@ class PieceComptableAdmin(admin.ModelAdmin):
 
     @admin.display(description="facture")
     def piece(self, obj):
-        return format_html('<a href="{}" target="_blank">PDF</a>', obj.fichier.url) if obj.fichier else "–"
+        if not obj.fichier:
+            return "–"
+        image = obj.fichier.name.lower().rsplit(".", 1)[-1] in ("jpg", "jpeg", "png")
+        return format_html('<a href="{}" target="_blank" class="apercu-piece" data-image="{}">{}</a>',
+                           obj.fichier.url, "1" if image else "", "Photo" if image else "PDF")
 
     def changelist_view(self, request, extra_context=None):
         extra_context = {**(extra_context or {}), "lien_2072": reverse("annexe_2072"),

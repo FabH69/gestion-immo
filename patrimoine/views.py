@@ -8,6 +8,7 @@ from urllib.parse import quote
 from django.contrib import admin, messages
 from django.contrib.admin.views.decorators import staff_member_required
 from django.http import HttpResponse
+from django.views.decorators.clickjacking import xframe_options_sameorigin
 from django.shortcuts import get_object_or_404, redirect, render
 from django.template.loader import render_to_string
 from django.urls import reverse
@@ -679,6 +680,7 @@ def biens_lmnp(request):
     return render(request, "patrimoine/lmnp.html", contexte)
 
 
+@xframe_options_sameorigin  # aperçu des factures au survol (cadre sur la même adresse)
 @staff_member_required
 def fichier_prive(request, chemin):
     """Pièces d'identité des garants : visibles seulement une fois connecté à l'administration."""
