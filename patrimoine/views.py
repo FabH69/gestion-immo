@@ -905,6 +905,20 @@ def recherche(request):
 
 
 @staff_member_required
+@require_POST
+def enregistrer_note(request):
+    """Bloc-notes du tableau de bord (chaque utilisateur a le sien)."""
+    from django.http import JsonResponse
+
+    from .models import NoteRapide
+
+    note, _ = NoteRapide.objects.get_or_create(utilisateur=request.user)
+    note.texte = request.POST.get("texte", "")[:20000]
+    note.save()
+    return JsonResponse({"ok": True, "heure": timezone.localtime(note.modifie_le).strftime("%H:%M")})
+
+
+@staff_member_required
 def annonce_pdf(request, pk):
     """Annonce en PDF : titre, chiffres clés, photos du lot et texte (pour l'imprimer ou l'envoyer)."""
     from pathlib import Path

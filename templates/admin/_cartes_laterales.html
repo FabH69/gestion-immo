@@ -6,6 +6,27 @@
     {% if droits.relocation == "modification" %}<a class="button" href="{% url 'admin:patrimoine_annonce_add' %}">Créer une annonce</a>{% endif %}
   </div>
 </div>{% endif %}
+{% note_rapide as note %}<div class="module carte bloc-notes">
+  <h2>Notes rapides<span class="lien-carte" id="etat-note">{% if note.texte %}enregistré{% endif %}</span></h2>
+  <textarea id="texte-note" rows="5" placeholder="Une idée, un numéro, un rappel… (enregistré automatiquement)">{{ note.texte|default:"" }}</textarea>
+</div>
+<script>
+(function () {
+  var zone = document.getElementById("texte-note"), etat = document.getElementById("etat-note"), minuteur;
+  var jeton = (document.cookie.match(/csrftoken=([^;]+)/) || [])[1] || "";
+  function enregistrer() {
+    var donnees = new FormData(); donnees.append("texte", zone.value);
+    fetch("{% url 'enregistrer_note' %}", {method: "POST", body: donnees, headers: {"X-CSRFToken": jeton}, credentials: "same-origin"})
+      .then(function (r) { return r.json(); })
+      .then(function (d) { etat.textContent = "enregistré à " + d.heure; zone.dataset.modifie = ""; })
+      .catch(function () { etat.textContent = "non enregistré"; });
+  }
+  zone.addEventListener("input", function () {
+    zone.dataset.modifie = "1"; etat.textContent = "…"; clearTimeout(minuteur); minuteur = setTimeout(enregistrer, 800);
+  });
+  zone.addEventListener("blur", function () { if (zone.dataset.modifie) { clearTimeout(minuteur); enregistrer(); } });
+})();
+</script>
 {% if droits.loyers %}<div class="module carte">
   <h2>Loyers de {{ tb.mois }}<a class="lien-carte" href="{% url 'admin:patrimoine_echeance_changelist' %}">Tout voir ({{ tb.nb_lignes }})</a></h2>
   {% for l in tb.lignes %}

@@ -328,3 +328,14 @@ def boutons_annees(context, annees, annee, mode=""):
     for a in sorted(annees, reverse=True):
         boutons.append({"libelle": a, "url": lien(a), "actif": a == annee})
     return {"boutons": boutons}
+
+
+@register.simple_tag(takes_context=True)
+def note_rapide(context):
+    """Texte du bloc-notes de l'utilisateur connecté."""
+    from patrimoine.models import NoteRapide
+
+    user = context.get("user")
+    if user is None or not user.is_authenticated:
+        return None
+    return NoteRapide.objects.filter(utilisateur=user).first()

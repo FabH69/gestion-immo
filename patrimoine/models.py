@@ -1650,6 +1650,21 @@ class ModeleAnnonce(models.Model):
         super().save(*args, **kwargs)
 
 
+class NoteRapide(models.Model):
+    """Bloc-notes du tableau de bord : une note par utilisateur, enregistrée au fil de la frappe."""
+
+    utilisateur = models.OneToOneField("auth.User", on_delete=models.CASCADE, related_name="note_rapide")
+    texte = models.TextField(blank=True)
+    modifie_le = models.DateTimeField("modifié le", auto_now=True)
+
+    class Meta:
+        verbose_name = "note rapide"
+        verbose_name_plural = "notes rapides"
+
+    def __str__(self):
+        return f"Notes de {self.utilisateur}"
+
+
 def _chemin_facture(instance, nom):
     import secrets
 
