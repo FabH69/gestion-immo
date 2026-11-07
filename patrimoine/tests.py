@@ -288,6 +288,22 @@ class RappelsEtRevisionTests(TestCase):
         self.assertEqual(self.bail.date_attestation_assurance, timezone.localdate())
         self.assertEqual(self.client.get("/admin/").status_code, 200)
 
+    def test_etat_encaisse_montant_cliquable(self):
+        from .models import Echeance, Paiement
+
+        e = Echeance.objects.create(bail=self.bail, periode=date(2026, 2, 1), loyer_hc=600, charges=50, date_exigibilite=date(2026, 2, 5))
+        Paiement.objects.create(echeance=e, date=date(2026, 2, 6), montant=650)
+        page = self.client.get("/etats/loyers-encaisses/?annee=2026")
+        self.assertContains(page, f"lot={self.bail.lot_id}&amp;annee=2026&amp;mois=2")
+        r = self.client.get(f"/etats/loyers-encaisses/detail/?lot={self.bail.lot_id}&annee=2026&mois=2")
+        self.assertEqual(r["Location"], f"/admin/patrimoine/echeance/{e.pk}/change/")
+        e2 = Echeance.objects.create(bail=self.bail, periode=date(2026, 3, 1), loyer_hc=600, charges=50, date_exigibilite=date(2026, 3, 5))
+        Paiement.objects.create(echeance=e2, date=date(2026, 2, 27), montant=650)
+        r = self.client.get(f"/etats/loyers-encaisses/detail/?lot={self.bail.lot_id}&annee=2026&mois=2")
+        liste = self.client.get(r["Location"])
+        self.assertEqual(liste.status_code, 200)
+        self.assertEqual(liste.context["cl"].result_count, 2)
+
     def test_revision_calcul_courrier_et_application(self):
         from .models import RevisionLoyer
 

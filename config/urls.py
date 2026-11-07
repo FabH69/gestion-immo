@@ -10,6 +10,7 @@ urlpatterns = [
     path("admin/", admin.site.urls),
     path("echeances/<int:pk>/document.pdf", views.document_echeance, name="document_echeance"),
     path("etats/loyers-encaisses/", views.etat_loyers_encaisses, name="etat_loyers_encaisses"),
+    path("etats/loyers-encaisses/detail/", views.etat_loyers_detail, name="etat_loyers_detail"),
     path("baux/<int:pk>/bail.pdf", views.document_bail, name="document_bail"),
     path("baux/<int:pk>/etat-des-lieux-<str:type_edl>.pdf", views.document_etat_des_lieux_vierge, name="document_edl_vierge"),
     path("baux/<int:pk>/inventaire-<str:type_edl>.pdf", views.document_inventaire, name="document_inventaire"),

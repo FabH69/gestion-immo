@@ -14,7 +14,7 @@
       {% for l in bb.lots %}
       <tr>
         <td class="libelle lot">{% if l.lot.designation|lower != bb.bien.nom|lower %}{{ bb.bien.nom }} – {% endif %}{{ l.lot.designation }}</td>
-        {% for v in l.mois %}<td>{% if v %}{{ v|floatformat:"2g" }}{% else %}–{% endif %}</td>{% endfor %}
+        {% for v in l.mois %}<td>{% if v %}{% if liens %}<a class="montant-lien" href="{% url 'etat_loyers_detail' %}?lot={{ l.lot.pk|unlocalize }}&amp;annee={{ annee|unlocalize }}&amp;mois={{ forloop.counter }}" title="Ouvrir le loyer pour le modifier">{{ v|floatformat:"2g" }}</a>{% else %}{{ v|floatformat:"2g" }}{% endif %}{% else %}–{% endif %}</td>{% endfor %}
         <td class="fort">{{ l.total|floatformat:"2g" }}</td><td>{{ l.loyers_hc|floatformat:"2g" }}</td><td>{{ l.charges|floatformat:"2g" }}</td>
       </tr>
       {% endfor %}

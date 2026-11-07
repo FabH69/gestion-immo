@@ -84,7 +84,30 @@ def etat_loyers_encaisses(request):
         response = HttpResponse(HTML(string=html).write_pdf(), content_type="application/pdf")
         response["Content-Disposition"] = f'attachment; filename="{nom_fichier}.pdf"'
         return response
-    return render(request, "patrimoine/etat_loyers.html", {**admin.site.each_context(request), **contexte, "title": f"Loyers encaissés en {annee}" + (f" – {proprietaire.nom}" if proprietaire else "")})
+    return render(request, "patrimoine/etat_loyers.html", {**admin.site.each_context(request), **contexte, "liens": True, "title": f"Loyers encaissés en {annee}" + (f" – {proprietaire.nom}" if proprietaire else "")})
+
+
+@staff_member_required
+def etat_loyers_detail(request):
+    """Clic sur un montant de l'état encaissé : ouvre le loyer réglé ce mois-là pour ce lot (ou la liste s'il y en a plusieurs)."""
+    from urllib.parse import urlencode
+
+    from django.urls import reverse
+
+    from .models import EncaissementHistorique
+
+    lot, annee, mois = int(request.GET["lot"]), int(request.GET["annee"]), int(request.GET["mois"])
+    ids = list(Echeance.objects.filter(bail__lot_id=lot, paiements__date__year=annee, paiements__date__month=mois)
+               .distinct().order_by("periode").values_list("pk", flat=True))
+    if len(ids) == 1:
+        return redirect("admin:patrimoine_echeance_change", ids[0])
+    if ids:
+        return redirect(reverse("admin:patrimoine_echeance_changelist") + "?" + urlencode({"id__in": ",".join(map(str, ids)), "reglement": "tous"}))
+    h = EncaissementHistorique.objects.filter(lot_id=lot, mois__year=annee, mois__month=mois).first()
+    if h:
+        return redirect("admin:patrimoine_encaissementhistorique_change", h.pk)
+    messages.info(request, "Aucun loyer trouvé pour ce montant.")
+    return redirect("etat_loyers_encaisses")
 
 
 def _etat_csv(etat, nom_fichier):
