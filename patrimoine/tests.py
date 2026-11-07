@@ -1614,4 +1614,5 @@ class EnvoyerQuittanceTests(TestCase):
         self.assertEqual(len(pieces), 1)
         texte = next(p for p in m.walk() if p.get_content_type() == "text/plain").get_content()
         self.assertIn("Bonjour Mme Dupont", texte)
-        self.assertIn("septembre 2026", texte)
+        self.assertIn("du mois de septembre 2026 pour le logement de Lyon.", texte)
+        self.assertTrue(texte.rstrip().endswith("Bien cordialement,"))

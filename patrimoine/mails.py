@@ -94,17 +94,19 @@ def _bonjour_locataires(locataires):
 def texte_quittance(echeance, locataires, mois, est_quittance=True):
     """Texte d'accompagnement de la quittance (ou de l'avis d'échéance si le loyer n'est pas soldé)."""
     lot = echeance.bail.lot
-    ville = f" ({lot.bien.ville})" if lot.bien.ville else ""
+    ville = lot.bien.ville or ""
+    logement = (f"le logement d'{ville}" if ville[:1].lower() in "aeiouyéèêâh" else f"le logement de {ville}") if ville \
+        else f"le logement {lot.designation}"
     de_mois = f"d'{mois}" if mois[:1] in "aeiouéèêâ" else f"de {mois}"
-    signature = _signature() or lot.bien.proprietaire.nom
     if est_quittance:
-        corps = (f"Veuillez trouver ci-joint la quittance de loyer du mois {de_mois} pour le logement {lot.designation}{ville}."
+        corps = (f"Veuillez trouver ci-joint la quittance de loyer du mois {de_mois} pour {logement}."
                  "\n\nJe vous remercie pour votre règlement.")
     else:
-        corps = (f"Veuillez trouver ci-joint l'avis d'échéance du mois {de_mois} pour le logement {lot.designation}{ville}, "
+        corps = (f"Veuillez trouver ci-joint l'avis d'échéance du mois {de_mois} pour {logement}, "
                  f"d'un montant de {f'{echeance.total:.2f}'.replace('.', ',')} €.")
+    # pas de signature : celle d'Outlook s'ajoute à l'envoi
     return (f"{_bonjour_locataires(locataires)}\n\n{corps}\n\n"
-            f"Je reste à votre disposition pour toute question.\n\nBien cordialement,\n{signature}").rstrip()
+            "Je reste à votre disposition pour toute question.\n\nBien cordialement,")
 
 
 def html_quittance(echeance, locataires, mois, est_quittance=True):

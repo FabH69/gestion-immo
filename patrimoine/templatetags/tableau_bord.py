@@ -84,12 +84,12 @@ def _menu():
     return [
         (None, [
             ("accueil", "Tableau de bord", r("admin:index"), ["/admin/$"], []),
-            ("loyers", "Loyers", a("echeance"), [a("echeance"), a("revisionloyer"), a("mouvementdepot")],
-             [("Révisions de loyer", a("revisionloyer")), ("Dépôts de garantie", a("mouvementdepot"))]),
-            ("baux", "Baux", a("bail"), [a("bail")], [("États des lieux", a("etatdeslieux")), ("Garants", a("garant"))]),
-            ("locataires", "Locataires", a("locataire"), [a("locataire")], []),
             ("biens", "Biens et lots", a("bien"), [a("bien"), a("lot")],
              [("Lots", a("lot")), ("Propriétaires", a("proprietaire")), ("Syndics", a("syndic"))]),
+            ("locataires", "Locataires", a("locataire"), [a("locataire")], []),
+            ("baux", "Baux", a("bail"), [a("bail")], [("États des lieux", a("etatdeslieux")), ("Garants", a("garant"))]),
+            ("loyers", "Loyers", a("echeance"), [a("echeance"), a("revisionloyer"), a("mouvementdepot")],
+             [("Révisions de loyer", a("revisionloyer")), ("Dépôts de garantie", a("mouvementdepot"))]),
         ]),
         ("Relocation", [
             ("candidatures", "Candidatures", a("candidature"), [a("candidature")], []),
