@@ -1256,6 +1256,10 @@ class Annonce(models.Model):
     """Annonce de location prête à copier sur Leboncoin (ou tout autre site)."""
 
     lot = models.ForeignKey(Lot, on_delete=models.CASCADE, related_name="annonces")
+    modele = models.ForeignKey("ModeleAnnonce", on_delete=models.SET_NULL, null=True, blank=True, related_name="annonces",
+                               verbose_name="modèle d'annonce",
+                               help_text="Proposé automatiquement d'après le lot. Son texte remplace la description générée ; "
+                                         "loyer, dépôt de garantie et mentions obligatoires sont ajoutés à la suite.")
     titre = models.CharField(max_length=100, blank=True, help_text="Laisser vide pour le générer")
     loyer_cc = models.DecimalField("loyer charges comprises (€/mois)", max_digits=10, decimal_places=2)
     charges = models.DecimalField("dont charges (€/mois)", max_digits=10, decimal_places=2, default=0)
@@ -1287,8 +1291,12 @@ class Annonce(models.Model):
     def texte_genere(self):
         from django.template.loader import render_to_string
 
-        return render_to_string("patrimoine/annonce.txt", {"a": self, "lot": self.lot, "bien": self.lot.bien,
-                                                           "points": [p.strip() for p in self.points_forts.splitlines() if p.strip()]}).strip()
+        contexte = {"a": self, "lot": self.lot, "bien": self.lot.bien,
+                    "points": [p.strip() for p in self.points_forts.splitlines() if p.strip()]}
+        if self.modele_id and self.modele.texte.strip():
+            # texte du modèle, puis loyer, dépôt et mentions obligatoires (loi Alur)
+            return (self.modele.texte.strip() + "\n\n" + render_to_string("patrimoine/annonce_conditions.txt", contexte).strip()).strip()
+        return render_to_string("patrimoine/annonce.txt", contexte).strip()
 
     def mentions_manquantes(self):
         lot = self.lot
@@ -1305,12 +1313,12 @@ class Annonce(models.Model):
 
     def save(self, *args, **kwargs):
         if not self.titre:
-            self.titre = self.titre_genere()
+            self.titre = (self.modele.titre if self.modele_id and self.modele.titre else self.titre_genere())[:100]
+        if not self.depot_garantie and self.loyer_cc:
+            # 1 mois de loyer HC en location nue, 2 mois en meublé (calculé avant le texte, qui l'indique)
+            self.depot_garantie = (self.loyer_cc - self.charges) * (2 if self.lot.meuble else 1)
         if not self.texte:
             self.texte = self.texte_genere()
-        if not self.depot_garantie and self.loyer_cc:
-            # 1 mois de loyer HC en location nue, 2 mois en meublé
-            self.depot_garantie = (self.loyer_cc - self.charges) * (2 if self.lot.meuble else 1)
         super().save(*args, **kwargs)
 
 
@@ -1591,8 +1599,8 @@ class ModeleDocument(models.Model):
     TYPES_BAIL = {"bail_nu": ["nu"], "bail_meuble": ["meuble", "etudiant", "mobilite"], "inventaire": ["meuble", "etudiant", "mobilite"]}
 
     class Meta:
-        verbose_name = "modèle de document"
-        verbose_name_plural = "modèles de documents"
+        verbose_name = "modèle de location"
+        verbose_name_plural = "modèles de location (documents contractuels)"
         ordering = ["type", "nom"]
 
     def __str__(self):
@@ -1601,6 +1609,45 @@ class ModeleDocument(models.Model):
     def convient(self, bail):
         types = self.TYPES_BAIL.get(self.type)
         return types is None or bail.type in types
+
+
+class ModeleAnnonce(models.Model):
+    """Texte d'annonce type (description du logement), rattaché à un lot : proposé quand on crée une annonce pour ce lot."""
+
+    nom = models.CharField(max_length=150)
+    lot = models.ForeignKey(Lot, on_delete=models.SET_NULL, null=True, blank=True, related_name="modeles_annonce",
+                            verbose_name="lot par défaut", help_text="Le modèle est proposé automatiquement pour les annonces de ce lot")
+    titre = models.CharField("titre de l'annonce", max_length=100, blank=True, help_text="Laisser vide pour le générer d'après le lot")
+    texte = models.TextField(blank=True, help_text="Description du logement. Laisser vide avec un fichier Word : le texte en est repris. "
+                                                   "Loyer, dépôt de garantie et mentions obligatoires s'ajoutent tout seuls dans l'annonce.")
+    fichier = models.FileField("fichier Word d'origine (.docx)", upload_to="modeles-annonces/", storage=stockage_prive, blank=True,
+                               validators=[FileExtensionValidator(["docx"], "Enregistrez le modèle au format Word .docx.")])
+    actif = models.BooleanField(default=True, help_text="Décochez pour ne plus le proposer sans le supprimer")
+    notes = models.TextField(blank=True)
+    modifie_le = models.DateTimeField("modifié le", auto_now=True)
+
+    class Meta:
+        verbose_name = "modèle d'annonce"
+        verbose_name_plural = "modèles d'annonces"
+        ordering = ["nom"]
+
+    def __str__(self):
+        return self.nom
+
+    @classmethod
+    def par_defaut(cls, lot_id):
+        return cls.objects.filter(lot_id=lot_id, actif=True).order_by("-modifie_le").first() if lot_id else None
+
+    def save(self, *args, **kwargs):
+        if not self.texte.strip() and self.fichier:
+            from .word import texte_docx
+
+            try:
+                self.fichier.open("rb")
+                self.texte = texte_docx(self.fichier)
+            except Exception:
+                pass
+        super().save(*args, **kwargs)
 
 
 def _chemin_facture(instance, nom):

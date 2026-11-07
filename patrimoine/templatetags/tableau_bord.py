@@ -112,7 +112,8 @@ def _menu():
         ]),
         ("Outils", [
             ("rappels", "Rappels", a("rappel"), [a("rappel")], []),
-            ("modeles", "Modèles Word", a("modeledocument"), [a("modeledocument"), r("liste_champs")], [("Liste des champs", r("liste_champs"))]),
+            ("modeles", "Modèles", a("modeledocument"), [a("modeledocument"), a("modeleannonce"), r("liste_champs")],
+             [("Modèles location", a("modeledocument")), ("Annonces", a("modeleannonce")), ("Liste des champs", r("liste_champs"))]),
             ("liens", "Sites utiles", a("siteutile"), [a("siteutile")], []),
             ("reglages", "Réglages", r("sauvegardes"),
              [r("sauvegardes"), a("parametresmail"), "/admin/auth/", "/admin/password_change/"],

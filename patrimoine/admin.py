@@ -10,7 +10,7 @@ from urllib.parse import quote
 from django.utils import timezone
 from django.utils.html import format_html, format_html_join
 
-from .models import PieceComptable, DocumentLocataire, ModeleDocument, ParametresMail, PieceCandidature, mois_depot_maximum, GarantCandidature, EncaissementHistorique, ChargeLMNP, SiteUtile, Syndic, Annonce, ChargeLCD, ParametresLCD, ReservationLCD, Bail, Bien, Candidature, ChangementLocataire, Garant, PhotoLot, Echeance, EtatDesLieux, MouvementDepot, Pret, Rappel, RevisionLoyer, Locataire, Lot, Paiement, Proprietaire, Tache
+from .models import ModeleAnnonce, PieceComptable, DocumentLocataire, ModeleDocument, ParametresMail, PieceCandidature, mois_depot_maximum, GarantCandidature, EncaissementHistorique, ChargeLMNP, SiteUtile, Syndic, Annonce, ChargeLCD, ParametresLCD, ReservationLCD, Bail, Bien, Candidature, ChangementLocataire, Garant, PhotoLot, Echeance, EtatDesLieux, MouvementDepot, Pret, Rappel, RevisionLoyer, Locataire, Lot, Paiement, Proprietaire, Tache
 
 admin.site.site_header = "Gestion immobilière"
 admin.site.enable_nav_sidebar = False  # remplacé par le menu du bandeau
@@ -1514,9 +1514,13 @@ class CandidatureAdmin(LotsALouerMixin, admin.ModelAdmin):
 
 @admin.register(Annonce)
 class AnnonceAdmin(LotsALouerMixin, admin.ModelAdmin):
-    list_display = ["titre", "lot", "loyer_cc", "disponible_le", "cree_le"]
+    list_display = ["titre", "lot", "loyer_cc", "disponible_le", "cree_le", "pdf"]
     list_filter = ["lot__bien__proprietaire"]
     readonly_fields = ["a_copier"]
+
+    @admin.display(description="PDF")
+    def pdf(self, obj):
+        return format_html('<a class="button" href="{}" target="_blank">Générer le PDF</a>', reverse("annonce_pdf", args=[obj.pk]))
     actions = ["regenerer"]
 
     def get_form(self, request, obj=None, **kwargs):
@@ -1526,9 +1530,34 @@ class AnnonceAdmin(LotsALouerMixin, admin.ModelAdmin):
         form.base_fields["titre"].widget.attrs.update(size=60)
         return form
     fieldsets = [
-        (None, {"fields": ["lot", ("loyer_cc", "charges", "charges_forfait"), "depot_garantie", "disponible_le", "points_forts"]}),
+        (None, {"fields": ["lot", "modele", ("loyer_cc", "charges", "charges_forfait"), "depot_garantie", "disponible_le", "points_forts"]}),
         ("Annonce", {"fields": ["titre", "texte", "a_copier"]}),
     ]
+
+    class Media:
+        js = ["patrimoine/annonce_modele.js"]
+
+    def get_urls(self):
+        return [path("modele-du-lot/", self.admin_site.admin_view(self.modele_du_lot), name="patrimoine_annonce_modele_du_lot")] + super().get_urls()
+
+    def modele_du_lot(self, request):
+        """Modèle d'annonce par défaut d'un lot (appelé quand on choisit le lot sur une nouvelle annonce)."""
+        from django.http import JsonResponse
+
+        m = ModeleAnnonce.par_defaut(request.GET.get("lot") or None)
+        return JsonResponse({"modele": m.pk if m else None, "nom": str(m) if m else ""})
+
+    def formfield_for_foreignkey(self, db_field, request, **kwargs):
+        if db_field.name == "modele":
+            kwargs["queryset"] = ModeleAnnonce.objects.filter(actif=True)
+        return super().formfield_for_foreignkey(db_field, request, **kwargs)
+
+    def get_changeform_initial_data(self, request):
+        initial = super().get_changeform_initial_data(request)
+        m = ModeleAnnonce.par_defaut(initial.get("lot"))
+        if m:
+            initial["modele"] = m.pk
+        return initial
 
     @admin.display(description="publier")
     def a_copier(self, obj):
@@ -1544,10 +1573,11 @@ class AnnonceAdmin(LotsALouerMixin, admin.ModelAdmin):
         return format_html(
             '{}<p><button type="button" class="button" onclick="navigator.clipboard.writeText(document.getElementById(\'id_titre\').value);this.textContent=\'Titre copié\'">Copier le titre</button> '
             '<button type="button" class="button" onclick="navigator.clipboard.writeText(document.getElementById(\'id_texte\').value);this.textContent=\'Texte copié\'">Copier le texte</button> '
+            '<a class="button" href="{}" target="_blank">Générer le PDF</a> '
             '<a class="button" href="{}">Télécharger les photos (zip)</a> '
             '<a class="button" href="https://www.leboncoin.fr/deposer-une-annonce" target="_blank" rel="noopener">Déposer sur Leboncoin</a></p>'
             '<div>{}</div><p class="help">Leboncoin ne permet pas la publication automatique pour les particuliers : copiez le titre et le texte, puis ajoutez les photos du zip.</p>',
-            alerte, reverse("photos_zip", args=[obj.lot_id]), photos or "Aucune photo : ajoutez-en dans la fiche du lot.",
+            alerte, reverse("annonce_pdf", args=[obj.pk]), reverse("photos_zip", args=[obj.lot_id]), photos or "Aucune photo : ajoutez-en dans la fiche du lot.",
         )
 
     @admin.action(description="Régénérer le titre et le texte depuis la fiche du lot")
@@ -1556,6 +1586,23 @@ class AnnonceAdmin(LotsALouerMixin, admin.ModelAdmin):
             annonce.titre = ""
             annonce.texte = ""
             annonce.save()
+
+
+@admin.register(ModeleAnnonce)
+class ModeleAnnonceAdmin(LotsALouerMixin, admin.ModelAdmin):
+    list_display = ["nom", "lot", "actif", "nb_annonces", "modifie_le"]
+    list_filter = ["actif", "lot__bien__proprietaire"]
+    search_fields = ["nom", "texte", "lot__designation", "lot__bien__nom"]
+    fields = ["nom", "lot", "titre", "texte", "fichier", "actif", "notes"]
+
+    def get_form(self, request, obj=None, **kwargs):
+        form = super().get_form(request, obj, **kwargs)
+        form.base_fields["texte"].widget.attrs.update(rows=16, style="width:100%;max-width:720px")
+        return form
+
+    @admin.display(description="annonces")
+    def nb_annonces(self, obj):
+        return obj.annonces.count()
 
 
 @admin.register(ReservationLCD)

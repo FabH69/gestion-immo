@@ -178,3 +178,13 @@ def remplir_docx(modele, valeurs, couleur_champs="FF0000"):
         return xml
 
     return _transformer_docx(modele, transformer)
+
+
+def texte_docx(source):
+    """Texte brut d'un .docx, un paragraphe par ligne (lignes vides conservées entre les blocs)."""
+    source.seek(0)
+    with zipfile.ZipFile(source) as z:
+        xml = z.read("word/document.xml").decode("utf8")
+    lignes = [_texte_paragraphe(p) for p in _PARAGRAPHE.findall(xml)]
+    texte = "\n".join(lignes)
+    return re.sub(r"\n{3,}", "\n\n", texte).strip()

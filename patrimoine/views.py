@@ -905,6 +905,19 @@ def recherche(request):
 
 
 @staff_member_required
+def annonce_pdf(request, pk):
+    """Annonce en PDF : titre, chiffres clés, photos du lot et texte (pour l'imprimer ou l'envoyer)."""
+    from pathlib import Path
+
+    from .models import Annonce
+
+    a = get_object_or_404(Annonce.objects.select_related("lot__bien"), pk=pk)
+    photos = [Path(p.image.path).as_uri() for p in a.lot.photos.all()[:7] if p.image and Path(p.image.path).exists()]
+    html = render_to_string("patrimoine/annonce_pdf.html", {"a": a, "lot": a.lot, "bien": a.lot.bien, "photos": photos})
+    return _pdf(html, f"annonce {a.lot.bien.ville or a.lot}")
+
+
+@staff_member_required
 def annexe_2072(request):
     """Annexe 2072-S-A1-SD pré-remplie : SCI, immeubles et année au choix ; détail des sources sous le tableau."""
     from django.db.models import Q

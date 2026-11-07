@@ -5,7 +5,7 @@ from django.contrib.auth.models import User
 from django.test import TestCase, TransactionTestCase
 from django.utils import timezone
 
-from .models import Bail, Bien, Echeance, Locataire, Lot, MouvementDepot, Paiement, Proprietaire, Rappel
+from .models import Annonce, Bail, Bien, Echeance, Locataire, Lot, MouvementDepot, Paiement, Proprietaire, Rappel
 
 
 class EcheanceTests(TestCase):
@@ -1683,3 +1683,53 @@ class DroitsTests(TestCase):
         r = self.client.get(f"/admin/auth/user/{u.pk}/change/")
         self.assertContains(r, "Droits par module")
         self.assertContains(r, 'value="modification" class="choix-droit" id="id_droit_compta_2" checked')
+
+
+class ModeleAnnonceTests(TestCase):
+    def setUp(self):
+        from django.contrib.auth.models import User
+
+        self.client.force_login(User.objects.create_superuser("chef", "c@exemple.fr", "x"))
+        proprio = Proprietaire.objects.create(nom="SCI M", type=Proprietaire.Type.SCI_IR)
+        bien = Bien.objects.create(proprietaire=proprio, nom="Vaugneray", adresse="1 rue", code_postal="69670", ville="Vaugneray")
+        self.lot = Lot.objects.create(bien=bien, designation="T2", surface=Decimal("32"))
+        from .models import ModeleAnnonce
+
+        self.modele = ModeleAnnonce.objects.create(nom="Annonce Vaugneray", lot=self.lot,
+                                                   texte="Particulier loue T2 en plein centre\nEntièrement rénové")
+
+    def test_texte_docx(self):
+        import io
+        import zipfile
+
+        from .word import texte_docx
+
+        tampon = io.BytesIO()
+        with zipfile.ZipFile(tampon, "w") as z:
+            z.writestr("word/document.xml", '<w:document><w:body><w:p><w:r><w:t>Ligne 1 &amp; plus</w:t></w:r></w:p>'
+                                            '<w:p><w:r><w:t>Ligne 2</w:t></w:r></w:p></w:body></w:document>')
+        self.assertEqual(texte_docx(tampon), "Ligne 1 & plus\nLigne 2")
+
+    def test_modele_par_defaut_et_texte(self):
+        r = self.client.get(f"/admin/patrimoine/annonce/modele-du-lot/?lot={self.lot.pk}")
+        self.assertEqual(r.json()["modele"], self.modele.pk)
+        r = self.client.get(f"/admin/patrimoine/annonce/add/?lot={self.lot.pk}")
+        self.assertContains(r, f'<option value="{self.modele.pk}" selected>')
+        a = Annonce.objects.create(lot=self.lot, modele=self.modele, loyer_cc=Decimal("560"), charges=Decimal("10"))
+        self.assertTrue(a.texte.startswith("Particulier loue T2 en plein centre\nEntièrement rénové\n\nLoyer : 560"))
+        self.assertIn("Classe énergie", a.texte)
+        sans = Annonce.objects.create(lot=self.lot, loyer_cc=Decimal("560"))
+        self.assertTrue(sans.texte.startswith("À louer"))
+
+
+class AnnoncePdfTests(TestCase):
+    def test_pdf(self):
+        from django.contrib.auth.models import User
+
+        self.client.force_login(User.objects.create_superuser("chef", "c@exemple.fr", "x"))
+        proprio = Proprietaire.objects.create(nom="SCI P", type=Proprietaire.Type.SCI_IR)
+        bien = Bien.objects.create(proprietaire=proprio, nom="B", adresse="1 rue", code_postal="69000", ville="Lyon")
+        a = Annonce.objects.create(lot=Lot.objects.create(bien=bien, designation="T2"), loyer_cc=Decimal("600"))
+        r = self.client.get(f"/annonces/{a.pk}/annonce.pdf")
+        self.assertEqual(r["Content-Type"], "application/pdf")
+        self.assertContains(self.client.get("/admin/patrimoine/annonce/"), "Générer le PDF")

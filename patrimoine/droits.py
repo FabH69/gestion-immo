@@ -27,7 +27,8 @@ MODULES = [
     ("relocation", "Relocation (candidatures, annonces)", ["patrimoine.candidature", "patrimoine.garantcandidature",
                                                          "patrimoine.piececandidature", "patrimoine.annonce",
                                                          "patrimoine.changementlocataire"],
-     ["preparer_mail_candidature", "envoyer_lien_candidature", "photos_zip"], ["envoyer_lien_candidature"]),
+     ["preparer_mail_candidature", "envoyer_lien_candidature", "photos_zip", "admin:patrimoine_annonce_modele_du_lot", "annonce_pdf"],
+     ["envoyer_lien_candidature"]),
     ("lcd", "Courte durée (Airbnb / Booking)", ["patrimoine.reservationlcd", "patrimoine.chargelcd", "patrimoine.parametreslcd",
                                                "patrimoine.encaissementlcd"], ["suivi_lcd"], []),
     ("finances", "Encaissements, prêts et endettement", ["patrimoine.pret", "patrimoine.encaissementhistorique"],
@@ -36,15 +37,16 @@ MODULES = [
      ["annexe_2072", "admin:patrimoine_piececomptable_import"], ["admin:patrimoine_piececomptable_import"]),
     ("etats", "États et LMNP", ["patrimoine.chargelmnp"],
      ["etat_loyers_encaisses", "etat_loyers_detail", "biens_lmnp", "plus_value"], []),
-    ("outils", "Rappels, modèles Word et sites utiles", ["patrimoine.rappel", "patrimoine.tache", "patrimoine.journalfait",
-                                                         "patrimoine.modeledocument", "patrimoine.siteutile"],
+    ("outils", "Rappels, modèles (location, annonces) et sites utiles", ["patrimoine.rappel", "patrimoine.tache", "patrimoine.journalfait",
+                                                         "patrimoine.modeledocument", "patrimoine.modeleannonce",
+                                                         "patrimoine.siteutile"],
      ["liste_champs", "rappel_fait"], ["rappel_fait"]),
     ("balles", "Balles", ["commandes.joueur", "commandes.article", "commandes.commande", "commandes.ligne"], [], []),
 ]
 LIBELLES = {code: libelle for code, libelle, *_ in MODULES}
 RESERVE_ADMIN = {"sauvegardes", "telecharger_sauvegarde", "tester_mail"}  # Réglages : administrateurs seulement
 # pièces privées : le dossier dit à quel module elles appartiennent
-DOSSIERS_PRIVES = {"factures/": ["compta"], "modeles-word/": ["outils"],
+DOSSIERS_PRIVES = {"factures/": ["compta"], "modeles-word/": ["outils"], "modeles-annonces/": ["outils"],
                    "pieces-identite/": ["locataires", "baux", "relocation"]}
 
 
