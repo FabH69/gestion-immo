@@ -358,6 +358,36 @@ class RappelsEtRevisionTests(TestCase):
             self.assertEqual(sum(1 for p in PieceComptable.objects.all() if p.a_codifier), 1)
             self.assertContains(self.client.get("/admin/patrimoine/piececomptable/"), "À codifier (1)")
 
+    def test_lecture_automatique_facture_pdf(self):
+        import io
+        import tempfile
+
+        from django.core.files.uploadedfile import SimpleUploadedFile
+        from django.test import override_settings
+        from weasyprint import HTML
+
+        from .lecture_factures import analyser
+        from .models import PieceComptable
+
+        r = analyser("Dupont Plomberie SARL\nFACTURE N° 41\nDate de facture : 14/03/2026\nRemplacement chauffe-eau\nTotal HT 450,00 €\nTotal TTC 495,00 €")
+        self.assertEqual((r["date"], r["montant"], r["fournisseur"], r["ligne"]), (date(2026, 3, 14), Decimal("495.00"), "Dupont Plomberie SARL", "9"))
+        r = analyser("DIRECTION GÉNÉRALE DES FINANCES PUBLIQUES\nAVIS D'IMPÔT 2026 TAXE FONCIÈRE\nDate : 31/08/2026\nMontant à payer : 1 234,00 €")
+        self.assertEqual((r["montant"], r["fournisseur"], r["ligne"]), (Decimal("1234.00"), "Impôts (DGFiP)", "12"))
+        self.assertEqual(analyser(""), {})
+
+        sci = Proprietaire.objects.create(nom="SCI L", type=Proprietaire.Type.SCI_IR)
+        bien = Bien.objects.create(proprietaire=sci, nom="Imm", adresse="1 rue", code_postal="69000", ville="Lyon")
+        pdf = io.BytesIO()
+        HTML(string="<p>Dupont Plomberie SARL</p><p>Date de facture : 14/03/2026</p><p>Réparation fuite</p><p>Total TTC : 495,00 €</p>").write_pdf(pdf)
+        with tempfile.TemporaryDirectory() as prive, override_settings(PRIVE_ROOT=prive):
+            self.client.post("/admin/patrimoine/piececomptable/import/", {"bien": bien.pk, "fichiers": [SimpleUploadedFile("f.pdf", pdf.getvalue())]})
+            piece = PieceComptable.objects.get()
+            self.assertEqual((piece.montant, piece.ligne, piece.date), (Decimal("495.00"), "9", date(2026, 3, 14)))
+            self.assertTrue(piece.preremplie and piece.a_codifier)  # à vérifier avant de compter dans l'annexe
+            self.client.post("/admin/patrimoine/piececomptable/", {"action": "valider_preremplies", "_selected_action": [piece.pk]})
+            piece.refresh_from_db()
+            self.assertFalse(piece.a_codifier)
+
     def test_etat_encaisse_montant_cliquable(self):
         from .models import Echeance, Paiement
 

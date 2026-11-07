@@ -1696,7 +1696,7 @@ class ACodifierFilter(admin.SimpleListFilter):
     def lookups(self, request, model_admin):
         return [("oui", "À codifier"), ("non", "Codifiées")]
 
-    MANQUE = Q(ligne="") | Q(montant__isnull=True) | Q(date__isnull=True)
+    MANQUE = Q(preremplie=True) | Q(ligne="") | Q(montant__isnull=True) | Q(date__isnull=True)
 
     def queryset(self, request, queryset):
         if self.value() == "oui":
@@ -1755,7 +1755,7 @@ class PieceComptableAdmin(admin.ModelAdmin):
     list_filter = [ACodifierFilter, AnneeFiscaleFilter, "bien__proprietaire", "ligne"]
     search_fields = ["fournisseur", "libelle", "bien__nom", "notes"]
     # mode « codifier » (liste filtrée sur les pièces à codifier) : tout se complète directement dans le tableau
-    LISTE_CODIFIER = ["piece", "bien", "date", "date_paiement", "fournisseur", "libelle", "montant", "ligne"]
+    LISTE_CODIFIER = ["piece", "etat_lecture", "bien", "date", "date_paiement", "fournisseur", "libelle", "montant", "ligne"]
     fieldsets = [
         (None, {"classes": ["identite-lot"], "fields": ["bien", ("date", "date_paiement"), ("fournisseur", "montant"), "libelle", "ligne", "fichier", "notes"],
                 "description": "Chaque facture alimente la ligne choisie de l'annexe 2072-S-A1 (Comptabilité SCI › Annexe 2072), "
@@ -1773,12 +1773,12 @@ class PieceComptableAdmin(admin.ModelAdmin):
         return None if self._codifier(request) else self.list_display_links
 
     def get_changelist_instance(self, request):
-        self.list_editable = self.LISTE_CODIFIER[1:] if self._codifier(request) else ()
+        self.list_editable = self.LISTE_CODIFIER[2:] if self._codifier(request) else ()
         return super().get_changelist_instance(request)
 
     def get_changelist_formset(self, request, **kwargs):
         # tableau de codification : listes simples (sans les icônes d'ajout / modification du bien)
-        self.list_editable = self.LISTE_CODIFIER[1:] if self._codifier(request) else ()
+        self.list_editable = self.LISTE_CODIFIER[2:] if self._codifier(request) else ()
         return forms.modelformset_factory(self.model, form=PieceComptableForm, fields=self.list_editable, extra=0)
 
     def get_urls(self):
@@ -1795,9 +1795,18 @@ class PieceComptableAdmin(admin.ModelAdmin):
         if request.method == "POST" and form.is_valid() and not request.FILES.getlist("fichiers"):
             form.add_error("fichiers", "Choisissez au moins une facture.")
         if request.method == "POST" and form.is_valid():
-            crees, refuses = 0, []
+            from .lecture_factures import analyser, texte_pdf
+
+            crees, lues, refuses = 0, 0, []
             for f in request.FILES.getlist("fichiers"):
                 piece = PieceComptable(bien=form.cleaned_data["bien"], libelle=Path(f.name).stem.replace("_", " ")[:200], fichier=f)
+                if f.name.lower().endswith(".pdf"):
+                    propositions = analyser(texte_pdf(f))
+                    for champ, valeur in propositions.items():
+                        setattr(piece, champ, valeur)
+                    if propositions:
+                        piece.preremplie = True
+                        lues += 1
                 try:
                     piece.full_clean()
                 except ValidationError:
@@ -1806,14 +1815,32 @@ class PieceComptableAdmin(admin.ModelAdmin):
                 piece.save()
                 crees += 1
             if crees:
+                lu = (f" Pour {lues} d'entre elles, les champs ont été lus dans le PDF : vérifiez-les." if lues else "")
                 messages.success(request, f"{crees} facture{'s' if crees > 1 else ''} importée{'s' if crees > 1 else ''} : "
-                                          "complétez date, montant et ligne 2072 dans le tableau, puis Enregistrer.")
+                                          "complétez date, montant et ligne 2072 dans le tableau, puis Enregistrer." + lu)
             if refuses:
                 messages.error(request, "Format non accepté (PDF, JPG, PNG ou HEIC) : " + ", ".join(refuses))
             return redirect(reverse("admin:patrimoine_piececomptable_changelist") + "?a_codifier=oui")
         return render(request, "admin/patrimoine/piececomptable/import.html",
                       {**self.admin_site.each_context(request), "form": form, "opts": self.model._meta,
                        "title": "Importer des factures"})
+
+    actions = ["valider_preremplies"]
+
+    @admin.action(description="Valider les champs lus automatiquement (pièces sélectionnées)")
+    def valider_preremplies(self, request, queryset):
+        n = queryset.filter(preremplie=True).update(preremplie=False)
+        messages.success(request, f"{n} pièce{'s' if n > 1 else ''} validée{'s' if n > 1 else ''}.")
+
+    @admin.display(description="")
+    def etat_lecture(self, obj):
+        if obj.preremplie:
+            return format_html('<span class="pill bleu" title="Champs lus dans le PDF : vérifiez-les, puis Enregistrer ou action « Valider »">lu auto</span>')
+        return ""
+
+    def save_model(self, request, obj, form, change):
+        obj.preremplie = False  # enregistrée par l'utilisateur (fiche ou tableau) : les champs sont considérés vérifiés
+        super().save_model(request, obj, form, change)
 
     @admin.display(description="date", ordering="date")
     def date_affichee(self, obj):
