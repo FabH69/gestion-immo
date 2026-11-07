@@ -1471,9 +1471,10 @@ class CandidatureAdmin(LotsALouerMixin, admin.ModelAdmin):
     @admin.display(description="lien à envoyer au candidat")
     def lien_a_envoyer(self, obj):
         url = self.request_courante.build_absolute_uri(reverse("candidature_publique", args=[obj.jeton]))
-        corps = (f"Bonjour,\n\nSuite à votre intérêt pour le logement {obj.lot.designation} ({obj.lot.bien.adresse}, {obj.lot.bien.ville}), "
-                 f"voici le formulaire de candidature à remplir en ligne :\n{url}\n\nCordialement")
-        mailto = f"mailto:{obj.email}?subject={quote('Votre dossier de candidature – ' + obj.lot.designation)}&body={quote(corps)}"
+        from . import mails
+
+        corps = mails.texte_invitation(obj, url)
+        mailto = f"mailto:{obj.email}?subject={quote('Votre dossier de location – ' + obj.lot.designation)}&body={quote(corps)}"
         envoi = ""
         if ParametresMail.objects.filter(pk=1).exists():
             envoi = format_html(

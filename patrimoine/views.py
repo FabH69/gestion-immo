@@ -714,7 +714,9 @@ def envoyer_lien_candidature(request, pk):
         c.save(update_fields=["email"])
     if not email:
         messages.error(request, "Renseignez d'abord l'e-mail du candidat.")
-    elif mails.envoyer([email], f"Votre dossier de candidature – {c.lot.designation}", mails.texte_invitation(c, mails.lien_candidature(c, request))):
+    elif mails.envoyer([email], f"Votre dossier de location – {c.lot.designation}",
+                       mails.texte_invitation(c, lien := mails.lien_candidature(c, request)),
+                       html=mails.html_invitation(c, lien)):
         messages.success(request, f"Lien envoyé à {email}.")
     else:
         messages.error(request, "Le mail n'est pas parti : vérifiez le réglage Réglages › Mails (adresse et mot de passe d'application).")

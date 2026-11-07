@@ -1,7 +1,8 @@
 """Envoi des mails par le compte Gmail réglé dans Réglages › Mails (smtp.gmail.com, autorisé par PythonAnywhere)."""
 import logging
 
-from django.core.mail import EmailMessage, get_connection
+from django.core.mail import EmailMultiAlternatives, get_connection
+from django.utils.html import escape
 
 journal = logging.getLogger(__name__)
 
@@ -12,8 +13,8 @@ def reglage():
     return ParametresMail.objects.filter(pk=1).first()
 
 
-def envoyer(destinataires, sujet, texte, reglage_mail=None, lever=False):
-    """Envoie un mail texte ; renvoie True si parti. Sans réglage, ne fait rien (renvoie False)."""
+def envoyer(destinataires, sujet, texte, reglage_mail=None, lever=False, html=None):
+    """Envoie un mail texte (et sa version mise en forme si html) ; renvoie True si parti. Sans réglage, ne fait rien."""
     r = reglage_mail or reglage()
     if not r:
         return False
@@ -23,7 +24,10 @@ def envoyer(destinataires, sujet, texte, reglage_mail=None, lever=False):
     connexion = get_connection(backend, host="smtp.gmail.com", port=587, use_tls=True,
                                username=r.adresse, password=r.mot_de_passe, timeout=20)
     expediteur = f"{r.nom_expediteur} <{r.adresse}>" if r.nom_expediteur else r.adresse
-    message = EmailMessage(sujet, texte, expediteur, [d for d in destinataires if d], reply_to=[r.adresse], connection=connexion)
+    message = EmailMultiAlternatives(sujet, texte, expediteur, [d for d in destinataires if d], reply_to=[r.adresse],
+                                     connection=connexion)
+    if html:
+        message.attach_alternative(html, "text/html")
     try:
         message.send()
         return True
@@ -40,11 +44,45 @@ def lien_candidature(candidature, request):
     return request.build_absolute_uri(reverse("candidature_publique", args=[candidature.jeton]))
 
 
+def _signature():
+    r = reglage()
+    return (r.nom_expediteur if r and r.nom_expediteur else "").strip()
+
+
 def texte_invitation(candidature, url):
+    """Version texte du mail d'invitation (rédigée comme un vrai message, pour ne pas finir en spam)."""
     lot = candidature.lot
-    return (f"Bonjour,\n\nSuite à votre intérêt pour le logement {lot.designation} ({lot.bien.adresse}, {lot.bien.ville}), "
-            f"voici le formulaire de candidature à remplir en ligne :\n{url}\n\n"
-            "Vous pourrez y déposer vos justificatifs. Cordialement")
+    bonjour = f"Bonjour {candidature.prenom}," if candidature.prenom else "Bonjour,"
+    adresse = ", ".join(x for x in [lot.bien.adresse, lot.bien.ville] if x)
+    signature = _signature()
+    return (f"{bonjour}\n\n"
+            f"Merci pour l'intérêt que vous portez au logement {lot.designation}"
+            f"{f' situé {adresse}' if adresse else ''}.\n\n"
+            "Afin d'étudier votre candidature, je vous invite à compléter votre dossier en ligne "
+            "et à y déposer vos justificatifs (pièce d'identité, justificatifs de revenus, etc.) :\n\n"
+            f"{url}\n\n"
+            "Ce lien vous est personnel. Si vous avez la moindre question, il vous suffit de répondre à ce message.\n\n"
+            f"Bien cordialement,\n{signature}").rstrip()
+
+
+def html_invitation(candidature, url):
+    """Version mise en forme du même mail, avec un bouton."""
+    lot = candidature.lot
+    bonjour = f"Bonjour {escape(candidature.prenom)}," if candidature.prenom else "Bonjour,"
+    adresse = ", ".join(x for x in [lot.bien.adresse, lot.bien.ville] if x)
+    situe = f" situé {escape(adresse)}" if adresse else ""
+    signature = escape(_signature())
+    lien = escape(url)
+    return f"""<!doctype html><html lang="fr"><body style="font-family:Arial,Helvetica,sans-serif;font-size:15px;color:#222;line-height:1.5">
+<p>{bonjour}</p>
+<p>Merci pour l'intérêt que vous portez au logement <strong>{escape(lot.designation)}</strong>{situe}.</p>
+<p>Afin d'étudier votre candidature, je vous invite à compléter votre dossier en ligne et à y déposer vos justificatifs
+(pièce d'identité, justificatifs de revenus, etc.).</p>
+<p style="margin:24px 0"><a href="{lien}" style="background:#1f5f5b;color:#fff;padding:12px 22px;border-radius:6px;text-decoration:none;font-weight:bold">Compléter mon dossier</a></p>
+<p style="font-size:13px;color:#555">Si le bouton ne fonctionne pas, copiez ce lien dans votre navigateur :<br><a href="{lien}">{lien}</a></p>
+<p>Ce lien vous est personnel. Si vous avez la moindre question, il vous suffit de répondre à ce message.</p>
+<p>Bien cordialement,<br>{signature}</p>
+</body></html>"""
 
 
 def dossier_recu(candidature, request):
