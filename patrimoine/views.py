@@ -32,10 +32,8 @@ def annees_disponibles():
     return range(courante + 1, debut - 1, -1)
 
 
-@staff_member_required
-def document_echeance(request, pk):
-    """Quittance si l'échéance est soldée, sinon avis d'échéance (une quittance ne se délivre que pour un loyer payé en entier)."""
-    echeance = get_object_or_404(Echeance.objects.select_related("bail__lot__bien__proprietaire"), pk=pk)
+def pdf_echeance(echeance):
+    """(contenu PDF, nom du fichier, est_quittance) : quittance si l'échéance est soldée, sinon avis d'échéance."""
     est_quittance = echeance.statut == Echeance.Statut.PAYE
     dernier_paiement = echeance.paiements.order_by("-date").first()
     html = render_to_string(
@@ -54,9 +52,73 @@ def document_echeance(request, pk):
     )
     titre = "quittance" if est_quittance else "avis-echeance"
     nom = f"{titre}-{echeance.periode:%Y-%m}-{echeance.bail.lot.designation}.pdf".replace(" ", "-")
-    response = HttpResponse(HTML(string=html).write_pdf(), content_type="application/pdf")
+    return HTML(string=html).write_pdf(), nom, est_quittance
+
+
+@staff_member_required
+def document_echeance(request, pk):
+    """Quittance si l'échéance est soldée, sinon avis d'échéance (une quittance ne se délivre que pour un loyer payé en entier)."""
+    echeance = get_object_or_404(Echeance.objects.select_related("bail__lot__bien__proprietaire"), pk=pk)
+    contenu, nom, _ = pdf_echeance(echeance)
+    response = HttpResponse(contenu, content_type="application/pdf")
     response["Content-Disposition"] = f'inline; filename="{nom}"'
     return response
+
+
+MOIS_FR = ["janvier", "février", "mars", "avril", "mai", "juin", "juillet", "août", "septembre", "octobre", "novembre", "décembre"]
+
+
+def _noms_locataires(bail):
+    return ", ".join(" ".join(x for x in [l.nom.upper(), l.prenom] if x) for l in bail.locataires.all()) or "sans locataire"
+
+
+@staff_member_required
+def envoyer_quittance(request):
+    """Depuis le tableau de bord : choix du bail (lot + locataires) puis du mois ; PDF ou mail préparé pour Outlook."""
+    baux = list(Bail.objects.select_related("lot__bien").prefetch_related("locataires")
+                .order_by("-actif", "lot__bien__nom", "lot__designation", "-date_debut"))
+    choix_baux = [{"pk": b.pk, "libelle": f"{b.lot.bien.nom} – {b.lot.designation} : {_noms_locataires(b)}"
+                   + ("" if b.actif else " (terminé)"), "actif": b.actif} for b in baux]
+    bail = next((b for b in baux if str(b.pk) == request.GET.get("bail")), None)
+    echeances, echeance = [], None
+    if bail:
+        echeances = list(bail.echeances.order_by("-periode"))
+        echeance = next((e for e in echeances if str(e.pk) == request.GET.get("mois")), None)
+        if echeance is None:  # par défaut : le dernier mois payé
+            echeance = next((e for e in echeances if e.statut == Echeance.Statut.PAYE), echeances[0] if echeances else None)
+    choix_mois = [{"pk": e.pk, "libelle": f"{MOIS_FR[e.periode.month - 1].capitalize()} {e.periode.year}"
+                   + ("" if e.statut == Echeance.Statut.PAYE else f" – {e.get_statut_display().lower()}")} for e in echeances]
+    emails = [l.email for l in bail.locataires.all() if l.email] if bail else []
+    return render(request, "patrimoine/envoyer_quittance.html", {
+        **admin.site.each_context(request), "title": "Envoyer une quittance", "baux": choix_baux, "bail": bail,
+        "mois": choix_mois, "echeance": echeance, "emails": emails,
+        "est_quittance": echeance is not None and echeance.statut == Echeance.Statut.PAYE})
+
+
+@staff_member_required
+def preparer_mail_quittance(request, pk):
+    """Brouillon .eml (quittance en pièce jointe, texte d'accompagnement) qui s'ouvre dans Outlook prêt à envoyer."""
+    from email.message import EmailMessage as Brouillon
+    from email.policy import SMTP
+
+    from . import mails
+
+    e = get_object_or_404(Echeance.objects.select_related("bail__lot__bien__proprietaire"), pk=pk)
+    contenu, nom, est_quittance = pdf_echeance(e)
+    locataires = list(e.bail.locataires.all())
+    mois = f"{MOIS_FR[e.periode.month - 1]} {e.periode.year}"
+    brouillon = Brouillon(policy=SMTP)
+    brouillon["Subject"] = f"{'Quittance de loyer' if est_quittance else 'Avis d’échéance'} – {mois} – {e.bail.lot.designation}"
+    destinataires = [l.email for l in locataires if l.email]
+    if destinataires:
+        brouillon["To"] = ", ".join(destinataires)
+    brouillon["X-Unsent"] = "1"
+    brouillon.set_content(mails.texte_quittance(e, locataires, mois, est_quittance))
+    brouillon.add_alternative(mails.html_quittance(e, locataires, mois, est_quittance), subtype="html")
+    brouillon.add_attachment(contenu, maintype="application", subtype="pdf", filename=nom)
+    reponse = HttpResponse(brouillon.as_bytes(), content_type="message/rfc822")
+    reponse["Content-Disposition"] = f'attachment; filename="{nom[:-4]}.eml"'
+    return reponse
 
 
 @staff_member_required

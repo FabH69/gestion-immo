@@ -85,6 +85,36 @@ def html_invitation(candidature, url):
 </body></html>"""
 
 
+def _bonjour_locataires(locataires):
+    if len(locataires) == 1 and locataires[0].civilite:
+        return f"Bonjour {locataires[0].civilite} {locataires[0].nom.title()},"
+    return "Bonjour,"
+
+
+def texte_quittance(echeance, locataires, mois, est_quittance=True):
+    """Texte d'accompagnement de la quittance (ou de l'avis d'échéance si le loyer n'est pas soldé)."""
+    lot = echeance.bail.lot
+    ville = f" ({lot.bien.ville})" if lot.bien.ville else ""
+    de_mois = f"d'{mois}" if mois[:1] in "aeiouéèêâ" else f"de {mois}"
+    signature = _signature() or lot.bien.proprietaire.nom
+    if est_quittance:
+        corps = (f"Veuillez trouver ci-joint la quittance de loyer du mois {de_mois} pour le logement {lot.designation}{ville}."
+                 "\n\nJe vous remercie pour votre règlement.")
+    else:
+        corps = (f"Veuillez trouver ci-joint l'avis d'échéance du mois {de_mois} pour le logement {lot.designation}{ville}, "
+                 f"d'un montant de {f'{echeance.total:.2f}'.replace('.', ',')} €.")
+    return (f"{_bonjour_locataires(locataires)}\n\n{corps}\n\n"
+            f"Je reste à votre disposition pour toute question.\n\nBien cordialement,\n{signature}").rstrip()
+
+
+def html_quittance(echeance, locataires, mois, est_quittance=True):
+    paragraphes = texte_quittance(echeance, locataires, mois, est_quittance).split("\n\n")
+    corps = "\n".join(f"<p>{escape(p).replace(chr(10), '<br>')}</p>" for p in paragraphes)
+    return f"""<!doctype html><html lang="fr"><body style="font-family:Arial,Helvetica,sans-serif;font-size:15px;color:#222;line-height:1.5">
+{corps}
+</body></html>"""
+
+
 def dossier_recu(candidature, request):
     """Après l'envoi du formulaire : alerte au propriétaire et accusé de réception au candidat."""
     from django.urls import reverse

@@ -9,6 +9,8 @@ from patrimoine import views
 urlpatterns = [
     path("admin/", admin.site.urls),
     path("echeances/<int:pk>/document.pdf", views.document_echeance, name="document_echeance"),
+    path("quittances/envoyer/", views.envoyer_quittance, name="envoyer_quittance"),
+    path("echeances/<int:pk>/preparer-mail/", views.preparer_mail_quittance, name="preparer_mail_quittance"),
     path("etats/loyers-encaisses/", views.etat_loyers_encaisses, name="etat_loyers_encaisses"),
     path("etats/loyers-encaisses/detail/", views.etat_loyers_detail, name="etat_loyers_detail"),
     path("baux/<int:pk>/bail.pdf", views.document_bail, name="document_bail"),

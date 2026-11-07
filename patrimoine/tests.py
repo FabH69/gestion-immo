@@ -1575,3 +1575,43 @@ class Annexe2072Tests(TestCase):
         self.assertEqual(cadre["R2"][1], Decimal("600.00"))
         self.assertEqual(cadre["R5"], (Decimal("-1040.00"), Decimal("-520.00")))
         self.assertContains(r, "Votre part (50 %)")
+
+
+class EnvoyerQuittanceTests(TestCase):
+    def setUp(self):
+        from django.contrib.auth.models import User
+
+        self.client.force_login(User.objects.create_superuser("admin", "a@a.fr", "x"))
+        proprio = Proprietaire.objects.create(nom="SCI Q", type=Proprietaire.Type.SCI_IR)
+        bien = Bien.objects.create(proprietaire=proprio, nom="Immeuble", adresse="1 rue", code_postal="69000", ville="Lyon")
+        lot = Lot.objects.create(bien=bien, designation="Studio")
+        self.bail = Bail.objects.create(lot=lot, type=Bail.Type.NU, date_debut=date(2026, 1, 1), loyer_hc=Decimal("600"), charges=Decimal("50"))
+        self.bail.locataires.add(Locataire.objects.create(civilite="Mme", nom="DUPONT", prenom="Léa", email="lea@exemple.fr"))
+        for mois in (9, 10):
+            Echeance.generer_pour_mois(date(2026, mois, 1))
+        self.payee = Echeance.objects.get(periode=date(2026, 9, 1))
+        Paiement.objects.create(echeance=self.payee, date=date(2026, 9, 3), montant=self.payee.total)
+
+    def test_page_choix(self):
+        r = self.client.get("/quittances/envoyer/")
+        self.assertContains(r, "DUPONT Léa")
+        r = self.client.get(f"/quittances/envoyer/?bail={self.bail.pk}")
+        self.assertContains(r, "Septembre 2026")
+        self.assertContains(r, "Octobre 2026 – à payer")
+        self.assertContains(r, f"/echeances/{self.payee.pk}/preparer-mail/")  # dernier mois payé par défaut
+
+    def test_mail_outlook(self):
+        import email
+
+        r = self.client.get(f"/echeances/{self.payee.pk}/preparer-mail/")
+        from email.policy import default
+
+        m = email.message_from_bytes(r.content, policy=default)
+        self.assertEqual(m["To"], "lea@exemple.fr")
+        self.assertEqual(m["X-Unsent"], "1")
+        self.assertIn("Quittance de loyer", m["Subject"])
+        pieces = [p for p in m.walk() if p.get_content_type() == "application/pdf"]
+        self.assertEqual(len(pieces), 1)
+        texte = next(p for p in m.walk() if p.get_content_type() == "text/plain").get_content()
+        self.assertIn("Bonjour Mme Dupont", texte)
+        self.assertIn("septembre 2026", texte)
