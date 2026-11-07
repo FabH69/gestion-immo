@@ -6,34 +6,59 @@
   {{ block.super }}
 {% endblock %}
 {% block footer %}{{ block.super }}
+{% load static %}
 <div id="apercu-piece" hidden></div>
 <style>
-#apercu-piece { position: fixed; z-index: 1000; width: 440px; height: 600px; max-height: 80vh; background: #fff; border: 1px solid var(--border-color, #ccc);
-  border-radius: 10px; box-shadow: 0 8px 30px rgba(0,0,0,.25); overflow: hidden; }
-#apercu-piece iframe { width: 100%; height: 100%; border: 0; }
-#apercu-piece img { width: 100%; height: 100%; object-fit: contain; background: #fff; }
+#apercu-piece { position: fixed; z-index: 1000; width: 460px; height: min(700px, 82vh); overflow-y: auto; box-sizing: border-box; background: #f3f4f6; border: 1px solid var(--border-color, #ccc);
+  border-radius: 10px; box-shadow: 0 8px 30px rgba(0,0,0,.25); padding: 8px; }
+#apercu-piece canvas, #apercu-piece img { display: block; width: 100%; height: auto; background: #fff; margin-bottom: 8px; box-shadow: 0 1px 3px rgba(0,0,0,.15); }
+#apercu-piece .attente { padding: 40px 0; text-align: center; color: #666; }
 </style>
+<script src="{% static 'patrimoine/pdfjs/pdf.min.js' %}"></script>
 <script>
 (function () {
-  // Aperçu de la facture au survol du lien PDF / Photo (le clic ouvre toujours la pièce dans un nouvel onglet).
-  var boite = document.getElementById("apercu-piece"), minuteur = null, courant = null;
+  // Aperçu de la facture au survol du lien PDF / Photo : les pages sont dessinées par pdf.js (fonctionne quel que soit
+  // le lecteur PDF du navigateur). Le clic ouvre toujours la pièce dans un nouvel onglet.
+  if (window.pdfjsLib) pdfjsLib.GlobalWorkerOptions.workerSrc = "{% static 'patrimoine/pdfjs/pdf.worker.min.js' %}";
+  var boite = document.getElementById("apercu-piece"), minuteur = null, courant = null, cache = {};
+  var LARGEUR = 460, PAGES_MAX = 3;
   function placer(lien) {
-    var r = lien.getBoundingClientRect(), l = 440, h = Math.min(600, window.innerHeight * 0.8);
-    var x = r.right + 12; if (x + l > window.innerWidth - 8) x = Math.max(8, r.left - l - 12);
+    var r = lien.getBoundingClientRect(), h = Math.min(700, window.innerHeight * 0.82);
+    var x = r.right + 12; if (x + LARGEUR > window.innerWidth - 8) x = Math.max(8, r.left - LARGEUR - 12);
     var y = Math.min(Math.max(8, r.top - h / 3), window.innerHeight - h - 8);
-    boite.style.left = x + "px"; boite.style.top = y + "px";
+    boite.style.left = x + "px"; boite.style.top = Math.max(8, y) + "px";
+  }
+  function dessinerPdf(url, cible) {
+    if (!window.pdfjsLib) { cible.innerHTML = '<p class="attente">Aperçu indisponible : cliquez pour ouvrir.</p>'; return; }
+    pdfjsLib.getDocument({url: url, withCredentials: true}).promise.then(function (doc) {
+      cible.innerHTML = "";
+      var n = Math.min(doc.numPages, PAGES_MAX), suite = Promise.resolve();
+      for (var i = 1; i <= n; i++) (function (i) {
+        suite = suite.then(function () { return doc.getPage(i); }).then(function (page) {
+          var v1 = page.getViewport({scale: 1}), echelle = (LARGEUR - 16) / v1.width * (window.devicePixelRatio || 1);
+          var vue = page.getViewport({scale: echelle}), toile = document.createElement("canvas");
+          toile.width = vue.width; toile.height = vue.height; cible.appendChild(toile);
+          return page.render({canvasContext: toile.getContext("2d"), viewport: vue}).promise;
+        });
+      })(i);
+      if (doc.numPages > n) suite.then(function () { cible.insertAdjacentHTML("beforeend", '<p class="attente">… ' + (doc.numPages - n) + ' page(s) de plus : cliquez pour tout voir.</p>'); });
+    }).catch(function () { cible.innerHTML = '<p class="attente">Aperçu indisponible : cliquez pour ouvrir.</p>'; });
   }
   function montrer(lien) {
     if (courant !== lien) {
-      boite.innerHTML = lien.dataset.image ? '<img alt="">' : '<iframe title="Aperçu de la facture"></iframe>';
-      boite.firstChild.src = lien.dataset.image ? lien.href : lien.href + "#toolbar=0&navpanes=0&view=FitH";
-      courant = lien;
+      if (!cache[lien.href]) {
+        var contenu = document.createElement("div");
+        if (lien.dataset.image) { contenu.innerHTML = '<img alt="">'; contenu.firstChild.src = lien.href; }
+        else { contenu.innerHTML = '<p class="attente">Chargement…</p>'; dessinerPdf(lien.href, contenu); }
+        cache[lien.href] = contenu;
+      }
+      boite.innerHTML = ""; boite.appendChild(cache[lien.href]); boite.scrollTop = 0; courant = lien;
     }
-    placer(lien); boite.hidden = false;
+    boite.hidden = false; placer(lien);
   }
   document.querySelectorAll("a.apercu-piece").forEach(function (lien) {
     lien.addEventListener("mouseenter", function () { clearTimeout(minuteur); minuteur = setTimeout(function () { montrer(lien); }, 250); });
-    lien.addEventListener("mouseleave", function () { clearTimeout(minuteur); minuteur = setTimeout(function () { boite.hidden = true; }, 200); });
+    lien.addEventListener("mouseleave", function () { clearTimeout(minuteur); minuteur = setTimeout(function () { boite.hidden = true; }, 250); });
   });
   boite.addEventListener("mouseenter", function () { clearTimeout(minuteur); });
   boite.addEventListener("mouseleave", function () { boite.hidden = true; });
