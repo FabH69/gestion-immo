@@ -1690,13 +1690,18 @@ class AnneeFiscaleFilter(admin.SimpleListFilter):
 
 
 class BienPieceFilter(admin.SimpleListFilter):
-    """Biens des sociétés ; limités au propriétaire choisi s'il y en a un. Affiché sous le filtre propriétaire."""
+    """Biens des sociétés ; limités au propriétaire choisi s'il y en a un, sans les biens vendus avant l'année regardée.
+    Affiché sous le filtre propriétaire."""
     title = "bien"
     parameter_name = "bien"
     a_droite = True
 
     def lookups(self, request, model_admin):
         biens = Bien.objects.exclude(proprietaire__type=Proprietaire.Type.NOM_PROPRE).order_by("nom")
+        # un bien vendu disparaît de la liste à partir de l'année qui suit sa vente (année filtrée, sinon année en cours)
+        annee = request.GET.get("annee", "")
+        annee = int(annee) if annee.isdigit() else timezone.localdate().year
+        biens = biens.filter(Q(vendu=False) | Q(date_vente__year__gte=annee))
         if request.GET.get("bien__proprietaire__id__exact"):
             biens = biens.filter(proprietaire_id=request.GET["bien__proprietaire__id__exact"])
         return [(str(b.pk), b.nom) for b in biens]
