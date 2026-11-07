@@ -1650,6 +1650,34 @@ class ModeleAnnonce(models.Model):
         super().save(*args, **kwargs)
 
 
+class Relance(models.Model):
+    """Relance d'un locataire (ou de sa caution) pour des loyers impayés : historique des courriers et mails préparés."""
+
+    class Niveau(models.TextChoices):
+        RAPPEL = "rappel", "1. Rappel amiable"
+        RELANCE = "relance", "2. Relance"
+        MISE_EN_DEMEURE = "mise_en_demeure", "3. Mise en demeure"
+        GARANT = "garant", "Information de la caution"
+
+    class Mode(models.TextChoices):
+        MAIL = "mail", "Mail (Outlook)"
+        COURRIER = "courrier", "Courrier (PDF)"
+
+    bail = models.ForeignKey(Bail, on_delete=models.CASCADE, related_name="relances")
+    niveau = models.CharField(max_length=20, choices=Niveau.choices)
+    date = models.DateField(default=date.today)
+    montant = models.DecimalField("montant réclamé (€)", max_digits=10, decimal_places=2)
+    detail = models.CharField("loyers concernés", max_length=300, blank=True)
+    mode = models.CharField(max_length=10, choices=Mode.choices)
+    notes = models.TextField(blank=True)
+
+    class Meta:
+        ordering = ["-date", "-pk"]
+
+    def __str__(self):
+        return f"{self.get_niveau_display()} du {self.date:%d/%m/%Y} – {self.bail.lot}"
+
+
 class NoteRapide(models.Model):
     """Bloc-notes du tableau de bord : une note par utilisateur, enregistrée au fil de la frappe."""
 

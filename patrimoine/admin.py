@@ -998,6 +998,8 @@ class EcheanceAdmin(admin.ModelAdmin):
         pdf = format_html('<a class="lien-action" href="{}" target="_blank">{}</a>', reverse("document_echeance", args=[obj.pk]), libelle)
         if obj.statut == "paye":
             return pdf
+        if obj.date_exigibilite < timezone.localdate():
+            pdf = format_html('{} <a class="lien-action" href="{}?bail={}">Relancer</a>', pdf, reverse("relances_impayes"), obj.bail_id)
         return format_html('<form method="post" action="{}" class="form-encaisser"><input type="hidden" name="csrfmiddlewaretoken" value="{}">'
                            '<button type="submit" class="bouton-encaisser" title="Enregistrer le paiement du reste dû, aujourd\'hui, par virement">Encaisser</button></form>{}',
                            reverse("admin:patrimoine_echeance_encaisser", args=[obj.pk]), self._csrf, pdf)

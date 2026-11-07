@@ -918,6 +918,99 @@ def enregistrer_note(request):
     return JsonResponse({"ok": True, "heure": timezone.localtime(note.modifie_le).strftime("%H:%M")})
 
 
+def _niveau_relance(request, bail, lignes):
+    from . import relances
+    from .models import Relance
+
+    niveau = request.GET.get("niveau")
+    return niveau if niveau in Relance.Niveau.values else relances.niveau_suggere(bail, lignes)
+
+
+@staff_member_required
+def relances_impayes(request):
+    """Liste des baux en impayé, puis pour un bail : loyers dus, niveau de relance proposé, mail ou lettre, historique."""
+    from . import droits, relances
+    from .models import Relance
+
+    contexte = {**admin.site.each_context(request), "title": "Relancer un impayé"}
+    bail = Bail.objects.filter(pk=request.GET.get("bail") or 0).select_related("lot__bien__proprietaire").first()
+    if bail:
+        lignes = relances.impayes(bail)
+        contexte.update(detail={"bail": bail, "lignes": lignes, "total": sum((r for _, r in lignes), Decimal(0))},
+                        niveau=_niveau_relance(request, bail, lignes), niveaux=Relance.Niveau.choices,
+                        historique=bail.relances.all()[:30],
+                        peut_modifier=bool(lignes) and droits.niveau(request.user, "loyers") == droits.MODIFICATION)
+    else:
+        baux = relances.baux_en_impaye()
+        for b in baux:
+            b["suggere_libelle"] = Relance.Niveau(b["suggere"]).label.split(". ", 1)[-1]
+        contexte["baux"] = baux
+    return render(request, "patrimoine/relances.html", contexte)
+
+
+def _pdf_relance(bail, niveau, lignes):
+    from . import relances
+    from .models import Relance
+
+    personnes = relances.destinataires(bail, niveau)
+    garant = niveau == Relance.Niveau.GARANT
+    html = render_to_string("patrimoine/relance_pdf.html", {
+        "c": relances.courrier(bail, niveau, lignes), "lignes": lignes, "personnes": personnes, "bien": bail.lot.bien,
+        "proprietaire": bail.lot.bien.proprietaire, "aujourdhui": timezone.localdate(), "garant": garant,
+        "adresse_garant": personnes[0].adresse if garant and personnes else "",
+        "appel": relances._bonjour(personnes), "recommande": niveau == Relance.Niveau.MISE_EN_DEMEURE})
+    nom = f"{Relance.Niveau(niveau).label.split('. ', 1)[-1]} {bail.lot.bien.ville} {timezone.localdate():%Y-%m-%d}"
+    return HTML(string=html).write_pdf(), slugify(nom) + ".pdf"
+
+
+@staff_member_required
+def lettre_relance(request, pk):
+    from . import relances
+    from .models import Relance
+
+    bail = get_object_or_404(Bail.objects.select_related("lot__bien__proprietaire"), pk=pk)
+    lignes = relances.impayes(bail)
+    if not lignes:
+        messages.info(request, "Plus aucun loyer impayé sur ce bail.")
+        return redirect(f"{reverse('relances_impayes')}?bail={pk}")
+    niveau = _niveau_relance(request, bail, lignes)
+    contenu, nom = _pdf_relance(bail, niveau, lignes)
+    relances.enregistrer(bail, niveau, lignes, Relance.Mode.COURRIER)
+    reponse = HttpResponse(contenu, content_type="application/pdf")
+    reponse["Content-Disposition"] = f'inline; filename="{nom}"'
+    return reponse
+
+
+@staff_member_required
+def preparer_mail_relance(request, pk):
+    """Brouillon .eml de relance (texte + lettre PDF jointe) qui s'ouvre dans Outlook, prêt à envoyer."""
+    from email.message import EmailMessage as Brouillon
+    from email.policy import SMTP
+
+    from . import relances
+    from .models import Relance
+
+    bail = get_object_or_404(Bail.objects.select_related("lot__bien__proprietaire"), pk=pk)
+    lignes = relances.impayes(bail)
+    if not lignes:
+        messages.info(request, "Plus aucun loyer impayé sur ce bail.")
+        return redirect(f"{reverse('relances_impayes')}?bail={pk}")
+    niveau = _niveau_relance(request, bail, lignes)
+    contenu, nom = _pdf_relance(bail, niveau, lignes)
+    brouillon = Brouillon(policy=SMTP)
+    brouillon["Subject"] = relances.OBJETS[niveau]
+    adresses = [p.email for p in relances.destinataires(bail, niveau) if p.email]
+    if adresses:
+        brouillon["To"] = ", ".join(adresses)
+    brouillon["X-Unsent"] = "1"
+    brouillon.set_content(relances.texte_mail(bail, niveau, lignes))
+    brouillon.add_attachment(contenu, maintype="application", subtype="pdf", filename=nom)
+    relances.enregistrer(bail, niveau, lignes, Relance.Mode.MAIL)
+    reponse = HttpResponse(brouillon.as_bytes(), content_type="message/rfc822")
+    reponse["Content-Disposition"] = f'attachment; filename="{nom[:-4]}.eml"'
+    return reponse
+
+
 @staff_member_required
 def annonce_pdf(request, pk):
     """Annonce en PDF : titre, chiffres clés, photos du lot et texte (pour l'imprimer ou l'envoyer)."""

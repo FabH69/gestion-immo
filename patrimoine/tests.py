@@ -1733,3 +1733,53 @@ class AnnoncePdfTests(TestCase):
         r = self.client.get(f"/annonces/{a.pk}/annonce.pdf")
         self.assertEqual(r["Content-Type"], "application/pdf")
         self.assertContains(self.client.get("/admin/patrimoine/annonce/"), "Générer le PDF")
+
+
+class RelancesTests(TestCase):
+    def setUp(self):
+        from django.contrib.auth.models import User
+
+        self.client.force_login(User.objects.create_superuser("chef", "c@exemple.fr", "x"))
+        proprio = Proprietaire.objects.create(nom="SCI R", type=Proprietaire.Type.SCI_IR, ville="Lyon", iban="FR76 1234")
+        bien = Bien.objects.create(proprietaire=proprio, nom="Immeuble", adresse="1 rue", code_postal="69000", ville="Lyon")
+        lot = Lot.objects.create(bien=bien, designation="T2")
+        self.bail = Bail.objects.create(lot=lot, type=Bail.Type.NU, date_debut=date(2026, 1, 1), loyer_hc=Decimal("600"), charges=Decimal("50"))
+        self.bail.locataires.add(Locataire.objects.create(civilite="M.", nom="DURAND", email="d@exemple.fr"))
+        for mois in (8, 9, 10):
+            Echeance.generer_pour_mois(date(2026, mois, 1))
+        e = Echeance.objects.get(periode=date(2026, 8, 1))
+        Paiement.objects.create(echeance=e, date=date(2026, 8, 3), montant=e.total)
+        Paiement.objects.create(echeance=Echeance.objects.get(periode=date(2026, 9, 1)), date=date(2026, 9, 3), montant=Decimal("400"))
+
+    def test_impayes_et_niveaux(self):
+        from . import relances
+        from .models import Relance
+
+        lignes = relances.impayes(self.bail, date(2026, 11, 7))
+        self.assertEqual([r for _, r in lignes], [Decimal("250"), Decimal("650")])
+        self.assertEqual(relances.niveau_suggere(self.bail, lignes), Relance.Niveau.RAPPEL)
+        relances.enregistrer(self.bail, Relance.Niveau.RAPPEL, lignes, Relance.Mode.MAIL)
+        relances.enregistrer(self.bail, Relance.Niveau.RAPPEL, lignes, Relance.Mode.MAIL)  # pas de doublon le même jour
+        self.assertEqual(self.bail.relances.count(), 1)
+        self.assertEqual(relances.niveau_suggere(self.bail, lignes), Relance.Niveau.RELANCE)
+        c = relances.courrier(self.bail, Relance.Niveau.MISE_EN_DEMEURE, lignes)
+        self.assertIn("900,00 €", c["paragraphes"][1])
+        self.assertIn("les loyers des mois de septembre 2026 et d'octobre 2026", c["paragraphes"][0])
+
+    def test_pages(self):
+        import email
+        from email.policy import default
+
+        r = self.client.get("/impayes/relancer/")
+        self.assertContains(r, "Sep 2026, Oct 2026")
+        self.assertContains(r, self.bail.lot.designation)
+        r = self.client.get(f"/impayes/relancer/?bail={self.bail.pk}")
+        self.assertContains(r, "Préparer le mail dans Outlook")
+        r = self.client.get(f"/impayes/{self.bail.pk}/preparer-mail/?niveau=rappel")
+        m = email.message_from_bytes(r.content, policy=default)
+        self.assertEqual(m["To"], "d@exemple.fr")
+        self.assertIn("Bonjour Monsieur Durand,", next(p for p in m.walk() if p.get_content_type() == "text/plain").get_content())
+        self.assertEqual(len([p for p in m.walk() if p.get_content_type() == "application/pdf"]), 1)
+        r = self.client.get(f"/impayes/{self.bail.pk}/lettre.pdf?niveau=mise_en_demeure")
+        self.assertEqual(r["Content-Type"], "application/pdf")
+        self.assertEqual(self.bail.relances.count(), 2)

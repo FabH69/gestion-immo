@@ -6,7 +6,7 @@
     <div class="kpi-barre"><i style="width:{{ tb.pourcentage }}%"></i></div>
     <div class="kpi-d">{{ tb.nb_payes }} payé{{ tb.nb_payes|pluralize }} sur {{ tb.nb_echeances }}</div>
   </a>
-  <a class="kpi" href="{% url 'admin:patrimoine_echeance_changelist' %}?retard=oui">
+  <a class="kpi" href="{% url 'relances_impayes' %}">
     <div class="kpi-l">Impayés en retard</div>
     <div class="kpi-v{% if tb.nb_retard %} rouge{% endif %}">{{ tb.nb_retard }}</div>
     <div class="kpi-d">{% if tb.nb_retard %}<span class="pill rouge">{{ tb.montant_retard|euros }} à encaisser</span>{% else %}<span class="pill ok">Tout est à jour</span>{% endif %}</div>

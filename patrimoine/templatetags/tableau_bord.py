@@ -88,8 +88,9 @@ def _menu():
              [("Lots", a("lot")), ("Propriétaires", a("proprietaire")), ("Syndics", a("syndic"))]),
             ("locataires", "Locataires", a("locataire"), [a("locataire")], []),
             ("baux", "Baux", a("bail"), [a("bail")], [("États des lieux", a("etatdeslieux")), ("Garants", a("garant"))]),
-            ("loyers", "Loyers", a("echeance"), [a("echeance"), a("revisionloyer"), a("mouvementdepot")],
-             [("Révisions de loyer", a("revisionloyer")), ("Dépôts de garantie", a("mouvementdepot"))]),
+            ("loyers", "Loyers", a("echeance"), [a("echeance"), r("relances_impayes"), a("revisionloyer"), a("mouvementdepot")],
+             [("Relances d'impayés", r("relances_impayes")), ("Révisions de loyer", a("revisionloyer")),
+              ("Dépôts de garantie", a("mouvementdepot"))]),
         ]),
         ("Relocation", [
             ("candidatures", "Candidatures", a("candidature"), [a("candidature")], []),
