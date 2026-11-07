@@ -108,17 +108,18 @@ def preparer_mail_quittance(request, pk):
     locataires = list(e.bail.locataires.all())
     mois = f"{MOIS_FR[e.periode.month - 1]} {e.periode.year}"
     brouillon = Brouillon(policy=SMTP)
-    brouillon["Subject"] = f"{'Quittance de loyer' if est_quittance else 'Avis d’échéance'} – {mois} – {e.bail.lot.designation}"
+    brouillon["Subject"] = f"{'Quittance de loyer' if est_quittance else 'Avis d’échéance'} – {mois}"
     destinataires = [l.email for l in locataires if l.email]
     if destinataires:
         brouillon["To"] = ", ".join(destinataires)
     brouillon["X-Unsent"] = "1"
     brouillon.set_content(mails.texte_quittance(e, locataires, mois, est_quittance))
     brouillon.add_alternative(mails.html_quittance(e, locataires, mois, est_quittance), subtype="html")
-    brouillon.add_attachment(contenu, maintype="application", subtype="pdf", filename=nom)
+    joint = f"{'quittance' if est_quittance else 'avis-echeance'}-{e.periode:%Y-%m}-{slugify(e.bail.lot.bien.ville or 'loyer')}.pdf"
+    brouillon.add_attachment(contenu, maintype="application", subtype="pdf", filename=joint)
     reponse = HttpResponse(brouillon.as_bytes(), content_type="message/rfc822")
     reponse["Content-Disposition"] = f'attachment; filename="{nom[:-4]}.eml"'
-    return reponse
+    return reponse  # PDF joint nommé d'après la ville, pas d'après le nom interne du logement
 
 
 @staff_member_required
