@@ -12,3 +12,4 @@ table.etat tr.stp td { font-weight: bold; border-bottom: 2px solid #999; }
 table.etat tr.total td { font-weight: bold; border-top: 2px solid #222; font-size: 1.05em; }
 table.etat td.vide { text-align: center; padding: 20px; color: #777; }
 .etat a.montant-lien, .etat a.montant-lien:link, .etat a.montant-lien:visited { color: inherit; text-decoration: none; border: 0; } .etat a.montant-lien:hover { color: var(--link-fg, #1f5a5c); }
+table.etat tr.groupe td { font-style: italic; font-weight: 600; color: var(--body-quiet-color, #555); padding-top: 8px; }

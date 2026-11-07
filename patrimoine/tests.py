@@ -288,6 +288,41 @@ class RappelsEtRevisionTests(TestCase):
         self.assertEqual(self.bail.date_attestation_assurance, timezone.localdate())
         self.assertEqual(self.client.get("/admin/").status_code, 200)
 
+    def test_pret_recale_sur_capital_constate(self):
+        from .models import Pret
+
+        proprio = Proprietaire.objects.create(nom="SCI R", type=Proprietaire.Type.SCI_IR)
+        pret = Pret.objects.create(proprietaire=proprio, banque="CM", montant=Decimal("70400"), taux=Decimal("1.80"), duree_mois=180,
+                                   date_premiere_echeance=date(2016, 7, 5))
+        calcule = pret.capital_restant_du(date(2026, 11, 7))
+        fin = pret.date_derniere_echeance
+        pret.capital_constate, pret.capital_constate_le = Decimal("24378.87"), date(2026, 11, 7)
+        pret.save()
+        self.assertNotEqual(calcule, Decimal("24378.87"))
+        self.assertEqual(pret.capital_restant_du(date(2026, 11, 7)), Decimal("24378.87"))
+        self.assertEqual(pret.capital_restant_du(date(2026, 10, 7)), pret.capital_restant_du(date(2026, 10, 7)))
+        lignes = pret.echeancier()
+        self.assertEqual(lignes[-1]["restant"], 0)
+        self.assertGreater(pret.date_derniere_echeance, fin)  # capital plus élevé : même mensualité, prêt allongé
+        self.assertEqual(lignes[-2]["mensualite"], pret.mensualite_hors_assurance)
+
+    def test_endettement_residence_principale_a_part(self):
+        from .etats import endettement
+        from .models import Pret
+
+        proprio = Proprietaire.objects.create(nom="M. et Mme", type=Proprietaire.Type.NOM_PROPRE)
+        rp = Bien.objects.create(proprietaire=proprio, nom="Résidence principale", adresse="89 av", code_postal="69290", ville="Grézieu",
+                                 residence_principale=True)
+        loc = Bien.objects.create(proprietaire=proprio, nom="Pollionnay", adresse="1 rue", code_postal="69290", ville="Pollionnay")
+        for bien, montant in ((rp, 82000), (loc, 70000)):
+            Pret.objects.create(proprietaire=proprio, bien=bien, banque="CM", montant=Decimal(montant), taux=Decimal("2"), duree_mois=120,
+                                date_premiere_echeance=date(2020, 1, 5))
+        bloc = next(b for b in endettement(date(2026, 11, 7))["blocs"] if b["proprietaire"] == proprio)
+        self.assertEqual([g["libelle"] for g in bloc["groupes"]], ["Locatif", "Résidence principale"])
+        self.assertEqual(bloc["groupes"][1]["montant"], Decimal(82000))
+        page = self.client.get("/etats/endettement/?date=2026-11-07")
+        self.assertContains(page, "Sous-total résidence principale")
+
     def test_etat_encaisse_montant_cliquable(self):
         from .models import Echeance, Paiement
 

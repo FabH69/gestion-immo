@@ -117,6 +117,9 @@ class Bien(models.Model):
     # zone tendue
     zone_tendue = models.BooleanField("zone tendue", default=False)
     encadrement_loyers = models.BooleanField("encadrement des loyers", default=False)
+    residence_principale = models.BooleanField(
+        "résidence principale", default=False,
+        help_text="Logement que vous habitez (non loué) : ses prêts sont présentés à part du locatif.")
     vendu = models.BooleanField("bien vendu", default=False)
     date_vente = models.DateField("date de vente", null=True, blank=True)
     notes = models.TextField(blank=True)
@@ -854,6 +857,11 @@ class Pret(models.Model):
         help_text="Seulement si la banque calcule l'assurance sur le capital restant dû et l'inclut dans une échéance constante "
                   "(ex. Caisse d'Épargne) : l'assurance mensuelle ci-dessus est alors ignorée.",
     )
+    capital_constate = models.DecimalField(
+        "capital restant dû constaté (€)", max_digits=12, decimal_places=2, null=True, blank=True,
+        help_text="Montant lu sur un relevé de la banque, s'il diffère du calcul (échéances reportées, remboursement "
+                  "anticipé…). L'échéancier repart de ce montant à cette date, avec la même mensualité.")
+    capital_constate_le = models.DateField("constaté le", null=True, blank=True)
     notes = models.TextField(blank=True)
 
     class Meta:
@@ -864,7 +872,15 @@ class Pret(models.Model):
         return f"{self.banque} {self.reference or ''} – {self.montant:.0f} €".replace("  ", " ")
 
     @property
+    def recale(self):
+        return self.capital_constate is not None and self.capital_constate_le is not None
+
+    @property
     def date_derniere_echeance(self):
+        if self.recale:
+            lignes = self.echeancier()
+            if lignes:
+                return lignes[-1]["date"]
         return _ajouter_mois(self.date_premiere_echeance, self.duree_mois - 1)
 
     @staticmethod
@@ -893,26 +909,43 @@ class Pret(models.Model):
         return (self.montant * t / (1 - (1 + t) ** -self.duree_mois)).quantize(Decimal("0.01"))
 
     def echeancier(self):
-        """Liste des échéances : (n°, date, mensualité, intérêts, capital remboursé, assurance, capital restant dû)."""
+        """Liste des échéances : (n°, date, mensualité, intérêts, capital remboursé, assurance, capital restant dû).
+
+        Avec un capital restant dû constaté, le capital repart de ce montant après la dernière échéance passée à cette
+        date ; la mensualité ne change pas et le prêt s'arrête quand tout est remboursé (durée allongée ou raccourcie)."""
         t = self.taux / Decimal(1200)
         restant = self.montant
         mensualite = self.mensualite_hors_assurance
         assurance_incluse = bool(self.taux_assurance) and self.type == self.Type.AMORTISSABLE
         totale = self.mensualite_totale
+        recale = self.recale
+        a_recaler = recale
+        if recale and self.capital_constate_le < self.date_premiere_echeance:
+            restant, a_recaler = self.capital_constate, False
         lignes = []
-        for n in range(1, self.duree_mois + 1):
+        n = 0
+        while restant > 0 and n < 1200:
+            n += 1
+            if n > self.duree_mois and not recale:
+                break
+            date_ = _ajouter_mois(self.date_premiere_echeance, n - 1)
             interets = (restant * t).quantize(Decimal("0.01"))
             assurance = (restant * self.taux_assurance / Decimal(1200)).quantize(Decimal("0.01")) if assurance_incluse else self.assurance_mensuelle
+            fin_prevue = n >= self.duree_mois and not recale
             if self.type == self.Type.IN_FINE:
-                capital = restant if n == self.duree_mois else Decimal(0)
+                capital = restant if n >= self.duree_mois else Decimal(0)
             elif assurance_incluse:
-                capital = restant if n == self.duree_mois else totale - interets - assurance
+                capital = restant if fin_prevue else min(restant, totale - interets - assurance)
             else:
-                capital = restant if n == self.duree_mois else mensualite - interets
+                capital = restant if fin_prevue else min(restant, mensualite - interets)
+            if recale and not a_recaler and restant - capital < 1:
+                capital = restant  # reliquat d'arrondi de quelques centimes : soldé avec cette échéance
             restant -= capital
+            if a_recaler and date_ <= self.capital_constate_le < _ajouter_mois(self.date_premiere_echeance, n):
+                restant, a_recaler = self.capital_constate, False
             lignes.append({
                 "numero": n,
-                "date": _ajouter_mois(self.date_premiere_echeance, n - 1),
+                "date": date_,
                 "mensualite": interets + capital,
                 "interets": interets,
                 "capital": capital,

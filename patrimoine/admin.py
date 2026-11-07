@@ -243,6 +243,7 @@ class BienAdmin(admin.ModelAdmin):
                              "<b>Encadrement des loyers</b> : loyer de référence majoré fixé par arrêté préfectoral (Lyon, Villeurbanne, Paris…).<br>"
                              "Si l'une des cases est cochée, le bail contient le paragraphe « zone tendue » : les chiffres "
                              "(loyer de référence, complément, loyer du précédent locataire) se saisissent dans chaque bail.")}),
+        ("Usage", {"classes": ["cases-a-cocher"], "fields": ["residence_principale"]}),
         ("Vente", {"classes": ["cases-a-cocher"], "fields": [("vendu", "date_vente")],
                    "description": "Un bien vendu (et tous ses lots) n'est plus proposé pour les baux, candidatures et annonces, "
                                   "mais reste dans les états des loyers. La date de vente est facultative."}),
@@ -1277,6 +1278,8 @@ class PretAdmin(admin.ModelAdmin):
     fieldsets = [
         (None, {"fields": ["proprietaire", "bien", "banque", ("reference", "type")]}),
         ("Conditions", {"fields": [("montant", "taux", "duree_mois"), "date_premiere_echeance", "assurance_mensuelle", "taux_assurance"]}),
+        ("Recalage sur la banque", {"fields": [("capital_constate", "capital_constate_le")],
+                                     "description": "Facultatif : capital restant dû indiqué par la banque à une date, si le calcul s'en écarte."}),
         ("Calculs", {"fields": ["calculs"]}),
         ("Notes", {"fields": ["notes"]}),
     ]

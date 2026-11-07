@@ -94,4 +94,14 @@ def endettement(a_date, proprietaire=None):
         for c in cles:
             bloc[c] += ligne[c]
             total[c] += ligne[c]
+    for bloc in blocs.values():
+        # Personne physique : prêts de la résidence principale séparés du locatif, avec un sous-total chacun.
+        rp = [l for l in bloc["lignes"] if l["pret"].bien and l["pret"].bien.residence_principale]
+        if rp:
+            locatif = [l for l in bloc["lignes"] if l not in rp]
+            bloc["groupes"] = [{"libelle": libelle, "lignes": lignes, **{c: sum((l[c] for l in lignes), Decimal(0)) for c in cles}}
+                               for libelle, lignes in (("Locatif", locatif), ("Résidence principale", rp)) if lignes]
+            bloc["lignes"] = locatif + rp
+        else:
+            bloc["groupes"] = [{"libelle": "", "lignes": bloc["lignes"]}]
     return {"blocs": list(blocs.values()), "total": total, "date": a_date, "annee": a_date.year}
