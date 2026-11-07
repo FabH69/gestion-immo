@@ -90,7 +90,7 @@ def envoyer_quittance(request):
                    + ("" if e.statut == Echeance.Statut.PAYE else f" – {e.get_statut_display().lower()}")} for e in echeances]
     emails = [l.email for l in bail.locataires.all() if l.email] if bail else []
     return render(request, "patrimoine/envoyer_quittance.html", {
-        **admin.site.each_context(request), "title": "Envoyer une quittance", "baux": choix_baux, "bail": bail,
+        **admin.site.each_context(request), "title": "Créer une quittance", "baux": choix_baux, "bail": bail,
         "mois": choix_mois, "echeance": echeance, "emails": emails,
         "est_quittance": echeance is not None and echeance.statut == Echeance.Statut.PAYE})
 

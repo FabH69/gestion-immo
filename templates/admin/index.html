@@ -4,7 +4,6 @@
 <div class="entete-accueil">
   <h1>Bonjour {% firstof user.first_name user.get_username|capfirst %}</h1>
   <p class="sous-titre">{% now "l j F Y" %}</p>
-  <div class="actions-accueil"><a class="button" href="{% url 'envoyer_quittance' %}">Envoyer une quittance</a></div>
 </div>
 {% endblock %}
 {% block content %}

@@ -1,4 +1,10 @@
 {% load tableau_bord %}
+<div class="module carte actions-rapides">
+  <h2>Actions rapides</h2>
+  <div class="actions-rapides-liste">
+    <a class="button" href="{% url 'envoyer_quittance' %}">Créer une quittance</a>
+  </div>
+</div>
 <div class="module carte">
   <h2>Loyers de {{ tb.mois }}<a class="lien-carte" href="{% url 'admin:patrimoine_echeance_changelist' %}">Tout voir ({{ tb.nb_lignes }})</a></h2>
   {% for l in tb.lignes %}
