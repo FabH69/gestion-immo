@@ -242,6 +242,11 @@ def filtres_haut(cl):
         if champ is not None and champ.name == "type" and champ.model._meta.model_name == "bail":
             titre = "type de bail"
         chemin = getattr(spec, "field_path", "")
+        if getattr(spec, "affichage_annees", False):
+            # Tout + année en cours + année précédente en boutons ; années antérieures dans une liste déroulante
+            filtres.append({"titre": "Années antérieures", "annees": True, "choix": choix[:3], "anterieures": choix[3:],
+                            "anterieure_active": any(c["actif"] for c in choix[3:]), "tous": choix[0]["actif"]})
+            continue
         filtres.append({"titre": titre[:1].upper() + titre[1:], "choix": choix, "boutons": len(choix) <= 5,
                         "tous": choix[0]["actif"], "avec_titre": any(c["libelle"] in ("Oui", "Non") for c in choix), "droite": chemin.split("__")[-1] == "proprietaire"})
     return filtres
@@ -283,12 +288,23 @@ def navigation_periode(cl):
 
 
 @register.inclusion_tag("patrimoine/_annees.html", takes_context=True)
-def boutons_annees(context, annees, annee):
-    """Années en boutons (à la place d'une liste déroulante) ; les autres paramètres de la page sont conservés."""
+def boutons_annees(context, annees, annee, mode=""):
+    """Années en boutons (à la place d'une liste déroulante) ; les autres paramètres de la page sont conservés.
+    mode « civil » : année en cours et précédente en boutons, années antérieures dans une liste déroulante."""
     request = context.get("request")
-    boutons = []
-    for a in sorted(annees, reverse=True):
+
+    def lien(a):
         params = request.GET.copy() if request else {}
         params["annee"] = a
-        boutons.append({"libelle": a, "url": "?" + params.urlencode(), "actif": a == annee})
+        return "?" + params.urlencode()
+
+    if mode == "civil":
+        t = timezone.localdate().year
+        boutons = [{"libelle": f"Année en cours ({t})", "url": lien(t), "actif": int(annee) == t},
+                   {"libelle": f"Année précédente ({t - 1})", "url": lien(t - 1), "actif": int(annee) == t - 1}]
+        anterieures = [{"libelle": a, "url": lien(a), "actif": int(a) == int(annee)} for a in sorted({int(x) for x in annees}, reverse=True) if a < t - 1]
+        return {"boutons": boutons, "anterieures": anterieures, "anterieure_active": any(a["actif"] for a in anterieures)}
+    boutons = []
+    for a in sorted(annees, reverse=True):
+        boutons.append({"libelle": a, "url": lien(a), "actif": a == annee})
     return {"boutons": boutons}

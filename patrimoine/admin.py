@@ -1672,17 +1672,19 @@ class ModeleDocumentAdmin(admin.ModelAdmin):
 
 
 class AnneeFiscaleFilter(admin.SimpleListFilter):
-    title = "année fiscale"
+    """Année civile du paiement : année en cours et précédente en boutons, années antérieures en liste déroulante."""
+    title = "année"
     parameter_name = "annee"
+    affichage_annees = True
 
     def lookups(self, request, model_admin):
-        annees = sorted({p.annee for p in PieceComptable.objects.only("date", "date_paiement")} - {None}, reverse=True)
-        return [(str(a), str(a)) for a in annees]
+        t = timezone.localdate().year
+        anterieures = sorted({p.annee for p in PieceComptable.objects.only("date", "date_paiement")} - {None, t, t - 1}, reverse=True)
+        return [(str(t), f"Année en cours ({t})"), (str(t - 1), f"Année précédente ({t - 1})")] + [(str(a), str(a)) for a in anterieures if a < t - 1]
 
     def queryset(self, request, queryset):
         if self.value():
             a = int(self.value())
-            from django.db.models import Q
             return queryset.filter(Q(date_paiement__year=a) | Q(date_paiement__isnull=True, date__year=a))
         return queryset
 
@@ -1752,8 +1754,6 @@ class PieceComptableAdmin(admin.ModelAdmin):
     list_display_links = ["date_affichee", "libelle"]
     list_filter = [ACodifierFilter, AnneeFiscaleFilter, "bien__proprietaire", "ligne"]
     search_fields = ["fournisseur", "libelle", "bien__nom", "notes"]
-    date_hierarchy = "date"
-    navigation_par = "mois"
     # mode « codifier » (liste filtrée sur les pièces à codifier) : tout se complète directement dans le tableau
     LISTE_CODIFIER = ["piece", "modifier", "bien", "date", "date_paiement", "fournisseur", "libelle", "montant", "ligne"]
     fieldsets = [

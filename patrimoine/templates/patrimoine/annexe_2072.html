@@ -14,7 +14,7 @@
 {% block content %}
 <form method="get" class="module choix-2072">
   <div class="rang"><b>SCI</b>{% for s in scis %}<a class="chip{% if s.pk == sci.pk %} actif{% endif %}" href="?sci={{ s.pk }}&annee={{ annee }}">{{ s.nom }}</a>{% endfor %}</div>
-  <div class="rang"><b>Revenus de</b>{% boutons_annees annees annee %}</div>
+  <div class="rang"><b>Revenus de</b>{% boutons_annees annees annee "civil" %}</div>
   <input type="hidden" name="sci" value="{{ sci.pk }}"><input type="hidden" name="annee" value="{{ annee }}">
   <div class="rang"><b>Immeubles</b>
     {% for b in biens_sci %}<label class="case"><input type="checkbox" name="bien" value="{{ b.pk }}"{% if b.pk in choisis %} checked{% endif %} onchange="this.form.submit()"> {{ b.nom }}</label>{% empty %}<span class="legende">Aucun bien pour cette SCI.</span>{% endfor %}

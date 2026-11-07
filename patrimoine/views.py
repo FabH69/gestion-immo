@@ -846,7 +846,7 @@ def annexe_2072(request):
     biens_sci = list(sci.biens.filter(Q(vendu=False) | Q(date_vente__year__gte=annee)).order_by("nom")) if sci else []
     choisis = request.GET.getlist("bien")
     biens = [b for b in biens_sci if str(b.pk) in choisis] if choisis else biens_sci
-    contexte = {"sci": sci, "scis": scis, "annee": annee, "annees": range(aujourdhui.year - 4, aujourdhui.year + 1),
+    contexte = {"sci": sci, "scis": scis, "annee": annee, "annees": range(aujourdhui.year - 10, aujourdhui.year + 1),
                 "biens_sci": biens_sci, "biens": biens, "choisis": [b.pk for b in biens], **annexe2072.annexe(biens, annee)}
     contexte["cadre_i"] = annexe2072.part_personnelle(contexte["resultat"], sci.pourcentage_detention if sci else 100)
     contexte["tous_les_biens"] = len(biens) == len(biens_sci)
