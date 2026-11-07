@@ -34,3 +34,32 @@
 </script>
 {% endif %}{% endblock %}
 {% block nav-sidebar %}{% endblock %}
+{% block footer %}{{ block.super }}
+<script>
+(function () {
+  // Saisie en cours non enregistrée : le navigateur demande confirmation avant de quitter la page.
+  var modifie = false;
+  function suivi(form) {
+    var m = (form.getAttribute("method") || "").toLowerCase();
+    return m === "post" && !form.closest("#recherche-globale") && !/\/(login|logout|password_change)\//.test(form.action || "");
+  }
+  function ignore(champ) {
+    return !champ.name || champ.name === "action" || champ.name === "_selected_action" || champ.name === "select_across"
+      || champ.name === "csrfmiddlewaretoken" || champ.classList.contains("action-select") || champ.id === "action-toggle";
+  }
+  function marquer(e) {
+    var c = e.target, f = c && c.form;
+    if (f && suivi(f) && !ignore(c)) modifie = true;
+  }
+  document.addEventListener("input", marquer, true);
+  document.addEventListener("change", marquer, true);
+  document.addEventListener("submit", function () { modifie = false; }, true);
+  window.addEventListener("beforeunload", function (e) {
+    if (!modifie) return;
+    e.preventDefault();
+    e.returnValue = "Des modifications ne sont pas enregistrées.";
+    return e.returnValue;
+  });
+})();
+</script>
+{% endblock %}
