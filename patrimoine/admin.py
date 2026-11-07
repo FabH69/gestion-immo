@@ -1482,9 +1482,11 @@ class CandidatureAdmin(LotsALouerMixin, admin.ModelAdmin):
                 reverse("envoyer_lien_candidature", args=[obj.pk]))
         return format_html(
             '<input type="text" value="{}" readonly style="width:100%;max-width:560px" onclick="this.select()"> '
-            '<p><a class="button" href="{}">Préparer le mail dans ma messagerie</a>{}</p>'
-            "<p class='help'>Pour envoyer directement depuis l'appli, renseignez l'e-mail du candidat et le réglage Réglages › Mails.</p>",
-            url, mailto, envoi,
+            '<p><a class="button" href="{}">Préparer le mail dans Outlook (mis en forme)</a> '
+            '<a class="button" href="{}">Préparer en texte simple</a>{}</p>'
+            "<p class='help'>« Mis en forme » télécharge un brouillon : ouvrez-le, il s'affiche dans Outlook prêt à envoyer. "
+            "Pour envoyer directement depuis l'appli, renseignez l'e-mail du candidat et le réglage Réglages › Mails.</p>",
+            url, reverse("preparer_mail_candidature", args=[obj.pk]), mailto, envoi,
         )
 
     def get_form(self, request, obj=None, **kwargs):

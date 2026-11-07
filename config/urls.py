@@ -28,6 +28,7 @@ urlpatterns = [
     path("modeles/champs/", views.liste_champs, name="liste_champs"),
     path("modeles/<int:pk>/bail/<int:bail_pk>/", views.remplir_modele, name="remplir_modele"),
     path("reglages/mails/test/", views.tester_mail, name="tester_mail"),
+    path("candidatures/<int:pk>/preparer-mail/", views.preparer_mail_candidature, name="preparer_mail_candidature"),
     path("candidatures/<int:pk>/envoyer-lien/", views.envoyer_lien_candidature, name="envoyer_lien_candidature"),
     path("reglages/sauvegardes/<str:nom>", views.telecharger_sauvegarde, name="telecharger_sauvegarde"),
     path("garants/<int:pk>/acte-de-cautionnement.pdf", views.acte_cautionnement, name="acte_cautionnement"),

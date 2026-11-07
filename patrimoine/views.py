@@ -703,6 +703,28 @@ def telecharger_sauvegarde(request, nom):
 
 
 @staff_member_required
+def preparer_mail_candidature(request, pk):
+    """Brouillon .eml mis en forme : Outlook l'ouvre comme un nouveau mail prêt à envoyer (en-tête X-Unsent)."""
+    from email.message import EmailMessage as Brouillon
+    from email.policy import SMTP
+
+    from . import mails
+
+    c = get_object_or_404(Candidature.objects.select_related("lot__bien"), pk=pk)
+    lien = mails.lien_candidature(c, request)
+    brouillon = Brouillon(policy=SMTP)
+    brouillon["Subject"] = f"Votre dossier de location – {c.lot.designation}"
+    if c.email:
+        brouillon["To"] = c.email
+    brouillon["X-Unsent"] = "1"
+    brouillon.set_content(mails.texte_invitation(c, lien))
+    brouillon.add_alternative(mails.html_invitation(c, lien), subtype="html")
+    reponse = HttpResponse(brouillon.as_bytes(), content_type="message/rfc822")
+    reponse["Content-Disposition"] = f'attachment; filename="invitation-candidature-{c.pk}.eml"'
+    return reponse
+
+
+@staff_member_required
 @require_POST
 def envoyer_lien_candidature(request, pk):
     from . import mails
