@@ -1,0 +1,16 @@
+{% extends "admin/base_site.html" %}
+{% block breadcrumbs %}<div class="breadcrumbs"><a href="{% url 'admin:index' %}">Accueil</a> › <a href="{% url 'admin:patrimoine_piececomptable_changelist' %}">Factures et pièces</a> › Importer</div>{% endblock %}
+{% block content %}
+<div class="module aligned" style="max-width:720px;padding:16px 18px">
+  <p>Sélectionnez ou glissez plusieurs factures d'un coup. Chacune devient une pièce <b>à codifier</b> :
+  vous complétez ensuite date, fournisseur, montant et ligne 2072 directement dans le tableau, puis un seul clic sur <b>Enregistrer</b>.</p>
+  <form method="post" enctype="multipart/form-data">{% csrf_token %}
+    {% if form.non_field_errors %}{{ form.non_field_errors }}{% endif %}
+    {% for champ in form %}
+    <div class="form-row">{{ champ.errors }}<label for="{{ champ.id_for_label }}" class="required">{{ champ.label|capfirst }}</label> {{ champ }}
+      {% if champ.help_text %}<div class="help">{{ champ.help_text }}</div>{% endif %}</div>
+    {% endfor %}
+    <div class="submit-row"><input type="submit" class="default" value="Importer"></div>
+  </form>
+</div>
+{% endblock %}

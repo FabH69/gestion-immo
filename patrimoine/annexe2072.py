@@ -65,7 +65,7 @@ def colonne(bien, annee):
 
     # factures codées
     for p in PieceComptable.objects.filter(_annee_q(annee), bien=bien).order_by("date"):
-        if p.ligne == "non":
+        if p.ligne == "non" or p.a_codifier:
             continue
         cle = "9" if p.ligne == "9b" else p.ligne
         v[cle] += p.montant

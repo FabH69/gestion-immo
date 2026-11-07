@@ -498,3 +498,10 @@ body.change-list #recherche-globale { visibility: hidden; }
 .periode-form button.chip { cursor: pointer; }
 .titre-filtre { font-size: .82rem; color: var(--body-quiet-color); align-self: center; margin-right: 2px; }
 .identite-lot #id_reduction_montant { width: 8em; }
+/* Factures à codifier : tableau compact */
+.model-piececomptable #result_list td input[type=date] { width: 9.5em; }
+.model-piececomptable #result_list td input[name$="-fournisseur"] { width: 9em; }
+.model-piececomptable #result_list td input[name$="-libelle"] { width: 12em; }
+.model-piececomptable #result_list td input[name$="-montant"] { width: 6em; }
+.model-piececomptable #result_list td select[name$="-ligne"] { max-width: 13em; }
+.model-piececomptable #result_list td select[name$="-bien"] { max-width: 13em; }

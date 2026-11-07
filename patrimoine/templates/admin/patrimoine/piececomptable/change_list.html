@@ -1,5 +1,7 @@
 {% extends "admin/patrimoine/change_list.html" %}
 {% block object-tools-items %}
+  <li><a href="{{ lien_import }}" class="addlink">Importer des factures</a></li>
+  {% if nb_a_codifier %}<li><a href="?a_codifier=oui">À codifier ({{ nb_a_codifier }})</a></li>{% endif %}
   <li><a href="{{ lien_2072 }}">Annexe 2072</a></li>
   {{ block.super }}
 {% endblock %}

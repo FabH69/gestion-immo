@@ -323,6 +323,41 @@ class RappelsEtRevisionTests(TestCase):
         page = self.client.get("/etats/endettement/?date=2026-11-07")
         self.assertContains(page, "Sous-total résidence principale")
 
+    def test_import_factures_en_masse_puis_codification(self):
+        import tempfile
+
+        from django.core.files.uploadedfile import SimpleUploadedFile
+        from django.test import override_settings
+
+        from .annexe2072 import colonne
+        from .models import PieceComptable
+
+        sci = Proprietaire.objects.create(nom="SCI X", type=Proprietaire.Type.SCI_IR)
+        bien = Bien.objects.create(proprietaire=sci, nom="Immeuble", adresse="1 rue", code_postal="69000", ville="Lyon")
+        with tempfile.TemporaryDirectory() as prive, override_settings(PRIVE_ROOT=prive):
+            self.assertEqual(self.client.get("/admin/patrimoine/piececomptable/import/").status_code, 200)
+            r = self.client.post("/admin/patrimoine/piececomptable/import/", {"bien": bien.pk, "fichiers": [
+                SimpleUploadedFile("facture_plombier.pdf", b"%PDF"), SimpleUploadedFile("taxe.pdf", b"%PDF"),
+                SimpleUploadedFile("virus.exe", b"x")]})
+            self.assertEqual(r.status_code, 302, r.context["form"].errors if r.context and "form" in r.context else r.content[:300])
+            self.assertEqual(r["Location"], "/admin/patrimoine/piececomptable/?a_codifier=oui")
+            self.assertEqual(PieceComptable.objects.count(), 2)
+            self.assertTrue(all(p.a_codifier for p in PieceComptable.objects.all()))
+            colonne(bien, 2026)  # les pièces à codifier sont ignorées sans erreur
+            liste = self.client.get("/admin/patrimoine/piececomptable/?a_codifier=oui")
+            self.assertContains(liste, 'name="form-0-montant"')
+            pieces = list(liste.context["cl"].result_list)
+            donnees = {"form-TOTAL_FORMS": "2", "form-INITIAL_FORMS": "2", "form-MIN_NUM_FORMS": "0", "form-MAX_NUM_FORMS": "1000", "_save": "Enregistrer"}
+            for n, p in enumerate(pieces):
+                donnees.update({f"form-{n}-id": p.pk, f"form-{n}-bien": bien.pk, f"form-{n}-date": "2026-03-10", f"form-{n}-date_paiement": "",
+                                f"form-{n}-fournisseur": "Plombier", f"form-{n}-libelle": p.libelle, f"form-{n}-montant": "150",
+                                f"form-{n}-ligne": "9" if n == 0 else ""})
+            r = self.client.post("/admin/patrimoine/piececomptable/?a_codifier=oui", donnees)
+            self.assertEqual(r.status_code, 302)
+            self.assertEqual(PieceComptable.objects.filter(ligne="9", montant=150).count(), 1)
+            self.assertEqual(sum(1 for p in PieceComptable.objects.all() if p.a_codifier), 1)
+            self.assertContains(self.client.get("/admin/patrimoine/piececomptable/"), "À codifier (1)")
+
     def test_etat_encaisse_montant_cliquable(self):
         from .models import Echeance, Paiement
 

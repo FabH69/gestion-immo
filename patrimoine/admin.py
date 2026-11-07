@@ -3,6 +3,7 @@ from decimal import Decimal
 
 from django import forms
 from django.contrib import admin, messages
+from django.db.models import Q
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import path, reverse
 from urllib.parse import quote
@@ -1675,7 +1676,7 @@ class AnneeFiscaleFilter(admin.SimpleListFilter):
     parameter_name = "annee"
 
     def lookups(self, request, model_admin):
-        annees = sorted({p.annee for p in PieceComptable.objects.only("date", "date_paiement")}, reverse=True)
+        annees = sorted({p.annee for p in PieceComptable.objects.only("date", "date_paiement")} - {None}, reverse=True)
         return [(str(a), str(a)) for a in annees]
 
     def queryset(self, request, queryset):
@@ -1684,6 +1685,48 @@ class AnneeFiscaleFilter(admin.SimpleListFilter):
             from django.db.models import Q
             return queryset.filter(Q(date_paiement__year=a) | Q(date_paiement__isnull=True, date__year=a))
         return queryset
+
+
+class ACodifierFilter(admin.SimpleListFilter):
+    title = "codification"
+    parameter_name = "a_codifier"
+
+    def lookups(self, request, model_admin):
+        return [("oui", "À codifier"), ("non", "Codifiées")]
+
+    MANQUE = Q(ligne="") | Q(montant__isnull=True) | Q(date__isnull=True)
+
+    def queryset(self, request, queryset):
+        if self.value() == "oui":
+            return queryset.filter(self.MANQUE)
+        if self.value() == "non":
+            return queryset.exclude(self.MANQUE)
+        return queryset
+
+
+class EntreeFichiersMultiples(forms.ClearableFileInput):
+    allow_multiple_selected = True
+
+
+class ChampFichiersMultiples(forms.FileField):
+    widget = EntreeFichiersMultiples
+
+    def clean(self, data, initial=None):
+        if isinstance(data, (list, tuple)):
+            return [super(ChampFichiersMultiples, self).clean(d, initial) for d in data]
+        return super().clean(data, initial)
+
+
+class ImportFacturesForm(forms.Form):
+    bien = forms.ModelChoiceField(Bien.objects.none(), label="bien concerné",
+                                  help_text="Le bien pourra être changé ensuite pièce par pièce.")
+    fichiers = ChampFichiersMultiples(label="factures (PDF ou photos)", required=False,
+                               widget=EntreeFichiersMultiples(attrs={"accept": ".pdf,.jpg,.jpeg,.png,.heic"}))
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields["bien"].queryset = Bien.objects.exclude(proprietaire__type=Proprietaire.Type.NOM_PROPRE).order_by("proprietaire__nom", "nom")
+        self.fields["bien"].label_from_instance = lambda b: f"{b.proprietaire.nom} – {b.nom}"
 
 
 class PieceComptableForm(forms.ModelForm):
@@ -1707,10 +1750,12 @@ class PieceComptableAdmin(admin.ModelAdmin):
     form = PieceComptableForm
     list_display = ["date_affichee", "bien", "fournisseur", "libelle", "ligne_courte", "montant_affiche", "piece"]
     list_display_links = ["date_affichee", "libelle"]
-    list_filter = [AnneeFiscaleFilter, "bien__proprietaire", "ligne"]
+    list_filter = [ACodifierFilter, AnneeFiscaleFilter, "bien__proprietaire", "ligne"]
     search_fields = ["fournisseur", "libelle", "bien__nom", "notes"]
     date_hierarchy = "date"
     navigation_par = "mois"
+    # mode « codifier » (liste filtrée sur les pièces à codifier) : tout se complète directement dans le tableau
+    LISTE_CODIFIER = ["piece", "modifier", "bien", "date", "date_paiement", "fournisseur", "libelle", "montant", "ligne"]
     fieldsets = [
         (None, {"classes": ["identite-lot"], "fields": ["bien", ("date", "date_paiement"), ("fournisseur", "montant"), "libelle", "ligne", "fichier", "notes"],
                 "description": "Chaque facture alimente la ligne choisie de l'annexe 2072-S-A1 (Comptabilité SCI › Annexe 2072), "
@@ -1718,23 +1763,83 @@ class PieceComptableAdmin(admin.ModelAdmin):
                                "sont calculés automatiquement : inutile de les saisir ici."}),
     ]
 
+    def _codifier(self, request):
+        return request.GET.get("a_codifier") == "oui"
+
+    def get_list_display(self, request):
+        return self.LISTE_CODIFIER if self._codifier(request) else self.list_display
+
+    def get_list_display_links(self, request, list_display):
+        return ["modifier"] if self._codifier(request) else self.list_display_links
+
+    def get_changelist_instance(self, request):
+        self.list_editable = self.LISTE_CODIFIER[2:] if self._codifier(request) else ()
+        return super().get_changelist_instance(request)
+
+    def get_changelist_formset(self, request, **kwargs):
+        # tableau de codification : listes simples (sans les icônes d'ajout / modification du bien)
+        self.list_editable = self.LISTE_CODIFIER[2:] if self._codifier(request) else ()
+        return forms.modelformset_factory(self.model, form=PieceComptableForm, fields=self.list_editable, extra=0)
+
+    @admin.display(description="")
+    def modifier(self, obj):
+        return "Fiche"
+
+    def get_urls(self):
+        from django.urls import path
+
+        return [path("import/", self.admin_site.admin_view(self.import_view), name="patrimoine_piececomptable_import")] + super().get_urls()
+
+    def import_view(self, request):
+        from pathlib import Path
+
+        from django.core.exceptions import ValidationError
+
+        form = ImportFacturesForm(request.POST or None, request.FILES or None)
+        if request.method == "POST" and form.is_valid() and not request.FILES.getlist("fichiers"):
+            form.add_error("fichiers", "Choisissez au moins une facture.")
+        if request.method == "POST" and form.is_valid():
+            crees, refuses = 0, []
+            for f in request.FILES.getlist("fichiers"):
+                piece = PieceComptable(bien=form.cleaned_data["bien"], libelle=Path(f.name).stem.replace("_", " ")[:200], fichier=f)
+                try:
+                    piece.full_clean()
+                except ValidationError:
+                    refuses.append(f.name)
+                    continue
+                piece.save()
+                crees += 1
+            if crees:
+                messages.success(request, f"{crees} facture{'s' if crees > 1 else ''} importée{'s' if crees > 1 else ''} : "
+                                          "complétez date, montant et ligne 2072 dans le tableau, puis Enregistrer.")
+            if refuses:
+                messages.error(request, "Format non accepté (PDF, JPG, PNG ou HEIC) : " + ", ".join(refuses))
+            return redirect(reverse("admin:patrimoine_piececomptable_changelist") + "?a_codifier=oui")
+        return render(request, "admin/patrimoine/piececomptable/import.html",
+                      {**self.admin_site.each_context(request), "form": form, "opts": self.model._meta,
+                       "title": "Importer des factures"})
+
     @admin.display(description="date", ordering="date")
     def date_affichee(self, obj):
-        return obj.date.strftime("%d/%m/%Y")
+        return obj.date.strftime("%d/%m/%Y") if obj.date else format_html('<span class="pill orange">à codifier</span>')
 
     @admin.display(description="ligne 2072", ordering="ligne")
     def ligne_courte(self, obj):
+        if not obj.ligne:
+            return "–"
         return format_html('<span class="pill gris" title="{}">{}</span>', obj.get_ligne_display(),
                            "non déd." if obj.ligne == "non" else ("9 bis" if obj.ligne == "9b" else obj.ligne))
 
     @admin.display(description="montant", ordering="montant")
     def montant_affiche(self, obj):
-        return euros_liste(obj.montant)
+        return euros_liste(obj.montant) if obj.montant is not None else "–"
 
     @admin.display(description="facture")
     def piece(self, obj):
         return format_html('<a href="{}" target="_blank">PDF</a>', obj.fichier.url) if obj.fichier else "–"
 
     def changelist_view(self, request, extra_context=None):
-        extra_context = {**(extra_context or {}), "lien_2072": reverse("annexe_2072")}
+        extra_context = {**(extra_context or {}), "lien_2072": reverse("annexe_2072"),
+                         "lien_import": reverse("admin:patrimoine_piececomptable_import"),
+                         "nb_a_codifier": PieceComptable.objects.filter(ACodifierFilter.MANQUE).count()}
         return super().changelist_view(request, extra_context)

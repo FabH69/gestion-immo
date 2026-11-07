@@ -1606,7 +1606,9 @@ class ModeleDocument(models.Model):
 def _chemin_facture(instance, nom):
     import secrets
 
-    return f"factures/{instance.date:%Y}/{secrets.token_hex(6)}-{nom}"
+    from django.utils import timezone
+
+    return f"factures/{(instance.date or timezone.localdate()):%Y}/{secrets.token_hex(6)}-{nom}"
 
 
 class PieceComptable(models.Model):
@@ -1631,13 +1633,14 @@ class PieceComptable(models.Model):
     RECETTES = {"2", "3"}
 
     bien = models.ForeignKey(Bien, on_delete=models.PROTECT, related_name="pieces_comptables")
-    date = models.DateField("date de la facture")
+    date = models.DateField("date de la facture", null=True, blank=True)
     date_paiement = models.DateField("payée le", null=True, blank=True,
                                      help_text="Année fiscale = année du paiement (date de la facture si vide)")
     fournisseur = models.CharField(max_length=150, blank=True)
-    libelle = models.CharField("objet", max_length=200)
-    montant = models.DecimalField("montant TTC (€)", max_digits=10, decimal_places=2)
-    ligne = models.CharField("ligne de l'annexe 2072", max_length=4, choices=Ligne.choices)
+    libelle = models.CharField("objet", max_length=200, blank=True)
+    montant = models.DecimalField("montant TTC (€)", max_digits=10, decimal_places=2, null=True, blank=True)
+    ligne = models.CharField("ligne de l'annexe 2072", max_length=4, choices=Ligne.choices, blank=True,
+                             help_text="Vide = pièce importée pas encore codifiée (ignorée par l'annexe 2072)")
     fichier = models.FileField("facture (PDF ou photo)", upload_to=_chemin_facture, storage=stockage_prive, blank=True,
                                validators=[FileExtensionValidator(["pdf", "jpg", "jpeg", "png", "heic"])])
     notes = models.TextField(blank=True)
@@ -1648,8 +1651,15 @@ class PieceComptable(models.Model):
         ordering = ["-date"]
 
     def __str__(self):
+        if self.a_codifier:
+            return f"À codifier – {self.libelle or self.fichier.name.rsplit('/', 1)[-1]}"
         return f"{self.date:%d/%m/%Y} – {self.fournisseur or self.libelle} – {self.montant} €"
 
     @property
+    def a_codifier(self):
+        return not self.ligne or self.montant is None or self.date is None
+
+    @property
     def annee(self):
-        return (self.date_paiement or self.date).year
+        d = self.date_paiement or self.date
+        return d.year if d else None
