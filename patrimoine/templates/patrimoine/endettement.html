@@ -17,6 +17,7 @@
   <button type="submit" class="button">Afficher</button>
   <a class="button" href="?date={{ date|date:'Y-m-d' }}&proprietaire={{ proprietaire.pk|default:'' }}&format=pdf" target="_blank">Télécharger en PDF</a>
   <a class="button" href="?date={{ date|date:'Y-m-d' }}&proprietaire={{ proprietaire.pk|default:'' }}&format=csv">Télécharger pour Excel</a>
+  <a class="button annuler" href="{% url 'admin:index' %}">← Retour à l'accueil</a>
 </form>
 <div class="etat-scroll">{% include "patrimoine/_tableau_endettement.html" %}</div>
 {% endblock %}

@@ -7,7 +7,8 @@ table.etat .fort { font-weight: bold; }
 table.etat tr.proprio td { text-align: left; font-weight: bold; background: #264b5d; color: #fff; padding-top: 6px; }
 table.etat tr.proprio .type { font-weight: normal; opacity: .8; }
 table.etat tr.bien td { text-align: left; font-weight: bold; background: #eef3f6; color: #264b5d; }
-table.etat tr.st td { font-style: italic; }
+table.etat tr.st td { font-weight: 600; background: var(--darkened-bg, #f4f6f8); }
 table.etat tr.stp td { font-weight: bold; border-bottom: 2px solid #999; }
 table.etat tr.total td { font-weight: bold; border-top: 2px solid #222; font-size: 1.05em; }
 table.etat td.vide { text-align: center; padding: 20px; color: #777; }
+.etat a.montant-lien, .etat a.montant-lien:link, .etat a.montant-lien:visited { color: inherit; text-decoration: none; border: 0; } .etat a.montant-lien:hover { color: var(--link-fg, #1f5a5c); }

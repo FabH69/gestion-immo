@@ -1,10 +1,10 @@
-{% extends "admin/change_list.html" %}
+{% extends "admin/patrimoine/change_list.html" %}
 {% block content %}
 <div class="module" style="max-width:520px;margin-bottom:16px">
   <table style="width:100%">
     <caption>Dépôts de garantie détenus (compte séparé des loyers)</caption>
     {% for proprio, solde in soldes %}<tr><td>{{ proprio.nom }}</td><td style="text-align:right">{{ solde|floatformat:"2g" }} €</td></tr>{% endfor %}
-    <tr><th>Total détenu</th><th style="text-align:right">{{ total_detenu|floatformat:"2g" }} €</th></tr>
+    <tr><th>Total des garanties en cours ({{ nb_en_cours }} {% if nb_en_cours > 1 %}baux{% else %}bail{% endif %}) · <a href="?en_cours=oui">voir le détail</a></th><th style="text-align:right">{{ total_detenu|floatformat:"2g" }} €</th></tr>
   </table>
 </div>
 {{ block.super }}

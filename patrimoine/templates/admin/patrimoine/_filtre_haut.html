@@ -1,0 +1,3 @@
+{% if f.boutons %}<div class="groupe-filtre" role="group" aria-label="{{ f.titre }}">{% if f.avec_titre %}<span class="titre-filtre">{{ f.titre }} :</span>{% endif %}{% for c in f.choix %}<a href="{{ c.url }}" class="chip{% if c.actif %} actif{% endif %}">{{ c.libelle }}</a>{% endfor %}</div>
+{% else %}<label class="filtre-select{% if not f.tous %} actif{% endif %}"><span>{{ f.titre }}</span>
+  <select onchange="window.location.href=this.value">{% for c in f.choix %}<option value="{{ c.url }}"{% if c.actif %} selected{% endif %}>{{ c.libelle }}</option>{% endfor %}</select></label>{% endif %}

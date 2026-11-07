@@ -1,0 +1,42 @@
+{% extends "admin/change_list.html" %}
+{% load admin_list tableau_bord %}
+{% block content_title %}{% endblock %}
+{% block object-tools %}
+<div class="titre-liste">
+  {% if title %}<h1>{{ title }}</h1>{% endif %}
+  <ul class="object-tools">
+    {% block object-tools-items %}{% change_list_object_tools %}{% endblock %}
+  </ul>
+  <div class="outils-droite">
+    {% search_form cl %}
+  </div>
+</div>
+{% filtres_haut cl as filtres %}
+{% if filtres or cl.has_active_filters or raccourcis %}
+<div class="barre-liste">
+  <div class="filtres-haut">
+    {% if raccourcis %}<div class="groupe-filtre raccourcis">{% for r in raccourcis %}<a href="{{ r.url }}" class="chip{% if r.actif %} actif{% endif %}">{{ r.libelle }}</a>{% endfor %}</div>{% endif %}
+    {% for f in filtres %}{% if not f.droite %}{% include "admin/patrimoine/_filtre_haut.html" %}{% endif %}{% endfor %}
+    {% if cl.has_active_filters %}<a class="effacer-filtres" href="{{ cl.clear_all_filters_qs }}">✕ Effacer les filtres</a>{% endif %}
+  </div>
+  <div class="filtres-haut filtres-droite">
+    {% for f in filtres %}{% if f.droite %}{% include "admin/patrimoine/_filtre_haut.html" %}{% endif %}{% endfor %}
+  </div>
+</div>
+{% endif %}
+{% endblock %}
+{% block search %}{% endblock %}
+{% block date_hierarchy %}{% navigation_periode cl as nav %}{% if nav %}
+<div class="navigation-periode">
+  {% for b in nav.boutons %}<a class="chip{% if b.actif %} actif{% endif %}" href="{{ b.url }}">{{ b.libelle }}</a>{% endfor %}
+  <details class="periode-libre"{% if nav.perso %} open{% endif %}>
+    <summary class="chip{% if nav.perso %} actif{% endif %}">Période…</summary>
+    <form method="get" class="periode-form">
+      {% for k, v in nav.autres %}<input type="hidden" name="{{ k }}" value="{{ v }}">{% endfor %}
+      <label>Du <input type="date" name="{{ nav.p_du }}" value="{{ nav.du }}"></label>
+      <label>au <input type="date" name="{{ nav.p_au }}" value="{{ nav.au }}"></label>
+      <button type="submit" class="chip actif">Afficher</button>
+    </form>
+  </details>
+</div>{% endif %}{% endblock %}
+{% block filters %}{% endblock %}

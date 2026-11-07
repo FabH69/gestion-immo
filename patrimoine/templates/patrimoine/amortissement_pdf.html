@@ -13,7 +13,7 @@
 </style></head>
 <body>
   <h1>Tableau d'amortissement – {{ pret.banque }}{% if pret.reference %} n° {{ pret.reference }}{% endif %}</h1>
-  <div class="sous-titre">{{ pret.proprietaire.nom }}{% if pret.bien %} · {{ pret.bien.nom }}{% endif %} · {{ pret.montant|floatformat:"2g" }} € à {{ pret.taux|floatformat:"-3" }} % sur {{ pret.duree_mois }} mois · {{ pret.get_type_display }} · mensualité {{ pret.mensualite_hors_assurance|floatformat:"2g" }} € + assurance {{ pret.assurance_mensuelle|floatformat:"2g" }} €</div>
+  <div class="sous-titre">{{ pret.proprietaire.nom }}{% if pret.bien %} · {{ pret.bien.nom }}{% endif %} · {{ pret.montant|floatformat:"2g" }} € à {{ pret.taux|floatformat:"-3" }} % sur {{ pret.duree_mois }} mois · {{ pret.get_type_display }} · mensualité {{ pret.mensualite_hors_assurance|floatformat:"2g" }} € {% if pret.taux_assurance %}(1re échéance) + assurance {{ pret.taux_assurance|floatformat:"-3" }} % du capital restant dû, soit {{ pret.mensualite_totale|floatformat:"2g" }} € par mois{% else %}+ assurance {{ pret.assurance_mensuelle|floatformat:"2g" }} €{% endif %}</div>
   <table>
     <thead><tr><th>N°</th><th>Date</th><th>Mensualité</th><th>Intérêts</th><th>Capital</th><th>Assurance</th><th>Capital restant dû</th></tr></thead>
     <tbody>

@@ -1,0 +1,18 @@
+{% extends "commandes/base.html" %}
+{% block contenu %}
+<div class="actions" style="justify-content:space-between">
+  <h1>Commandes</h1>
+  <a class="btn" href="{% url 'balles:commande_creer' %}">+ Nouvelle commande</a>
+</div>
+<div class="chiffres">
+  <div class="chiffre"><b>{{ en_cours|length }}</b><span>commande(s) en cours</span></div>
+  <div class="chiffre"><b>{{ commission_totale|floatformat:2 }} €</b><span>commissions cumulées</span></div>
+</div>
+
+<h2>En cours</h2>
+{% include "commandes/_liste_commandes.html" with commandes=en_cours %}
+{% if terminees %}
+<h2>Terminées</h2>
+{% include "commandes/_liste_commandes.html" with commandes=terminees %}
+{% endif %}
+{% endblock %}

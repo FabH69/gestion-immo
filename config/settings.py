@@ -10,6 +10,8 @@ For the full list of settings and their values, see
 https://docs.djangoproject.com/en/5.1/ref/settings/
 """
 
+import os
+import sys
 from pathlib import Path
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
@@ -20,12 +22,14 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 # See https://docs.djangoproject.com/en/5.1/howto/deployment/checklist/
 
 # SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = "django-insecure-ftdr_0fbcw*nbam43kdl(g5kp$n4srdji&cw_dirms9f53a^d!"
+# En ligne, la clé, DEBUG et le nom de domaine viennent de variables d'environnement (voir deploiement/).
+SECRET_KEY = os.environ.get("DJANGO_SECRET_KEY") or "django-insecure-ftdr_0fbcw*nbam43kdl(g5kp$n4srdji&cw_dirms9f53a^d!"
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = True
+DEBUG = os.environ.get("DJANGO_DEBUG", "1") == "1"
 
-ALLOWED_HOSTS = []
+ALLOWED_HOSTS = [h for h in os.environ.get("DJANGO_ALLOWED_HOSTS", "").split(",") if h] or ([] if not DEBUG else ["localhost", "127.0.0.1"])
+CSRF_TRUSTED_ORIGINS = [f"https://{h}" for h in ALLOWED_HOSTS if "." in h]
 
 
 # Application definition
@@ -38,16 +42,20 @@ INSTALLED_APPS = [
     "django.contrib.messages",
     "django.contrib.staticfiles",
     "patrimoine",
+    "commandes",  # commandes groupées de balles de tennis (/balles/)
 ]
 
 MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
+    "whitenoise.middleware.WhiteNoiseMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
     "django.contrib.auth.middleware.AuthenticationMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
+    "patrimoine.sauvegarde.SauvegardeAutomatiqueMiddleware",
+    "patrimoine.loyers_auto.LoyersAutomatiquesMiddleware",
 ]
 
 ROOT_URLCONF = "config.urls"
@@ -116,9 +124,26 @@ USE_TZ = True
 # Static files (CSS, JavaScript, Images)
 # https://docs.djangoproject.com/en/5.1/howto/static-files/
 
+LOGIN_URL = "/admin/login/"
+
 STATIC_URL = "static/"
+STATIC_ROOT = BASE_DIR / "staticfiles"
 
 # Default primary key field type
 # https://docs.djangoproject.com/en/5.1/ref/settings/#default-auto-field
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
+
+# Fichiers déposés (photos des logements)
+MEDIA_URL = "media/"
+MEDIA_ROOT = BASE_DIR / "media"
+# pièces d'identité des garants : hors de media (non publié), servies seulement aux personnes connectées
+PRIVE_ROOT = BASE_DIR / "prive"
+# sauvegardes automatiques (les 7 dernières) : Réglages › Sauvegardes
+SAUVEGARDES_ROOT = BASE_DIR / "sauvegardes"
+SAUVEGARDE_AUTO = CHARGER_MODELES = "test" not in sys.argv  # pas de sauvegarde automatique pendant les tests
+LOYERS_AUTO = "test" not in sys.argv  # loyers du mois créés automatiquement (pas pendant les tests)
+
+if not DEBUG:
+    SESSION_COOKIE_SECURE = CSRF_COOKIE_SECURE = True
+    SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")

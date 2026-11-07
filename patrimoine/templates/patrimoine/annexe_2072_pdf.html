@@ -1,0 +1,14 @@
+<!doctype html><html lang="fr"><head><meta charset="utf-8"><style>
+@page { size: A4 landscape; margin: 12mm; }
+body { font-family: "DejaVu Sans", Arial, sans-serif; font-size: 10px; color: #1f2933; }
+h1 { font-size: 13px; margin: 0 0 2px; } .entete { display: flex; justify-content: space-between; margin-bottom: 8px; }
+{% include "patrimoine/_annexe_2072_style.css" %}
+.annexe-2072 { font-size: 9px; page-break-after: always; } .annexe-2072:last-of-type { page-break-after: auto; }
+.annexe-2072 th, .annexe-2072 td { padding: 2px 4px; }
+</style></head><body>
+<div class="entete"><div><h1>REVENUS PERÇUS AU TITRE DE L'ANNÉE {{ annee }} – ANNEXE 1</h1>
+<b>VII – Détermination des revenus de la société immobilière selon la règle des revenus fonciers</b><br>{{ sci.nom }}</div><div><b>2072-S-A1-SD</b><br>Document préparatoire</div></div>
+{% include "patrimoine/_annexe_2072_tableau.html" %}
+<div style="page-break-before:always"></div>
+{% include "patrimoine/_cadre_i_2072.html" %}
+</body></html>

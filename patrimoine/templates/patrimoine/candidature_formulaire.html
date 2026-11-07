@@ -1,0 +1,69 @@
+{% extends "patrimoine/_public_base.html" %}
+{% block titre %}Dossier de candidature – {{ lot.designation }}{% endblock %}
+{% block entete %}Dossier de candidature – {{ lot.get_type_display }} {{ lot.designation }}{% endblock %}
+{% block contenu %}
+{% if ferme %}
+<div class="carte"><h2>Ce dossier est clôturé</h2><p>Merci pour votre intérêt. Le propriétaire a déjà traité cette candidature.</p></div>
+{% else %}
+<div class="carte">
+  <div class="resume">
+    {% if lot.surface %}<span>Surface <strong>{{ lot.surface|floatformat:"-2" }} m²</strong></span>{% endif %}
+    {% if lot.nb_pieces %}<span>Pièces <strong>{{ lot.nb_pieces }}</strong></span>{% endif %}
+    <span>{% if lot.meuble %}<strong>Meublé</strong>{% else %}<strong>Non meublé</strong>{% endif %}</span>
+    {% if loyer_indicatif %}<span>Loyer indicatif <strong>{{ loyer_indicatif|floatformat:0 }} € charges comprises</strong></span>{% endif %}
+  </div>
+  <p class="aide" style="margin-bottom:0">Remplissez ce formulaire en 5 minutes. Vous pouvez joindre vos justificatifs en bas de page (uniquement ceux autorisés par la loi), ou les envoyer plus tard.</p>
+</div>
+<form method="post" enctype="multipart/form-data" novalidate>{% csrf_token %}
+  {% if form.non_field_errors %}<div class="carte erreur">{{ form.non_field_errors }}</div>{% endif %}
+  <div class="carte"><h2>Vous</h2><div class="grille">
+    {% for f in form %}{% if f.name in "civilite prenom nom date_naissance lieu_naissance email telephone adresse_rue adresse_code_postal adresse_ville" %}
+    <div class="{% if f.name == 'adresse_rue' %}plein{% endif %}">{{ f.label_tag }}{{ f }}{% for e in f.errors %}<div class="erreur">{{ e }}</div>{% endfor %}</div>
+    {% endif %}{% endfor %}
+  </div></div>
+  <div class="carte"><h2>Situation et projet</h2><div class="grille">
+    {% for f in form %}{% if f.name in "situation employeur revenus_mensuels nb_occupants date_entree_souhaitee" %}
+    <div>{{ f.label_tag }}{{ f }}{% for e in f.errors %}<div class="erreur">{{ e }}</div>{% endfor %}</div>
+    {% endif %}{% endfor %}
+  </div></div>
+  <div class="carte"><h2>Garantie</h2><div class="grille">
+    <div class="plein">{{ form.type_garantie.label_tag }}{{ form.type_garantie }}{% for e in form.type_garantie.errors %}<div class="erreur">{{ e }}</div>{% endfor %}</div>
+  </div></div>
+  {{ garants.management_form }}
+  {% for g in garants %}
+  <div class="carte bloc-garant"><h2>{% if forloop.first %}Garant{% else %}Second garant <span class="aide">(facultatif)</span>{% endif %}</h2>
+    {% if forloop.first %}<p class="aide">La personne qui se porte caution solidaire. S'il y a deux garants (par exemple vos deux parents), remplissez aussi le second bloc.</p>{% endif %}
+    {% for e in g.non_field_errors %}<div class="erreur">{{ e }}</div>{% endfor %}
+    {% for h in g.hidden_fields %}{{ h }}{% endfor %}
+    <div class="grille">
+    {% for f in g.visible_fields %}
+      <div class="{% if f.name in 'adresse_rue piece_identite_fichier' %}plein{% endif %}">{{ f.label_tag }}{{ f }}{% if f.help_text %}<div class="aide">{{ f.help_text }}</div>{% endif %}{% for e in f.errors %}<div class="erreur">{{ e }}</div>{% endfor %}</div>
+    {% endfor %}
+    </div>
+  </div>
+  {% endfor %}
+  <div class="carte"><h2>Justificatifs <span class="aide">(facultatif)</span></h2>
+    <p class="aide">PDF ou photo, 10 Mo maximum par fichier. Vous pouvez choisir plusieurs fichiers à la fois. Ne joignez pas de RIB, d'extrait de casier judiciaire ni de relevé de compte : la loi interdit de les demander.</p>
+    {% for p in types_pieces %}
+    <div style="margin-top:12px"><label for="piece-{{ p.code }}">{{ p.libelle }}{% if p.deja %} <span class="aide">– {{ p.deja }} fichier{{ p.deja|pluralize }} déjà reçu{{ p.deja|pluralize }}</span>{% endif %}</label>
+      <input type="file" id="piece-{{ p.code }}" name="piece-{{ p.code }}" multiple accept=".pdf,.jpg,.jpeg,.png,.heic,.webp,image/*">
+      {% if p.erreur %}<div class="erreur">{{ p.erreur }}</div>{% endif %}</div>
+    {% endfor %}
+  </div>
+  <div class="carte">
+    {{ form.message.label_tag }}{{ form.message }}
+    <label class="case" style="margin-top:14px">{{ form.consentement }} {{ form.consentement.label }}</label>
+    {% for e in form.consentement.errors %}<div class="erreur">{{ e }}</div>{% endfor %}
+    <p class="aide">Vos données sont conservées par le propriétaire uniquement le temps de l'étude de votre dossier, et supprimées sous 3 mois si votre candidature n'est pas retenue.</p>
+    <button type="submit">Envoyer mon dossier</button>
+  </div>
+</form>
+<script>
+  const choix = document.getElementById("id_type_garantie");
+  const maj = () => document.querySelectorAll(".bloc-garant").forEach(b => b.style.display = choix.value === "garant" ? "" : "none");
+  // champ « garantie » verrouillé quand le propriétaire l'a choisi avant l'envoi
+  if (choix.disabled) choix.title = "Choisi par le propriétaire";
+  choix.addEventListener("change", maj); maj();
+</script>
+{% endif %}
+{% endblock %}

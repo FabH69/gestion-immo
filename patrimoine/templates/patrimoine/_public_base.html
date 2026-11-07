@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{% block titre %}Candidature{% endblock %}</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap">
+<style>
+  :root { --primaire: #2f6f73; --fonce: #24585c; --accent: #f2c14e; --texte: #1f2933; --doux: #6b7785; --fond: #f4f7f7; --bord: #dfe5ea; }
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: Inter, -apple-system, "Segoe UI", Roboto, Arial, sans-serif; color: var(--texte); background: var(--fond); font-size: 15px; line-height: 1.5; }
+  header { background: var(--fonce); color: #fff; padding: 18px 16px; }
+  header .contenu { max-width: 720px; margin: 0 auto; display: flex; align-items: center; gap: 12px; }
+  header .logo { width: 36px; height: 36px; border-radius: 10px; background: var(--accent); color: var(--fonce); display: grid; place-items: center; font-size: 22px; }
+  header h1 { margin: 0; font-size: 1.15rem; }
+  header p { margin: 2px 0 0; opacity: .85; font-size: .9rem; }
+  main { max-width: 720px; margin: 24px auto 60px; padding: 0 16px; }
+  .carte { background: #fff; border: 1px solid var(--bord); border-radius: 14px; padding: 20px; margin-bottom: 16px; box-shadow: 0 1px 6px rgba(16,24,40,.05); }
+  .carte h2 { margin: 0 0 14px; font-size: 1.05rem; }
+  .grille { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+  .plein { grid-column: 1 / -1; }
+  label { display: block; font-weight: 500; font-size: .88rem; margin-bottom: 5px; }
+  input, select, textarea { width: 100%; padding: 10px 12px; border: 1px solid var(--bord); border-radius: 10px; font: inherit; background: #fff; }
+  input:focus, select:focus, textarea:focus { outline: 2px solid rgba(47,111,115,.25); border-color: var(--primaire); }
+  input[type=checkbox] { width: auto; margin-right: 8px; transform: scale(1.2); }
+  .case { display: flex; align-items: flex-start; font-weight: 400; }
+  .erreur { color: #c62828; font-size: .82rem; margin-top: 4px; }
+  .aide { color: var(--doux); font-size: .85rem; }
+  button { background: var(--primaire); color: #fff; border: 0; border-radius: 999px; padding: 13px 26px; font: inherit; font-weight: 600; cursor: pointer; width: 100%; }
+  button:hover { background: var(--fonce); }
+  .resume { display: flex; gap: 18px; flex-wrap: wrap; color: var(--doux); font-size: .9rem; }
+  .resume strong { color: var(--texte); }
+  @media (max-width: 560px) { .grille { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+<header><div class="contenu"><div class="logo">⌂</div><div><h1>{% block entete %}{% endblock %}</h1><p>{{ bien.adresse|default:lot.bien.adresse }}, {{ lot.bien.code_postal }} {{ lot.bien.ville }}</p></div></div></header>
+<main>{% block contenu %}{% endblock %}</main>
+</body>
+</html>

@@ -12,7 +12,7 @@
 
 <h2>Parties et logement</h2>
 <table>
-  <tr><td class="l">Bailleur</td><td><strong>{{ proprietaire.nom }}</strong>{% if proprietaire.representant %}, représenté par {{ proprietaire.representant }}{% endif %}<br>{{ proprietaire.adresse|linebreaksbr }}</td></tr>
+  <tr><td class="l">Bailleur</td><td><strong>{{ proprietaire.nom }}</strong>{% if proprietaire.representant %}, représenté par {{ proprietaire.representant }}{% endif %}<br>{{ proprietaire.adresse_complete|linebreaksbr }}</td></tr>
   <tr><td class="l">Locataire{{ locataires|length|pluralize }}</td><td>{% for l in locataires %}<strong>{{ l }}</strong>{% if not forloop.last %}, {% endif %}{% endfor %}</td></tr>
   {% if edl.type == "sortie" %}<tr><td class="l">Nouvelle adresse du locataire</td><td>{{ edl.nouvelle_adresse|linebreaksbr|default:'&nbsp;' }}</td></tr>{% endif %}
   <tr><td class="l">Logement</td><td>{{ lot.get_type_display }} – {{ lot.designation }}{% if lot.etage %}, {{ lot.etage }}{% endif %}<br>{{ bien.adresse }}, {{ bien.code_postal }} {{ bien.ville }}</td></tr>
@@ -24,6 +24,7 @@
 <h2>Relevés des compteurs et clés</h2>
 <table>
   <tr><th>Électricité</th><th>Gaz</th><th>Eau froide</th><th>Eau chaude</th></tr>
+  {% if bail.pdl_electricite or bail.pce_gaz or bail.compteur_eau or bail.compteur_eau_chaude %}<tr><td>{% if bail.pdl_electricite %}PDL {{ bail.pdl_electricite }}{% endif %}</td><td>{% if bail.pce_gaz %}PCE {{ bail.pce_gaz }}{% endif %}</td><td>{% if bail.compteur_eau %}N° {{ bail.compteur_eau }}{% endif %}</td><td>{% if bail.compteur_eau_chaude %}N° {{ bail.compteur_eau_chaude }}{% endif %}</td></tr>{% endif %}
   <tr><td style="height:22pt">{{ edl.compteur_electricite }}</td><td>{{ edl.compteur_gaz }}</td><td>{{ edl.compteur_eau_froide }}</td><td>{{ edl.compteur_eau_chaude }}</td></tr>
   <tr><th colspan="4">Clés, badges et télécommandes remis (nombre et type)</th></tr>
   <tr><td colspan="4" style="height:22pt">{{ edl.nb_cles }}</td></tr>

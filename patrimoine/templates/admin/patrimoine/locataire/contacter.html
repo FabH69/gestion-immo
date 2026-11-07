@@ -1,0 +1,31 @@
+{% extends "admin/base_site.html" %}
+{% block breadcrumbs %}<div class="breadcrumbs"><a href="{% url 'admin:index' %}">Accueil</a> › <a href="{% url 'admin:patrimoine_locataire_changelist' %}">Locataires</a> › Contacter</div>{% endblock %}
+{% block content %}
+<form method="post" class="module fiche-compacte contacter" style="max-width:760px;padding:18px 20px">{% csrf_token %}
+  <input type="hidden" name="retour" value="{{ retour }}">
+  <p><b>À :</b> {{ locataire }} &lt;{{ locataire.email }}&gt;</p>
+  <p><label for="motif"><b>Motif</b></label><br>
+    <select id="motif" name="motif">
+      <option value="">— choisir un motif —</option>
+      {% for m in motifs %}<option value="{{ m.code }}"{% if m.code == motif_choisi %} selected{% endif %}>{{ m.libelle }}</option>{% endfor %}
+    </select></p>
+  <p><label for="sujet"><b>Sujet</b></label><br><input type="text" id="sujet" name="sujet" value="{{ sujet }}" style="width:100%" required></p>
+  <p><label for="message"><b>Message</b></label><br><textarea id="message" name="message" rows="14" style="width:100%" required>{{ message }}</textarea></p>
+  <div class="submit-row" style="justify-content:flex-start">
+    <input type="submit" class="default" value="Envoyer le mail">
+    <a class="button annuler" href="{{ retour }}">Annuler</a>
+  </div>
+  {{ motifs|json_script:"motifs-contact" }}
+</form>
+<script>
+(function () {
+  const motifs = JSON.parse(document.getElementById('motifs-contact').textContent);
+  const choix = document.getElementById('motif'), sujet = document.getElementById('sujet'), message = document.getElementById('message');
+  choix.addEventListener('change', function () {
+    const m = motifs.find(x => x.code === choix.value);
+    if (!m) return;
+    sujet.value = m.sujet; message.value = m.message;
+  });
+})();
+</script>
+{% endblock %}

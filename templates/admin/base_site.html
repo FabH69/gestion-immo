@@ -1,5 +1,5 @@
 {% extends "admin/base.html" %}
-{% load static %}
+{% load static tableau_bord %}
 {% block title %}{% if subtitle %}{{ subtitle }} | {% endif %}{{ title }} | {{ site_title|default:_('Django site admin') }}{% endblock %}
 {% block extrastyle %}{{ block.super }}
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -10,4 +10,27 @@
 <div id="site-name"><a href="{% url 'admin:index' %}"><span class="logo">⌂</span> {{ site_header|default:_('Django administration') }}</a></div>
 {% if user.is_anonymous %}{% include "admin/color_theme_toggle.html" %}{% endif %}
 {% endblock %}
-{% block nav-global %}{% endblock %}
+{% block usertools %}{% if has_permission %}
+<form id="recherche-globale" action="{% url 'recherche' %}" method="get" role="search">
+  <input type="search" name="q" value="{{ request.GET.q|default:'' }}" placeholder="Rechercher un locataire, un bien, un garant…" aria-label="Rechercher">
+</form>
+<div id="user-tools">{% include "admin/color_theme_toggle.html" %}</div>
+{% endif %}{% endblock %}
+{% block nav-global %}{% if user.is_active and user.is_staff %}
+<button type="button" id="bouton-menu" aria-label="Ouvrir le menu" onclick="document.body.classList.toggle('menu-ouvert')">{% icone "menu" 22 %}</button>
+{% menu_lateral %}
+<nav id="barre-onglets" aria-label="Navigation rapide">
+  <a href="{% url 'admin:index' %}">{% icone "accueil" 22 %}<span>Accueil</span></a>
+  <a href="{% url 'admin:patrimoine_echeance_changelist' %}">{% icone "loyers" 22 %}<span>Loyers</span></a>
+  <a href="{% url 'admin:patrimoine_locataire_changelist' %}">{% icone "locataires" 22 %}<span>Locataires</span></a>
+  <a href="{% url 'admin:patrimoine_bien_changelist' %}">{% icone "biens" 22 %}<span>Biens</span></a>
+  <a href="#" onclick="document.body.classList.add('menu-ouvert');return false">{% icone "menu" 22 %}<span>Plus</span></a>
+</nav>
+<script>
+  document.querySelectorAll('#barre-onglets a[href^="/"]').forEach(function (a) {
+    var h = a.getAttribute('href'), p = location.pathname;
+    if (h === '/admin/' ? p === h : p.indexOf(h) === 0) a.classList.add('actif');
+  });
+</script>
+{% endif %}{% endblock %}
+{% block nav-sidebar %}{% endblock %}

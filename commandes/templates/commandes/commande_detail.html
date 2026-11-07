@@ -1,0 +1,105 @@
+{% extends "commandes/base.html" %}
+{% block titre %}{{ commande.nom }}{% endblock %}
+{% block contenu %}
+<div class="actions" style="justify-content:space-between">
+  <h1>{{ commande.nom }} <span class="badge {{ commande.statut }}">{{ commande.get_statut_display }}</span></h1>
+  <div class="actions">
+    <a class="btn sec" href="{% url 'balles:commande_modifier' commande.pk %}">Modifier</a>
+    <form method="post" action="{% url 'balles:commande_dupliquer' commande.pk %}" class="inline">{% csrf_token %}
+      <button class="btn sec" title="Créer une nouvelle commande avec les mêmes joueurs et articles">⧉ Dupliquer</button>
+    </form>
+    <a class="btn" href="{% url 'balles:commande_messages' commande.pk %}">✉️ Prévenir les joueurs</a>
+  </div>
+</div>
+<p class="doux">Créée le {{ commande.date_creation|date:"d/m/Y" }}
+{% if commande.date_reception %} · reçue le {{ commande.date_reception|date:"d/m/Y" }}{% endif %}
+{% if commande.lieu_remise %} · remise : {{ commande.lieu_remise }}{% endif %}</p>
+
+<div class="chiffres">
+  <div class="chiffre"><b>{{ commande.total_quantite }}</b><span>articles · {{ commande.nb_joueurs }} joueur(s)</span></div>
+  <div class="chiffre"><b>{{ commande.montant_total|floatformat:2 }} €</b><span>montant total</span></div>
+  <div class="chiffre"><b>{{ commande.commission|floatformat:2 }} €</b><span>ma commission</span></div>
+  <div class="chiffre"><b>{{ commande.montant_encaisse|floatformat:2 }} €</b><span>encaissé ({{ nb_payes }}/{{ lignes|length }} lignes)</span></div>
+  <div class="chiffre"><b>{{ nb_remis }}/{{ lignes|length }}</b><span>lignes remises</span></div>
+</div>
+
+<div class="carte">
+  <h2 style="margin-top:0">Ajouter une ligne</h2>
+  <form method="post" class="ajout">
+    {% csrf_token %}
+    <div><label class="doux">Joueur</label>{{ form.joueur }}</div>
+    <div><label class="doux">Article</label>{{ form.article }}</div>
+    <div><label class="doux">Quantité</label>{{ form.quantite }}</div>
+    <div><label class="doux">Prix unit. (€)</label>{{ form.prix_unitaire }}</div>
+    <button class="btn">Ajouter</button>
+  </form>
+  {% for champ, erreurs in form.errors.items %}<div style="color:var(--rouge)">{{ erreurs|striptags }}</div>{% endfor %}
+  <p class="doux" style="margin:8px 0 0">Il manque quelqu'un ou quelque chose ?
+    <a href="{% url 'balles:joueur_creer' %}?next={{ request.path|urlencode }}">Créer un joueur</a> ·
+    <a href="{% url 'balles:article_creer' %}?next={{ request.path|urlencode }}">Créer un article</a></p>
+</div>
+
+<div class="table-wrap">
+<table>
+  <tr><th>Joueur</th><th>Article</th><th>Qté</th><th>Prix unit.</th><th>Montant</th><th>Payé</th><th>Prévenu</th><th>Remis</th><th></th></tr>
+  {% for l in lignes %}
+  <tr>
+    <td>{% ifchanged l.joueur_id %}<b>{{ l.joueur }}</b>{% endifchanged %}{% if l.notes %}<br><span class="doux">{{ l.notes }}</span>{% endif %}</td>
+    <td>{{ l.article.nom }}</td>
+    <td>
+      <form method="post" action="{% url 'balles:ligne_action' l.pk %}" class="inline">{% csrf_token %}
+        <input type="hidden" name="action" value="quantite">
+        <input class="nb" type="number" min="1" name="quantite" value="{{ l.quantite }}" onchange="this.form.submit()">
+      </form>
+    </td>
+    <td>{{ l.prix_unitaire|floatformat:2 }} €</td>
+    <td>{{ l.montant|floatformat:2 }} €</td>
+    <td>{% include "commandes/_bascule.html" with action="paye" actif=l.paye %}</td>
+    <td>{% include "commandes/_bascule.html" with action="prevenu" actif=l.prevenu_le %}</td>
+    <td>{% include "commandes/_bascule.html" with action="remis" actif=l.remis %}</td>
+    <td>
+      <form method="post" action="{% url 'balles:ligne_action' l.pk %}" class="inline" onsubmit="return confirm('Supprimer cette ligne ?')">{% csrf_token %}
+        <input type="hidden" name="action" value="supprimer"><button class="btn petit danger" title="Supprimer">✕</button>
+      </form>
+    </td>
+  </tr>
+  {% empty %}
+  <tr><td colspan="9" class="doux">Aucune ligne pour l'instant. Ajoutez un joueur et son article ci-dessus.</td></tr>
+  {% endfor %}
+</table>
+</div>
+
+{% if recap %}
+<h2>À commander au fournisseur</h2>
+<div class="table-wrap">
+<table>
+  <tr><th>Article</th><th>Quantité totale</th><th>Montant</th></tr>
+  {% for r in recap %}
+  <tr><td>{{ r.article.nom }}{% if r.article.reference %} <span class="doux">({{ r.article.reference }})</span>{% endif %}</td><td><b>{{ r.quantite }}</b></td><td>{{ r.montant|floatformat:2 }} €</td></tr>
+  {% endfor %}
+</table>
+</div>
+{% endif %}
+
+<h2>Avancement de la commande</h2>
+<div class="actions">
+  {% for valeur, libelle in statuts %}
+  <form method="post" action="{% url 'balles:commande_statut' commande.pk %}" class="inline">{% csrf_token %}
+    <input type="hidden" name="statut" value="{{ valeur }}">
+    <button class="btn petit {% if commande.statut != valeur %}sec{% endif %}">{{ libelle }}</button>
+  </form>
+  {% endfor %}
+</div>
+{% if commande.notes %}<h2>Notes</h2><div class="carte" style="white-space:pre-wrap">{{ commande.notes }}</div>{% endif %}
+
+{{ prix_articles|json_script:"prix-articles" }}
+<script>
+// Affiche le prix de l'article choisi dans le champ prix (modifiable)
+(function () {
+  const prix = JSON.parse(document.getElementById("prix-articles").textContent);
+  const article = document.getElementById("id_article"), champ = document.getElementById("id_prix_unitaire");
+  if (!article || !champ) return;
+  article.addEventListener("change", () => { champ.value = prix[article.value] || ""; });
+})();
+</script>
+{% endblock %}

@@ -1,0 +1,46 @@
+{% extends "admin/base_site.html" %}
+{% load tableau_bord %}
+{% block extrastyle %}{{ block.super }}<style>{% include "patrimoine/_annexe_2072_style.css" %}
+.choix-2072 { display: flex; flex-direction: column; gap: 12px; margin: 6px 0 18px; padding: 16px; }
+.choix-2072 .rang { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+.choix-2072 .rang > b { min-width: 90px; }
+.choix-2072 label.case { display: inline-flex; gap: 6px; align-items: center; padding: 4px 12px; border: 1px solid var(--border-color); border-radius: 999px; background: var(--body-bg); }
+.detail-2072 h3 { margin: 18px 0 6px; font-size: 14px; }
+.detail-2072 table { width: 100%; }
+.detail-2072 td.m { text-align: right; white-space: nowrap; }
+.legende { color: var(--body-quiet-color); font-size: 12.5px; }
+</style>{% endblock %}
+{% block breadcrumbs %}<div class="breadcrumbs"><a href="{% url 'admin:index' %}">Accueil</a> › Comptabilité SCI › Annexe 2072-S-A1</div>{% endblock %}
+{% block content %}
+<form method="get" class="module choix-2072">
+  <div class="rang"><b>SCI</b>{% for s in scis %}<a class="chip{% if s.pk == sci.pk %} actif{% endif %}" href="?sci={{ s.pk }}&annee={{ annee }}">{{ s.nom }}</a>{% endfor %}</div>
+  <div class="rang"><b>Revenus de</b>{% boutons_annees annees annee %}</div>
+  <input type="hidden" name="sci" value="{{ sci.pk }}"><input type="hidden" name="annee" value="{{ annee }}">
+  <div class="rang"><b>Immeubles</b>
+    {% for b in biens_sci %}<label class="case"><input type="checkbox" name="bien" value="{{ b.pk }}"{% if b.pk in choisis %} checked{% endif %} onchange="this.form.submit()"> {{ b.nom }}</label>{% empty %}<span class="legende">Aucun bien pour cette SCI.</span>{% endfor %}
+  </div>
+  <div class="rang">
+    <a class="button" target="_blank" href="?{{ request.GET.urlencode }}{% if request.GET %}&{% endif %}format=pdf">Télécharger en PDF</a>
+    <a class="button" href="{% url 'admin:patrimoine_piececomptable_add' %}">+ Ajouter une facture</a>
+    <a class="button annuler" href="{% url 'admin:patrimoine_piececomptable_changelist' %}">Voir les factures</a>
+  </div>
+</form>
+<p class="legende">À reporter sur l'annexe 2072-S-A1-SD des revenus {{ annee }}. Cases sur fond vert : calculées automatiquement (loyers encaissés, forfait de 20 € par local, intérêts et assurance des prêts rattachés au bien). Les autres lignes viennent des factures codées, prises dans l'année de leur paiement. Vérifiez avec votre comptable avant de déclarer.</p>
+<div class="etat-scroll">{% include "patrimoine/_cadre_i_2072.html" %}</div>
+{% if not tous_les_biens %}<p class="legende" style="color:#b54708">Attention : le cadre I ne totalise que les immeubles cochés. Cochez-les tous pour la déclaration.</p>{% endif %}
+<p class="legende">« Votre part » = montant de la SCI × votre % de détention (réglé sur la fiche du propriétaire). Il sert uniquement à reporter votre quote-part dans votre déclaration personnelle.</p>
+<div class="etat-scroll">{% include "patrimoine/_annexe_2072_tableau.html" %}</div>
+<div class="module detail-2072" style="padding:14px 16px">
+  <h2 style="margin:0">Détail par immeuble</h2>
+  {% for c in colonnes %}
+    <h3>{{ c.bien.nom }}</h3>
+    <table>
+      {% for code, lignes in c.detail.items %}{% for libelle, montant, piece in lignes %}
+        <tr><td style="width:60px">Ligne {% if code == "9b" %}9 bis{% else %}{{ code }}{% endif %}</td>
+            <td>{% if piece %}<a href="{% url 'admin:patrimoine_piececomptable_change' piece.pk %}">{{ libelle }}</a>{% if piece.fichier %} · <a href="{{ piece.fichier.url }}" target="_blank">PDF</a>{% endif %}{% else %}{{ libelle }}{% endif %}</td>
+            <td class="m">{{ montant|euros:2 }}</td></tr>
+      {% endfor %}{% empty %}<tr><td class="legende">Aucune donnée pour {{ annee }}.</td></tr>{% endfor %}
+    </table>
+  {% endfor %}
+</div>
+{% endblock %}
