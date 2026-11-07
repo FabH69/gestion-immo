@@ -1689,6 +1689,22 @@ class AnneeFiscaleFilter(admin.SimpleListFilter):
         return queryset
 
 
+class BienPieceFilter(admin.SimpleListFilter):
+    """Biens des sociétés ; limités au propriétaire choisi s'il y en a un. Affiché sous le filtre propriétaire."""
+    title = "bien"
+    parameter_name = "bien"
+    a_droite = True
+
+    def lookups(self, request, model_admin):
+        biens = Bien.objects.exclude(proprietaire__type=Proprietaire.Type.NOM_PROPRE).order_by("nom")
+        if request.GET.get("bien__proprietaire__id__exact"):
+            biens = biens.filter(proprietaire_id=request.GET["bien__proprietaire__id__exact"])
+        return [(str(b.pk), b.nom) for b in biens]
+
+    def queryset(self, request, queryset):
+        return queryset.filter(bien_id=self.value()) if self.value() else queryset
+
+
 class ACodifierFilter(admin.SimpleListFilter):
     title = "codification"
     parameter_name = "a_codifier"
@@ -1762,7 +1778,7 @@ class PieceComptableAdmin(admin.ModelAdmin):
     form = PieceComptableForm
     list_display = ["date_affichee", "bien", "fournisseur", "libelle", "ligne_courte", "montant_affiche", "piece"]
     list_display_links = ["date_affichee", "libelle"]
-    list_filter = [ACodifierFilter, AnneeFiscaleFilter, "bien__proprietaire", "ligne"]
+    list_filter = [ACodifierFilter, AnneeFiscaleFilter, "bien__proprietaire", BienPieceFilter, "ligne"]
     search_fields = ["fournisseur", "libelle", "bien__nom", "notes"]
     # mode « codifier » (liste filtrée sur les pièces à codifier) : tout se complète directement dans le tableau
     LISTE_CODIFIER = ["piece", "etat_lecture", "bien", "date", "date_paiement", "fournisseur", "libelle", "montant", "ligne"]

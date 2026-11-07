@@ -248,7 +248,7 @@ def filtres_haut(cl):
                             "anterieure_active": any(c["actif"] for c in choix[3:]), "tous": choix[0]["actif"]})
             continue
         filtres.append({"titre": titre[:1].upper() + titre[1:], "choix": choix, "boutons": len(choix) <= 5,
-                        "tous": choix[0]["actif"], "avec_titre": any(c["libelle"] in ("Oui", "Non") for c in choix), "droite": chemin.split("__")[-1] == "proprietaire"})
+                        "tous": choix[0]["actif"], "avec_titre": any(c["libelle"] in ("Oui", "Non") for c in choix), "droite": chemin.split("__")[-1] == "proprietaire" or getattr(spec, "a_droite", False)})
     return filtres
 
 

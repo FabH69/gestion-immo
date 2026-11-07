@@ -844,7 +844,7 @@ def annexe_2072(request):
     scis = list(Proprietaire.objects.filter(type=Proprietaire.Type.SCI_IR).order_by("nom")) or \
         list(Proprietaire.objects.exclude(type=Proprietaire.Type.NOM_PROPRE).order_by("nom"))
     sci = next((p for p in scis if str(p.pk) == request.GET.get("sci")), scis[0] if scis else None)
-    annee = int(request.GET.get("annee") or aujourdhui.year - 1)
+    annee = int(request.GET.get("annee") or aujourdhui.year)
     biens_sci = list(sci.biens.filter(Q(vendu=False) | Q(date_vente__year__gte=annee)).order_by("nom")) if sci else []
     choisis = request.GET.getlist("bien")
     biens = [b for b in biens_sci if str(b.pk) in choisis] if choisis else biens_sci

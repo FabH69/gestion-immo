@@ -505,3 +505,6 @@ body.change-list #recherche-globale { visibility: hidden; }
 .model-piececomptable #result_list td input[name$="-montant"] { width: 6em; }
 .model-piececomptable #result_list td select[name$="-ligne"] { max-width: 13em; }
 .model-piececomptable #result_list td select[name$="-bien"] { max-width: 13em; }
+/* filtres de droite empilés : propriétaire puis bien en dessous */
+.filtres-haut.filtres-droite { flex-direction: column; align-items: flex-end; }
+@media (max-width: 767px) { .filtres-haut.filtres-droite { align-items: flex-start; } }
