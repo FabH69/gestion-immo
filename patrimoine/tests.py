@@ -337,7 +337,7 @@ class RappelsEtRevisionTests(TestCase):
         with tempfile.TemporaryDirectory() as prive, override_settings(PRIVE_ROOT=prive):
             self.assertEqual(self.client.get("/admin/patrimoine/piececomptable/import/").status_code, 200)
             r = self.client.post("/admin/patrimoine/piececomptable/import/", {"bien": bien.pk, "fichiers": [
-                SimpleUploadedFile("facture_plombier.pdf", b"%PDF"), SimpleUploadedFile("taxe.pdf", b"%PDF"),
+                SimpleUploadedFile("facture_plombier.pdf", b"%PDF-1"), SimpleUploadedFile("taxe.pdf", b"%PDF-2"),
                 SimpleUploadedFile("virus.exe", b"x")]})
             self.assertEqual(r.status_code, 302, r.context["form"].errors if r.context and "form" in r.context else r.content[:300])
             self.assertEqual(r["Location"], "/admin/patrimoine/piececomptable/?a_codifier=oui")
@@ -387,6 +387,10 @@ class RappelsEtRevisionTests(TestCase):
             self.client.post("/admin/patrimoine/piececomptable/", {"action": "valider_preremplies", "_selected_action": [piece.pk]})
             piece.refresh_from_db()
             self.assertFalse(piece.a_codifier)
+            # même PDF importé une seconde fois : refusé comme doublon
+            r = self.client.post("/admin/patrimoine/piececomptable/import/", {"bien": bien.pk, "fichiers": [SimpleUploadedFile("copie.pdf", pdf.getvalue())]}, follow=True)
+            self.assertEqual(PieceComptable.objects.count(), 1)
+            self.assertContains(r, "déjà présente")
 
     def test_etat_encaisse_montant_cliquable(self):
         from .models import Echeance, Paiement

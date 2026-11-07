@@ -1641,6 +1641,8 @@ class PieceComptable(models.Model):
     montant = models.DecimalField("montant TTC (€)", max_digits=10, decimal_places=2, null=True, blank=True)
     ligne = models.CharField("ligne de l'annexe 2072", max_length=4, choices=Ligne.choices, blank=True,
                              help_text="Vide = pièce importée pas encore codifiée (ignorée par l'annexe 2072)")
+    empreinte = models.CharField(max_length=64, blank=True, db_index=True, editable=False,
+                                 help_text="Empreinte SHA-256 du fichier, pour repérer une facture importée deux fois")
     preremplie = models.BooleanField("préremplie automatiquement", default=False, editable=False,
                                      help_text="Champs lus dans le PDF à l'import : à vérifier avant d'être comptés dans l'annexe")
     fichier = models.FileField("facture (PDF ou photo)", upload_to=_chemin_facture, storage=stockage_prive, blank=True,
@@ -1656,6 +1658,25 @@ class PieceComptable(models.Model):
         if self.a_codifier:
             return f"À codifier – {self.libelle or self.fichier.name.rsplit('/', 1)[-1]}"
         return f"{self.date:%d/%m/%Y} – {self.fournisseur or self.libelle} – {self.montant} €"
+
+    def save(self, *args, **kwargs):
+        if self.fichier and not self.empreinte:
+            try:
+                self.empreinte = self.calculer_empreinte(self.fichier)
+            except Exception:
+                pass
+        super().save(*args, **kwargs)
+
+    @staticmethod
+    def calculer_empreinte(fichier):
+        import hashlib
+
+        h = hashlib.sha256()
+        fichier.seek(0)
+        for bloc in iter(lambda: fichier.read(65536), b""):
+            h.update(bloc)
+        fichier.seek(0)
+        return h.hexdigest()
 
     @property
     def a_codifier(self):

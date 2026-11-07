@@ -1746,6 +1746,16 @@ class PieceComptableForm(forms.ModelForm):
             self.fields["bien"].queryset = Bien.objects.exclude(proprietaire__type=Proprietaire.Type.NOM_PROPRE).order_by("proprietaire__nom", "nom")
             self.fields["bien"].label_from_instance = lambda b: f"{b.proprietaire.nom} – {b.nom}"
 
+    def clean_fichier(self):
+        f = self.cleaned_data.get("fichier")
+        if f and hasattr(f, "content_type"):  # nouveau fichier envoyé
+            empreinte = PieceComptable.calculer_empreinte(f)
+            deja = PieceComptable.objects.filter(empreinte=empreinte).exclude(pk=self.instance.pk).first()
+            if deja:
+                raise forms.ValidationError(f"Cette facture est déjà enregistrée : {deja}.")
+            self.instance.empreinte = empreinte
+        return f
+
 
 @admin.register(PieceComptable)
 class PieceComptableAdmin(admin.ModelAdmin):
@@ -1797,9 +1807,16 @@ class PieceComptableAdmin(admin.ModelAdmin):
         if request.method == "POST" and form.is_valid():
             from .lecture_factures import analyser, texte_pdf
 
-            crees, lues, refuses = 0, 0, []
+            crees, lues, refuses, doublons, vus = 0, 0, [], [], set()
             for f in request.FILES.getlist("fichiers"):
-                piece = PieceComptable(bien=form.cleaned_data["bien"], libelle=Path(f.name).stem.replace("_", " ")[:200], fichier=f)
+                empreinte = PieceComptable.calculer_empreinte(f)
+                deja = PieceComptable.objects.filter(empreinte=empreinte).select_related("bien").first()
+                if deja or empreinte in vus:
+                    quand = f" (déjà importée pour {deja.bien.nom}{f', facture du {deja.date:%d/%m/%Y}' if deja.date else ''})" if deja else " (en double dans cet envoi)"
+                    doublons.append(f.name + quand)
+                    continue
+                vus.add(empreinte)
+                piece = PieceComptable(empreinte=empreinte, bien=form.cleaned_data["bien"], libelle=Path(f.name).stem.replace("_", " ")[:200], fichier=f)
                 if f.name.lower().endswith(".pdf"):
                     propositions = analyser(texte_pdf(f))
                     for champ, valeur in propositions.items():
@@ -1820,7 +1837,10 @@ class PieceComptableAdmin(admin.ModelAdmin):
                                           "complétez date, montant et ligne 2072 dans le tableau, puis Enregistrer." + lu)
             if refuses:
                 messages.error(request, "Format non accepté (PDF, JPG, PNG ou HEIC) : " + ", ".join(refuses))
-            return redirect(reverse("admin:patrimoine_piececomptable_changelist") + "?a_codifier=oui")
+            if doublons:
+                messages.warning(request, f"{len(doublons)} facture{'s' if len(doublons) > 1 else ''} déjà présente{'s' if len(doublons) > 1 else ''}, "
+                                          "non importée" + ("s" if len(doublons) > 1 else "") + " : " + " ; ".join(doublons))
+            return redirect(reverse("admin:patrimoine_piececomptable_changelist") + ("?a_codifier=oui" if crees else ""))
         return render(request, "admin/patrimoine/piececomptable/import.html",
                       {**self.admin_site.each_context(request), "form": form, "opts": self.model._meta,
                        "title": "Importer des factures"})
