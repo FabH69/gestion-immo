@@ -4,11 +4,11 @@
 {% block object-tools %}
 <div class="titre-liste">
   {% if title %}<h1>{{ title }}</h1>{% endif %}
+  <ul class="object-tools">
+    {% block object-tools-items %}{% change_list_object_tools %}{% endblock %}
+  </ul>
   <div class="outils-droite">
     {% search_form cl %}
-    <ul class="object-tools">
-      {% block object-tools-items %}{% change_list_object_tools %}{% endblock %}
-    </ul>
   </div>
 </div>
 {% filtres_haut cl as filtres %}

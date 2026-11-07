@@ -465,13 +465,15 @@ body.change-list #recherche-globale { visibility: hidden; }
 .titre-liste .outils-droite #toolbar form > div { display: flex; align-items: center; gap: 6px; }
 .titre-liste .outils-droite #toolbar input[type=submit], .titre-liste .outils-droite #toolbar .small.quiet { display: none; }
 .titre-liste .outils-droite #toolbar input[type=text] { width: 260px; border-radius: 999px; padding-left: 14px; }
-.titre-liste .outils-droite ul.object-tools { float: none; margin: 0; padding: 0; position: static; display: flex; gap: 6px; }
-.titre-liste .outils-droite ul.object-tools li { margin: 0; }
+.titre-liste ul.object-tools { float: none; margin: 0; padding: 0; position: static; display: flex; gap: 6px; }
+.titre-liste ul.object-tools li { margin: 0; }
+.titre-liste ul.object-tools:empty { display: none; }
+.titre-liste h1 + ul.object-tools { margin-left: 6px; }
 .filtres-droite { justify-content: flex-end; flex: 0 1 auto; margin-left: auto; }
 @media (max-width: 767px) { .titre-liste .outils-droite { width: 100%; flex-wrap: wrap; } .titre-liste .outils-droite #toolbar { flex: 1 1 auto; } .titre-liste .outils-droite #toolbar input[type=text] { width: 100%; } .filtres-droite { margin-left: 0; justify-content: flex-start; } }
 /* Fiche lot : case surface plus étroite */
 .identite-lot #id_surface, .identite-lot #id_nb_pieces { width: 7em; }
-@media (min-width: 1024px) { .titre-liste { flex-wrap: nowrap; } .titre-liste .outils-droite ul.object-tools { flex-wrap: nowrap; white-space: nowrap; } }
+@media (min-width: 1024px) { .titre-liste { flex-wrap: nowrap; } .titre-liste ul.object-tools { flex-wrap: nowrap; white-space: nowrap; } }
 .identite-lot .flex-container { flex-wrap: wrap; gap: 0 4px; }
 .identite-lot .fieldBox + .fieldBox label { width: auto !important; min-width: 0 !important; padding-right: 8px !important; }
 .identite-lot .flex-container { flex-wrap: nowrap !important; }
