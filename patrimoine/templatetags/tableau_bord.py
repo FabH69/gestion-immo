@@ -230,6 +230,7 @@ def filtres_haut(cl):
     """Filtres d'une liste à afficher en haut : boutons quand il y a peu de choix, sinon liste déroulante.
     Les filtres nommés dans `filtres_caches` de l'admin restent actifs mais ne s'affichent pas."""
     caches = set(getattr(cl.model_admin, "filtres_caches", ()))
+    en_liste = set(getattr(cl.model_admin, "filtres_en_liste", ()))
     filtres = []
     for spec in cl.filter_specs:
         if caches & set(spec.expected_parameters()):
@@ -247,7 +248,12 @@ def filtres_haut(cl):
             filtres.append({"titre": "Années antérieures", "annees": True, "choix": choix[:3], "anterieures": choix[3:],
                             "anterieure_active": any(c["actif"] for c in choix[3:]), "tous": choix[0]["actif"]})
             continue
-        filtres.append({"titre": titre[:1].upper() + titre[1:], "choix": choix, "boutons": len(choix) <= 5,
+        if chemin.endswith("proprietaire") and any("bien" in f.expected_parameters() for f in cl.filter_specs):
+            # changer de propriétaire efface le bien choisi (il appartiendrait à un autre propriétaire)
+            from urllib.parse import parse_qsl, urlencode
+            for c in choix:
+                c["url"] = "?" + urlencode([(k, v) for k, v in parse_qsl(c["url"].lstrip("?")) if k != "bien"])
+        filtres.append({"titre": titre[:1].upper() + titre[1:], "choix": choix, "boutons": len(choix) <= 5 and chemin not in en_liste,
                         "tous": choix[0]["actif"], "avec_titre": any(c["libelle"] in ("Oui", "Non") for c in choix), "droite": chemin.split("__")[-1] == "proprietaire" or getattr(spec, "a_droite", False)})
     return filtres
 

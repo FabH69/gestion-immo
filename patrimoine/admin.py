@@ -1778,6 +1778,7 @@ class PieceComptableAdmin(admin.ModelAdmin):
     form = PieceComptableForm
     list_display = ["date_affichee", "bien", "fournisseur", "libelle", "ligne_courte", "montant_affiche", "piece"]
     list_display_links = ["date_affichee", "libelle"]
+    filtres_en_liste = ("bien__proprietaire",)  # propriétaire en liste déroulante, comme le bien
     list_filter = [ACodifierFilter, AnneeFiscaleFilter, "bien__proprietaire", BienPieceFilter, "ligne"]
     search_fields = ["fournisseur", "libelle", "bien__nom", "notes"]
     # mode « codifier » (liste filtrée sur les pièces à codifier) : tout se complète directement dans le tableau
