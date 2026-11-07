@@ -5,6 +5,15 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap">
 <link rel="stylesheet" href="{% static 'patrimoine/theme.css' %}">
+{# bouton sur l'écran d'accueil du téléphone : icône et ouverture plein écran #}
+<link rel="icon" type="image/png" href="{% static 'patrimoine/icones/favicon.png' %}">
+<link rel="apple-touch-icon" href="{% static 'patrimoine/icones/apple-touch-icon.png' %}">
+<link rel="manifest" href="{% static 'patrimoine/manifest.json' %}">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Immo">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="theme-color" content="#173f45">
 {% endblock %}
 {% block branding %}
 <div id="site-name"><a href="{% url 'admin:index' %}"><span class="logo">⌂</span> {{ site_header|default:_('Django administration') }}</a></div>
