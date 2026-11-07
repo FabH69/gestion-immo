@@ -1,6 +1,6 @@
 {% load tableau_bord %}
 <div class="kpis">
-  <a class="kpi" href="{% url 'admin:patrimoine_echeance_changelist' %}">
+  {% if droits.loyers %}<a class="kpi" href="{% url 'admin:patrimoine_echeance_changelist' %}">
     <div class="kpi-l">Loyers de {{ tb.mois }}</div>
     <div class="kpi-v">{{ tb.encaisse|euros }} <small>/ {{ tb.attendu|euros }}</small></div>
     <div class="kpi-barre"><i style="width:{{ tb.pourcentage }}%"></i></div>
@@ -11,7 +11,7 @@
     <div class="kpi-v{% if tb.nb_retard %} rouge{% endif %}">{{ tb.nb_retard }}</div>
     <div class="kpi-d">{% if tb.nb_retard %}<span class="pill rouge">{{ tb.montant_retard|euros }} à encaisser</span>{% else %}<span class="pill ok">Tout est à jour</span>{% endif %}</div>
   </a>
-  <a class="kpi" href="{% url 'etat_endettement' %}">
+  {% endif %}{% if droits.finances %}<a class="kpi" href="{% url 'etat_endettement' %}">
     <div class="kpi-l">Capital restant dû</div>
     <div class="kpi-v">{{ tb.crd|euros }}</div>
     <div class="kpi-d">{{ tb.nb_prets }} prêt{{ tb.nb_prets|pluralize }} en cours · {{ tb.mensualites|euros }}/mois</div>
@@ -20,5 +20,5 @@
     <div class="kpi-l">Loyers − mensualités</div>
     <div class="kpi-v{% if tb.cash_flow < 0 %} rouge{% else %} vert{% endif %}">{{ tb.cash_flow|euros }}</div>
     <div class="kpi-d">loyers {{ tb.attendu|euros }} − prêts {{ tb.mensualites|euros }}</div>
-  </a>
+  </a>{% endif %}
 </div>

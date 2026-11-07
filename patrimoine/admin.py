@@ -1912,3 +1912,6 @@ class PieceComptableAdmin(admin.ModelAdmin):
                          "lien_import": reverse("admin:patrimoine_piececomptable_import"),
                          "nb_a_codifier": PieceComptable.objects.filter(ACodifierFilter.MANQUE).count()}
         return super().changelist_view(request, extra_context)
+
+
+from . import admin_utilisateurs  # noqa: E402,F401  (écran Utilisateurs avec droits par module)

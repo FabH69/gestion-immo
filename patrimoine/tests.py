@@ -1616,3 +1616,70 @@ class EnvoyerQuittanceTests(TestCase):
         self.assertIn("Bonjour Mme Dupont", texte)
         self.assertIn("du mois de septembre 2026 pour le logement de Lyon.", texte)
         self.assertTrue(texte.rstrip().endswith("Bien cordialement,"))
+
+
+class DroitsTests(TestCase):
+    def setUp(self):
+        from django.contrib.auth.models import User
+
+        from . import droits
+
+        self.admin = User.objects.create_superuser("chef", "c@exemple.fr", "x")
+        self.user = User.objects.create_user("aide", password="x", is_staff=True)
+        droits.appliquer(self.user, {"biens": droits.CONSULTATION, "loyers": droits.MODIFICATION})
+        proprio = Proprietaire.objects.create(nom="SCI D", type=Proprietaire.Type.SCI_IR)
+        self.bien = Bien.objects.create(proprietaire=proprio, nom="Immeuble", adresse="1 rue", code_postal="69000", ville="Lyon")
+        self.client.force_login(self.user)
+
+    def test_niveaux(self):
+        from . import droits
+
+        n = droits.niveaux(self.user)
+        self.assertEqual(n["biens"], droits.CONSULTATION)
+        self.assertEqual(n["loyers"], droits.MODIFICATION)
+        self.assertEqual(n["compta"], droits.AUCUN)
+
+    def test_consultation_sans_modification(self):
+        self.assertEqual(self.client.get("/admin/patrimoine/bien/").status_code, 200)
+        r = self.client.get(f"/admin/patrimoine/bien/{self.bien.pk}/change/")
+        self.assertEqual(r.status_code, 200)
+        self.assertNotContains(r, 'name="_save"')  # fiche en lecture seule
+        self.assertEqual(self.client.post(f"/admin/patrimoine/bien/{self.bien.pk}/change/", {"nom": "X"}).status_code, 403)
+        self.assertEqual(self.client.post("/admin/patrimoine/bien/", {"action": "delete_selected", "_selected_action": [self.bien.pk]}).status_code, 403)
+        self.assertEqual(self.client.get("/admin/patrimoine/bien/add/").status_code, 403)
+
+    def test_modules_interdits(self):
+        self.assertEqual(self.client.get("/admin/patrimoine/piececomptable/").status_code, 403)
+        self.assertEqual(self.client.get("/comptabilite/2072/").status_code, 403)
+        self.assertEqual(self.client.get("/etats/endettement/").status_code, 403)
+        self.assertEqual(self.client.get("/reglages/sauvegardes/").status_code, 403)
+        self.assertEqual(self.client.get("/admin/auth/user/").status_code, 403)
+        self.assertEqual(self.client.get("/balles/").status_code, 403)
+        self.assertEqual(self.client.get("/quittances/envoyer/").status_code, 200)  # loyers : autorisé
+
+    def test_menu_et_tableau_de_bord(self):
+        r = self.client.get("/admin/")
+        self.assertContains(r, "Biens et lots")
+        self.assertContains(r, "Créer une quittance")
+        self.assertNotContains(r, "Comptabilité SCI")
+        self.assertNotContains(r, "Capital restant dû")
+        self.assertNotContains(r, "Réglages")
+
+    def test_ecran_utilisateurs(self):
+        from django.contrib.auth.models import User
+
+        from . import droits
+
+        self.client.force_login(self.admin)
+        donnees = {"username": "compta", "password1": "Motdepasse-tres-long-1", "password2": "Motdepasse-tres-long-1",
+                   "first_name": "", "last_name": "", "email": "", "droit_compta": "modification", "droit_etats": "consultation"}
+        r = self.client.post("/admin/auth/user/add/", donnees)
+        self.assertEqual(r.status_code, 302, getattr(r, "context", None) and r.context["adminform"].form.errors)
+        u = User.objects.get(username="compta")
+        self.assertTrue(u.is_staff)
+        self.assertEqual(droits.niveau(u, "compta"), droits.MODIFICATION)
+        self.assertEqual(droits.niveau(u, "etats"), droits.CONSULTATION)
+        self.assertEqual(droits.niveau(u, "biens"), droits.AUCUN)
+        r = self.client.get(f"/admin/auth/user/{u.pk}/change/")
+        self.assertContains(r, "Droits par module")
+        self.assertContains(r, 'value="modification" class="choix-droit" id="id_droit_compta_2" checked')

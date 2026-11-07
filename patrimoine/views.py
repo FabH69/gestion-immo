@@ -868,7 +868,15 @@ def recherche(request):
                 condition &= sous
             return condition
 
+        from . import droits
+
+        acces = droits.niveaux(request.user)
+        module = {"Locataires": "locataires", "Biens": "biens", "Lots": "biens", "Baux": "baux", "Garants": "baux",
+                  "Candidatures": "relocation", "Prêts": "finances", "Syndics": "biens"}
+
         def ajouter(titre, objets, lien, detail=lambda o: ""):
+            if not acces.get(module.get(titre, ""), ""):
+                return
             lignes = [{"titre": str(o), "detail": detail(o), "url": reverse(lien, args=[o.pk])} for o in objets[:15]]
             if lignes:
                 groupes.append({"titre": titre, "lignes": lignes})

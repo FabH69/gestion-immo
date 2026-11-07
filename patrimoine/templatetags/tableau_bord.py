@@ -136,15 +136,28 @@ def menu_lateral(context):
         "Loyers": Echeance.objects.exclude(statut=Echeance.Statut.PAYE).filter(date_exigibilite__lt=aujourdhui).count(),
         "Candidatures": Candidature.objects.filter(statut=Candidature.Statut.RECUE).count(),
     }
+    from patrimoine import droits
+
+    user = context.get("user")
+    acces = droits.niveaux(user) if user is not None and user.is_authenticated else {}
+    module_du_lien = {"biens": "biens", "locataires": "locataires", "baux": "baux", "loyers": "loyers",
+                      "candidatures": "relocation", "annonces": "relocation", "cles": "relocation", "lcd": "lcd",
+                      "encaissements": "finances", "prets": "finances", "compta": "compta", "etats": "etats",
+                      "rappels": "outils", "modeles": "outils", "liens": "outils", "balles": "balles"}
     groupes, actif_trouve = [], False
     for titre, liens in _menu():
         lignes = []
         for ico, libelle, url, prefixes, sous in liens:
+            if ico == "reglages" and not (user and user.is_superuser):
+                continue  # Réglages : administrateurs seulement ; le mot de passe reste accessible dans le menu du compte
+            if ico in module_du_lien and not acces.get(module_du_lien[ico]):
+                continue
             actif = any(re.match(p, chemin) if p.endswith("$") else chemin.startswith(p) for p in prefixes)
             lignes.append({"icone": icone(ico), "libelle": libelle, "url": url, "actif": actif and not actif_trouve,
                            "pastille": pastilles.get(libelle), "sous": [{"libelle": l, "url": u, "actif": chemin.startswith(u)} for l, u in sous]})
             actif_trouve |= actif
-        groupes.append({"titre": titre, "liens": lignes})
+        if lignes:
+            groupes.append({"titre": titre, "liens": lignes})
     return {"groupes": groupes, "user": context.get("user"), "liens_utiles": sites_utiles()}
 
 

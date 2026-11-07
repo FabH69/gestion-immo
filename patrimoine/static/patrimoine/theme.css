@@ -287,6 +287,8 @@ body:not(.login) #user-tools { margin-left: auto; padding: 0; }
 .menu-utilisateur { display: flex; align-items: center; gap: 10px; padding: 12px 8px 4px; margin-top: 12px; border-top: 1px solid rgba(255,255,255,.1); }
 .menu-utilisateur .avatar { display: grid; place-items: center; width: 30px; height: 30px; border-radius: 50%; background: rgba(255,255,255,.15); color: #fff; font-weight: 600; font-size: 13px; }
 .menu-utilisateur .nom { color: #fff; font-weight: 500; flex: 1; }
+.menu-utilisateur .lien-mdp { display: block; font-size: 12px; font-weight: 400; color: rgba(255,255,255,.75) !important; }
+.grille-accueil.une-colonne { grid-template-columns: minmax(0, 1fr); max-width: 560px; }
 .menu-utilisateur button { background: none; border: 0; color: var(--lateral-quiet); font-size: 12px; cursor: pointer; padding: 0; }
 .menu-utilisateur button:hover { color: #fff; }
 #voile-menu, #barre-onglets { display: none; }

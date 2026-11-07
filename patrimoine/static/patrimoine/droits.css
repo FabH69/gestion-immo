@@ -1,0 +1,7 @@
+.droits-modules .form-row { padding: 8px 10px; }
+.droits-modules ul.choix-droit, .droits-modules div.choix-droit, .droits-modules .choix-droit { display: flex; gap: 8px; flex-wrap: wrap; margin: 0; padding: 0; list-style: none; }
+.droits-modules .choix-droit li, .droits-modules .choix-droit > div { list-style: none; margin: 0; padding: 0; }
+.droits-modules .choix-droit label { display: inline-flex; align-items: center; gap: 6px; width: auto; padding: 4px 12px; border: 1px solid var(--border-color); border-radius: 999px; cursor: pointer; font-weight: 400; }
+.droits-modules .choix-droit label:has(input:checked) { background: var(--primary); border-color: var(--primary); color: #fff; }
+.droits-modules .choix-droit input { margin: 0; }
+.droits-modules .description { color: var(--body-quiet-color); }

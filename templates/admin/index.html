@@ -10,8 +10,8 @@
 <div id="content-main" class="accueil">
   {% donnees_accueil as tb %}
   {% include "admin/_chiffres_cles.html" %}
-  <div class="grille-accueil">
-    <div>{% bloc_a_faire %}</div>
+  <div class="grille-accueil{% if not droits.outils %} une-colonne{% endif %}">
+    {% if droits.outils %}<div>{% bloc_a_faire %}</div>{% endif %}
     <div class="colonne-cartes">{% include "admin/_cartes_laterales.html" %}</div>
   </div>
 </div>
