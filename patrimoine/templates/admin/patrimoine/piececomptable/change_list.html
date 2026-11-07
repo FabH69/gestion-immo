@@ -9,7 +9,7 @@
 {% load static %}
 <div id="apercu-piece" hidden></div>
 <style>
-#apercu-piece { position: fixed; z-index: 1000; width: 460px; height: min(700px, 82vh); overflow-y: auto; box-sizing: border-box; background: #f3f4f6; border: 1px solid var(--border-color, #ccc);
+#apercu-piece { position: fixed; z-index: 1000; width: min(700px, 55vw); height: 90vh; overflow-y: auto; box-sizing: border-box; background: #f3f4f6; border: 1px solid var(--border-color, #ccc);
   border-radius: 10px; box-shadow: 0 8px 30px rgba(0,0,0,.25); padding: 8px; }
 #apercu-piece canvas, #apercu-piece img { display: block; width: 100%; height: auto; background: #fff; margin-bottom: 8px; box-shadow: 0 1px 3px rgba(0,0,0,.15); }
 #apercu-piece .attente { padding: 40px 0; text-align: center; color: #666; }
@@ -21,9 +21,9 @@
   // le lecteur PDF du navigateur). Le clic ouvre toujours la pièce dans un nouvel onglet.
   if (window.pdfjsLib) pdfjsLib.GlobalWorkerOptions.workerSrc = "{% static 'patrimoine/pdfjs/pdf.worker.min.js' %}";
   var boite = document.getElementById("apercu-piece"), minuteur = null, courant = null, cache = {};
-  var LARGEUR = 460, PAGES_MAX = 3;
+  var LARGEUR = Math.min(700, window.innerWidth * 0.55), PAGES_MAX = 3;
   function placer(lien) {
-    var r = lien.getBoundingClientRect(), h = Math.min(700, window.innerHeight * 0.82);
+    var r = lien.getBoundingClientRect(), h = window.innerHeight * 0.9;
     var x = r.right + 12; if (x + LARGEUR > window.innerWidth - 8) x = Math.max(8, r.left - LARGEUR - 12);
     var y = Math.min(Math.max(8, r.top - h / 3), window.innerHeight - h - 8);
     boite.style.left = x + "px"; boite.style.top = Math.max(8, y) + "px";
