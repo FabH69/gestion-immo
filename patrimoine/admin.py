@@ -1199,12 +1199,32 @@ class TacheAdmin(admin.ModelAdmin):
         return {}
 
 
+class TacheActiveFilter(admin.SimpleListFilter):
+    """Par défaut, seules les tâches actives sont listées."""
+    title = "active"
+    parameter_name = "active"
+
+    def lookups(self, request, model_admin):
+        return [("oui", "Actives"), ("non", "Désactivées"), ("toutes", "Toutes")]
+
+    def choices(self, changelist):
+        for valeur, libelle in self.lookup_choices:
+            yield {"selected": (self.value() or "oui") == valeur, "display": libelle,
+                   "query_string": changelist.get_query_string({self.parameter_name: valeur})}
+
+    def queryset(self, request, queryset):
+        valeur = self.value() or "oui"
+        if valeur == "toutes":
+            return queryset
+        return queryset.filter(actif=valeur == "oui")
+
+
 @admin.register(TacheParDefaut)
 class TacheParDefautAdmin(admin.ModelAdmin):
     """Réglages : tâches ajoutées à chaque nouveau changement de locataire."""
     list_display = ["libelle", "phase", "quand", "ordre", "actif"]
     list_editable = ["ordre", "actif"]
-    list_filter = ["phase", "actif"]
+    list_filter = [TacheActiveFilter, "phase"]
     list_display_links = ["libelle"]
     search_fields = ["libelle"]
     fields = ["phase", "libelle", "aide", ("decalage_jours", "reference"), "ordre", "actif"]

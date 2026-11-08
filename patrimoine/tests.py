@@ -136,6 +136,10 @@ class ChangementLocataireTests(TestCase):
         tache = c.taches.filter(faite=False, echeance__isnull=False).order_by("echeance").first()
         self.assertIn(tache.libelle.replace("'", "&#x27;"), page)
         self.client.post(f"/taches/{tache.pk}/faite/")
+        from .models import TacheParDefaut
+        TacheParDefaut.objects.filter(libelle__startswith="Organiser les visites").update(actif=False)
+        self.assertNotIn("Organiser les visites", self.client.get("/admin/patrimoine/tachepardefaut/").content.decode())
+        self.assertIn("Organiser les visites", self.client.get("/admin/patrimoine/tachepardefaut/?active=toutes").content.decode())
         tache.refresh_from_db()
         self.assertTrue(tache.faite)
 
