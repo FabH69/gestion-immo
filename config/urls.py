@@ -41,6 +41,7 @@ urlpatterns = [
     path("impayes/relancer/", views.relances_impayes, name="relances_impayes"),
     path("impayes/<int:pk>/lettre.pdf", views.lettre_relance, name="lettre_relance"),
     path("impayes/<int:pk>/preparer-mail/", views.preparer_mail_relance, name="preparer_mail_relance"),
+    path("taches/<int:pk>/faite/", views.tache_faite, name="tache_faite"),
     path("notes/enregistrer/", views.enregistrer_note, name="enregistrer_note"),
     path("annonces/<int:pk>/annonce.pdf", views.annonce_pdf, name="annonce_pdf"),
     path("comptabilite/2072/", views.annexe_2072, name="annexe_2072"),

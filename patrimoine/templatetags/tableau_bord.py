@@ -18,6 +18,30 @@ def bloc_a_faire(context):
     return contexte
 
 
+@register.inclusion_tag("patrimoine/_taches_changement.html", takes_context=True)
+def bloc_taches_changement(context, par_changement=6):
+    """Accueil : tâches restant à faire pour les sorties et entrées de locataires en cours."""
+    from django.db.models import F
+
+    from patrimoine.models import ChangementLocataire
+
+    aujourdhui = timezone.localdate()
+    changements = []
+    for c in ChangementLocataire.objects.filter(termine=False).select_related("lot__bien", "bail_sortant"):
+        restantes = list(c.taches.filter(faite=False).order_by(F("echeance").asc(nulls_last=True), "ordre"))
+        if not restantes:
+            continue
+        faites, total = c.avancement
+        changements.append({
+            "changement": c, "faites": faites, "total": total, "autres": max(0, len(restantes) - par_changement),
+            "taches": [{"tache": t, "en_retard": bool(t.echeance and t.echeance < aujourdhui)} for t in restantes[:par_changement]],
+            "retard": sum(1 for t in restantes if t.echeance and t.echeance < aujourdhui),
+        })
+    changements.sort(key=lambda x: min((t["tache"].echeance for t in x["taches"] if t["tache"].echeance), default=aujourdhui.max))
+    return {"changements": changements, "csrf_token": context.get("csrf_token"),
+            "modifiable": (context.get("droits") or {}).get("relocation") == "modification"}
+
+
 @register.filter
 def get_item(conteneur, cle):
     """Accès à un élément de dictionnaire ou de liste depuis un gabarit."""
@@ -117,8 +141,8 @@ def _menu():
              [("Modèles location", a("modeledocument")), ("Annonces", a("modeleannonce")), ("Liste des champs", r("liste_champs"))]),
             ("liens", "Sites utiles", a("siteutile"), [a("siteutile")], []),
             ("reglages", "Réglages", r("sauvegardes"),
-             [r("sauvegardes"), a("parametresmail"), "/admin/auth/", "/admin/password_change/"],
-             [("Sauvegardes", r("sauvegardes")), ("Mails (Gmail)", a("parametresmail")),
+             [r("sauvegardes"), a("parametresmail"), a("tachepardefaut"), "/admin/auth/", "/admin/password_change/"],
+             [("Sauvegardes", r("sauvegardes")), ("Mails (Gmail)", a("parametresmail")), ("Tâches entrée / sortie", a("tachepardefaut")),
               ("Utilisateurs", r("admin:auth_user_changelist")), ("Mot de passe", r("admin:password_change"))]),
             ("balles", "Balles", r("balles:accueil"), [], []),
         ]),

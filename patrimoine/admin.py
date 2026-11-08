@@ -8,9 +8,10 @@ from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import path, reverse
 from urllib.parse import quote
 from django.utils import timezone
+from django.utils.safestring import mark_safe
 from django.utils.html import format_html, format_html_join
 
-from .models import ModeleAnnonce, PieceComptable, DocumentLocataire, ModeleDocument, ParametresMail, PieceCandidature, mois_depot_maximum, GarantCandidature, EncaissementHistorique, ChargeLMNP, SiteUtile, Syndic, Annonce, ChargeLCD, ParametresLCD, ReservationLCD, Bail, Bien, Candidature, ChangementLocataire, Garant, PhotoLot, Echeance, EtatDesLieux, MouvementDepot, Pret, Rappel, RevisionLoyer, Locataire, Lot, Paiement, Proprietaire, Tache
+from .models import ModeleAnnonce, PieceComptable, DocumentLocataire, ModeleDocument, ParametresMail, PieceCandidature, mois_depot_maximum, GarantCandidature, EncaissementHistorique, ChargeLMNP, SiteUtile, Syndic, Annonce, ChargeLCD, ParametresLCD, ReservationLCD, Bail, Bien, Candidature, ChangementLocataire, Garant, PhotoLot, Echeance, EtatDesLieux, MouvementDepot, Pret, Rappel, RevisionLoyer, Locataire, Lot, Paiement, Proprietaire, Tache, TacheParDefaut
 
 admin.site.site_header = "Gestion immobilière"
 admin.site.enable_nav_sidebar = False  # remplacé par le menu du bandeau
@@ -1198,6 +1199,31 @@ class TacheAdmin(admin.ModelAdmin):
         return {}
 
 
+@admin.register(TacheParDefaut)
+class TacheParDefautAdmin(admin.ModelAdmin):
+    """Réglages : tâches ajoutées à chaque nouveau changement de locataire."""
+    list_display = ["libelle", "phase", "quand", "ordre", "actif"]
+    list_editable = ["ordre", "actif"]
+    list_filter = ["phase", "actif"]
+    list_display_links = ["libelle"]
+    search_fields = ["libelle"]
+    fields = ["phase", "libelle", "aide", ("decalage_jours", "reference"), "ordre", "actif"]
+
+    @admin.display(description="échéance")
+    def quand(self, obj):
+        j = obj.decalage_jours
+        de, le = {"conge": ("de la", "la"), "depart": ("du", "le"), "arrivee": ("de l'", "l'")}[obj.reference]
+        libelle = obj.get_reference_display()
+        if j == 0:
+            return f"le jour {de}{'' if de.endswith(chr(39)) else ' '}{libelle}"
+        return f"{abs(j)} j {'après' if j > 0 else 'avant'} {le}{'' if le.endswith(chr(39)) else ' '}{libelle}"
+
+    def changelist_view(self, request, extra_context=None):
+        messages.info(request, "Ces tâches sont ajoutées à chaque nouveau changement de locataire. "
+                               "Les changements déjà créés gardent leur liste.")
+        return super().changelist_view(request, extra_context)
+
+
 @admin.register(EtatDesLieux)
 class EtatDesLieuxAdmin(admin.ModelAdmin):
     date_hierarchy = "date"
@@ -1528,11 +1554,10 @@ class AnnonceAdmin(LotsALouerMixin, admin.ModelAdmin):
     def get_form(self, request, obj=None, **kwargs):
         form = super().get_form(request, obj, **kwargs)
         form.base_fields["texte"].widget.attrs.update(rows=22, style="width:100%;max-width:720px")
-        form.base_fields["points_forts"].widget.attrs.update(rows=4)
         form.base_fields["titre"].widget.attrs.update(size=60)
         return form
     fieldsets = [
-        (None, {"fields": ["lot", "modele", ("loyer_cc", "charges", "charges_forfait"), "depot_garantie", "disponible_le", "points_forts"]}),
+        (None, {"fields": ["lot", "modele", ("loyer_cc", "charges", "charges_forfait", "depot_garantie"), "disponible_le"]}),
         ("Annonce", {"fields": ["titre", "texte", "a_copier"]}),
     ]
 
@@ -1546,8 +1571,9 @@ class AnnonceAdmin(LotsALouerMixin, admin.ModelAdmin):
         """Modèle d'annonce par défaut d'un lot (appelé quand on choisit le lot sur une nouvelle annonce)."""
         from django.http import JsonResponse
 
-        m = ModeleAnnonce.par_defaut(request.GET.get("lot") or None)
-        return JsonResponse({"modele": m.pk if m else None, "nom": str(m) if m else ""})
+        lot = Lot.objects.filter(pk=request.GET.get("lot") or None).first()
+        m = ModeleAnnonce.par_defaut(lot.pk if lot else None)
+        return JsonResponse({"modele": m.pk if m else None, "nom": str(m) if m else "", "meuble": bool(lot and lot.meuble)})
 
     def formfield_for_foreignkey(self, db_field, request, **kwargs):
         if db_field.name == "modele":
@@ -1572,16 +1598,15 @@ class AnnonceAdmin(LotsALouerMixin, admin.ModelAdmin):
         ) if manque else ""
         photos = format_html_join("", '<img src="{}" title="{}" style="height:80px;border-radius:8px;margin:0 6px 6px 0">',
                                   ((p.image.url, str(p)) for p in obj.lot.photos.all()))
-        actualiser = format_html(
+        actualiser = mark_safe(
             '<p><button type="submit" name="_actualiser" value="1" class="button" title="Enregistre la fiche puis refait le titre et le texte '
-            'avec la version actuelle du modèle (et les loyer, dépôt et mentions obligatoires)">Actualiser avec le modèle{}</button></p>',
-            f" « {obj.modele} »" if obj.modele_id else "")
+            'avec la version actuelle du modèle (et les loyer, dépôt et mentions obligatoires)">Actualiser avec le modèle</button></p>')
         return format_html(
             '{}{}<p><button type="button" class="button" onclick="navigator.clipboard.writeText(document.getElementById(\'id_titre\').value);this.textContent=\'Titre copié\'">Copier le titre</button> '
             '<button type="button" class="button" onclick="navigator.clipboard.writeText(document.getElementById(\'id_texte\').value);this.textContent=\'Texte copié\'">Copier le texte</button> '
+            '<a class="button" href="https://www.leboncoin.fr/deposer-une-annonce" target="_blank" rel="noopener">Déposer sur Leboncoin</a> '
             '<a class="button" href="{}" target="_blank">Générer le PDF</a> '
-            '<a class="button" href="{}">Télécharger les photos (zip)</a> '
-            '<a class="button" href="https://www.leboncoin.fr/deposer-une-annonce" target="_blank" rel="noopener">Déposer sur Leboncoin</a></p>'
+            '<a class="button" href="{}">Télécharger les photos (zip)</a></p>'
             '<div>{}</div><p class="help">Leboncoin ne permet pas la publication automatique pour les particuliers : copiez le titre et le texte, puis ajoutez les photos du zip.</p>',
             alerte, actualiser, reverse("annonce_pdf", args=[obj.pk]), reverse("photos_zip", args=[obj.lot_id]), photos or "Aucune photo : ajoutez-en dans la fiche du lot.",
         )

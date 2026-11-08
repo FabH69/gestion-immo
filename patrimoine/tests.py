@@ -110,9 +110,34 @@ class ChangementLocataireTests(TestCase):
         self.assertEqual(c.taches.count(), len(MODELE_CHANGEMENT_LOCATAIRE))
         edl = c.taches.get(libelle="Réaliser l'état des lieux de sortie")
         self.assertEqual(edl.echeance, date(2026, 12, 20))
-        depot = c.taches.get(libelle="Restituer le dépôt de garantie")
+        depot = c.taches.get(libelle="Rembourser la caution (dépôt de garantie)")
         self.assertEqual(depot.echeance, date(2027, 1, 19))
         self.assertEqual(c.taches.first().phase, "depart")
+
+    def test_liste_par_defaut_des_reglages(self):
+        from .models import ChangementLocataire, TacheParDefaut
+
+        self.assertTrue(TacheParDefaut.objects.filter(libelle="Transmettre le reçu du dépôt de garantie", phase="arrivee").exists())
+        TacheParDefaut.objects.filter(libelle__startswith="Organiser les visites").update(actif=False)
+        TacheParDefaut.objects.create(phase="depart", libelle="Couper l'abonnement internet", reference="depart", decalage_jours=2)
+        c = ChangementLocataire.objects.create(lot=self.lot, date_depart=date(2026, 12, 20))
+        self.assertFalse(c.taches.filter(libelle__startswith="Organiser les visites").exists())
+        self.assertEqual(c.taches.get(libelle="Couper l'abonnement internet").echeance, date(2026, 12, 22))
+
+    def test_bloc_accueil_et_case_a_cocher(self):
+        from .models import ChangementLocataire
+
+        User.objects.create_superuser("admin", "a@a.fr", "x")
+        self.client.login(username="admin", password="x")
+        c = ChangementLocataire.objects.create(lot=self.lot, date_depart=date(2026, 12, 20))
+        page = self.client.get("/admin/").content.decode()
+        self.assertIn("Entrées et sorties de locataires", page)
+        self.assertNotIn("<h2>Logements", page)
+        tache = c.taches.filter(faite=False, echeance__isnull=False).order_by("echeance").first()
+        self.assertIn(tache.libelle.replace("'", "&#x27;"), page)
+        self.client.post(f"/taches/{tache.pk}/faite/")
+        tache.refresh_from_db()
+        self.assertTrue(tache.faite)
 
     def test_report_du_depart_decale_les_taches_non_faites(self):
         from .models import ChangementLocataire

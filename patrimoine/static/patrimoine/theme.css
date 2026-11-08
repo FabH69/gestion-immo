@@ -522,3 +522,8 @@ body.change-list #recherche-globale { visibility: hidden; }
 }
 @keyframes sous-menu { from { opacity: 0; transform: translateY(-3px); } to { opacity: 1; transform: none; } }
 #barre-laterale a:hover, #barre-laterale a:focus { text-decoration: none !important; }
+/* Accueil : entrées et sorties de locataires */
+.taches-changement .titre-bloc { font-weight: 600; }
+.taches-changement tr.entete-changement td { background: var(--darkened-bg); padding-top: 12px; }
+.taches-changement tr.entete-changement .detail { display: inline; margin-left: 6px; }
+.taches-changement td.detail { font-size: .82rem; }

@@ -66,11 +66,7 @@ def a_faire(aujourdhui, horizon_jours=PREAVIS_JOURS):
                 reverse("admin:patrimoine_rappel_change", args=[rappel.pk]),
                 action=reverse("rappel_fait", args=["rappel", rappel.pk]))
 
-    taches = Tache.objects.filter(faite=False, changement__termine=False, echeance__isnull=False).select_related("changement__lot__bien")
-    for t in taches:
-        ajouter(t.echeance, t.libelle, str(t.changement.lot), "Changement de locataire",
-                reverse("admin:patrimoine_changementlocataire_change", args=[t.changement_id]),
-                action=reverse("rappel_fait", args=["tache", t.pk]))
+    # les tâches d'entrée et de sortie ont leur propre bloc sur l'accueil (bloc_taches_changement)
 
     return sorted(items, key=lambda i: i["date"])
 

@@ -699,9 +699,14 @@ class ChangementLocataire(models.Model):
         return {"conge": self.date_conge or self.date_depart, "depart": self.date_depart, "arrivee": self.date_arrivee}[reference]
 
     def creer_taches(self):
+        """Tâches créées à partir de la liste par défaut (Réglages > Tâches d'entrée et de sortie)."""
         from .checklists import MODELE_CHANGEMENT_LOCATAIRE
 
-        for ordre, (phase, libelle, aide, reference, decalage) in enumerate(MODELE_CHANGEMENT_LOCATAIRE):
+        if TacheParDefaut.objects.exists():
+            modele = [(t.phase, t.libelle, t.aide, t.reference, t.decalage_jours) for t in TacheParDefaut.objects.filter(actif=True)]
+        else:
+            modele = MODELE_CHANGEMENT_LOCATAIRE
+        for ordre, (phase, libelle, aide, reference, decalage) in enumerate(modele):
             Tache.objects.create(
                 changement=self, ordre=ordre, phase=phase, libelle=libelle, aide=aide,
                 reference=reference, decalage_jours=decalage,
@@ -752,6 +757,32 @@ class Tache(models.Model):
         if not self.faite:
             self.date_faite = None
         super().save(*args, **kwargs)
+
+
+class TacheParDefaut(models.Model):
+    """Liste des tâches créées à chaque nouveau changement de locataire (modifiable dans les Réglages)."""
+
+    class Reference(models.TextChoices):
+        CONGE = "conge", "réception du congé"
+        DEPART = "depart", "départ du locataire"
+        ARRIVEE = "arrivee", "arrivée du nouveau locataire"
+
+    phase = models.CharField(max_length=10, choices=Tache.Phase.choices)
+    ordre = models.PositiveSmallIntegerField(default=0)
+    libelle = models.CharField("tâche", max_length=200)
+    aide = models.TextField("à savoir", blank=True)
+    reference = models.CharField("à compter de", max_length=10, choices=Reference.choices, default=Reference.DEPART)
+    decalage_jours = models.IntegerField("délai (jours)", default=0,
+                                         help_text="Nombre de jours après la date de référence (négatif = avant).")
+    actif = models.BooleanField("active", default=True)
+
+    class Meta:
+        verbose_name = "tâche par défaut (entrée / sortie)"
+        verbose_name_plural = "tâches par défaut (entrée / sortie)"
+        ordering = ["-phase", "ordre", "pk"]
+
+    def __str__(self):
+        return self.libelle
 
 
 def _ajouter_mois(d, n):
@@ -1264,7 +1295,8 @@ class Annonce(models.Model):
     loyer_cc = models.DecimalField("loyer charges comprises (€/mois)", max_digits=10, decimal_places=2)
     charges = models.DecimalField("dont charges (€/mois)", max_digits=10, decimal_places=2, default=0)
     charges_forfait = models.BooleanField("charges au forfait", default=False, help_text="Sinon : provisions avec régularisation annuelle")
-    depot_garantie = models.DecimalField("dépôt de garantie (€)", max_digits=10, decimal_places=2, default=0)
+    depot_garantie = models.DecimalField("dépôt de garantie (€)", max_digits=10, decimal_places=2, default=0,
+                                         help_text="Calculé automatiquement : loyer hors charges × 1 mois (location nue) ou × 2 mois (meublé).")
     disponible_le = models.DateField("disponible le", null=True, blank=True)
     points_forts = models.TextField("points forts", blank=True, help_text="Une idée par ligne : « proche gare », « balcon plein sud »…")
     texte = models.TextField(blank=True, help_text="Laisser vide puis enregistrer pour générer le texte ; il reste modifiable ensuite.")

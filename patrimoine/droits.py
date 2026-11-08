@@ -27,9 +27,10 @@ MODULES = [
       "preparer_mail_relance"]),
     ("relocation", "Relocation (candidatures, annonces)", ["patrimoine.candidature", "patrimoine.garantcandidature",
                                                          "patrimoine.piececandidature", "patrimoine.annonce",
-                                                         "patrimoine.changementlocataire"],
-     ["preparer_mail_candidature", "envoyer_lien_candidature", "photos_zip", "admin:patrimoine_annonce_modele_du_lot", "annonce_pdf"],
-     ["envoyer_lien_candidature"]),
+                                                         "patrimoine.changementlocataire", "patrimoine.tache"],
+     ["preparer_mail_candidature", "envoyer_lien_candidature", "photos_zip", "admin:patrimoine_annonce_modele_du_lot", "annonce_pdf",
+      "tache_faite"],
+     ["envoyer_lien_candidature", "tache_faite"]),
     ("lcd", "Courte durée (Airbnb / Booking)", ["patrimoine.reservationlcd", "patrimoine.chargelcd", "patrimoine.parametreslcd",
                                                "patrimoine.encaissementlcd"], ["suivi_lcd"], []),
     ("finances", "Encaissements, prêts et endettement", ["patrimoine.pret", "patrimoine.encaissementhistorique"],
@@ -38,7 +39,7 @@ MODULES = [
      ["annexe_2072", "admin:patrimoine_piececomptable_import"], ["admin:patrimoine_piececomptable_import"]),
     ("etats", "États et LMNP", ["patrimoine.chargelmnp"],
      ["etat_loyers_encaisses", "etat_loyers_detail", "biens_lmnp", "plus_value"], []),
-    ("outils", "Rappels, modèles (location, annonces) et sites utiles", ["patrimoine.rappel", "patrimoine.tache", "patrimoine.journalfait",
+    ("outils", "Rappels, modèles (location, annonces) et sites utiles", ["patrimoine.rappel", "patrimoine.journalfait",
                                                          "patrimoine.modeledocument", "patrimoine.modeleannonce",
                                                          "patrimoine.siteutile"],
      ["liste_champs", "rappel_fait"], ["rappel_fait"]),
@@ -122,7 +123,7 @@ class DroitsMiddleware:
         if match.namespace == "balles":
             exige = MODIFICATION if ecriture or match.url_name.endswith(("_creer", "_modifier")) else CONSULTATION
             return self._verifier(user, ["balles"], exige)
-        if match.url_name in RESERVE_ADMIN or request.path.startswith(("/admin/auth/", "/admin/patrimoine/parametresmail/")):
+        if match.url_name in RESERVE_ADMIN or request.path.startswith(("/admin/auth/", "/admin/patrimoine/parametresmail/", "/admin/patrimoine/tachepardefaut/")):
             raise PermissionDenied("Réservé aux administrateurs.")
         code, modifie = _module_de_vue(nom)
         if code:

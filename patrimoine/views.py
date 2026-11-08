@@ -423,6 +423,16 @@ def rappel_fait(request, type_rappel, pk):
     return redirect("admin:index")
 
 
+@require_POST
+def tache_faite(request, pk):
+    """Case à cocher du bloc « Entrées et sorties de locataires » de l'accueil."""
+    tache = get_object_or_404(Tache, pk=pk)
+    tache.faite = True
+    tache.save()
+    messages.success(request, f"Tâche « {tache.libelle} » cochée.")
+    return redirect("admin:index")
+
+
 def _mail_revision(revision):
     bail = revision.bail
     locataires = list(bail.locataires.all())
