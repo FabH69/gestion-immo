@@ -292,7 +292,7 @@ def filtres_haut(cl):
             from urllib.parse import parse_qsl, urlencode
             for c in choix:
                 c["url"] = "?" + urlencode([(k, v) for k, v in parse_qsl(c["url"].lstrip("?")) if k != "bien"])
-        filtres.append({"titre": titre[:1].upper() + titre[1:], "choix": choix, "boutons": len(choix) <= 5 and chemin not in en_liste,
+        filtres.append({"titre": titre[:1].upper() + titre[1:], "choix": choix, "boutons": len(choix) <= 5 and chemin not in en_liste and getattr(spec, "parameter_name", None) not in en_liste,
                         "tous": choix[0]["actif"], "avec_titre": any(c["libelle"] in ("Oui", "Non") for c in choix), "droite": chemin.split("__")[-1] == "proprietaire" or getattr(spec, "a_droite", False)})
     return filtres
 

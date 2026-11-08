@@ -891,11 +891,31 @@ class ModifierEcheancesForm(forms.Form):
                                        widget=forms.DateInput(attrs={"type": "date"}))
 
 
+class BailEcheanceFilter(admin.SimpleListFilter):
+    """Loyers : liste déroulante des baux (logement – locataires), baux en cours d'abord, à droite de la liste."""
+    title = "bail"
+    parameter_name = "bail"
+    a_droite = True
+
+    def lookups(self, request, model_admin):
+        baux = Bail.objects.select_related("lot__bien").prefetch_related("locataires").order_by("-actif", "lot__bien__nom", "lot__designation", "-date_debut")
+        choix = []
+        for b in baux:
+            noms = ", ".join(f"{l.prenom} {l.nom}".strip() for l in b.locataires.all())
+            libelle = f"{b.lot} – {noms}" if noms else str(b.lot)
+            choix.append((str(b.pk), libelle if b.actif else f"{libelle} (terminé)"))
+        return choix
+
+    def queryset(self, request, queryset):
+        return queryset.filter(bail_id=self.value()) if self.value() else queryset
+
+
 @admin.register(Echeance)
 class EcheanceAdmin(admin.ModelAdmin):
     list_display = ["locataire_et_logement", "echeance_le", "total", "paye", "reste", "statut_colore", "actions_ligne"]
     list_display_links = ["locataire_et_logement"]
-    list_filter = [EcheanceStatutFilter, EnRetardFilter, "bail__lot__bien__proprietaire"]
+    list_filter = [EcheanceStatutFilter, EnRetardFilter, BailEcheanceFilter]
+    filtres_en_liste = ("bail",)  # liste déroulante des baux, à droite
     filtres_caches = ("reglement", "retard")  # remplacés par les raccourcis en haut de la liste
     search_fields = ["bail__lot__designation", "bail__lot__bien__nom", "bail__locataires__nom"]
     date_hierarchy = "periode"

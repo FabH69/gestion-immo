@@ -1188,9 +1188,9 @@ class FiltreLoyersTests(TestCase):
         Paiement.objects.create(echeance=e, date=date(2026, 10, 2), montant=e.total)
         self.client.force_login(User.objects.create_superuser("admin", "a@example.com", "x"))
         page = self.client.get("/admin/patrimoine/echeance/").content.decode()
-        self.assertIn("ATTENTE", page)
-        self.assertNotIn("PAYE", page)
-        self.assertIn("PAYE", self.client.get("/admin/patrimoine/echeance/?reglement=tous").content.decode())
+        self.assertIn("<b>ATTENTE</b>", page)
+        self.assertNotIn("<b>PAYE</b>", page)
+        self.assertIn("<b>PAYE</b>", self.client.get("/admin/patrimoine/echeance/?reglement=tous").content.decode())
 
 
 class ModifierLoyersTests(TestCase):
