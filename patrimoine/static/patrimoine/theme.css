@@ -514,13 +514,9 @@ body.change-list #recherche-globale { visibility: hidden; }
 .bloc-notes textarea { display: block; width: calc(100% - 32px); margin: 12px 16px 16px; min-height: 90px; resize: vertical; border-radius: 10px; padding: 10px 12px; font: inherit; box-sizing: border-box; width: calc(100% - 32px); }
 .bloc-notes #etat-note { font-size: 12px; color: var(--body-quiet-color); font-weight: 400; }
 
-/* Sous-menus : ouverts pour la rubrique en cours, et au survol pour les autres (ordinateur) */
+/* Sous-menus : affichés seulement pour la rubrique en cours */
 .menu-sous-survol { display: none; }
 .menu-bloc.ouvert > .menu-sous-survol { display: flex; }
-@media (hover: hover) and (min-width: 768px) {
-  .menu-bloc:hover > .menu-sous-survol { display: flex; animation: sous-menu .15s ease; }
-}
-@keyframes sous-menu { from { opacity: 0; transform: translateY(-3px); } to { opacity: 1; transform: none; } }
 #barre-laterale a:hover, #barre-laterale a:focus { text-decoration: none !important; }
 /* Accueil : entrées et sorties de locataires */
 .taches-changement .titre-bloc { font-weight: 600; }
