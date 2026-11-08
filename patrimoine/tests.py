@@ -1783,3 +1783,28 @@ class RelancesTests(TestCase):
         r = self.client.get(f"/impayes/{self.bail.pk}/lettre.pdf?niveau=mise_en_demeure")
         self.assertEqual(r["Content-Type"], "application/pdf")
         self.assertEqual(self.bail.relances.count(), 2)
+
+
+class ActualiserAnnonceTests(TestCase):
+    def test_bouton_actualiser(self):
+        from django.contrib.auth.models import User
+
+        from .models import ModeleAnnonce
+
+        self.client.force_login(User.objects.create_superuser("chef", "c@exemple.fr", "x"))
+        proprio = Proprietaire.objects.create(nom="SCI A", type=Proprietaire.Type.SCI_IR)
+        bien = Bien.objects.create(proprietaire=proprio, nom="B", adresse="1 rue", code_postal="69000", ville="Lyon")
+        lot = Lot.objects.create(bien=bien, designation="T2")
+        m = ModeleAnnonce.objects.create(nom="M", lot=lot, texte="Ancien texte")
+        a = Annonce.objects.create(lot=lot, modele=m, loyer_cc=Decimal("600"))
+        m.texte = "Nouveau texte"
+        m.save()
+        r = self.client.get(f"/admin/patrimoine/annonce/{a.pk}/change/")
+        self.assertContains(r, "Actualiser avec le modèle")
+        self.assertNotContains(r, "_addanother")
+        donnees = {"lot": lot.pk, "modele": m.pk, "loyer_cc": "600", "charges": "0", "depot_garantie": str(a.depot_garantie),
+                   "disponible_le": "", "points_forts": "", "titre": a.titre, "texte": a.texte, "_actualiser": "1"}
+        r = self.client.post(f"/admin/patrimoine/annonce/{a.pk}/change/", donnees)
+        self.assertEqual(r.status_code, 302)
+        a.refresh_from_db()
+        self.assertTrue(a.texte.startswith("Nouveau texte"))

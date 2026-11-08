@@ -1572,17 +1572,36 @@ class AnnonceAdmin(LotsALouerMixin, admin.ModelAdmin):
         ) if manque else ""
         photos = format_html_join("", '<img src="{}" title="{}" style="height:80px;border-radius:8px;margin:0 6px 6px 0">',
                                   ((p.image.url, str(p)) for p in obj.lot.photos.all()))
+        actualiser = format_html(
+            '<p><button type="submit" name="_actualiser" value="1" class="button" title="Enregistre la fiche puis refait le titre et le texte '
+            'avec la version actuelle du modèle (et les loyer, dépôt et mentions obligatoires)">Actualiser avec le modèle{}</button></p>',
+            f" « {obj.modele} »" if obj.modele_id else "")
         return format_html(
-            '{}<p><button type="button" class="button" onclick="navigator.clipboard.writeText(document.getElementById(\'id_titre\').value);this.textContent=\'Titre copié\'">Copier le titre</button> '
+            '{}{}<p><button type="button" class="button" onclick="navigator.clipboard.writeText(document.getElementById(\'id_titre\').value);this.textContent=\'Titre copié\'">Copier le titre</button> '
             '<button type="button" class="button" onclick="navigator.clipboard.writeText(document.getElementById(\'id_texte\').value);this.textContent=\'Texte copié\'">Copier le texte</button> '
             '<a class="button" href="{}" target="_blank">Générer le PDF</a> '
             '<a class="button" href="{}">Télécharger les photos (zip)</a> '
             '<a class="button" href="https://www.leboncoin.fr/deposer-une-annonce" target="_blank" rel="noopener">Déposer sur Leboncoin</a></p>'
             '<div>{}</div><p class="help">Leboncoin ne permet pas la publication automatique pour les particuliers : copiez le titre et le texte, puis ajoutez les photos du zip.</p>',
-            alerte, reverse("annonce_pdf", args=[obj.pk]), reverse("photos_zip", args=[obj.lot_id]), photos or "Aucune photo : ajoutez-en dans la fiche du lot.",
+            alerte, actualiser, reverse("annonce_pdf", args=[obj.pk]), reverse("photos_zip", args=[obj.lot_id]), photos or "Aucune photo : ajoutez-en dans la fiche du lot.",
         )
 
-    @admin.action(description="Régénérer le titre et le texte depuis la fiche du lot")
+    def changeform_view(self, request, object_id=None, form_url="", extra_context=None):
+        extra_context = {**(extra_context or {}), "show_save_and_add_another": False}
+        return super().changeform_view(request, object_id, form_url, extra_context)
+
+    def save_model(self, request, obj, form, change):
+        if "_actualiser" in request.POST:
+            obj.titre, obj.texte = "", ""  # refaits au save() d'après le modèle actuel
+        super().save_model(request, obj, form, change)
+
+    def response_change(self, request, obj):
+        if "_actualiser" in request.POST:
+            messages.success(request, "Titre et texte actualisés avec la version actuelle du modèle.")
+            return redirect(request.path)
+        return super().response_change(request, obj)
+
+    @admin.action(description="Actualiser le titre et le texte (modèle actuel ou fiche du lot)")
     def regenerer(self, request, queryset):
         for annonce in queryset:
             annonce.titre = ""
