@@ -28,18 +28,6 @@
   zone.addEventListener("blur", function () { if (zone.dataset.modifie) { clearTimeout(minuteur); enregistrer(); } });
 })();
 </script>
-{% if droits.loyers %}<div class="module carte">
-  <h2>Loyers de {{ tb.mois }}<a class="lien-carte" href="{% url 'admin:patrimoine_echeance_changelist' %}">Tout voir ({{ tb.nb_lignes }})</a></h2>
-  {% for l in tb.lignes %}
-  <a class="ligne-carte" href="{{ l.url }}">
-    <span class="avatar-rond">{{ l.initiales }}</span>
-    <span class="lc-texte"><b>{{ l.lot }}</b><small>{{ l.locataire }} · le {{ l.date|date:"d/m" }}</small></span>
-    <span class="pill {{ l.classe }}">{{ l.total|euros }}{% if l.classe != "ok" %} · {{ l.libelle|lower }}{% endif %}</span>
-  </a>
-  {% empty %}<p class="carte-vide">Les loyers de {{ tb.mois }} ne sont pas encore générés. <a href="{% url 'admin:patrimoine_echeance_changelist' %}">Les générer</a></p>
-  {% endfor %}
-</div>
-{% endif %}
 {% if droits.biens %}<div class="module carte">
   <h2>Logements<a class="lien-carte" href="{% url 'admin:patrimoine_lot_changelist' %}">Tout voir</a></h2>
   <div class="ligne-carte"><span class="lc-texte"><b>{{ tb.nb_loues }} loué{{ tb.nb_loues|pluralize }}</b><small>bail en cours</small></span>{% if tb.nb_courte %}<span class="pill bleu">{{ tb.nb_courte }} en courte durée</span>{% endif %}</div>

@@ -4,8 +4,10 @@
     {% for g in groupes %}
       {% if g.titre %}<div class="menu-groupe">{{ g.titre }}</div>{% endif %}
       {% for l in g.liens %}
+        <div class="menu-bloc{% if l.actif %} ouvert{% endif %}">
         <a href="{{ l.url }}" class="menu-entree{% if l.actif %} actif{% endif %}">{{ l.icone }}<span>{{ l.libelle }}</span>{% if l.pastille %}<span class="menu-pastille">{{ l.pastille }}</span>{% endif %}</a>
-        {% if l.actif and l.sous %}<div class="menu-sous">{% for s in l.sous %}<a href="{{ s.url }}"{% if s.actif %} class="actif"{% endif %}>{{ s.libelle }}</a>{% endfor %}</div>{% endif %}
+        {% if l.sous %}<div class="menu-sous menu-sous-survol">{% for s in l.sous %}<a href="{{ s.url }}"{% if s.actif %} class="actif"{% endif %}>{{ s.libelle }}</a>{% endfor %}</div>{% endif %}
+        </div>
         {% if l.libelle == "Sites utiles" %}<div class="menu-sous menu-sites">{% for site in liens_utiles %}<a href="{{ site.url }}" target="_blank" rel="noopener">{{ site.nom }} ↗</a>{% endfor %}<a href="{% url 'admin:patrimoine_siteutile_add' %}" class="menu-ajout">+ Ajouter un site</a></div>{% endif %}
       {% endfor %}
     {% endfor %}
