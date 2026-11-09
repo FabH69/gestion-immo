@@ -787,7 +787,9 @@ class LocationCourteDureeTests(TestCase):
         self.assertEqual(self.importer(airbnb)[1:], (2, 0, 1))
         r = ReservationLCD.objects.get(reference="HMR5A8FZ39")
         self.assertEqual((r.arrivee, r.depart, r.date_versement), (date(2025, 2, 1), date(2025, 2, 2), date(2025, 2, 3)))
-        self.assertEqual((r.montant_brut, r.commission, r.net), (Decimal("82.00"), Decimal("14.76"), Decimal("67.24")))
+        # Taxe de séjour sortie des frais Airbnb (comme le tableau Excel) : le net versé ne change pas.
+        self.assertEqual((r.montant_brut, r.commission, r.taxe_sejour, r.net),
+                         (Decimal("82.00"), Decimal("13.27"), Decimal("1.49"), Decimal("67.24")))
 
     def test_import_booking_et_airbnb_sans_doublon(self):
         from .models import ParametresLCD, ReservationLCD

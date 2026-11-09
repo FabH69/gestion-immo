@@ -21,7 +21,8 @@ COLONNES = {
     "brut": ["montant brut reservation", "montant brut", "revenus bruts", "gross earnings", "amount", "original amount", "prix"],
     "commission": ["commission", "frais de service", "service fee", "commission amount"],
     "frais": ["frais de service de paiement", "payments service fee", "payment charge", "frais de paiement rapide", "fast pay fee"],
-    "taxe": ["taxe de sejour", "tourism tax", "taxes de sejour", "occupancy taxes", "city tax"],
+    "taxe": ["taxe de sejour", "tourism tax", "taxes de sejour", "taxes reversees par airbnb", "occupancy taxes",
+             "occupancy taxes remitted by airbnb", "city tax"],
     "versement": ["payout date", "date de versement", "date d'emission", "date"],
     "type": ["type", "type de transaction"],
     "nuits": ["nuits", "nights", "nb nuitees"],
@@ -157,6 +158,10 @@ def importer(lot, fichier, nom, plateforme=None):
             "date_versement": _date(get("versement"), jour_en_premier),
             "annulee": "cancel" in statut or "annul" in statut,
         }
+        if plateforme == PLATEFORMES.AIRBNB and valeurs["commission"] >= valeurs["taxe_sejour"]:
+            # Comme le tableau Excel de suivi : brut − commission − taxe de séjour = net versé.
+            # Airbnb ne versant que « brut − frais de service », la taxe est retirée des frais de service.
+            valeurs["commission"] -= valeurs["taxe_sejour"]
         _, cree = ReservationLCD.objects.update_or_create(plateforme=plateforme, reference=reference, defaults=valeurs)
         creees += cree
         mises_a_jour += not cree
