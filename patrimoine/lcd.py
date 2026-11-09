@@ -67,6 +67,21 @@ def _date(valeur, jour_en_premier=True):
     return None
 
 
+def _ordre_des_dates(lignes, colonnes):
+    """Jour d'abord (31/12/2025) ou mois d'abord (12/31/2025, export Airbnb) ? Déduit des valeurs du fichier ;
+    None si aucune date ne permet de trancher."""
+    for ligne in lignes:
+        for c in colonnes:
+            m = re.fullmatch(r"\s*(\d{1,2})/(\d{1,2})/\d{4}.*", str(ligne.get(c) or ""))
+            if m:
+                premier, second = int(m.group(1)), int(m.group(2))
+                if premier > 12:
+                    return True
+                if second > 12:
+                    return False
+    return None
+
+
 def lire_tableau(fichier, nom):
     """Lignes (dictionnaires) d'un fichier CSV ou Excel."""
     if nom.lower().endswith((".xlsx", ".xlsm")):
@@ -115,7 +130,9 @@ def importer(lot, fichier, nom, plateforme=None):
     manquantes = [c for c in ("reference", "arrivee", "brut") if c not in col]
     if manquantes:
         raise ValueError(f"Colonnes introuvables : {', '.join(manquantes)}.")
-    jour_en_premier = any(_norme(h) in ("date de debut", "date d'arrivee", "numero de reference", "code de confirmation") for h in entetes)
+    jour_en_premier = _ordre_des_dates(lignes, [col[c] for c in ("arrivee", "depart", "versement") if c in col])
+    if jour_en_premier is None:
+        jour_en_premier = any(_norme(h) in ("date de debut", "date d'arrivee", "numero de reference") for h in entetes)
 
     creees = mises_a_jour = ignorees = 0
     for ligne in lignes:

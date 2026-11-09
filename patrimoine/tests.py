@@ -776,6 +776,19 @@ class LocationCourteDureeTests(TestCase):
         from . import lcd
         return lcd.importer(self.lot, io.BytesIO(contenu.encode("utf-8")), nom)
 
+    def test_import_airbnb_dates_au_format_americain(self):
+        from .models import ReservationLCD
+        airbnb = ("Date,Arrivée au plus tard le,Type,Code de confirmation,Date de réservation,Date de début,Date de fin,Nuits,Voyageur,Logement,"
+                  "Détails,Code de référence,Devise,Montant,Versé,Frais de service,Frais de Versement sur carte bancaire,Frais de ménage,"
+                  "Frais de gestion,Frais divers,Revenus bruts,Taxes reversées par Airbnb,Année des revenus\n"
+                  "02/03/2025,02/10/2025,Payout,,,,,,,,Transfert,G-X,EUR,,67.24,,,,,,,,\n"
+                  "02/03/2025,,Réservation,HMR5A8FZ39,02/01/2025,02/01/2025,02/02/2025,1,Marion,Studio,,,EUR,67.24,,\"14,76\",,28.00,0.00,0.00,82.00,\"1,49\",2025\n"
+                  "12/24/2025,,Réservation,HMDBD2ZTJC,11/01/2025,12/23/2025,12/25/2025,2,Pierre,Studio,,,EUR,140.01,,\"31,99\",,0.00,28.00,0.00,172.00,\"4,73\",2025\n")
+        self.assertEqual(self.importer(airbnb)[1:], (2, 0, 1))
+        r = ReservationLCD.objects.get(reference="HMR5A8FZ39")
+        self.assertEqual((r.arrivee, r.depart, r.date_versement), (date(2025, 2, 1), date(2025, 2, 2), date(2025, 2, 3)))
+        self.assertEqual((r.montant_brut, r.commission, r.net), (Decimal("82.00"), Decimal("14.76"), Decimal("67.24")))
+
     def test_import_booking_et_airbnb_sans_doublon(self):
         from .models import ParametresLCD, ReservationLCD
         booking = ("Type,Reference number,Check-in,Checkout,Guest name,Reservation status,Currency,Payment status,Tourism tax,Amount,Commission,Payments Service Fee,Net,Payout date\n"
