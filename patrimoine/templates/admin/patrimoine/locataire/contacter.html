@@ -26,6 +26,8 @@
     if (!m) return;
     sujet.value = m.sujet; message.value = m.message;
   });
+  // motif choisi par le lien (ex. « Demander » l'attestation d'assurance depuis la fiche du bail)
+  if (choix.value && !sujet.value && !message.value) choix.dispatchEvent(new Event('change'));
 })();
 </script>
 {% endblock %}

@@ -23,6 +23,7 @@ urlpatterns = [
     path("etats/endettement/", views.etat_endettement, name="etat_endettement"),
     path("prets/<int:pk>/amortissement.pdf", views.document_amortissement, name="document_amortissement"),
     path("baux/<int:pk>/revision/", views.revision_loyer, name="revision_loyer"),
+    path("baux/<int:pk>/depot/<str:sens>/", views.depot_bail, name="depot_bail"),
     path("revisions/<int:pk>/lettre.pdf", views.lettre_revision, name="lettre_revision"),
     path("rappels/<str:type_rappel>/<int:pk>/fait/", views.rappel_fait, name="rappel_fait"),
     path("rappels/<str:type_rappel>/<int:pk>/ne-plus-rappeler/", views.ne_plus_rappeler, name="ne_plus_rappeler"),

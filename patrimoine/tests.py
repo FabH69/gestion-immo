@@ -2332,6 +2332,68 @@ class ControlesTests(TestCase):
         self.assertEqual([c for c, *_ in booking], [f"booking:{lcd.pk}:2026-08"])  # août : Airbnb seulement
 
 
+class FichesTests(TestCase):
+    """Fiches bail, locataire et lot : en-tête, actions, onglets, encart « En bref » ; dépôt Encaisser / Restituer."""
+
+    def setUp(self):
+        proprio = Proprietaire.objects.create(nom="SCI ALFAB", type=Proprietaire.Type.SCI_IR)
+        self.bien = Bien.objects.create(proprietaire=proprio, nom="Vaugneray", adresse="1 rue", code_postal="69670", ville="Vaugneray")
+        self.lot = Lot.objects.create(bien=self.bien, designation="Vaugneray", surface=Decimal("32"))
+        self.bail = Bail.objects.create(lot=self.lot, type=Bail.Type.NU, date_debut=date(2023, 5, 10), loyer_hc=Decimal("560"),
+                                        charges=Decimal("10"), depot_garantie=Decimal("560"))
+        self.loc = Locataire.objects.create(nom="DAGNELIE", prenom="Gael", email="g@example.com")
+        self.bail.locataires.add(self.loc)
+        self.client.force_login(User.objects.create_superuser("admin", "", "x"))
+
+    def test_fiche_bail(self):
+        page = self.client.get(f"/admin/patrimoine/bail/{self.bail.pk}/change/").content.decode()
+        for texte in ("Bail de Vaugneray", "En bref", "Bail PDF", "Déclarer un départ", 'data-onglet="argent"', "570\u00a0€ charges comprises",
+                      "Attestation non reçue", 'name="_continue"', f"/baux/{self.bail.pk}/depot/encaisser/"):
+            self.assertIn(texte, page)
+        self.assertNotIn("Enregistrer et continuer", page)
+        ajout = self.client.get(f"/admin/patrimoine/bail/add/?lot={self.lot.pk}").content.decode()
+        self.assertNotIn("onglets-fiche", ajout)  # création : formulaire d'un seul tenant
+
+    def test_recherche_des_locataires_pour_un_bail(self):
+        libre = Locataire.objects.create(nom="LIBRE")
+        r = self.client.get("/admin/autocomplete/", {"app_label": "patrimoine", "model_name": "bail", "field_name": "locataires", "term": ""})
+        ids = {int(x["id"]) for x in r.json()["results"]}
+        self.assertIn(libre.pk, ids)
+        self.assertNotIn(self.loc.pk, ids)  # déjà sur un bail en cours
+
+    def test_depot_encaisser_puis_restituer(self):
+        from .models import MouvementDepot
+
+        r = self.client.post(f"/baux/{self.bail.pk}/depot/encaisser/", {"date": "2023-05-10", "montant": "560", "mode": "virement"})
+        self.assertRedirects(r, f"/admin/patrimoine/bail/{self.bail.pk}/change/#argent", fetch_redirect_response=False)
+        self.assertEqual(self.bail.depot_detenu, Decimal("560"))
+        r = self.client.post(f"/baux/{self.bail.pk}/depot/restituer/", {"date": "2026-11-09", "montant": "500", "retenue": "100",
+                                                                          "motif": "lampe", "mode": "virement"})
+        self.assertEqual(r.status_code, 200)  # 600 € > 560 € détenus : refusé
+        self.client.post(f"/baux/{self.bail.pk}/depot/restituer/", {"date": "2026-11-09", "montant": "460", "retenue": "100",
+                                                                     "motif": "", "mode": "virement"})
+        self.assertEqual(MouvementDepot.objects.count(), 1)  # retenue sans motif : refusé
+        self.client.post(f"/baux/{self.bail.pk}/depot/restituer/", {"date": "2026-11-09", "montant": "460", "retenue": "100",
+                                                                     "motif": "lampe cassée", "mode": "virement"})
+        self.assertEqual(self.bail.depot_detenu, Decimal("0"))
+        self.assertEqual(MouvementDepot.objects.filter(type="retenue").get().justification, "lampe cassée")
+
+    def test_fiches_locataire_et_lot(self):
+        page = self.client.get(f"/admin/patrimoine/locataire/{self.loc.pk}/change/").content.decode()
+        self.assertIn("Présent", page)
+        self.assertIn("Bail en cours : Vaugneray", page)
+        self.assertIn("Contacter", page)
+        page = self.client.get(f"/admin/patrimoine/lot/{self.lot.pk}/change/").content.decode()
+        self.assertIn("Ouvrir le bail", page)
+        self.assertIn("32\u00a0m²", page)
+        self.assertIn("DPE à compléter", page)
+        self.bail.actif = False
+        self.bail.save()
+        page = self.client.get(f"/admin/patrimoine/lot/{self.lot.pk}/change/").content.decode()
+        self.assertIn(f"/admin/patrimoine/bail/add/?lot={self.lot.pk}", page)  # vacant : « Nouveau bail »
+        self.assertIn("Vacant", page)
+
+
 def timedelta_jours(n):
     from datetime import timedelta
 

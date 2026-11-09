@@ -20,7 +20,9 @@ from ..models import (
     Locataire,
     Lot,
 )
+from .. import fiches
 from .communs import LotsALouerMixin
+from .fiche import FicheMixin
 
 
 class GarantInline(admin.StackedInline):
@@ -54,11 +56,15 @@ class GarantBailInline(GarantInline):
 
 
 class MouvementDepotInline(admin.TabularInline):
+    """Mouvements du dépôt, en lecture : ils se saisissent par « Encaisser » / « Restituer » (une erreur se supprime)."""
     model = MouvementDepot
     fields = ["date", "type", "montant", "mode", "justification", "recu"]
-    readonly_fields = ["recu"]
+    readonly_fields = fields
     extra = 0
-    verbose_name_plural = "Dépôt de garantie (compte séparé)"
+    verbose_name_plural = "Mouvements du dépôt de garantie (compte séparé)"
+
+    def has_add_permission(self, request, obj=None):
+        return False
 
     @admin.display(description="reçu")
     def recu(self, obj):
@@ -162,8 +168,17 @@ class DocumentLocataireInline(admin.TabularInline):
 
 
 @admin.register(Locataire)
-class LocataireAdmin(admin.ModelAdmin):
+class LocataireAdmin(FicheMixin, admin.ModelAdmin):
     form = LocataireForm
+    onglets = [
+        ("general", "Général", ["Identité", "Logement", "Notes"], []),
+        ("documents", "Documents", ["Documents"], ["DocumentLocataireInline"]),
+        ("garants", "Garants", [], ["GarantInline"]),
+        ("sortie", "Départ", ["Sortie du locataire"], []),
+    ]
+
+    def contenu_fiche(self, request, obj):
+        return fiches.fiche_locataire(obj)
     list_display = ["fiche", "statut_present", "contact", "bouton_contacter"]
     list_display_links = ["fiche"]
     list_filter = [PresentFilter, "baux__lot__bien__proprietaire"]
@@ -195,8 +210,8 @@ class LocataireAdmin(admin.ModelAdmin):
             sortie = ("Sortie du locataire", {"fields": ["sortie", "date_sortie", ("nouvelle_rue", "nouveau_code_postal", "nouvelle_ville")],
                                               "classes": ["sortie-locataire", "fiche-compacte"],
                                               "description": "Cochez pour enregistrer le départ : le bail est clôturé et les rappels de fin de bail sont créés (restitution du dépôt de garantie, fin de la garantie Visale)."})
-            return [documents, identite, logement, notes, sortie]
-        return [documents, identite, logement, notes]
+            return self.avec_onglets([identite, logement, notes, documents, sortie], obj)
+        return self.avec_onglets([identite, logement, notes, documents], obj)
 
     @admin.display(description="")
     def encart_documents(self, obj):
@@ -339,6 +354,12 @@ class LocataireAdmin(admin.ModelAdmin):
             return format_html('<span class="quiet">pas d\'e-mail</span>')
         return format_html('<a class="bouton-encaisser" href="{}">Contacter</a>', reverse("admin:patrimoine_locataire_contacter", args=[obj.pk]))
 
+    def get_search_results(self, request, queryset, search_term):
+        qs, doublons = super().get_search_results(request, queryset, search_term)
+        if request.GET.get("model_name") == "bail" and request.GET.get("field_name") == "locataires":
+            qs = qs.exclude(baux__actif=True)  # ajout d'un locataire sur un bail : pas ceux qui ont déjà un bail en cours
+        return qs, doublons
+
     def get_urls(self):
         return [path("<int:pk>/contacter/", self.admin_site.admin_view(self.contacter_view), name="patrimoine_locataire_contacter")] + super().get_urls()
 
@@ -364,7 +385,7 @@ class LocataireAdmin(admin.ModelAdmin):
         contexte = {**self.admin_site.each_context(request), "title": f"Contacter {locataire}", "locataire": locataire,
                     "motifs": motifs, "opts": self.model._meta, "retour": retour,
                     "sujet": request.POST.get("sujet", ""), "message": request.POST.get("message", ""),
-                    "motif_choisi": request.POST.get("motif", "")}
+                    "motif_choisi": request.POST.get("motif") or request.GET.get("motif", "")}
         return render(request, "admin/patrimoine/locataire/contacter.html", contexte)
 
     @admin.display(description="contact")
@@ -385,9 +406,10 @@ class BailForm(forms.ModelForm):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         if "locataires" in self.fields:
-            # seuls les locataires sans bail (nouvellement créés) et ceux déjà sur ce bail sont proposés
+            # seuls les locataires sans bail en cours et ceux déjà sur ce bail sont proposés (recherche par le nom)
             deja = self.instance.locataires.all() if self.instance.pk else Locataire.objects.none()
-            self.fields["locataires"].queryset = (Locataire.objects.filter(baux__isnull=True) | Locataire.objects.filter(pk__in=deja)).distinct()
+            self.fields["locataires"].queryset = (Locataire.objects.exclude(baux__actif=True) | Locataire.objects.filter(pk__in=deja)).distinct()
+            self.fields["locataires"].help_text = "Tapez le nom pour ajouter un locataire (seuls ceux sans bail en cours sont proposés)."
         if "depot_garantie" in self.fields:
             self.fields["depot_garantie"].help_text = ("Maximum légal : 1 mois de loyer hors charges en location nue, 2 mois en meublé, "
                                                        "aucun en bail mobilité. Calculé automatiquement à la saisie du loyer.")
@@ -423,8 +445,33 @@ class BailForm(forms.ModelForm):
 
 
 @admin.register(Bail)
-class BailAdmin(LotsALouerMixin, admin.ModelAdmin):
+class BailAdmin(FicheMixin, LotsALouerMixin, admin.ModelAdmin):
     form = BailForm
+    onglets = [
+        ("general", "Général", [None, "Clauses particulières"], []),
+        ("argent", "Argent", ["Conditions financières", "Réduction temporaire", "Garantie"], ["MouvementDepotInline"]),
+        ("compteurs", "Compteurs", ["Relevés des compteurs"], []),
+        ("revisions", "Révisions", ["Zone tendue", "Révision annuelle et rappels", "Historique des révisions"], []),
+        ("garants", "Garants et documents", ["Documents pré-remplis"], ["GarantBailInline"]),
+        ("historique", "Historique", [], []),
+    ]
+
+    def contenu_fiche(self, request, obj):
+        return fiches.fiche_bail(obj)
+
+    def get_form(self, request, obj=None, **kwargs):
+        form = super().get_form(request, obj, **kwargs)
+        lot = form.base_fields.get("lot")
+        if obj is not None and lot is not None:  # le lot s'ouvre par le lien de l'en-tête : pas d'icônes sous la liste
+            lot.widget.can_add_related = lot.widget.can_change_related = lot.widget.can_delete_related = lot.widget.can_view_related = False
+        return form
+
+    def get_fieldsets(self, request, obj=None):
+        fieldsets = super().get_fieldsets(request, obj)
+        if obj is not None:
+            return [(t, {**o, "description": "Les garants se saisissent dans l'onglet « Garants et documents »."} if t == "Garantie" else o)
+                    for t, o in fieldsets]
+        return fieldsets
 
     class Media:
         js = ["patrimoine/depot_garantie.js", "patrimoine/heures_creuses.js"]
@@ -432,12 +479,12 @@ class BailAdmin(LotsALouerMixin, admin.ModelAdmin):
     list_display_links = ["liste_locataires", "lot"]
     list_filter = [BailEnCoursFilter, "lot__bien__proprietaire"]
     search_fields = ["lot__designation", "lot__bien__nom", "locataires__nom"]
-    filter_horizontal = ["locataires"]
+    autocomplete_fields = ["locataires"]
     date_hierarchy = "date_debut"
-    readonly_fields = ["documents", "recu_depot", "historique"]
+    readonly_fields = ["documents", "etat_depot", "historique"]
     fieldsets = [
-        (None, {"fields": ["lot", "locataires", ("type", "destination"), ("date_debut", "date_fin"), "actif"]}),
-        ("Conditions financières", {"fields": [("loyer_initial", "loyer_hc"), ("charges", "mode_charges"), ("depot_garantie", "recu_depot"), "jour_echeance", "paiement_a_echoir"]}),
+        (None, {"fields": [("lot", "type"), "locataires", ("date_debut", "date_fin"), "destination", "actif"]}),
+        ("Conditions financières", {"fields": [("loyer_initial", "loyer_hc"), ("charges", "mode_charges"), ("depot_garantie", "etat_depot"), "jour_echeance", "paiement_a_echoir"]}),
         ("Réduction temporaire", {"classes": ["identite-lot"], "fields": [("reduction_montant", "reduction_debut", "reduction_fin")],
                                   "description": "Montant déduit du loyer hors charges chaque mois entre ces deux dates (au prorata des jours si la période "
                                                  "commence ou finit en cours de mois). Les loyers non encore réglés sont recalculés à l'enregistrement."}),
@@ -461,11 +508,21 @@ class BailAdmin(LotsALouerMixin, admin.ModelAdmin):
     ]
     inlines = [GarantBailInline, MouvementDepotInline]
 
-    @admin.display(description="reçu")
-    def recu_depot(self, obj):
+    @admin.display(description="détenu aujourd'hui")
+    def etat_depot(self, obj):
+        """Solde du dépôt avec « Encaisser », « Restituer » et le reçu : les mouvements se saisissent ici, pas dans la liste."""
         if not obj.pk:
-            return "Enregistrez le bail pour créer le reçu."
-        return format_html('<a class="button" href="{}">Créer le reçu (Word)</a>', reverse("recu_depot_bail", args=[obj.pk]))
+            return "Enregistrez le bail pour encaisser le dépôt."
+        detenu = obj.depot_detenu
+        boutons = []
+        if detenu < obj.depot_garantie:
+            boutons.append((reverse("depot_bail", args=[obj.pk, "encaisser"]), "button", "Encaisser"))
+        if detenu > 0:
+            boutons.append((reverse("depot_bail", args=[obj.pk, "restituer"]), "button annuler", "Restituer"))
+        if obj.depot_garantie:
+            boutons.append((reverse("recu_depot_bail", args=[obj.pk]), "lien-recu", "Créer le reçu (Word)"))
+        return format_html('<span class="depot-detenu">{}</span>{}', fiches.eur(detenu),
+                           format_html_join("", ' <a class="{1}" href="{0}">{2}</a>', boutons))
 
     @admin.display(description="documents")
     def documents(self, obj):

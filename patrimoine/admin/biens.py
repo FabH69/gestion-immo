@@ -8,6 +8,7 @@ from django.utils.html import format_html
 
 from ..models import Syndic, Bail, Bien, PhotoLot, Lot, Proprietaire
 from .communs import euros_liste
+from .fiche import FicheMixin
 
 
 class BienInline(admin.TabularInline):
@@ -39,10 +40,28 @@ class LotInline(admin.TabularInline):
 
 
 class BailInline(admin.TabularInline):
+    """Baux du lot, en lecture : un bail se modifie sur sa propre fiche (« Modifier » ouvre le bail)."""
     model = Bail
-    fields = ["type", "date_debut", "date_fin", "loyer_hc", "charges", "actif"]
+    fields = ["locataires_du_bail", "type", "date_debut", "date_fin", "loyer", "actif"]
+    readonly_fields = fields
     extra = 0
+    can_delete = False
     show_change_link = True
+    verbose_name_plural = "Baux du logement"
+
+    def has_add_permission(self, request, obj=None):
+        return False
+
+    def get_queryset(self, request):
+        return super().get_queryset(request).prefetch_related("locataires").order_by("-actif", "-date_debut")
+
+    @admin.display(description="locataires")
+    def locataires_du_bail(self, obj):
+        return ", ".join(str(l) for l in obj.locataires.all()) or "–"
+
+    @admin.display(description="loyer CC")
+    def loyer(self, obj):
+        return euros_liste(obj.loyer_cc)
 
 
 @admin.register(Proprietaire)
@@ -201,7 +220,27 @@ class BienAdmin(admin.ModelAdmin):
 
 
 @admin.register(Lot)
-class LotAdmin(admin.ModelAdmin):
+class LotAdmin(FicheMixin, admin.ModelAdmin):
+    onglets = [
+        ("general", "Général", [None, "Notes"], []),
+        ("caracteristiques", "Caractéristiques", ["Caractéristiques (reprises dans le bail)", "Chaudière gaz", "Compteurs", "État des lieux"], []),
+        ("relocation", "Relocation et photos", ["Relocation et annonce"], ["PhotoInline"]),
+        ("baux", "Baux", [], ["BailInline"]),
+        ("vente", "Vente", ["Vente"], []),
+    ]
+
+    def contenu_fiche(self, request, obj):
+        from .. import fiches
+
+        return fiches.fiche_lot(obj)
+
+    def get_form(self, request, obj=None, **kwargs):
+        form = super().get_form(request, obj, **kwargs)
+        bien = form.base_fields.get("bien")
+        if obj is not None and bien is not None:  # le bien s'ouvre par le lien de l'en-tête
+            bien.widget.can_add_related = bien.widget.can_change_related = bien.widget.can_delete_related = bien.widget.can_view_related = False
+        return form
+
     list_display = ["designation", "bien_nom", "type_lot", "surface", "exploitation_pill", "locataire_actuel", "loyer_actuel"]
     list_filter = [VenduFilter, "bien__proprietaire"]
     search_fields = ["designation", "bien__nom"]
