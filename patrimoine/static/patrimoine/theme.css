@@ -370,7 +370,7 @@ a.ligne-carte:hover { background: var(--selected-bg); text-decoration: none; }
 .carte-vide { padding: 14px 16px; color: var(--body-quiet-color); margin: 0; }
 .dashboard .a-faire { margin-bottom: 0 !important; }
 @media (max-width: 1200px) { .kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
-@media (max-width: 1023px) { .grille-accueil { grid-template-columns: 1fr; } .kpi-v { font-size: 21px; } .kpis { gap: 10px; } .kpi { padding: 12px 14px; } }
+@media (max-width: 1023px) { .grille-accueil { grid-template-columns: minmax(0, 1fr); } .kpi-v { font-size: 21px; } .kpis { gap: 10px; } .kpi { padding: 12px 14px; } }
 
 /* listes : résumé chiffré, raccourcis de filtre, cellule personne, bouton Encaisser */
 .resume-liste { display: flex; flex-wrap: wrap; gap: 8px 32px; padding: 14px 16px; border-bottom: 1px solid var(--hairline-color); }
@@ -523,3 +523,9 @@ body.change-list #recherche-globale { visibility: hidden; }
 .taches-changement tr.entete-changement td { background: var(--darkened-bg); padding-top: 12px; }
 .taches-changement tr.entete-changement .detail { display: inline; margin-left: 6px; }
 .taches-changement td.detail { font-size: .82rem; }
+@media (max-width: 767px) {
+  .taches-changement tr.entete-changement { display: block; }
+  .taches-changement tr.entete-changement td { display: block; white-space: normal; }
+  .taches-changement tr.entete-changement .detail { display: block; margin: 2px 0 0; }
+  .taches-changement .pastille-retard { display: inline-block; margin: 4px 0 0; }
+}
