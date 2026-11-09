@@ -154,7 +154,8 @@ def _chemin_facture(instance, nom):
 
 
 class PieceComptable(models.Model):
-    """Facture ou recette d'un bien (comptabilité interne) : codée sur une ligne de l'annexe 2072-S-A1-SD."""
+    """Facture ou recette d'un bien (comptabilité interne) : codée sur une ligne de l'annexe 2072-S-A1-SD (revenus fonciers)
+    ou sur une rubrique (biens en LMNP ou en société)."""
 
     class Ligne(models.TextChoices):
         L2 = "2", "2 · Dépenses du propriétaire mises à la charge des locataires"
@@ -174,6 +175,16 @@ class PieceComptable(models.Model):
 
     RECETTES = {"2", "3"}
 
+    # rubriques des biens en LMNP ou en société (ordre et libellés du tableau de suivi de Fabien)
+    RUBRIQUES = [
+        ("Exploitation", [("commission", "Commission"), ("menage", "Ménage"), ("consommables", "Consommables")]),
+        ("Charges du logement", [("electricite", "Électricité"), ("eau", "Eau"), ("fibre", "Fibre"), ("pno", "PNO"),
+                                 ("copro", "Charges copro"), ("comptable", "Comptable"), ("taxe_fonciere", "Taxe foncière")]),
+        ("Prêt", [("pret", "Rbt prêt"), ("assurance_pret", "Assurance prêt")]),
+        ("Autre", [("autre", "Autre")]),
+    ]
+    LIBELLES_RUBRIQUES = {code: libelle for _, rubriques in RUBRIQUES for code, libelle in rubriques}
+
     bien = models.ForeignKey(Bien, on_delete=models.PROTECT, related_name="pieces_comptables")
     date = models.DateField("date de la facture", null=True, blank=True)
     date_paiement = models.DateField("payée le", null=True, blank=True,
@@ -183,6 +194,11 @@ class PieceComptable(models.Model):
     montant = models.DecimalField("montant TTC (€)", max_digits=10, decimal_places=2, null=True, blank=True)
     ligne = models.CharField("ligne de l'annexe 2072", max_length=4, choices=Ligne.choices, blank=True,
                              help_text="Vide = pièce importée pas encore codifiée (ignorée par l'annexe 2072)")
+    rubrique = models.CharField(max_length=15, choices=[(g, r) for g, r in RUBRIQUES], blank=True,
+                                help_text="Biens en LMNP ou en société : rubrique du récapitulatif")
+    mois_concerne = models.DateField("mois de la prestation", null=True, blank=True,
+                                     help_text="Pour une facture qui couvre un autre mois que sa date (ex. conciergerie de septembre "
+                                               "facturée en octobre) : place le montant dans le bon mois du récapitulatif")
     empreinte = models.CharField(max_length=64, blank=True, db_index=True, editable=False,
                                  help_text="Empreinte SHA-256 du fichier, pour repérer une facture importée deux fois")
     preremplie = models.BooleanField("préremplie automatiquement", default=False, editable=False,
@@ -221,8 +237,17 @@ class PieceComptable(models.Model):
         return h.hexdigest()
 
     @property
+    def par_rubrique(self):
+        """Vrai si la pièce se code en rubrique (bien en LMNP ou en société), faux en revenus fonciers (ligne 2072)."""
+        return bool(self.bien_id) and self.bien.comptabilite in ("lmnp", "societe")
+
+    @property
+    def codification(self):
+        return self.rubrique if self.par_rubrique else self.ligne
+
+    @property
     def a_codifier(self):
-        return self.preremplie or not self.ligne or self.montant is None or self.date is None
+        return self.preremplie or not self.codification or self.montant is None or self.date is None
 
     @property
     def annee(self):

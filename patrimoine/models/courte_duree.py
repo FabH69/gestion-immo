@@ -112,6 +112,9 @@ class ParametresLCD(models.Model):
         "commission de conciergerie (% du revenu net)", max_digits=5, decimal_places=2, default=0,
         help_text="Laisser 0 si vous gérez vous-même",
     )
+    commission_hors_menage = models.BooleanField(
+        "commission calculée après déduction du ménage", default=True,
+        help_text="Comme la facture de la conciergerie : (net versé par la plateforme − ménage) × taux.")
 
     class Meta:
         verbose_name = "paramètres courte durée"

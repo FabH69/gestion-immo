@@ -22,7 +22,7 @@
   <div class="filtres-haut">
     {% if raccourcis %}<div class="groupe-filtre raccourcis">{% for r in raccourcis %}<a href="{{ r.url }}" class="chip{% if r.actif %} actif{% endif %}">{{ r.libelle }}</a>{% endfor %}</div>{% endif %}
     {% for f in filtres %}{% if not f.droite %}{% include "admin/patrimoine/_filtre_haut.html" %}{% endif %}{% endfor %}
-    {% if cl.has_active_filters %}<a class="effacer-filtres" href="{{ cl.clear_all_filters_qs }}">✕ Effacer les filtres</a>{% endif %}
+    {% lien_effacer cl as effacer %}{% if effacer %}<a class="effacer-filtres" href="{{ effacer }}">✕ Effacer les filtres</a>{% endif %}
   </div>
   <div class="filtres-haut filtres-droite">
     {% for f in filtres %}{% if f.droite %}{% include "admin/patrimoine/_filtre_haut.html" %}{% endif %}{% endfor %}

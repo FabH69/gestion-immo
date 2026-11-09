@@ -205,8 +205,11 @@ def biens_lmnp(request):
 
     aujourdhui = timezone.localdate()
     annee = int(request.GET.get("annee") or aujourdhui.year)
-    contexte = {**admin.site.each_context(request), "title": f"Biens en LMNP – {annee}", "annee": annee,
-                "annees": annees_disponibles(), **lmnp.bilan(annee)}
+    from .compta import onglets
+
+    contexte = {**admin.site.each_context(request), "title": f"Bilan LMNP (2031) – {annee}", "annee": annee,
+                "annees": annees_disponibles(), **lmnp.bilan(annee), "onglets": onglets("lmnp", "2031"), "libelle_regime": "LMNP",
+                "lien_regime": reverse("compta_lmnp")}
     return render(request, "patrimoine/lmnp.html", contexte)
 
 
@@ -231,5 +234,9 @@ def annexe_2072(request):
     contexte["tous_les_biens"] = len(biens) == len(biens_sci)
     if request.GET.get("format") == "pdf":
         return _pdf(render_to_string("patrimoine/annexe_2072_pdf.html", contexte), f"2072-S-A1 {annee} {sci.nom if sci else ''}")
+    from .compta import onglets
+
     return render(request, "patrimoine/annexe_2072.html",
-                  {**admin.site.each_context(request), **contexte, "title": f"Annexe 2072-S-A1 – revenus {annee}"})
+                  {**admin.site.each_context(request), **contexte, "title": f"Annexe 2072-S-A1 – revenus {annee}",
+                   "onglets": onglets("foncier", "2072"), "libelle_regime": "Revenus fonciers",
+                   "lien_regime": reverse("admin:patrimoine_piececomptable_changelist") + "?compta=foncier"})

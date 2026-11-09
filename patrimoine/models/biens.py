@@ -102,6 +102,17 @@ class Bien(models.Model):
         help_text="Logement que vous habitez (non loué) : ses prêts sont présentés à part du locatif.")
     vendu = models.BooleanField("bien vendu", default=False)
     date_vente = models.DateField("date de vente", null=True, blank=True)
+
+    class Comptabilite(models.TextChoices):
+        FONCIER = "foncier", "Revenus fonciers (2072 ou 2044)"
+        LMNP = "lmnp", "LMNP (rubriques)"
+        SOCIETE = "societe", "Société à l'IR, BIC (rubriques)"
+        AUCUNE = "", "Aucune (résidence principale)"
+
+    comptabilite = models.CharField(
+        "comptabilité", max_length=10, choices=Comptabilite.choices, default=Comptabilite.FONCIER, blank=True,
+        help_text="Range le bien dans le bon menu Comptabilité et choisit la codification de ses factures : "
+                  "lignes 2072 / 2044 (revenus fonciers) ou rubriques (LMNP, société).")
     notes = models.TextField(blank=True)
 
     EQUIPEMENTS_COMMUNS = ["gardiennage", "ascenseur", "chauffage_collectif", "antenne_tv", "vide_ordures", "interphone",

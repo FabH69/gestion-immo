@@ -92,8 +92,25 @@ def _date(texte):
     return valides[0][1]
 
 
-def analyser(texte):
-    """Propositions trouvées dans le texte : {date, montant, fournisseur, ligne} (clés absentes si rien trouvé)."""
+# biens en LMNP ou en société : (rubrique proposée, mots entiers) ; le premier qui correspond l'emporte
+RUBRIQUES = [
+    ("taxe_fonciere", ["taxe foncière", "taxe fonciere", "avis d'impôt", "avis d'impot", "finances publiques"]),
+    ("copro", ["appel de fonds", "appel de charges", "charges de copropriété", "charges de copropriete", "syndic"]),
+    ("assurance_pret", ["assurance emprunteur", "assurance de prêt", "assurance de pret", "assurance du prêt", "assurance du pret"]),
+    ("pno", ["propriétaire non occupant", "proprietaire non occupant", "pno", "prime d'assurance", "cotisation d'assurance"]),
+    ("comptable", ["expert-comptable", "expert comptable", "comptabilité", "comptabilite", "cga", "centre de gestion"]),
+    ("electricite", ["edf", "engie", "totalenergies", "électricité", "electricite", "kwh"]),
+    ("eau", ["eau potable", "veolia", "suez", "saur", "assainissement", "m3"]),
+    ("fibre", ["fibre", "internet", "livebox", "freebox", "bbox", "sfr box"]),
+    ("menage", ["ménage", "menage", "nettoyage", "pressing", "blanchisserie"]),
+    ("consommables", ["consommables", "papier toilette", "café", "cafe", "produits d'entretien"]),
+    ("commission", ["conciergerie", "commission", "honoraires de gestion"]),
+]
+
+
+def analyser(texte, par_rubrique=False):
+    """Propositions trouvées dans le texte : {date, montant, fournisseur, ligne} (clés absentes si rien trouvé).
+    Pour un bien en LMNP ou en société, une rubrique est proposée à la place de la ligne 2072."""
     resultat = {}
     if not texte or len(texte.strip()) < 20:
         return resultat
@@ -129,6 +146,12 @@ def analyser(texte):
                 resultat["fournisseur"] = l[:60]
                 break
 
+    if par_rubrique:
+        for rubrique, mots in RUBRIQUES:
+            if any(re.search(r"(?<!\w)" + re.escape(m) + r"(?!\w)", bas) for m in mots):
+                resultat["rubrique"] = rubrique
+                break
+        return resultat
     for ligne_2072, mots in LIGNES:
         if any(m in bas for m in mots):
             resultat["ligne"] = ligne_2072

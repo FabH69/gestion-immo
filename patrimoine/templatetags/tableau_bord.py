@@ -95,6 +95,9 @@ ICONES = {
     "prets": '<path d="M3 10 12 4l9 6M5 10v8M9.5 10v8M14.5 10v8M19 10v8M3 21h18"/>',
     "etats": '<path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/>',
     "compta": '<rect x="4" y="2" width="16" height="20" rx="2"/><path d="M8 6h8M8 10h8M8 14h2M12 14h4M8 18h2M12 18h4"/>',
+    "foncier": '<path d="M3 11l9-8 9 8"/><path d="M5 10v10h14V10"/><path d="M10 20v-5h4v5"/>',
+    "lmnp": '<path d="M3 18v-6a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v6"/><path d="M3 15h18M6 10V7a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v3"/>',
+    "societe": '<rect x="4" y="3" width="16" height="18" rx="1"/><path d="M9 7h1M14 7h1M9 11h1M14 11h1M9 15h6"/>',
     "rappels": '<path d="M6 8a6 6 0 1 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/>',
     "modeles": '<path d="M12 20h9M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4z"/>',
     "reglages": '<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>',
@@ -142,13 +145,10 @@ def _menu():
         ("Finances", [
             ("encaissements", "Encaissements", r("suivi_encaissements"), [r("suivi_encaissements")], []),
             ("prets", "Prêts et endettement", a("pret"), [a("pret"), r("etat_endettement")], [("Endettement à une date", r("etat_endettement"))]),
-            ("compta", "Comptabilité SCI", a("piececomptable"), [a("piececomptable"), r("annexe_2072")],
-             [("Factures et pièces", a("piececomptable")), ("Annexe 2072-S-A1", r("annexe_2072"))]),
-            ("etats", "États et LMNP", r("etat_loyers_encaisses"),
-             [r("etat_loyers_encaisses"), r("biens_lmnp"), a("chargelmnp"), r("plus_value")],
-             [("Loyers encaissés", r("etat_loyers_encaisses")), ("Biens en LMNP", r("biens_lmnp")),
-              ("Charges LMNP", a("chargelmnp")), ("Simulation de plus-value", r("plus_value"))]),
+            ("etats", "États", r("etat_loyers_encaisses"), [r("etat_loyers_encaisses"), r("plus_value")],
+             [("Loyers encaissés", r("etat_loyers_encaisses")), ("Simulation de plus-value", r("plus_value"))]),
         ]),
+        ("Comptabilité", _menu_compta()),
         ("Outils", [
             ("rappels", "Rappels", a("rappel"), [a("rappel")], []),
             ("modeles", "Modèles", a("modeledocument"), [a("modeledocument"), a("modeleannonce"), r("liste_champs")],
@@ -163,26 +163,88 @@ def _menu():
     ]
 
 
-@register.inclusion_tag("admin/_menu_lateral.html", takes_context=True)
-def menu_lateral(context):
+def _menu_compta():
+    """Une entrée par comptabilité utilisée : revenus fonciers (SCI et nom propre), LMNP, société (H-INVEST).
+    Une page de factures appartient à l'entrée de son paramètre ?compta=… ; un sous-lien peut exiger un autre module."""
+    from django.urls import reverse as r
+
+    from patrimoine import compta
+
+    factures = r("admin:patrimoine_piececomptable_changelist")
+    conciergerie = r("conciergerie_ajouter")
+    entrees = []
+    for regime in compta.regimes_utilises():
+        f = f"{factures}?compta={regime}"
+        if regime == "foncier":
+            sous = [("Factures", f), ("Annexe 2072 (SCI)", r("annexe_2072"))]
+            if compta.biens_2044().exists():
+                sous.append(("Récapitulatif 2044", r("recap_2044")))
+            entrees.append(("foncier", "Revenus fonciers", f, [f, r("annexe_2072"), r("recap_2044")], sous))
+        else:
+            recap = r(f"compta_{regime}")
+            sous = [("Récapitulatif", recap), ("Factures", f)]
+            prefixes = [recap, f, f"{conciergerie}?compta={regime}"]
+            if regime == "lmnp":
+                sous += [("Bilan LMNP (2031)", r("biens_lmnp"), "etats"),
+                         ("Charges et amortissements", r("admin:patrimoine_chargelmnp_changelist"), "etats")]
+                prefixes += [r("biens_lmnp"), r("admin:patrimoine_chargelmnp_changelist")]
+            entrees.append((regime, compta.libelle(regime), recap, prefixes, sous))
+    return entrees
+
+
+def _parametres_de_la_page(request):
+    """Paramètres de la page, avec ceux de la liste d'origine (_changelist_filters) et le régime de comptabilité
+    d'une facture ouverte directement (fiche, contrôle de conciergerie) : ils choisissent l'entrée active du menu."""
     import re
 
+    from django.http import QueryDict
+
+    if request is None:
+        return {}
+    params = {k: v for k, v in QueryDict(request.GET.get("_changelist_filters", "")).items()}
+    params.update({k: v for k, v in request.GET.items()})
+    if "compta" not in params:
+        m = re.match(r"^/(?:admin/patrimoine/piececomptable|comptabilite/conciergerie)/(\d+)/", request.path)
+        if m:
+            from patrimoine.models import PieceComptable
+
+            regime = PieceComptable.objects.filter(pk=m[1]).values_list("bien__comptabilite", flat=True).first()
+            if regime:
+                params["compta"] = regime
+    return params
+
+
+def _correspond(prefixe, chemin, params):
+    """Le lien correspond-il à la page ? « /chemin$ » : chemin exact ; « /chemin?cle=valeur » : début du chemin et paramètres."""
+    import re
+    from urllib.parse import parse_qsl
+
+    if prefixe.endswith("$"):
+        return bool(re.match(prefixe, chemin))
+    base, _, requete = prefixe.partition("?")
+    return chemin.startswith(base) and all(params.get(k) == v for k, v in parse_qsl(requete))
+
+
+@register.inclusion_tag("admin/_menu_lateral.html", takes_context=True)
+def menu_lateral(context):
     from patrimoine.models import Candidature, Echeance
 
     request = context.get("request")
     chemin = request.path if request else ""
+    params = _parametres_de_la_page(request)
     aujourdhui = timezone.localdate()
     pastilles = {
         "Loyers": Echeance.objects.exclude(statut=Echeance.Statut.PAYE).filter(date_exigibilite__lt=aujourdhui).count(),
         "Candidatures": Candidature.objects.filter(statut=Candidature.Statut.RECUE).count(),
     }
-    from patrimoine import droits
+    from patrimoine import compta, droits
 
     user = context.get("user")
     acces = droits.niveaux(user) if user is not None and user.is_authenticated else {}
     module_du_lien = {"biens": "biens", "locataires": "locataires", "baux": "baux", "loyers": "loyers",
                       "candidatures": "relocation", "annonces": "relocation", "cles": "relocation", "lcd": "lcd",
-                      "encaissements": "finances", "prets": "finances", "compta": "compta", "etats": "etats",
+                      "encaissements": "finances", "prets": "finances", "etats": "etats",
+                      "foncier": "compta", "lmnp": "compta", "societe": "compta",
                       "rappels": "outils", "modeles": "outils", "liens": "outils", "balles": "balles"}
     groupes, actif_trouve = [], False
     for titre, liens in _menu():
@@ -192,9 +254,14 @@ def menu_lateral(context):
                 continue  # Réglages : administrateurs seulement ; le mot de passe reste accessible dans le menu du compte
             if ico in module_du_lien and not acces.get(module_du_lien[ico]):
                 continue
-            actif = any(re.match(p, chemin) if p.endswith("$") else chemin.startswith(p) for p in prefixes)
+            actif = any(_correspond(p, chemin, params) for p in prefixes)
+            pastille = pastilles.get(libelle)
+            if ico in compta.REGIMES:
+                pastille = compta.a_codifier(ico).count()  # factures à codifier de cette comptabilité
+            sous_liens = [{"libelle": s[0], "url": s[1], "actif": _correspond(s[1], chemin, params)}
+                          for s in sous if len(s) < 3 or acces.get(s[2])]
             lignes.append({"icone": icone(ico), "libelle": libelle, "url": url, "actif": actif and not actif_trouve,
-                           "pastille": pastilles.get(libelle), "sous": [{"libelle": l, "url": u, "actif": chemin.startswith(u)} for l, u in sous]})
+                           "pastille": pastille, "pastille_douce": ico in compta.REGIMES, "sous": sous_liens})
             actif_trouve |= actif
         if lignes:
             groupes.append({"titre": titre, "liens": lignes})
@@ -310,6 +377,17 @@ def filtres_haut(cl):
                         "tous": choix[0]["actif"], "avec_titre": any(c["libelle"] in ("Oui", "Non") for c in choix), "droite": chemin.split("__")[-1] == "proprietaire" or getattr(spec, "a_droite", False)})
     return filtres
 
+
+
+@register.simple_tag
+def lien_effacer(cl):
+    """« Effacer les filtres » : garde les filtres cachés (choisis par le menu, comme l'entrée de comptabilité) ;
+    rien à effacer quand seuls ceux-là sont actifs."""
+    if not cl.has_active_filters:
+        return ""
+    caches = set(getattr(cl.model_admin, "filtres_caches", ()))
+    a_retirer = [k for k in cl.get_filters_params() if k not in caches]
+    return cl.get_query_string(remove=a_retirer) if a_retirer else ""
 
 
 @register.simple_tag

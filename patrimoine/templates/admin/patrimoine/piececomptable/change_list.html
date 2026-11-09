@@ -1,4 +1,6 @@
 {% extends "admin/patrimoine/change_list.html" %}
+{% block breadcrumbs %}{% if regime %}{% include "patrimoine/_fil_compta.html" with page_fil="Factures" %}{% else %}{{ block.super }}{% endif %}{% endblock %}
+{% block sous_titre %}{% if onglets %}{% include "patrimoine/_onglets_compta.html" %}{% endif %}{% endblock %}
 {% block object-tools-items %}
   {# un seul bouton principal : l'import accepte une ou plusieurs factures, par glisser-déposer ; « À codifier » est un filtre, l'annexe 2072 est dans le menu #}
   <li><a href="{{ lien_import }}" class="addlink">Ajouter des factures</a></li>

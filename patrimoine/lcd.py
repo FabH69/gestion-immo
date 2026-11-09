@@ -23,7 +23,7 @@ COLONNES = {
     "frais": ["frais de service de paiement", "payments service fee", "payment charge", "frais de paiement rapide", "fast pay fee"],
     "taxe": ["taxe de sejour", "tourism tax", "taxes de sejour", "taxes reversees par airbnb", "occupancy taxes",
              "occupancy taxes remitted by airbnb", "city tax"],
-    "versement": ["payout date", "date de versement", "date d'emission", "date"],
+    "versement": ["payout date", "date de versement", "date du versement", "date d'emission", "date"],
     "type": ["type", "type de transaction"],
     "nuits": ["nuits", "nights", "nb nuitees"],
 }
@@ -216,9 +216,14 @@ def suivi_annuel(lot, annee):
         m["remplissage"] = Decimal(m["nuits"]) / m["jours"] * 100
         m["prix_nuit"] = m["brut"] / m["nuits"] if m["nuits"] else zero
         if parametres:
-            m["gestion"] = (m["net"] * parametres.commission_gestion / 100 + m["sejours"] * (parametres.menage_par_sejour + parametres.consommables_par_sejour))
+            # conciergerie : taux × (net − ménage) ou taux × net, plus ménage et consommables à chaque séjour
+            base = m["net"] - (m["sejours"] * parametres.menage_par_sejour if parametres.commission_hors_menage else zero)
+            m["conciergerie"] = base * parametres.commission_gestion / 100
+            m["menage"] = m["sejours"] * parametres.menage_par_sejour
+            m["consommables"] = m["sejours"] * parametres.consommables_par_sejour
         else:
-            m["gestion"] = zero
+            m["conciergerie"] = m["menage"] = m["consommables"] = zero
+        m["gestion"] = m["conciergerie"] + m["menage"] + m["consommables"]
         m["charges_detail"] = [(c.libelle, c.montant_mensuel) for c in charges if c.active_en(premier, dernier)]
         m["charges"] = sum((v for _, v in m["charges_detail"]), zero)
         m["pret"] = sum((l["mensualite"] + l["assurance"] for p_ in prets for l in p_.echeancier() if premier <= l["date"] <= dernier), zero)

@@ -147,7 +147,8 @@ class BienAdmin(admin.ModelAdmin):
     search_fields = ["nom", "adresse", "ville"]
     inlines = [LotInline]
     fieldsets = [
-        (None, {"fields": ["proprietaire", "nom", "adresse", ("code_postal", "ville"), "syndic", ("date_acquisition", "prix_acquisition")]}),
+        (None, {"fields": ["proprietaire", "nom", "adresse", ("code_postal", "ville"), "syndic", ("date_acquisition", "prix_acquisition"),
+                           "comptabilite"]}),
         ("L'immeuble (repris dans les baux)", {"fields": [("type_habitat", "regime_juridique")]}),
         ("Équipements à usage commun", {"classes": ["cases-a-cocher"], "fields": [
             ("gardiennage", "ascenseur", "interphone", "local_velos"),

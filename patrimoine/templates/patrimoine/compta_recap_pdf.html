@@ -1,0 +1,21 @@
+{% load tableau_bord %}<!doctype html><html lang="fr"><head><meta charset="utf-8"><style>
+@page { size: A4 {% if colonnes|length > 4 %}landscape{% endif %}; margin: 12mm; }
+body { font-family: "DejaVu Sans", Arial, sans-serif; font-size: {% if colonnes|length > 8 %}8{% else %}10{% endif %}px; color: #1f2933; }
+h1 { font-size: 14px; margin: 0 0 2px; } .entete { display: flex; justify-content: space-between; margin-bottom: 10px; }
+{% include "patrimoine/_style_etat.css" %}
+table.etat td small { display: block; color: #777; font-size: .85em; }
+tr.groupe-compta td { text-align: left; font-weight: bold; background: #eef3f6; color: #264b5d; }
+td.estime { color: #777; font-style: italic; }
+.legende { color: #666; margin-top: 8px; }
+</style></head><body>
+<div class="entete"><div><h1>Comptabilité {{ libelle_regime }}{% if bien %} – {{ bien.nom }}{% endif %}</h1>{{ periode|capfirst }}</div><div>Édité le {{ aujourdhui|date:"d/m/Y" }}</div></div>
+<table class="etat">
+  <thead><tr><th class="libelle">Rubrique</th>{% for c in colonnes %}<th>{{ c.titre }}</th>{% endfor %}{% if colonnes|length > 1 %}<th>Total</th>{% endif %}</tr></thead>
+  <tbody>{% for g in groupes %}
+    {% if g.titre %}<tr class="groupe-compta"><td colspan="{{ colonnes|length|add:2 }}">{{ g.titre }}</td></tr>{% endif %}
+    {% for l in g.lignes %}<tr><td class="libelle">{{ l.libelle }}</td>{% for c in l.cases %}<td{% if c.sources == 'E'|make_list %} class="estime"{% endif %}>{% if c.montant %}{% if c.sources == 'E'|make_list %}≈ {% endif %}{{ c.montant|euros:2 }}{% else %}–{% endif %}</td>{% endfor %}{% if colonnes|length > 1 %}<td class="fort">{{ l.total|euros:2 }}</td>{% endif %}</tr>{% endfor %}
+  {% endfor %}</tbody>
+  <tfoot><tr class="total"><td class="libelle">Total des charges</td>{% for t in totaux %}<td>{{ t|euros:2 }}</td>{% endfor %}{% if colonnes|length > 1 %}<td>{{ total|euros:2 }}</td>{% endif %}</tr></tfoot>
+</table>
+<p class="legende">≈ : estimation tirée des charges mensuelles, faute de facture codée pour la rubrique. Rbt prêt : mensualités (capital + intérêts).</p>
+</body></html>

@@ -1,6 +1,6 @@
 """Pages de l'application hors listes et fiches de l'administration.
 
-Rangé par métier : communs.py, loyers.py, documents.py, relocation.py, courte_duree.py, finances.py, outils.py."""
+Rangé par métier : communs.py, loyers.py, documents.py, relocation.py, courte_duree.py, finances.py, compta.py, outils.py."""
 from .communs import _contexte_bail, _etat_csv, _pdf, _reponse_docx, annees_disponibles  # noqa: F401
 from .loyers import (  # noqa: F401
     _dernier_irl_publie,
@@ -55,6 +55,7 @@ from .finances import (  # noqa: F401
     plus_value,
     suivi_encaissements,
 )
+from .compta import compta_recap, conciergerie_ajouter, controle_conciergerie, recap_2044  # noqa: F401
 from .outils import (  # noqa: F401
     _lieu,
     enregistrer_note,

@@ -7,7 +7,8 @@ from django.urls import reverse
 from django.utils import timezone
 from django.utils.html import format_html
 
-from ..models import PieceComptable, Bien, Pret, Proprietaire
+from .. import compta
+from ..models import PieceComptable, Bien, Pret
 from .communs import euros_liste
 
 
@@ -82,15 +83,40 @@ class AnneeFiscaleFilter(admin.SimpleListFilter):
         return queryset
 
 
+def _regime(request):
+    """Régime de comptabilité choisi dans le menu (?compta=…), aussi retrouvé depuis une fiche ouverte depuis la liste."""
+    from django.http import QueryDict
+
+    valeur = request.GET.get("compta") or QueryDict(request.GET.get("_changelist_filters", "")).get("compta", "")
+    return valeur if valeur in compta.REGIMES else ""
+
+
+def _biens_comptables(regime=""):
+    biens = Bien.objects.exclude(comptabilite="").select_related("proprietaire").order_by("proprietaire__nom", "nom")
+    return biens.filter(comptabilite=regime) if regime else biens
+
+
+class ComptabiliteFilter(admin.SimpleListFilter):
+    """Entrée du menu Comptabilité (revenus fonciers, LMNP, société) : choisie par le menu, pas affichée dans la liste."""
+    title = "comptabilité"
+    parameter_name = "compta"
+
+    def lookups(self, request, model_admin):
+        return [(r, compta.libelle(r)) for r in compta.REGIMES]
+
+    def queryset(self, request, queryset):
+        return queryset.filter(bien__comptabilite=self.value()) if self.value() else queryset
+
+
 class BienPieceFilter(admin.SimpleListFilter):
-    """Biens des sociétés ; limités au propriétaire choisi s'il y en a un, sans les biens vendus avant l'année regardée.
-    Affiché sous le filtre propriétaire."""
+    """Biens de l'entrée de comptabilité choisie ; limités au propriétaire choisi s'il y en a un, sans les biens vendus
+    avant l'année regardée. Affiché sous le filtre propriétaire."""
     title = "bien"
     parameter_name = "bien"
     a_droite = True
 
     def lookups(self, request, model_admin):
-        biens = Bien.objects.exclude(proprietaire__type=Proprietaire.Type.NOM_PROPRE).order_by("nom")
+        biens = _biens_comptables(_regime(request))
         # un bien vendu disparaît de la liste à partir de l'année qui suit sa vente (année filtrée, sinon année en cours)
         annee = request.GET.get("annee", "")
         annee = int(annee) if annee.isdigit() else timezone.localdate().year
@@ -103,15 +129,25 @@ class BienPieceFilter(admin.SimpleListFilter):
         return queryset.filter(bien_id=self.value()) if self.value() else queryset
 
 
+class RubriqueFilter(admin.SimpleListFilter):
+    title = "rubrique"
+    parameter_name = "rubrique"
+
+    def lookups(self, request, model_admin):
+        return list(PieceComptable.LIBELLES_RUBRIQUES.items())
+
+    def queryset(self, request, queryset):
+        return queryset.filter(rubrique=self.value()) if self.value() else queryset
+
+
 class ACodifierFilter(admin.SimpleListFilter):
     title = "codification"
     parameter_name = "a_codifier"
+    MANQUE = compta.MANQUE  # ligne 2072 pour les revenus fonciers, rubrique pour le LMNP et la société
 
     def lookups(self, request, model_admin):
-        nombre = PieceComptable.objects.filter(self.MANQUE).count()
+        nombre = compta.a_codifier(_regime(request) or None).count()
         return [("oui", f"À codifier ({nombre})" if nombre else "À codifier"), ("non", "Codifiées")]
-
-    MANQUE = Q(preremplie=True) | Q(ligne="") | Q(montant__isnull=True) | Q(date__isnull=True)
 
     def queryset(self, request, queryset):
         if self.value() == "oui":
@@ -140,9 +176,9 @@ class ImportFacturesForm(forms.Form):
     fichiers = ChampFichiersMultiples(label="factures (PDF ou photos)", required=False,
                                widget=EntreeFichiersMultiples(attrs={"accept": ".pdf,.jpg,.jpeg,.png,.heic"}))
 
-    def __init__(self, *args, **kwargs):
+    def __init__(self, *args, regime="", **kwargs):
         super().__init__(*args, **kwargs)
-        self.fields["bien"].queryset = Bien.objects.exclude(proprietaire__type=Proprietaire.Type.NOM_PROPRE).order_by("proprietaire__nom", "nom")
+        self.fields["bien"].queryset = _biens_comptables(regime)
         self.fields["bien"].label_from_instance = lambda b: f"{b.proprietaire.nom} – {b.nom}"
 
 
@@ -152,14 +188,18 @@ class PieceComptableForm(forms.ModelForm):
         fields = "__all__"
         widgets = {"date": forms.DateInput(attrs={"type": "date"}, format="%Y-%m-%d"),
                    "date_paiement": forms.DateInput(attrs={"type": "date"}, format="%Y-%m-%d"),
+                   "mois_concerne": forms.DateInput(attrs={"type": "date"}, format="%Y-%m-%d"),
                    "notes": forms.Textarea(attrs={"rows": 2})}
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         if "bien" in self.fields:
-            # biens des sociétés (l'annexe 2072 concerne les SCI)
-            self.fields["bien"].queryset = Bien.objects.exclude(proprietaire__type=Proprietaire.Type.NOM_PROPRE).order_by("proprietaire__nom", "nom")
+            self.fields["bien"].queryset = _biens_comptables()
             self.fields["bien"].label_from_instance = lambda b: f"{b.proprietaire.nom} – {b.nom}"
+        # tableau de codification : chaque ligne ne propose que la codification de son bien (ligne 2072 ou rubrique)
+        if self.instance.pk and self.instance.bien_id and "ligne" in self.fields and "rubrique" in self.fields:
+            inutile = "ligne" if self.instance.par_rubrique else "rubrique"
+            self.fields[inutile].widget = forms.HiddenInput()
 
     def clean_fichier(self):
         f = self.cleaned_data.get("fichier")
@@ -174,38 +214,59 @@ class PieceComptableForm(forms.ModelForm):
 
 @admin.register(PieceComptable)
 class PieceComptableAdmin(admin.ModelAdmin):
+    """Factures des trois comptabilités : la liste s'ouvre depuis le menu sur une entrée (?compta=foncier, lmnp ou societe)
+    et ne montre que sa codification (ligne 2072 ou rubrique)."""
     form = PieceComptableForm
-    list_display = ["date_affichee", "bien", "fournisseur", "libelle", "ligne_courte", "montant_affiche", "piece"]
     list_display_links = ["date_affichee", "libelle"]
     filtres_en_liste = ("bien__proprietaire",)  # propriétaire en liste déroulante, comme le bien
-    list_filter = [ACodifierFilter, AnneeFiscaleFilter, "bien__proprietaire", BienPieceFilter, "ligne"]
+    filtres_caches = ("compta",)  # choisie par le menu
     search_fields = ["fournisseur", "libelle", "bien__nom", "notes"]
-    # mode « codifier » (liste filtrée sur les pièces à codifier) : tout se complète directement dans le tableau
-    LISTE_CODIFIER = ["piece", "etat_lecture", "bien", "date", "date_paiement", "fournisseur", "libelle", "montant", "ligne"]
     fieldsets = [
-        (None, {"classes": ["identite-lot"], "fields": ["bien", ("date", "date_paiement"), ("fournisseur", "montant"), "libelle", "ligne", "fichier", "notes"],
-                "description": "Chaque facture alimente la ligne choisie de l'annexe 2072-S-A1 (Comptabilité SCI › Annexe 2072), "
-                               "pour l'année de son paiement. Les loyers, le forfait de 20 € par local et les intérêts d'emprunt "
-                               "sont calculés automatiquement : inutile de les saisir ici."}),
+        (None, {"classes": ["identite-lot"], "fields": ["bien", ("date", "date_paiement"), ("fournisseur", "montant"), "libelle", "ligne",
+                                                        ("rubrique", "mois_concerne"), "fichier", "notes"],
+                "description": "Revenus fonciers : la facture alimente la ligne choisie de l'annexe 2072 (ou du récapitulatif 2044), "
+                               "pour l'année de son paiement ; loyers, forfait de 20 € par local et intérêts d'emprunt sont calculés "
+                               "automatiquement. LMNP et société : la facture alimente sa rubrique dans le récapitulatif."}),
     ]
 
     def _codifier(self, request):
         return request.GET.get("a_codifier") == "oui"
 
+    def _champs_codification(self, request):
+        regime = _regime(request)
+        return {"foncier": ["ligne"], "lmnp": ["rubrique"], "societe": ["rubrique"]}.get(regime, ["ligne", "rubrique"])
+
+    def _liste_codifier(self, request):
+        return ["piece", "etat_lecture", "bien", "date", "date_paiement", "fournisseur", "libelle", "montant"] + self._champs_codification(request)
+
+    def get_list_filter(self, request):
+        regime = _regime(request)
+        codif = {"foncier": ["ligne"], "lmnp": [RubriqueFilter], "societe": [RubriqueFilter]}.get(regime, ["ligne", RubriqueFilter])
+        return [ComptabiliteFilter, ACodifierFilter, AnneeFiscaleFilter, "bien__proprietaire", BienPieceFilter] + codif
+
     def get_list_display(self, request):
-        return self.LISTE_CODIFIER if self._codifier(request) else self.list_display
+        if self._codifier(request):
+            return self._liste_codifier(request)
+        codif = {"foncier": "ligne_courte", "lmnp": "rubrique_courte", "societe": "rubrique_courte"}.get(_regime(request), "codification")
+        return ["date_affichee", "bien", "fournisseur", "libelle", codif, "montant_affiche", "piece"]
 
     def get_list_display_links(self, request, list_display):
         return None if self._codifier(request) else self.list_display_links
 
     def get_changelist_instance(self, request):
-        self.list_editable = self.LISTE_CODIFIER[2:] if self._codifier(request) else ()
+        self.list_editable = self._liste_codifier(request)[2:] if self._codifier(request) else ()
         return super().get_changelist_instance(request)
 
     def get_changelist_formset(self, request, **kwargs):
         # tableau de codification : listes simples (sans les icônes d'ajout / modification du bien)
-        self.list_editable = self.LISTE_CODIFIER[2:] if self._codifier(request) else ()
+        self.list_editable = self._liste_codifier(request)[2:] if self._codifier(request) else ()
         return forms.modelformset_factory(self.model, form=PieceComptableForm, fields=self.list_editable, extra=0)
+
+    def get_fieldsets(self, request, obj=None):
+        # la fiche ne montre que la codification du bien (les deux pour une nouvelle pièce, le choix du bien les départage)
+        regime = (obj.bien.comptabilite if obj and obj.bien_id else "") or _regime(request)
+        retirer = {"foncier": {("rubrique", "mois_concerne")}, "lmnp": {"ligne"}, "societe": {"ligne"}}.get(regime, set())
+        return [(t, {**o, "fields": [c for c in o["fields"] if c not in retirer]}) for t, o in self.fieldsets]
 
     def get_urls(self):
         from django.urls import path
@@ -217,13 +278,17 @@ class PieceComptableAdmin(admin.ModelAdmin):
 
         from django.core.exceptions import ValidationError
 
-        form = ImportFacturesForm(request.POST or None, request.FILES or None)
+        from .. import conciergerie
+
+        regime = _regime(request) or request.POST.get("compta", "")
+        form = ImportFacturesForm(request.POST or None, request.FILES or None, regime=regime)
         if request.method == "POST" and form.is_valid() and not request.FILES.getlist("fichiers"):
             form.add_error("fichiers", "Choisissez au moins une facture.")
         if request.method == "POST" and form.is_valid():
             from ..lecture_factures import analyser, texte_pdf
 
-            crees, lues, refuses, doublons, vus = 0, 0, [], [], set()
+            bien = form.cleaned_data["bien"]
+            crees, lues, refuses, doublons, vus, controles = 0, 0, [], [], set(), []
             for f in request.FILES.getlist("fichiers"):
                 empreinte = PieceComptable.calculer_empreinte(f)
                 deja = PieceComptable.objects.filter(empreinte=empreinte).select_related("bien").first()
@@ -232,9 +297,17 @@ class PieceComptableAdmin(admin.ModelAdmin):
                     doublons.append(f.name + quand)
                     continue
                 vus.add(empreinte)
-                piece = PieceComptable(empreinte=empreinte, bien=form.cleaned_data["bien"], libelle=Path(f.name).stem.replace("_", " ")[:200], fichier=f)
-                if f.name.lower().endswith(".pdf"):
-                    propositions = analyser(texte_pdf(f))
+                texte = texte_pdf(f) if f.name.lower().endswith(".pdf") else ""
+                # facture de conciergerie d'un logement en courte durée : contrôlée et répartie en rubriques
+                lot_courte = next((l for l in bien.lots.all() if l.exploitation == "courte"), None) if bien.comptabilite in compta.PAR_RUBRIQUE else None
+                if lot_courte and conciergerie.est_une_facture(texte):
+                    principale = conciergerie.enregistrer(lot_courte, f, texte)
+                    controles.append(principale)
+                    crees += 1
+                    continue
+                piece = PieceComptable(empreinte=empreinte, bien=bien, libelle=Path(f.name).stem.replace("_", " ")[:200], fichier=f)
+                if texte:
+                    propositions = analyser(texte, par_rubrique=bien.comptabilite in compta.PAR_RUBRIQUE)
                     for champ, valeur in propositions.items():
                         setattr(piece, champ, valeur)
                     if propositions:
@@ -247,19 +320,28 @@ class PieceComptableAdmin(admin.ModelAdmin):
                     continue
                 piece.save()
                 crees += 1
-            if crees:
+            codif = "rubrique" if bien.comptabilite in compta.PAR_RUBRIQUE else "ligne 2072"
+            if crees - len(controles):
                 lu = (f" Pour {lues} d'entre elles, les champs ont été lus dans le PDF : vérifiez-les." if lues else "")
-                messages.success(request, f"{crees} facture{'s' if crees > 1 else ''} importée{'s' if crees > 1 else ''} : "
-                                          "complétez date, montant et ligne 2072 dans le tableau, puis Enregistrer." + lu)
+                n = crees - len(controles)
+                messages.success(request, f"{n} facture{'s' if n > 1 else ''} importée{'s' if n > 1 else ''} : "
+                                          f"complétez date, montant et {codif} dans le tableau, puis Enregistrer." + lu)
             if refuses:
                 messages.error(request, "Format non accepté (PDF, JPG, PNG ou HEIC) : " + ", ".join(refuses))
             if doublons:
                 messages.warning(request, f"{len(doublons)} facture{'s' if len(doublons) > 1 else ''} déjà présente{'s' if len(doublons) > 1 else ''}, "
                                           "non importée" + ("s" if len(doublons) > 1 else "") + " : " + " ; ".join(doublons))
-            return redirect(reverse("admin:patrimoine_piececomptable_changelist") + ("?a_codifier=oui" if crees else ""))
+            if len(controles) == 1 and crees == 1:
+                return redirect("controle_conciergerie", pk=controles[0].pk)
+            for p in controles:
+                messages.info(request, f"Facture de conciergerie contrôlée et répartie en rubriques : {p.libelle}.")
+            suite = f"?compta={bien.comptabilite}" + ("&a_codifier=oui" if crees - len(controles) else "")
+            return redirect(reverse("admin:patrimoine_piececomptable_changelist") + suite)
         return render(request, "admin/patrimoine/piececomptable/import.html",
-                      {**self.admin_site.each_context(request), "form": form, "opts": self.model._meta,
-                       "title": "Importer des factures"})
+                      {**self.admin_site.each_context(request), "form": form, "opts": self.model._meta, "regime": regime,
+                       "libelle_regime": compta.libelle(regime) if regime else "", "title": "Ajouter des factures",
+                       "par_rubrique": regime in compta.PAR_RUBRIQUE,
+                       "lien_factures": reverse("admin:patrimoine_piececomptable_changelist") + (f"?compta={regime}" if regime else "")})
 
     actions = ["valider_preremplies"]
 
@@ -289,6 +371,16 @@ class PieceComptableAdmin(admin.ModelAdmin):
         return format_html('<span class="pill gris" title="{}">{}</span>', obj.get_ligne_display(),
                            "non déd." if obj.ligne == "non" else ("9 bis" if obj.ligne == "9b" else obj.ligne))
 
+    @admin.display(description="rubrique", ordering="rubrique")
+    def rubrique_courte(self, obj):
+        if not obj.rubrique:
+            return "–"
+        return format_html('<span class="pill gris">{}</span>', obj.get_rubrique_display())
+
+    @admin.display(description="codification")
+    def codification(self, obj):
+        return self.rubrique_courte(obj) if obj.par_rubrique else self.ligne_courte(obj)
+
     @admin.display(description="montant", ordering="montant")
     def montant_affiche(self, obj):
         return euros_liste(obj.montant) if obj.montant is not None else "–"
@@ -301,8 +393,29 @@ class PieceComptableAdmin(admin.ModelAdmin):
         return format_html('<a href="{}" target="_blank" class="apercu-piece" data-image="{}">{}</a>',
                            obj.fichier.url, "1" if image else "", "Photo" if image else "PDF")
 
+    def get_queryset(self, request):
+        return super().get_queryset(request).select_related("bien")
+
     def changelist_view(self, request, extra_context=None):
-        extra_context = {**(extra_context or {}), "lien_2072": reverse("annexe_2072"),
-                         "lien_import": reverse("admin:patrimoine_piececomptable_import"),
-                         "nb_a_codifier": PieceComptable.objects.filter(ACodifierFilter.MANQUE).count()}
+        regime = _regime(request)
+        lien_import = reverse("admin:patrimoine_piececomptable_import") + (f"?compta={regime}" if regime else "")
+        extra_context = {**(extra_context or {}), "lien_2072": reverse("annexe_2072"), "lien_import": lien_import,
+                         "regime": regime, "libelle_regime": compta.libelle(regime) if regime else "",
+                         "nb_a_codifier": compta.a_codifier(regime or None).count()}
+        if regime:
+            from ..views.compta import onglets
+
+            extra_context["title"] = f"Factures · {compta.libelle(regime)}"
+            extra_context["onglets"] = onglets(regime, "codifier" if self._codifier(request) else "factures")
+            extra_context["lien_regime"] = reverse(f"compta_{regime}") if regime in compta.PAR_RUBRIQUE else ""
         return super().changelist_view(request, extra_context)
+
+    def changeform_view(self, request, object_id=None, form_url="", extra_context=None):
+        biens = {str(b.pk): b.comptabilite for b in Bien.objects.only("pk", "comptabilite")}
+        regime = _regime(request)
+        if object_id and not regime:
+            regime = PieceComptable.objects.filter(pk=object_id).values_list("bien__comptabilite", flat=True).first() or ""
+        extra_context = {**(extra_context or {}), "regimes_des_biens": biens, "regime": regime,
+                         "libelle_regime": compta.libelle(regime) if regime else "",
+                         "lien_factures": reverse("admin:patrimoine_piececomptable_changelist") + (f"?compta={regime}" if regime else "")}
+        return super().changeform_view(request, object_id, form_url, extra_context)

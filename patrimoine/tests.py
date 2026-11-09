@@ -369,7 +369,7 @@ class RappelsEtRevisionTests(TestCase):
                 SimpleUploadedFile("facture_plombier.pdf", b"%PDF-1"), SimpleUploadedFile("taxe.pdf", b"%PDF-2"),
                 SimpleUploadedFile("virus.exe", b"x")]})
             self.assertEqual(r.status_code, 302, r.context["form"].errors if r.context and "form" in r.context else r.content[:300])
-            self.assertEqual(r["Location"], "/admin/patrimoine/piececomptable/?a_codifier=oui")
+            self.assertEqual(r["Location"], "/admin/patrimoine/piececomptable/?compta=foncier&a_codifier=oui")
             self.assertEqual(PieceComptable.objects.count(), 2)
             self.assertTrue(all(p.a_codifier for p in PieceComptable.objects.all()))
             colonne(bien, 2026)  # les pièces à codifier sont ignorées sans erreur
@@ -1734,7 +1734,7 @@ class DroitsTests(TestCase):
         r = self.client.get("/admin/")
         self.assertContains(r, "Biens et lots")
         self.assertContains(r, "Créer une quittance")
-        self.assertNotContains(r, "Comptabilité SCI")
+        self.assertNotContains(r, "Revenus fonciers")  # pas d'accès à la comptabilité
         self.assertNotContains(r, "Capital restant dû")
         self.assertNotContains(r, "Réglages")
 
@@ -1969,3 +1969,158 @@ class VocabulaireEtListesTests(TestCase):
     def test_dates_au_format_court(self):
         from django.utils import formats
         self.assertEqual(formats.date_format(date(2026, 6, 3)), "03/06/2026")
+
+
+FACTURE_CONCIERGERIE = """Facture n° 2026-10-FAC999
+Date de facturation : 05/10/2026
+DESCRIPTION
+Réservation du 4 au 6 septembre Airbnb
+Honoraire 85.14 € x 20% = 17.03 €
+Frais de ménage 28 €
+Consommable 2 €
+1
+unité
+47,03
+€ TTC
+Réservation du 22 au 23 septembre Booking
+Honoraire 56.99 x 20% = 12.40 €
+Frais de ménage 28
+Consommable 2 €
+1
+unité
+42,40
+€ TTC
+Réservation 15 a 20 septembre direct
+Honoraire 305 € x 20% = 61 €
+Frais de ménage 28 €
+Consommable 2 €
+1
+unité
+91,00
+€ TTC
+Conciergerie Exemple
+Total TTC à régler
+180,43
+€"""
+
+
+class ComptaEtConciergerieTests(TestCase):
+    """Comptabilité par régime (menu, récapitulatif par rubrique) et contrôle de la facture de la conciergerie."""
+
+    def setUp(self):
+        import shutil
+        import tempfile
+
+        from django.test import override_settings
+
+        from .models import ParametresLCD, ReservationLCD
+
+        prive = tempfile.mkdtemp()
+        reglage = override_settings(PRIVE_ROOT=prive)
+        reglage.enable()
+        self.addCleanup(reglage.disable)
+        self.addCleanup(shutil.rmtree, prive, True)
+        proprio = Proprietaire.objects.create(nom="Fabien", type=Proprietaire.Type.NOM_PROPRE)
+        self.bien = Bien.objects.create(proprietaire=proprio, nom="Chasselay", adresse="1 rue", code_postal="69380", ville="Chasselay",
+                                        comptabilite="lmnp")
+        self.lot = Lot.objects.create(bien=self.bien, designation="Studio", meuble=True, exploitation="courte")
+        ParametresLCD.objects.create(lot=self.lot, menage_par_sejour=28, consommables_par_sejour=2, commission_gestion=20)
+        ReservationLCD.objects.create(lot=self.lot, plateforme="airbnb", reference="HM1", arrivee=date(2026, 9, 4), depart=date(2026, 9, 6),
+                                      montant_brut=Decimal("113.14"))
+        ReservationLCD.objects.create(lot=self.lot, plateforme="booking", reference="B1", arrivee=date(2026, 9, 22), depart=date(2026, 9, 23),
+                                      montant_brut=Decimal("100.00"), commission=Decimal("15.01"))
+        ReservationLCD.objects.create(lot=self.lot, plateforme="airbnb", reference="HM2", arrivee=date(2026, 9, 27), depart=date(2026, 9, 29),
+                                      montant_brut=Decimal("150.00"))
+        self.client.force_login(User.objects.create_superuser("admin", "", "x"))
+        self._pdfs = {}
+
+    def pdf(self, texte=FACTURE_CONCIERGERIE, nom="facture-conciergerie.pdf"):
+        from django.core.files.uploadedfile import SimpleUploadedFile
+        from django.utils.html import escape
+        from weasyprint import HTML
+
+        if texte not in self._pdfs:  # le même PDF à chaque fois (WeasyPrint y inscrit l'heure de création)
+            html = "".join(f"<p style='margin:0'>{escape(l)}</p>" for l in texte.splitlines())
+            self._pdfs[texte] = HTML(string=html).write_pdf()
+        return SimpleUploadedFile(nom, self._pdfs[texte], content_type="application/pdf")
+
+    def test_lecture_et_controle(self):
+        from . import conciergerie
+
+        facture = conciergerie.lire(FACTURE_CONCIERGERIE)
+        self.assertEqual((facture["numero"], facture["date"], facture["total_ttc"]), ("2026-10-FAC999", date(2026, 10, 5), Decimal("180.43")))
+        self.assertEqual([(l["jour_arrivee"], l["plateforme"]) for l in facture["lignes"]], [(4, "airbnb"), (22, "booking"), (15, "direct")])
+        r = conciergerie.controler(self.lot, facture)
+        etats = [l["etat"] for l in r["lignes"]]
+        self.assertEqual(etats, ["ok", "alerte", "alerte"])
+        self.assertIn("Honoraire : 12,40 € facturés pour 56,99 € × 20 % = 11,40 €.", [n[1] for n in r["lignes"][1]["notes"]])
+        self.assertIn("réservation directe", r["lignes"][2]["notes"][0][1])
+        self.assertEqual([x.reference for x in r["non_facturees"]], ["HM2"])  # séjour du mois oublié sur la facture
+        self.assertEqual(r["mois"], date(2026, 9, 1))
+        self.assertEqual(r["totaux"]["ttc"], Decimal("180.43"))
+
+    def test_depot_enregistrement_et_rapport(self):
+        from . import compta
+        from .models import PieceComptable
+
+        r = self.client.post("/comptabilite/conciergerie/", {"compta": "lmnp", "lot": self.lot.pk, "fichier": self.pdf()})
+        principale = PieceComptable.objects.get(rubrique="commission")
+        self.assertRedirects(r, f"/comptabilite/conciergerie/{principale.pk}/")
+        self.assertEqual(principale.montant, Decimal("90.43"))
+        self.assertEqual({p.rubrique: p.montant for p in PieceComptable.objects.all()},
+                         {"commission": Decimal("90.43"), "menage": Decimal("84.00"), "consommables": Decimal("6.00")})
+        self.assertTrue(all(p.mois_concerne == date(2026, 9, 1) for p in PieceComptable.objects.all()))
+        rapport = self.client.get(r["Location"]).content.decode()
+        self.assertIn("2 anomalies", rapport)
+        self.assertIn("ajoute la réservation directe", rapport)
+        self.assertIn("Séjours du mois absents de la facture", rapport)
+        # la même facture déposée une seconde fois : pas de doublon, retour au rapport
+        r = self.client.post("/comptabilite/conciergerie/", {"compta": "lmnp", "lot": self.lot.pk, "fichier": self.pdf()})
+        self.assertRedirects(r, f"/comptabilite/conciergerie/{principale.pk}/")
+        self.assertEqual(PieceComptable.objects.count(), 3)
+        # dans le récapitulatif, la facture remplace l'estimation du ménage de septembre
+        rec = compta.recapitulatif("lmnp", 2026, par_mois=True)
+        menage = next(l for g in rec["groupes"] for l in g["lignes"] if l["code"] == "menage")
+        self.assertEqual(menage["cases"][8]["montant"], Decimal("84.00"))
+        self.assertEqual(menage["cases"][8]["sources"], ["F"])
+
+    def test_import_general_reconnait_la_conciergerie(self):
+        from .models import PieceComptable
+
+        r = self.client.post("/admin/patrimoine/piececomptable/import/", {"compta": "lmnp", "bien": self.bien.pk, "fichiers": [self.pdf()]})
+        principale = PieceComptable.objects.get(rubrique="commission")
+        self.assertRedirects(r, f"/comptabilite/conciergerie/{principale.pk}/")
+
+    def test_menu_et_pages(self):
+        foncier = Bien.objects.create(proprietaire=Proprietaire.objects.create(nom="SCI A", type=Proprietaire.Type.SCI_IR),
+                                      nom="Immeuble", adresse="2 rue", code_postal="69000", ville="Lyon")
+        from .models import PieceComptable
+        PieceComptable.objects.create(bien=foncier, libelle="Sans ligne", montant=Decimal("10"), date=date(2026, 1, 1))
+        PieceComptable.objects.create(bien=self.bien, libelle="Sans rubrique", montant=Decimal("10"), date=date(2026, 1, 1))
+        page = self.client.get("/comptabilite/lmnp/?annee=2026").content.decode()
+        self.assertIn("Comptabilité LMNP", page)
+        self.assertIn('class="menu-entree actif"', page.split("LMNP</span>")[0].rsplit("<a", 1)[1])
+        self.assertIn("Revenus fonciers", page)
+        self.assertIn("Commission", page)
+        self.assertIn("1 facture à codifier", page)
+        self.assertIn("Contrôle conciergerie", page)
+        mensuel = self.client.get("/comptabilite/lmnp/?annee=2026&vue=mois").content.decode()
+        self.assertIn("sept.", mensuel)
+        self.assertEqual(self.client.get("/comptabilite/lmnp/?format=pdf")["Content-Type"], "application/pdf")
+        factures = self.client.get("/admin/patrimoine/piececomptable/?compta=foncier").content.decode()
+        self.assertIn("Factures · Revenus fonciers", factures)
+        self.assertIn("Sans ligne", factures)
+        self.assertNotIn("Sans rubrique", factures)
+        self.assertNotIn("Effacer les filtres", factures)  # le choix du menu n'est pas un filtre à effacer
+        for url in ("/comptabilite/2044/", "/comptabilite/societe/", "/comptabilite/conciergerie/?compta=lmnp",
+                    "/admin/patrimoine/piececomptable/import/?compta=lmnp", "/lmnp/", "/admin/patrimoine/chargelmnp/"):
+            self.assertEqual(self.client.get(url).status_code, 200, url)
+
+    def test_droits(self):
+        from . import droits
+
+        aide = User.objects.create_user("aide", password="x", is_staff=True)
+        droits.appliquer(aide, {"loyers": droits.CONSULTATION})
+        self.client.force_login(aide)
+        self.assertEqual(self.client.get("/comptabilite/lmnp/").status_code, 403)
+        self.assertEqual(self.client.get("/comptabilite/conciergerie/").status_code, 403)

@@ -1,6 +1,6 @@
 {% extends "admin/base_site.html" %}
 {% load tableau_bord %}
-{% block breadcrumbs %}<div class="breadcrumbs"><a href="{% url 'admin:index' %}">Accueil</a> › <a href="{% url 'etat_loyers_encaisses' %}">États et LMNP</a> › Biens en LMNP</div>{% endblock %}
+{% block breadcrumbs %}{% include "patrimoine/_fil_compta.html" with page_fil="Bilan LMNP (2031)" %}{% endblock %}
 {% block extrastyle %}{{ block.super }}<style>
 .carte { background: var(--body-bg); border: 1px solid var(--hairline-color); border-radius: 12px; box-shadow: 0 1px 6px rgba(16,24,40,.06); padding: 16px 18px; margin-bottom: 18px; }
 .carte h2 { margin: 0 0 4px; font-size: 1.1rem; }
@@ -22,6 +22,7 @@ table.bilan tr.fort td { font-size: 1.05rem; font-weight: 700; background: var(-
 .liens { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 12px; }
 </style>{% endblock %}
 {% block content %}
+{% include "patrimoine/_onglets_compta.html" %}
 <div class="carte">
   <form method="get" class="barre">
     <div><label>Année</label>{% boutons_annees annees annee %}<input type="hidden" name="annee" value="{{ annee }}"></div>

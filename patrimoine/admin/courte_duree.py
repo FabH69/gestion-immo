@@ -24,6 +24,13 @@ class ChargeLMNPAdmin(admin.ModelAdmin):
         initial.setdefault("annee", timezone.localdate().year - 1)
         return initial
 
+    def changelist_view(self, request, extra_context=None):
+        from ..views.compta import onglets
+
+        extra_context = {**(extra_context or {}), "onglets": onglets("lmnp", "amortissements"), "libelle_regime": "LMNP",
+                         "lien_regime": reverse("compta_lmnp"), "title": "Charges et amortissements LMNP"}
+        return super().changelist_view(request, extra_context)
+
     def response_add(self, request, obj, post_url_continue=None):
         if "_continue" not in request.POST and "_addanother" not in request.POST:
             return redirect(f"{reverse('biens_lmnp')}?annee={obj.annee}")
