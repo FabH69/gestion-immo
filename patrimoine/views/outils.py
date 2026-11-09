@@ -183,57 +183,92 @@ def tester_mail(request):
     return redirect("admin:patrimoine_parametresmail_change", 1)
 
 
-@staff_member_required
-def recherche(request):
-    """Recherche globale (barre du haut) : locataires, biens et lots, baux, garants, candidatures, prêts, syndics."""
+def resultats_recherche(q, user, par_groupe=15):
+    """Recherche globale : locataires, baux, loyers, biens et lots, garants, candidatures, prêts, syndics.
+    Les éléments en cours (locataire présent, bail actif, lot non vendu) passent devant."""
     from django.db.models import Q
 
-    from ..models import Bien, Garant, Locataire, Lot, Pret, Syndic
+    from .. import droits
+    from ..fiches import MOIS
+    from ..models import Bien, Echeance, Garant, Locataire, Lot, Pret, Syndic
 
-    q = (request.GET.get("q") or "").strip()
+    q = (q or "").strip()
+    if len(q) < 2:
+        return []
+    mots = q.split()
+
+    def filtre(champs):
+        condition = Q()
+        for mot in mots:
+            sous = Q()
+            for c in champs:
+                sous |= Q(**{f"{c}__icontains": mot})
+            condition &= sous
+        return condition
+
+    acces = droits.niveaux(user)
     groupes = []
-    if len(q) >= 2:
-        mots = q.split()
 
-        def filtre(champs):
-            condition = Q()
-            for mot in mots:
-                sous = Q()
-                for c in champs:
-                    sous |= Q(**{f"{c}__icontains": mot})
-                condition &= sous
-            return condition
+    def ajouter(titre, module, objets, url, detail=lambda o: "", libelle=str):
+        if not acces.get(module):
+            return
+        lignes = [{"titre": libelle(o), "detail": detail(o), "url": url(o)} for o in objets[:par_groupe]]
+        if lignes:
+            groupes.append({"titre": titre, "lignes": lignes})
 
-        from .. import droits
+    change = lambda modele: (lambda o: reverse(f"admin:patrimoine_{modele}_change", args=[o.pk]))
+    locataires = sorted(Locataire.objects.filter(filtre(["nom", "prenom", "email", "telephone"])).prefetch_related("baux__lot__bien"),
+                        key=lambda o: (not any(b.actif for b in o.baux.all()), o.nom))
 
-        acces = droits.niveaux(request.user)
-        module = {"Locataires": "locataires", "Biens": "biens", "Lots": "biens", "Baux": "baux", "Garants": "baux",
-                  "Candidatures": "relocation", "Prêts": "finances", "Syndics": "biens"}
+    def detail_locataire(o):
+        baux = sorted(o.baux.all(), key=lambda b: (not b.actif, b.date_debut))
+        if not baux:
+            return o.email
+        return f"{baux[0].lot} · {'bail en cours' if baux[0].actif else 'parti'}"
 
-        def ajouter(titre, objets, lien, detail=lambda o: ""):
-            if not acces.get(module.get(titre, ""), ""):
-                return
-            lignes = [{"titre": str(o), "detail": detail(o), "url": reverse(lien, args=[o.pk])} for o in objets[:15]]
-            if lignes:
-                groupes.append({"titre": titre, "lignes": lignes})
+    ajouter("Locataires", "locataires", locataires, change("locataire"), detail_locataire)
+    baux = (Bail.objects.filter(filtre(["locataires__nom", "locataires__prenom", "lot__designation", "lot__bien__nom"]))
+            .distinct().select_related("lot__bien").prefetch_related("locataires").order_by("-actif", "-date_debut"))
+    ajouter("Baux", "baux", baux, change("bail"),
+            lambda o: (f"depuis le {o.date_debut:%d/%m/%Y} · {o.loyer_cc:.0f} € CC" if o.actif else f"terminé · {', '.join(str(l) for l in o.locataires.all())}"),
+            lambda o: f"{o.lot} – {o.get_type_display()}")
+    actifs = [b.pk for b in baux if b.actif][:par_groupe]
+    mois = timezone.localdate().replace(day=1)
+    loyers = [e for e in (Echeance.objects.filter(bail_id=pk, periode__lte=mois).select_related("bail__lot__bien").order_by("-periode").first()
+                          for pk in actifs) if e]
+    ajouter("Loyers", "loyers", loyers, change("echeance"), lambda e: f"{e.bail.lot} · {e.get_statut_display().lower()}",
+            lambda e: f"{MOIS[e.periode.month - 1].capitalize()} {e.periode.year} · {e.total:.0f} €")
+    ajouter("Biens", "biens", Bien.objects.filter(filtre(["nom", "adresse", "ville", "code_postal"])).select_related("proprietaire").order_by("vendu", "nom"),
+            change("bien"), lambda o: f"{o.adresse}, {o.ville} · {o.proprietaire}{' · vendu' if o.vendu else ''}")
+    ajouter("Lots", "biens", Lot.objects.filter(filtre(["designation", "bien__nom", "bien__ville"])).select_related("bien").order_by("vendu", "bien__nom", "designation"),
+            change("lot"), lambda o: f"{o.get_type_display()}{' · vendu' if o.vendu else ''}")
+    ajouter("Garants", "baux", Garant.objects.filter(filtre(["nom", "prenom", "email"])).select_related("locataire"),
+            change("garant"), lambda o: f"garant de {o.locataire}")
+    ajouter("Candidatures", "relocation", Candidature.objects.filter(filtre(["nom", "prenom", "email"])).select_related("lot__bien"),
+            change("candidature"), lambda o: f"{o.lot} · {o.get_statut_display()}")
+    ajouter("Prêts", "finances", Pret.objects.filter(filtre(["banque", "reference", "bien__nom"])).select_related("proprietaire"),
+            change("pret"), lambda o: str(o.proprietaire))
+    ajouter("Syndics", "biens", Syndic.objects.filter(filtre(["nom", "ville"])), change("syndic"))
+    return groupes
 
-        ajouter("Locataires", Locataire.objects.filter(filtre(["nom", "prenom", "email", "telephone"])).prefetch_related("baux__lot__bien"),
-                "admin:patrimoine_locataire_change",
-                lambda o: " · ".join(dict.fromkeys(str(b.lot) for b in o.baux.all())) or o.email)
-        ajouter("Biens", Bien.objects.filter(filtre(["nom", "adresse", "ville", "code_postal"])).select_related("proprietaire"),
-                "admin:patrimoine_bien_change", lambda o: f"{o.adresse}, {o.ville} · {o.proprietaire}{' · vendu' if o.vendu else ''}")
-        ajouter("Lots", Lot.objects.filter(filtre(["designation", "bien__nom", "bien__ville"])).select_related("bien"),
-                "admin:patrimoine_lot_change", lambda o: f"{o.get_type_display()}{' · vendu' if o.vendu else ''}")
-        ajouter("Baux", Bail.objects.filter(filtre(["locataires__nom", "locataires__prenom", "lot__designation", "lot__bien__nom"]))
-                .distinct().select_related("lot__bien").prefetch_related("locataires"),
-                "admin:patrimoine_bail_change", lambda o: ", ".join(str(l) for l in o.locataires.all()) + ("" if o.actif else " · terminé"))
-        ajouter("Garants", Garant.objects.filter(filtre(["nom", "prenom", "email"])).select_related("locataire"),
-                "admin:patrimoine_garant_change", lambda o: f"garant de {o.locataire}")
-        ajouter("Candidatures", Candidature.objects.filter(filtre(["nom", "prenom", "email"])).select_related("lot__bien"),
-                "admin:patrimoine_candidature_change", lambda o: f"{o.lot} · {o.get_statut_display()}")
-        ajouter("Prêts", Pret.objects.filter(filtre(["banque", "reference", "bien__nom"])).select_related("proprietaire"),
-                "admin:patrimoine_pret_change", lambda o: str(o.proprietaire))
-        ajouter("Syndics", Syndic.objects.filter(filtre(["nom", "ville"])), "admin:patrimoine_syndic_change")
+
+@staff_member_required
+def recherche(request):
+    """Barre de recherche du haut : page de résultats, ou aperçu sous la barre pendant la frappe (?apercu=1)."""
+    q = (request.GET.get("q") or "").strip()
+    if request.GET.get("apercu"):
+        from django.http import JsonResponse
+
+        groupes = resultats_recherche(q, request.user, par_groupe=3)
+        # au plus 8 lignes dans l'aperçu, groupes dans l'ordre
+        reste, apercu = 8, []
+        for g in groupes:
+            if reste <= 0:
+                break
+            apercu.append({"titre": g["titre"], "lignes": g["lignes"][:reste]})
+            reste -= len(apercu[-1]["lignes"])
+        return JsonResponse({"groupes": apercu, "tout": f"{reverse('recherche')}?q={quote(q)}"})
+    groupes = resultats_recherche(q, request.user)
     return render(request, "patrimoine/recherche.html", {
         **admin.site.each_context(request), "title": f"Recherche : {q}" if q else "Recherche", "q": q, "groupes": groupes,
         "nb": sum(len(g["lignes"]) for g in groupes),

@@ -10,6 +10,7 @@
   </ul>
   <div class="outils-droite">
     {% search_form cl %}
+    <script>(function () { var s = document.getElementById("searchbar"); if (s && !s.placeholder) s.placeholder = "Filtrer ces {{ cl.opts.verbose_name_plural|escapejs }}…"; })();</script>
     {% if filtres or cl.has_active_filters or raccourcis or cl.date_hierarchy %}{% with n=filtres|nb_filtres_actifs %}
     <button type="button" class="bouton-filtres{% if n %} actif{% endif %}" aria-expanded="false"
             onclick="this.setAttribute('aria-expanded', document.body.classList.toggle('filtres-ouverts'))">{% icone "filtre" 16 %}Filtres{% if n %} ({{ n }}){% endif %}</button>

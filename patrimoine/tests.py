@@ -2494,3 +2494,18 @@ class UneSeuleFaconTests(TestCase):
         liste = self.client.get("/admin/patrimoine/mouvementdepot/").content.decode()
         self.assertIn(f"/admin/patrimoine/bail/{self.bail.pk}/change/#argent", liste)
         self.assertEqual(self.client.get("/admin/patrimoine/mouvementdepot/add/").status_code, 403)
+
+    def test_recherche_globale_apercu(self):
+        loc = Locataire.objects.create(nom="DAGNELIE", prenom="Gael")
+        self.bail.locataires.add(loc)
+        Echeance.objects.filter(bail=self.bail).delete()
+        mois = timezone.localdate().replace(day=1)
+        Echeance.objects.create(bail=self.bail, periode=mois, loyer_hc=560, charges=10, date_exigibilite=mois)
+        r = self.client.get("/recherche/", {"q": "dagn", "apercu": "1"}).json()
+        self.assertEqual([g["titre"] for g in r["groupes"]], ["Locataires", "Baux", "Loyers"])
+        self.assertEqual(r["groupes"][0]["lignes"][0]["detail"], "Vaugneray · bail en cours")
+        self.assertIn("570 €", r["groupes"][2]["lignes"][0]["titre"])
+        self.assertEqual(r["tout"], "/recherche/?q=dagn")
+        liste = self.client.get("/admin/patrimoine/echeance/").content.decode()
+        self.assertIn('id="recherche-globale"', liste)  # la recherche globale reste en haut des listes
+        self.assertIn("Filtrer ces loyers", liste)
