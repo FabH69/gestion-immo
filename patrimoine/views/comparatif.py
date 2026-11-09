@@ -31,6 +31,7 @@ class LigneForm(forms.ModelForm):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+        self.fields["cote"].choices = [("nue", "Nue"), ("courte", "Courte"), ("deux", "Les deux")]  # colonne étroite
         _sans_zeros(self)
 
 
