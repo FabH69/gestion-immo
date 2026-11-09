@@ -1,0 +1,168 @@
+{% extends "admin/base_site.html" %}
+{% load tableau_bord %}
+{% block extrastyle %}{{ block.super }}<style>
+.choix-comparatif { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px 16px; margin-bottom: 16px; }
+.choix-comparatif .filtres-boutons { display: flex; flex-wrap: wrap; gap: 6px; }
+.choix-comparatif .chip { font-size: .85rem; padding: 4px 12px; }
+.choix-annee { display: flex; align-items: center; gap: 8px; margin: 0; }
+.choix-annee label { color: var(--body-quiet-color); font-size: .85rem; }
+.choix-annee select { height: 32px !important; border-radius: 999px; padding: 0 12px; font-weight: 600; }
+.kpis-comparatif { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 14px; margin-bottom: 18px; }
+.kpi-comparatif { background: var(--body-bg); border: 1px solid var(--hairline-color); border-radius: 14px; padding: 14px 18px; }
+.kpi-comparatif > span { color: var(--body-quiet-color); font-size: 13px; font-weight: 600; }
+.kpi-comparatif .duel { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin: 8px 0; }
+.kpi-comparatif .duel small { display: block; color: var(--body-quiet-color); font-size: 12px; }
+.kpi-comparatif .duel b { font-size: 22px; font-variant-numeric: tabular-nums; letter-spacing: -.02em; white-space: nowrap; }
+.kpi-comparatif .verdict { margin: 0; padding: 6px 10px; border-radius: 8px; font-size: 13px; font-weight: 600; background: var(--darkened-bg); }
+.kpi-comparatif .verdict.nue { color: var(--bleu); background: var(--bleu-c); }
+.kpi-comparatif .verdict.courte { color: var(--ok); background: var(--ok-c); }
+.grille-comparatif { display: grid; grid-template-columns: minmax(0, 1fr) 380px; gap: 18px; align-items: start; }
+.tableau-comparatif { margin-bottom: 18px; }
+.tableau-comparatif .tableau-defilant { overflow-x: auto; }
+.tableau-comparatif table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
+.tableau-comparatif th, .tableau-comparatif td { padding: 7px 12px; border-bottom: 1px solid var(--hairline-color); vertical-align: top; }
+.tableau-comparatif thead th { color: var(--body-quiet-color); font-weight: 600; font-size: 12.5px; background: transparent; }
+.tableau-comparatif .montant { text-align: right; white-space: nowrap; width: 1%; }
+.tableau-comparatif td small { display: block; color: var(--body-quiet-color); font-size: 12px; }
+.tableau-comparatif tr.recette td { font-weight: 600; }
+.tableau-comparatif tfoot td { font-weight: 600; font-size: .9rem; color: var(--body-fg); background: var(--darkened-bg); }
+.tableau-comparatif tfoot tr.total td { font-weight: 700; border-top: 2px solid var(--border-color); }
+.tableau-comparatif .ecart.plus { color: var(--bleu); }
+.tableau-comparatif .ecart.moins { color: var(--ok); }
+.tableau-comparatif p.help { padding: 8px 12px; margin: 0; }
+.hypotheses-nue { padding-bottom: 6px; }
+.hypotheses-nue h3 { margin: 16px 12px 6px; font-size: .9rem; }
+.hypotheses-nue p.help, .hypotheses-nue .errornote { margin: 6px 12px; }
+.champs-nue { display: grid; grid-template-columns: 1fr 1fr; gap: 10px 12px; padding: 12px 12px 0; }
+.champ-court label { display: block; font-size: .8rem; font-weight: 600; color: var(--body-quiet-color); margin-bottom: 3px; }
+.champ-court input, .champ-court textarea { width: 100%; box-sizing: border-box; }
+.champ-court textarea { height: 4.5em; }
+.champ-court .help { display: block; font-size: 11.5px; color: var(--body-quiet-color); margin-top: 2px; }
+.hypotheses-nue > .champ-court { padding: 6px 12px; }
+table.traitements, table.lignes-comparatif { width: calc(100% - 24px); margin: 0 12px; border-collapse: collapse; }
+table.traitements td, table.lignes-comparatif td, table.lignes-comparatif th { padding: 4px 4px; border-bottom: 1px solid var(--hairline-color); font-size: .85rem; vertical-align: middle; }
+table.traitements td:first-child { color: var(--body-fg); }
+table.traitements select { max-width: 100%; }
+table.traitements .pct { display: inline-flex; align-items: center; gap: 4px; margin-top: 4px; white-space: nowrap; font-size: .8rem; color: var(--body-quiet-color); }
+table.traitements .pct[hidden] { display: none; }
+table.traitements .pct input { width: 4.5em; }
+table.lignes-comparatif th { font-size: 11.5px; color: var(--body-quiet-color); text-align: left; background: transparent; }
+table.lignes-comparatif { table-layout: fixed; }
+table.lignes-comparatif col.c-cote { width: 31%; } table.lignes-comparatif col.c-montant { width: 22%; }
+table.lignes-comparatif col.c-recup { width: 13%; } table.lignes-comparatif col.c-suppr { width: 28px; }
+table.lignes-comparatif input[type=text], table.lignes-comparatif input[type=number], table.lignes-comparatif select { width: 100%; box-sizing: border-box; min-width: 0; padding-left: 6px; padding-right: 4px; }
+table.lignes-comparatif td:nth-child(4), table.lignes-comparatif th:nth-child(4) { text-align: center; }
+.lignes-comparatif .supprimer { display: inline-flex; align-items: center; gap: 2px; font-size: .9rem; color: var(--rouge); cursor: pointer; }
+.lignes-comparatif .supprimer input { margin: 0; }
+.hypotheses-nue .submit-row { margin: 12px; padding: 0; border: 0; background: transparent; }
+.alerte-loyer { margin: 0 0 14px; padding: 10px 14px; border-radius: 10px; background: var(--orange-c); color: var(--orange); font-weight: 600; }
+@media (max-width: 1023px) {
+  .grille-comparatif { grid-template-columns: minmax(0, 1fr); }
+}
+@media (max-width: 767px) {
+  .kpi-comparatif .duel b { font-size: 18px; }
+  .tableau-comparatif th, .tableau-comparatif td { padding: 6px 6px; font-size: .82rem; }
+  .tableau-comparatif tr > :nth-child(4), .legende-ecart { display: none; }
+  .tableau-comparatif td small { font-size: 11px; }
+  .champs-nue { grid-template-columns: 1fr 1fr; }
+}
+</style>{% endblock %}
+{% block breadcrumbs %}<div class="breadcrumbs"><a href="{% url 'admin:index' %}">Accueil</a> › <a href="{% url 'suivi_lcd' %}">Courte durée</a> › Comparatif location nue</div>{% endblock %}
+{% block content_title %}<h1>Comparatif location nue / courte durée</h1>
+<p class="sous-titre-page">Chiffres réels de la courte durée comparés à une location nue (revenus fonciers) sur la même période, avant impôts. Le temps passé n'est pas compté.</p>{% endblock %}
+{% block content %}
+<div class="page-comparatif">
+{% if not lot %}
+  <p class="module" style="padding:16px">Aucun logement en courte durée. Choisissez « Courte durée » dans le mode d'exploitation de la fiche du lot.</p>
+{% else %}
+  <div class="choix-comparatif">
+    <div class="filtres-boutons">{% for l in lots %}<a class="chip{% if l.pk == lot.pk %} actif{% endif %}" href="?lot={{ l.pk }}&annee={{ annee }}">{{ l }}</a>{% endfor %}</div>
+    <form method="get" class="choix-annee"><input type="hidden" name="lot" value="{{ lot.pk }}">
+      <label for="annee">Année</label> <select id="annee" name="annee" onchange="this.form.submit()">{% for a in annees %}<option value="{{ a }}"{% if a == annee %} selected{% endif %}>{{ a }}</option>{% endfor %}</select>
+    </form>
+  </div>
+
+  {% if not hypotheses.loyer_hc %}<p class="alerte-loyer">Indiquez dans les hypothèses de location nue le loyer que vous demanderiez : sans lui, la comparaison n'a pas de sens.</p>{% endif %}
+  <div class="kpis-comparatif">
+    {% for p in periodes %}
+    <div class="kpi-comparatif">
+      <span>{{ p.titre }}</span>
+      <div class="duel"><div><small>Courte durée</small><b>{{ p.resultat.courte|euros }}</b></div><div><small>Location nue</small><b>{{ p.resultat.nue|euros }}</b></div></div>
+      <p class="verdict {% if p.ecart > 0 %}nue{% elif p.ecart < 0 %}courte{% endif %}">{% if p.ecart > 0 %}La location nue rapporterait {{ p.ecart|euros }} de plus{% elif p.ecart < 0 %}La courte durée rapporte {{ p.ecart|euros|cut:"−" }} de plus{% else %}Égalité{% endif %}</p>
+    </div>
+    {% endfor %}
+  </div>
+
+  <div class="grille-comparatif">
+    <div>
+    {% for p in periodes %}
+    <div class="module tableau-comparatif">
+      <h2>{{ p.titre }}</h2>
+      <div class="tableau-defilant"><table>
+        <thead><tr><th></th><th class="montant">Courte durée</th><th class="montant">Location nue</th><th class="montant">Écart</th></tr></thead>
+        <tbody>
+        {% for l in p.lignes %}
+          <tr class="{{ l.genre }}"><td>{{ l.libelle }}{% if l.note %}<small>{% if l.genre == "recette" %}nue : {% endif %}{{ l.note }}</small>{% endif %}</td>
+            <td class="montant">{{ l.courte|euros }}</td><td class="montant">{{ l.nue|euros }}</td>
+            <td class="montant ecart {% if l.ecart > 0 %}plus{% elif l.ecart < 0 %}moins{% endif %}">{% if l.ecart %}{% if l.ecart > 0 %}+{% endif %}{{ l.ecart|euros }}{% endif %}</td></tr>
+        {% endfor %}
+        </tbody>
+        <tfoot>
+          <tr class="total"><td>Résultat avant impôts{% if p.pret is not None %} et avant prêt{% endif %}</td><td class="montant">{{ p.resultat.courte|euros }}</td>
+            <td class="montant">{{ p.resultat.nue|euros }}</td><td class="montant ecart {% if p.ecart > 0 %}plus{% elif p.ecart < 0 %}moins{% endif %}">{% if p.ecart > 0 %}+{% endif %}{{ p.ecart|euros }}</td></tr>
+          {% if p.pret is not None %}
+          <tr><td>Prêt (mensualités et assurance)<small>identique dans les deux cas</small></td><td class="montant">{{ p.pret|euros }}</td><td class="montant">{{ p.pret|euros }}</td><td></td></tr>
+          <tr class="total"><td>Cash-flow avant impôts</td><td class="montant">{{ p.cash.courte|euros }}</td><td class="montant">{{ p.cash.nue|euros }}</td><td></td></tr>
+          {% endif %}
+        </tfoot>
+      </table></div>
+      <p class="help"><span class="legende-ecart">Écart en bleu : à l'avantage de la location nue ; en vert : de la courte durée.</span>{% if p.perte_vacance %} Vacance comptée : {{ p.perte_vacance|euros }} de loyers non perçus en location nue.{% endif %}{% if not p.pret_connu %} Le bien a plusieurs logements : ses factures (taxe foncière, PNO, copropriété…) et son prêt ne sont pas répartis, seules les charges propres au logement sont reprises. Ajoutez sa part dans les dépenses ajoutées, côté « Les deux ».{% endif %}</p>
+    </div>
+    {% endfor %}
+    </div>
+
+    <form method="post" class="module hypotheses-nue">{% csrf_token %}
+      <input type="hidden" name="lot" value="{{ lot.pk }}">
+      <h2>Hypothèses de location nue</h2>
+      {% if form.errors or lignes.total_error_count %}<p class="errornote">Corrigez les erreurs ci-dessous.</p>{% endif %}
+      <div class="champs-nue">
+        {% for champ in form %}{% if champ.name != "notes" %}
+        <div class="champ-court{% if champ.errors %} errors{% endif %}"><label for="{{ champ.id_for_label }}">{{ champ.label|capfirst }}</label>{{ champ }}{% if champ.help_text %}<span class="help">{{ champ.help_text }}</span>{% endif %}{{ champ.errors }}</div>
+        {% endif %}{% endfor %}
+      </div>
+      {% if traitements %}
+      <h3>Les charges de la courte durée, en location nue</h3>
+      <table class="traitements">
+        {% for t in traitements %}
+        <tr><td>{{ t.libelle }}</td>
+          <td><select name="t_{{ t.code }}" data-pct="p_{{ t.code }}">{% for code, libelle in choix_traitements %}<option value="{{ code }}"{% if code == t.traitement %} selected{% endif %}>{{ libelle }}</option>{% endfor %}</select>
+            <span class="pct"{% if t.traitement != "partielle" %} hidden{% endif %}><input type="number" name="p_{{ t.code }}" value="{{ t.pct|floatformat:0 }}" min="0" max="100" step="1"> % récupéré</span></td></tr>
+        {% endfor %}
+      </table>
+      <p class="help">« Récupérée » : remboursée par le locataire, à votre charge seulement pendant la vacance. « Supprimée » : payée directement par le locataire (électricité, internet) ou inutile en location nue (ménage, conciergerie, CFE, comptable).</p>
+      {% endif %}
+      <h3>Dépenses ajoutées</h3>
+      {{ lignes.management_form }}
+      <table class="lignes-comparatif"><colgroup><col class="c-cote"><col><col class="c-montant"><col class="c-recup"><col class="c-suppr"></colgroup>
+        <thead><tr><th>Côté</th><th>Libellé</th><th>€ par an</th><th title="Récupérable sur le locataire">Récup.</th><th title="Supprimer">✕</th></tr></thead>
+        <tbody>
+        {% for f in lignes %}
+          <tr>{% for h in f.hidden_fields %}{{ h }}{% endfor %}
+            <td>{{ f.cote }}</td><td>{{ f.libelle }}{{ f.libelle.errors }}</td><td>{{ f.montant_annuel }}{{ f.montant_annuel.errors }}</td><td>{{ f.recuperable }}</td>
+            <td>{% if f.instance.pk %}<label class="supprimer" title="Cocher pour supprimer cette dépense">{{ f.DELETE }}</label>{% endif %}</td></tr>
+        {% endfor %}
+        </tbody>
+      </table>
+      <p class="help">Ex. frais de relocation (location nue), mobilier à renouveler (courte durée), part de taxe foncière d'un immeuble (les deux).</p>
+      <div class="champ-court"><label for="{{ form.notes.id_for_label }}">Notes</label>{{ form.notes }}</div>
+      <div class="submit-row"><input type="submit" class="default" value="Enregistrer et recalculer"></div>
+    </form>
+  </div>
+{% endif %}
+</div>
+<script>
+document.querySelectorAll('.traitements select').forEach(function (s) {
+  s.addEventListener('change', function () { s.parentNode.querySelector('.pct').hidden = s.value !== 'partielle'; });
+});
+</script>
+{% endblock %}

@@ -55,6 +55,7 @@ urlpatterns = [
     path("comptabilite/conciergerie/", views.conciergerie_ajouter, name="conciergerie_ajouter"),
     path("comptabilite/conciergerie/<int:pk>/", views.controle_conciergerie, name="controle_conciergerie"),
     path("location-courte-duree/", views.suivi_lcd, name="suivi_lcd"),
+    path("location-courte-duree/comparatif/", views.comparatif_lcd, name="comparatif_lcd"),
     path("simulations/plus-value/", views.plus_value, name="plus_value"),
     path("recherche/", views.recherche, name="recherche"),
     path("balles/", include("commandes.urls")),

@@ -2398,3 +2398,67 @@ def timedelta_jours(n):
     from datetime import timedelta
 
     return timedelta(days=n)
+
+
+class ComparatifNueTests(TestCase):
+    """Comparatif location nue / courte durée : chiffres réels de la courte durée, hypothèses de location nue."""
+
+    def setUp(self):
+        from .models import ComparatifNue, EncaissementLCD, LigneComparatif
+
+        self.client.force_login(User.objects.create_superuser("admin", "a@a.fr", "x"))
+        proprio = Proprietaire.objects.create(nom="H-INVEST", type=Proprietaire.Type.SARL_FAMILLE)
+        bien = Bien.objects.create(proprietaire=proprio, nom="Villeurbanne", adresse="68 rue", code_postal="69100", ville="Villeurbanne")
+        Lot.objects.create(bien=bien, designation="T1 bis")
+        self.t2 = Lot.objects.create(bien=bien, designation="T2", exploitation="courte")
+        EncaissementLCD.objects.create(lot=self.t2, mois=date(2025, 1, 1), ca=1000, commission=200, menage=50)
+        EncaissementLCD.objects.create(lot=self.t2, mois=date(2025, 6, 1), ca=1400, commission=280, frais=20)
+        self.c = ComparatifNue.objects.create(lot=self.t2, loyer_hc=600, charges=40)
+        LigneComparatif.objects.create(comparatif=self.c, cote="deux", libelle="Taxe foncière (part)", montant_annuel=480)
+        LigneComparatif.objects.create(comparatif=self.c, cote="nue", libelle="Relocation", montant_annuel=300, recuperable=True)
+
+    def test_calcul_annee_complete(self):
+        from . import comparatif as cmp
+
+        p = cmp.periode(self.t2, self.c, 2025, 12)
+        lignes = {l["libelle"]: l for l in p["lignes"]}
+        self.assertEqual(lignes["Loyers encaissés"]["courte"], Decimal("2400"))
+        self.assertEqual(lignes["Loyers encaissés"]["nue"], Decimal("6600"))  # 600 € × 11 mois (1 mois de vacance)
+        self.assertEqual(lignes["Commissions (plateformes, conciergerie)"]["courte"], Decimal("-500"))
+        self.assertEqual(lignes["Commissions (plateformes, conciergerie)"]["nue"], 0)  # supprimée en location nue
+        self.assertEqual(lignes["GLI (assurance loyers impayés)"]["nue"], Decimal("-211.2"))  # 3 % de 640 € × 11 mois
+        self.assertEqual(lignes["Taxe foncière (part)"]["courte"], lignes["Taxe foncière (part)"]["nue"])
+        self.assertEqual(lignes["Relocation"]["nue"], Decimal("-25"))  # récupérable : à charge pendant la vacance seulement
+        self.assertEqual(p["resultat"], {"courte": Decimal("1370"), "nue": Decimal("5883.8")})
+        self.assertIsNone(p["pret"])  # bien à plusieurs logements : prêt non réparti
+        self.assertEqual(p["perte_vacance"], Decimal("600"))
+
+    def test_charges_recuperees_en_partie(self):
+        from . import comparatif as cmp
+
+        self.c.traitements = {"copro": ["partielle", 50]}
+        n = cmp.location_nue(self.c, {"charges": {"copro": Decimal("1200"), "eau": Decimal("120"), "pno": Decimal("90")}}, 12)
+        self.assertEqual(n["charges"], {"copro": Decimal("650"), "eau": Decimal("10"), "pno": Decimal("90")})
+
+    def test_page_et_enregistrement(self):
+        url = f"/location-courte-duree/comparatif/?lot={self.t2.pk}&annee=2026"
+        page = self.client.get(url).content.decode()
+        for texte in ("Hypothèses de location nue", "La location nue rapporterait", 'name="t_menage"', "Taxe foncière (part)"):
+            self.assertIn(texte, page)
+        donnees = {"lot": self.t2.pk, "loyer_hc": "550", "charges": "40", "vacance_mois": "2", "gli": "0", "notes": "",
+                   "t_menage": "charge", "t_commission": "partielle", "p_commission": "30",
+                   "lignes-TOTAL_FORMS": "3", "lignes-INITIAL_FORMS": "2", "lignes-MIN_NUM_FORMS": "0", "lignes-MAX_NUM_FORMS": "1000"}
+        for i, l in enumerate(self.c.lignes.all()):
+            donnees.update({f"lignes-{i}-id": l.pk, f"lignes-{i}-comparatif": self.c.pk, f"lignes-{i}-cote": l.cote,
+                            f"lignes-{i}-libelle": l.libelle, f"lignes-{i}-montant_annuel": l.montant_annuel})
+        donnees["lignes-1-DELETE"] = "on"
+        donnees.update({"lignes-2-cote": "courte", "lignes-2-libelle": "Mobilier", "lignes-2-montant_annuel": "600"})
+        r = self.client.post(url, donnees)
+        self.assertEqual(r.status_code, 302)
+        self.c.refresh_from_db()
+        self.assertEqual((self.c.loyer_hc, self.c.vacance_mois, self.c.gli), (Decimal("550"), Decimal("2"), Decimal("0")))
+        self.assertEqual(self.c.traitement("menage")[0], "charge")
+        self.assertEqual(self.c.traitement("commission"), ("partielle", Decimal("30")))
+        self.assertEqual(sorted(self.c.lignes.values_list("libelle", flat=True)), ["Mobilier", "Taxe foncière (part)"])
+        page = self.client.get(url).content.decode()
+        self.assertNotIn("GLI (assurance", page)  # GLI à 0 : ligne retirée

@@ -1,4 +1,6 @@
 """Location courte durée (Airbnb, Booking) et charges des biens en LMNP."""
+from decimal import Decimal
+
 from django.db import models
 
 from .biens import Lot
@@ -144,3 +146,54 @@ class ChargeLCD(models.Model):
 
     def active_en(self, premier_jour, dernier_jour):
         return (not self.debut or self.debut <= dernier_jour) and (not self.fin or self.fin >= premier_jour)
+
+
+class ComparatifNue(models.Model):
+    """Hypothèses de location nue (revenus fonciers) d'un logement exploité en courte durée, pour les comparer."""
+
+    TRAITEMENTS = [("charge", "À ma charge"), ("recuperable", "Récupérée sur le locataire"), ("partielle", "En partie récupérée"),
+                   ("supprimee", "Supprimée en location nue")]
+    # charge de la courte durée → ce qu'elle devient en location nue (modifiable logement par logement)
+    TRAITEMENTS_PAR_DEFAUT = {"commission": ("supprimee", 0), "menage": ("supprimee", 0), "consommables": ("supprimee", 0),
+                              "electricite": ("supprimee", 0), "fibre": ("supprimee", 0), "eau": ("recuperable", 100),
+                              "comptable": ("supprimee", 0), "impots_taxes": ("supprimee", 0), "copro": ("partielle", 50),
+                              "pno": ("charge", 0), "taxe_fonciere": ("charge", 0), "autre": ("charge", 0)}
+
+    lot = models.OneToOneField(Lot, on_delete=models.CASCADE, related_name="comparatif_nue")
+    loyer_hc = models.DecimalField("loyer mensuel hors charges (€)", max_digits=10, decimal_places=2, default=0)
+    charges = models.DecimalField("provision mensuelle sur charges (€)", max_digits=10, decimal_places=2, default=0,
+                                  help_text="Payée par le locataire : sert au calcul de la GLI")
+    vacance_mois = models.DecimalField("vacance locative (mois par an)", max_digits=4, decimal_places=1, default=1)
+    gli = models.DecimalField("GLI (% des loyers et charges)", max_digits=5, decimal_places=2, default=3,
+                              help_text="Assurance loyers impayés ; 0 si vous n'en prenez pas")
+    traitements = models.JSONField(default=dict, blank=True, help_text="{rubrique: [traitement, % récupéré]}")
+    notes = models.TextField(blank=True)
+
+    class Meta:
+        verbose_name = "comparatif location nue"
+        verbose_name_plural = "comparatifs location nue"
+
+    def __str__(self):
+        return f"Comparatif location nue – {self.lot}"
+
+    def traitement(self, rubrique):
+        t = self.traitements.get(rubrique) or self.TRAITEMENTS_PAR_DEFAUT.get(rubrique) or ("charge", 0)
+        return t[0], Decimal(str(t[1] or 0))
+
+
+class LigneComparatif(models.Model):
+    """Dépense ajoutée à la main dans le comparatif (ex. frais de relocation, travaux, mobilier à renouveler)."""
+
+    comparatif = models.ForeignKey(ComparatifNue, on_delete=models.CASCADE, related_name="lignes")
+    cote = models.CharField("côté", max_length=6, choices=[("nue", "Location nue"), ("courte", "Courte durée"), ("deux", "Les deux")], default="nue")
+    libelle = models.CharField("libellé", max_length=100)
+    montant_annuel = models.DecimalField("montant par an (€)", max_digits=10, decimal_places=2)
+    recuperable = models.BooleanField("récupérable sur le locataire", default=False)
+
+    class Meta:
+        verbose_name = "dépense du comparatif"
+        verbose_name_plural = "dépenses du comparatif"
+        ordering = ["cote", "pk"]
+
+    def __str__(self):
+        return f"{self.libelle} ({self.montant_annuel} €/an)"
