@@ -22,11 +22,11 @@ def a_faire(aujourdhui, horizon_jours=PREAVIS_JOURS):
     limite = aujourdhui + timedelta(days=horizon_jours)
     items = []
 
-    def ajouter(date, titre, detail, categorie, url, action=None):
+    def ajouter(date, titre, detail, categorie, url, action=None, stop=None):
         if date <= limite:
             items.append({
                 "date": date, "titre": titre, "detail": detail, "categorie": categorie,
-                "url": url, "action": action, "en_retard": date < aujourdhui,
+                "url": url, "action": action, "stop": stop, "en_retard": date < aujourdhui,
             })
 
     baux = Bail.objects.filter(actif=True).select_related("lot__bien").prefetch_related("locataires")
@@ -35,15 +35,17 @@ def a_faire(aujourdhui, horizon_jours=PREAVIS_JOURS):
         lieu = f"{bail.lot} – {noms}" if noms else str(bail.lot)
 
         revision = bail.prochaine_revision(aujourdhui)
-        if revision:
+        if revision and bail.rappel_revision:
             ajouter(revision, "Réviser le loyer (IRL)", lieu, "Révision", reverse("revision_loyer", args=[bail.pk]),
-                    action=reverse("rappel_fait", args=["revision", bail.pk]))
+                    action=reverse("rappel_fait", args=["revision", bail.pk]),
+                    stop=reverse("ne_plus_rappeler", args=["revision", bail.pk]))
 
         echeance = _anniversaire_recent(bail.date_attestation_assurance or bail.date_debut, aujourdhui)
         if bail.rappel_assurance:
             ajouter(echeance, "Demander l'attestation d'assurance habitation", lieu, "Assurance",
                     reverse("admin:patrimoine_bail_change", args=[bail.pk]),
-                    action=reverse("rappel_fait", args=["assurance", bail.pk]))
+                    action=reverse("rappel_fait", args=["assurance", bail.pk]),
+                    stop=reverse("ne_plus_rappeler", args=["assurance", bail.pk]))
 
         if bail.lot.chaudiere_gaz:
             echeance = _anniversaire_recent(bail.lot.date_entretien_chaudiere or bail.date_debut, aujourdhui)

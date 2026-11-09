@@ -43,6 +43,19 @@ def bloc_taches_changement(context, par_changement=6):
 
 
 @register.filter
+def libelle_ajouter(nom):
+    """« Ajouter une annonce » plutôt que « Ajouter annonce »."""
+    from ..libelles import ajouter
+    return ajouter(nom)
+
+
+@register.filter
+def nb_filtres_actifs(filtres):
+    """Nombre de filtres réglés autrement que sur « Tous » (affiché sur le bouton « Filtres » du téléphone)."""
+    return sum(1 for f in filtres or () if not f.get("tous", True))
+
+
+@register.filter
 def get_item(conteneur, cle):
     """Accès à un élément de dictionnaire ou de liste depuis un gabarit."""
     try:
@@ -88,6 +101,7 @@ ICONES = {
     "liens": '<path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>',
     "balles": '<circle cx="12" cy="12" r="9"/><path d="M5.6 5.6a9 9 0 0 1 0 12.8M18.4 5.6a9 9 0 0 0 0 12.8"/>',
     "menu": '<path d="M4 6h16M4 12h16M4 18h16"/>',
+    "filtre": '<path d="M4 5h16l-6 8v5l-4 2v-7z"/>',
 }
 
 

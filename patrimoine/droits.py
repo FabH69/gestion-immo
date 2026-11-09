@@ -42,7 +42,7 @@ MODULES = [
     ("outils", "Rappels, modèles (location, annonces) et sites utiles", ["patrimoine.rappel", "patrimoine.journalfait",
                                                          "patrimoine.modeledocument", "patrimoine.modeleannonce",
                                                          "patrimoine.siteutile"],
-     ["liste_champs", "rappel_fait"], ["rappel_fait"]),
+     ["liste_champs", "rappel_fait", "ne_plus_rappeler"], ["rappel_fait", "ne_plus_rappeler"]),
     ("balles", "Balles", ["commandes.joueur", "commandes.article", "commandes.commande", "commandes.ligne"], [], []),
 ]
 LIBELLES = {code: libelle for code, libelle, *_ in MODULES}

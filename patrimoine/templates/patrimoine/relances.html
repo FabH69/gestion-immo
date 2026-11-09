@@ -11,7 +11,7 @@
 .legende { color: var(--body-quiet-color); font-size: 13px; }
 .boutons { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 8px; }
 </style>{% endblock %}
-{% block breadcrumbs %}<div class="breadcrumbs"><a href="{% url 'admin:index' %}">Accueil</a> › <a href="{% url 'relances_impayes' %}">Relancer un impayé</a>{% if detail %} › {{ detail.bail.lot }}{% endif %}</div>{% endblock %}
+{% block breadcrumbs %}<div class="breadcrumbs"><a href="{% url 'admin:index' %}">Accueil</a> › <a href="{% url 'admin:patrimoine_echeance_changelist' %}">Loyers</a> › <a href="{% url 'relances_impayes' %}">Relances d'impayés</a>{% if detail %} › {{ detail.bail.lot }}{% endif %}</div>{% endblock %}
 {% block content %}
 {% if detail %}
 <div class="module relance-carte">

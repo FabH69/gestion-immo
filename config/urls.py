@@ -25,6 +25,7 @@ urlpatterns = [
     path("baux/<int:pk>/revision/", views.revision_loyer, name="revision_loyer"),
     path("revisions/<int:pk>/lettre.pdf", views.lettre_revision, name="lettre_revision"),
     path("rappels/<str:type_rappel>/<int:pk>/fait/", views.rappel_fait, name="rappel_fait"),
+    path("rappels/<str:type_rappel>/<int:pk>/ne-plus-rappeler/", views.ne_plus_rappeler, name="ne_plus_rappeler"),
     path("candidature/<str:jeton>/", views.candidature_publique, name="candidature_publique"),
     path("prive/<path:chemin>", views.fichier_prive, name="fichier_prive"),
     path("reglages/sauvegardes/", views.sauvegardes, name="sauvegardes"),

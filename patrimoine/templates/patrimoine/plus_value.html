@@ -1,5 +1,5 @@
 {% extends "admin/base_site.html" %}
-{% block breadcrumbs %}<div class="breadcrumbs"><a href="{% url 'admin:index' %}">Accueil</a> › États › Simulation de plus-value</div>{% endblock %}
+{% block breadcrumbs %}<div class="breadcrumbs"><a href="{% url 'admin:index' %}">Accueil</a> › <a href="{% url 'etat_loyers_encaisses' %}">États et LMNP</a> › Simulation de plus-value</div>{% endblock %}
 {% block extrastyle %}{{ block.super }}<style>
 .pv { display: grid; grid-template-columns: minmax(300px, 440px) minmax(300px, 1fr); gap: 18px; align-items: start; max-width: 1100px; }
 @media (max-width: 900px) { .pv { grid-template-columns: 1fr; } }

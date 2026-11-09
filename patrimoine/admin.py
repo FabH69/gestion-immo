@@ -29,6 +29,54 @@ def _changelist_view_titre_simple(self, request, extra_context=None):
 
 admin.ModelAdmin.changelist_view = _changelist_view_titre_simple
 
+# --- Vocabulaire commun à toutes les fiches ---------------------------------------------------------------------------
+# « Ajouter une annonce » / « Modifier l'annonce » au lieu de « Ajout de annonce » / « Modification de annonce ».
+# « Enregistrer et ajouter un nouveau » n'est gardé que là où l'on saisit souvent plusieurs fiches d'affilée.
+PLUSIEURS_D_AFFILEE = {"echeance", "paiement", "rappel", "piececomptable", "chargelcd", "chargelmnp", "encaissementhistorique",
+                       "siteutile", "tachepardefaut", "mouvementdepot", "reservationlcd", "photolot", "documentlocataire",
+                       "modeledocument", "modeleannonce", "tache"}
+_changeform_view_django = admin.ModelAdmin.changeform_view
+
+
+def _changeform_view_libelles(self, request, object_id=None, form_url="", extra_context=None):
+    from . import libelles
+    nom = self.model._meta.verbose_name
+    contexte = {"title": libelles.ajouter(nom) if object_id is None else libelles.modifier(nom)}
+    if self.model._meta.model_name not in PLUSIEURS_D_AFFILEE:
+        contexte["show_save_and_add_another"] = False
+    return _changeform_view_django(self, request, object_id, form_url, {**contexte, **(extra_context or {})})
+
+
+admin.ModelAdmin.changeform_view = _changeform_view_libelles
+
+_get_inline_formsets_django = admin.ModelAdmin.get_inline_formsets
+
+
+def _get_inline_formsets_libelles(self, request, formsets, inline_instances, obj=None):
+    """Bouton des sous-listes : « Ajouter un garant » au lieu de « Ajouter un objet Garant supplémentaire »."""
+    import json
+    from . import libelles
+    resultat = _get_inline_formsets_django(self, request, formsets, inline_instances, obj)
+    for inline in resultat:
+        donnees = json.loads(inline.inline_formset_data())
+        donnees["options"]["addText"] = getattr(inline.opts, "texte_ajout", None) or libelles.ajouter(inline.opts.verbose_name)
+        inline.inline_formset_data = (lambda texte: lambda: texte)(json.dumps(donnees))
+    return resultat
+
+
+admin.ModelAdmin.get_inline_formsets = _get_inline_formsets_libelles
+
+_message_user_django = admin.ModelAdmin.message_user
+
+
+def _message_user_libelles(self, request, message, *args, **kwargs):
+    """« Enregistrement effectué : « X ». » au lieu de « L'objet loyer « X » a été ajouté avec succès. »."""
+    from . import libelles
+    return _message_user_django(self, request, libelles.message(message), *args, **kwargs)
+
+
+admin.ModelAdmin.message_user = _message_user_libelles
+
 
 class LotsALouerMixin:
     """Ne propose que les lots non vendus ; un lot vendu déjà choisi reste affiché sur sa fiche."""
@@ -228,8 +276,37 @@ class VenduFilter(admin.SimpleListFilter):
 
 @admin.register(Bien)
 class BienAdmin(admin.ModelAdmin):
-    list_display = ["nom", "ville", "proprietaire", "syndic", "nb_lots", "vendu", "date_vente"]
+    list_display = ["nom", "ville", "proprietaire", "syndic", "nb_lots", "loyers_mois", "rendement"]
     list_filter = [VenduFilter, "proprietaire"]
+
+    def get_list_display(self, request):
+        """Colonnes de vente seulement quand on regarde les biens vendus (sinon des croix rouges partout)."""
+        vente = request.GET.get("vente") or "non"
+        if vente == "oui":
+            return ["nom", "ville", "proprietaire", "nb_lots", "date_vente"]
+        if vente == "tous":
+            return self.list_display + ["vendu", "date_vente"]
+        return self.list_display
+
+    def get_queryset(self, request):
+        from django.db.models import Prefetch
+        return super().get_queryset(request).select_related("proprietaire", "syndic").prefetch_related(
+            "lots", Prefetch("lots__baux", queryset=Bail.objects.filter(actif=True), to_attr="baux_actifs"))
+
+    def _loyers_hc(self, obj):
+        return sum((b.loyer_hc or 0 for lot in obj.lots.all() for b in lot.baux_actifs), Decimal(0))
+
+    @admin.display(description="loyers HC / mois")
+    def loyers_mois(self, obj):
+        total = self._loyers_hc(obj)
+        return f"{total:,.0f} €".replace(",", " ") if total else "–"
+
+    @admin.display(description="rendement brut")
+    def rendement(self, obj):
+        total = self._loyers_hc(obj)
+        if not total or not obj.prix_acquisition:
+            return "–"
+        return f"{total * 12 / obj.prix_acquisition * 100:.1f} %".replace(".", ",")
     search_fields = ["nom", "adresse", "ville"]
     inlines = [LotInline]
     fieldsets = [
@@ -277,7 +354,7 @@ class BienAdmin(admin.ModelAdmin):
 
     @admin.display(description="lots")
     def nb_lots(self, obj):
-        return obj.lots.count()
+        return len(obj.lots.all())
 
 
 @admin.register(Lot)
@@ -334,7 +411,7 @@ class LotAdmin(admin.ModelAdmin):
 
     @admin.display(description="bien", ordering="bien__nom")
     def bien_nom(self, obj):
-        return obj.bien.nom
+        return "" if obj.bien.nom.strip().lower() == obj.designation.strip().lower() else obj.bien.nom
 
     @admin.display(description="type", ordering="type")
     def type_lot(self, obj):
@@ -757,7 +834,7 @@ class BailAdmin(LotsALouerMixin, admin.ModelAdmin):
                                                             ("loyer_precedent", "date_loyer_precedent", "date_revision_precedente")],
                          "description": "À remplir si le bien est en zone tendue ou soumis à l'encadrement des loyers (cases sur la fiche du bien). "
                                         "Loyer de référence : sur le site de la préfecture ou de la métropole (ex. Lyon : loyers.grandlyon.com)."}),
-        ("Révision annuelle et rappels", {"fields": ["revision_annuelle", ("irl_trimestre", "irl_valeur"), "indice_reference", "date_derniere_revision", ("date_attestation_assurance", "rappel_assurance")]}),
+        ("Révision annuelle et rappels", {"fields": [("revision_annuelle", "rappel_revision"), ("irl_trimestre", "irl_valeur"), "indice_reference", "date_derniere_revision", ("date_attestation_assurance", "rappel_assurance")]}),
         ("Historique des révisions", {"fields": ["historique"]}),
         ("Clauses particulières", {"fields": ["notes"]}),
         ("Documents pré-remplis", {"fields": ["documents"]}),
@@ -1107,7 +1184,7 @@ class EcheanceAdmin(admin.ModelAdmin):
             "action_checkbox_name": admin.helpers.ACTION_CHECKBOX_NAME,
         })
 
-    @admin.action(description="Marquer comme payé intégralement (virement, aujourd'hui)")
+    @admin.action(description="Tout encaisser (virement, aujourd'hui)")
     def marquer_paye(self, request, queryset):
         n = 0
         for e in queryset.exclude(statut=Echeance.Statut.PAYE):
@@ -1892,7 +1969,8 @@ class ACodifierFilter(admin.SimpleListFilter):
     parameter_name = "a_codifier"
 
     def lookups(self, request, model_admin):
-        return [("oui", "À codifier"), ("non", "Codifiées")]
+        nombre = PieceComptable.objects.filter(self.MANQUE).count()
+        return [("oui", f"À codifier ({nombre})" if nombre else "À codifier"), ("non", "Codifiées")]
 
     MANQUE = Q(preremplie=True) | Q(ligne="") | Q(montant__isnull=True) | Q(date__isnull=True)
 

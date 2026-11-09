@@ -323,6 +323,9 @@ class Bail(models.Model):
     date_derniere_revision = models.DateField("dernière révision", null=True, blank=True)
     date_attestation_assurance = models.DateField("dernière attestation d'assurance reçue", null=True, blank=True)
     rappel_assurance = models.BooleanField("rappel annuel de l'attestation d'assurance", default=True)
+    rappel_revision = models.BooleanField(
+        "rappel de la révision annuelle", default=True,
+        help_text="Décoché : la révision de ce bail n'apparaît plus dans « À faire » (révision volontairement non appliquée).")
     actif = models.BooleanField(default=True)
     # réduction temporaire du loyer (geste commercial, travaux…) : déduite du loyer HC des mois concernés, au prorata des jours
     reduction_montant = models.DecimalField("réduction mensuelle (€)", max_digits=10, decimal_places=2, null=True, blank=True)

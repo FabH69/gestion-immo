@@ -387,8 +387,8 @@ a.ligne-carte:hover { background: var(--selected-bg); text-decoration: none; }
 .cellule-personne small { display: block; color: var(--body-quiet-color); font-size: 12.5px; font-weight: 400; }
 #result_list .field-locataire_et_logement a:hover b { color: var(--primary); }
 .form-encaisser { display: inline; margin: 0; }
-.bouton-encaisser { background: var(--primary); color: #fff; border: 0; border-radius: 999px; padding: 5px 13px; font-weight: 600; font-size: 12.5px; cursor: pointer; margin-right: 10px; }
-.bouton-encaisser:hover { background: var(--secondary); }
+.bouton-encaisser { background: transparent; color: var(--primary); border: 1px solid var(--border-color); border-radius: 999px; padding: 4px 12px; font-weight: 600; font-size: 12.5px; cursor: pointer; margin-right: 10px; }
+.bouton-encaisser:hover { background: var(--primary); border-color: var(--primary); color: #fff; }
 #result_list .field-total, #result_list .field-paye, #result_list .field-reste, #result_list .column-total, #result_list .column-paye, #result_list .column-reste { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
 #result_list .field-actions_ligne { white-space: nowrap; text-align: right; }
 .model-echeance #changelist-filter details[data-filter-title="statut"], .model-echeance #changelist-filter details[data-filter-title="retard"] { display: none; }
@@ -459,7 +459,8 @@ a.ligne-carte:hover { background: var(--selected-bg); text-decoration: none; }
 .titre-liste + .messagelist, .titre-liste { margin-bottom: 12px; }
 @media (max-width: 767px) { .titre-liste #toolbar { width: 100%; } .titre-liste #toolbar input[type=text] { width: 100%; } }
 .cellule-personne small { display: block; }
-#result_list a.bouton-encaisser, a.bouton-encaisser { color: #fff !important; text-decoration: none; }
+#result_list a.bouton-encaisser, a.bouton-encaisser { color: var(--primary) !important; text-decoration: none; }
+#result_list a.bouton-encaisser:hover, a.bouton-encaisser:hover { color: #fff !important; }
 
 /* Listes : titre + recherche + Ajouter sur une ligne ; filtres propriétaire à droite ; pas de recherche globale en doublon */
 body.change-list #recherche-globale { visibility: hidden; }
@@ -529,3 +530,39 @@ body.change-list #recherche-globale { visibility: hidden; }
   .taches-changement tr.entete-changement .detail { display: block; margin: 2px 0 0; }
   .taches-changement .pastille-retard { display: inline-block; margin: 4px 0 0; }
 }
+
+/* Boutons d'enregistrement : un seul bouton plein (« Enregistrer »), les autres en contour, sans majuscules */
+#content .submit-row input[type=submit].default { text-transform: none; }
+#content .submit-row input[type=submit]:not(.default) { background: var(--body-bg); color: var(--primary); border: 1px solid var(--border-color); }
+#content .submit-row input[type=submit]:not(.default):hover { background: var(--selected-bg); color: var(--primary); }
+
+/* Téléphone : filtres repliés derrière un bouton « Filtres (n) » */
+.bouton-filtres { display: none; }
+@media (max-width: 767px) {
+  .bouton-filtres { display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--border-color); background: var(--body-bg); color: var(--body-fg);
+    border-radius: 999px; padding: 8px 14px; font: inherit; font-weight: 600; font-size: .85rem; cursor: pointer; }
+  .bouton-filtres.actif { border-color: var(--primary); color: var(--primary); background: var(--selected-bg); }
+  body.change-list:not(.filtres-ouverts) .barre-liste, body.change-list:not(.filtres-ouverts) .navigation-periode { display: none; }
+}
+
+/* « Ne plus rappeler » sous une révision ou une assurance du bloc À faire */
+.a-faire form.ne-plus-rappeler { display: inline; margin: 0; }
+.a-faire form.ne-plus-rappeler button { background: none; border: 0; padding: 2px 0 0; color: var(--body-quiet-color); font: inherit; font-size: .78rem; font-weight: 500; text-decoration: underline; cursor: pointer; }
+.a-faire form.ne-plus-rappeler button:hover { color: var(--primary); }
+
+/* Listes : chiffres clés sous le titre (dépôts de garantie), lien secondaire discret dans la barre de titre */
+.kpis-liste { grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); margin: 4px 0 8px; }
+.aide-liste { color: var(--body-quiet-color); font-size: .82rem; margin: 0 0 12px; }
+.titre-liste .object-tools li.lien-discret a:link, .titre-liste .object-tools li.lien-discret a:visited { background: transparent; color: var(--primary); border: 1px solid var(--border-color); }
+
+/* Listes : la barre d'actions n'apparaît que si une ligne est cochée, avec un bouton par action */
+#changelist-form:not(.selection-active) .actions { display: none !important; }
+#changelist-form.selection-active .actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; background: var(--selected-bg); border-radius: 12px; padding: 8px 12px; margin: 0 0 10px; }
+#changelist-form .actions.actions-en-boutons > label, #changelist-form .actions.actions-en-boutons > button[name=index] { display: none; }
+.actions-boutons { display: inline-flex; flex-wrap: wrap; gap: 8px; }
+#changelist-form .actions .actions-boutons .button { background: var(--body-bg); color: var(--primary); border: 1px solid var(--border-color); cursor: pointer; height: auto; }
+#changelist-form .actions .actions-boutons .button.principal { background: var(--primary); color: #fff; border-color: var(--primary); }
+#changelist-form .actions .actions-boutons .button.danger { color: var(--rouge, #c8463d); }
+/* Tri : une seule flèche, sur la colonne triée en premier */
+#result_list thead .sortoptions .sortpriority, #result_list thead .sortoptions .sortremove { display: none; }
+#result_list thead th.tri-secondaire .sortoptions { display: none; }

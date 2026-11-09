@@ -15,7 +15,6 @@ table.sauv td.m { text-align: right; white-space: nowrap; }
   <p class="aide">Une sauvegarde contient toutes les données (base), les photos et les pièces d'identité des garants. Elle est faite <strong>automatiquement chaque jour</strong> dès que vous utilisez l'application ; les {{ a_garder }} dernières restent sur le serveur. Pour être à l'abri d'un problème chez l'hébergeur, téléchargez-en une de temps en temps (par exemple chaque mois) et rangez-la sur votre ordinateur ou votre Drive.</p>
   <form method="post" class="actions">{% csrf_token %}
     <button type="submit" class="button default">Créer et télécharger une sauvegarde</button>
-    <a class="button annuler" href="{% url 'admin:index' %}">← Retour à l'accueil</a>
   </form>
 </div>
 

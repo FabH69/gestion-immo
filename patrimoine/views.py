@@ -424,6 +424,21 @@ def rappel_fait(request, type_rappel, pk):
 
 
 @require_POST
+def ne_plus_rappeler(request, type_rappel, pk):
+    """Lien « Ne plus rappeler » du bloc À faire : la révision ou l'assurance de ce bail quitte la liste pour de bon.
+    Le rappel se réactive sur la fiche du bail (cases « Rappel de la révision annuelle » et « Rappel annuel de l'attestation »)."""
+    bail = get_object_or_404(Bail, pk=pk)
+    champ, libelle = {"revision": ("rappel_revision", "révision du loyer"),
+                      "assurance": ("rappel_assurance", "attestation d'assurance")}.get(type_rappel, (None, None))
+    if champ:
+        Bail.objects.filter(pk=pk).update(**{champ: False})
+        JournalFait.objects.create(titre=f"Rappel de {libelle} désactivé", detail=_lieu(bail), categorie="Révision" if type_rappel == "revision" else "Assurance",
+                                   url=reverse("admin:patrimoine_bail_change", args=[pk]))
+        messages.success(request, f"{_lieu(bail)} : la {libelle} ne sera plus rappelée. Pour la réactiver, cochez la case sur la fiche du bail.")
+    return redirect("admin:index")
+
+
+@require_POST
 def tache_faite(request, pk):
     """Case à cocher du bloc « Entrées et sorties de locataires » de l'accueil."""
     tache = get_object_or_404(Tache, pk=pk)

@@ -1894,3 +1894,78 @@ class HeuresCreusesTests(TestCase):
         bail.heures_creuses = True
         self.assertEqual(bail.liste_heures_creuses, ["22h00 – 06h00", "12h30 – 14h30"])
 
+
+
+class VocabulaireEtListesTests(TestCase):
+    """Libellés en bon français, fils d'Ariane du menu, « Ne plus rappeler », colonnes des listes."""
+
+    def setUp(self):
+        self.admin = User.objects.create_superuser("admin", "", "x")
+        self.client.force_login(self.admin)
+        proprio = Proprietaire.objects.create(nom="SCI Test", type=Proprietaire.Type.SCI_IR)
+        self.bien = Bien.objects.create(proprietaire=proprio, nom="Vaugneray", adresse="1 rue", code_postal="69670", ville="Vaugneray",
+                                        prix_acquisition=Decimal("100000"))
+        self.lot = Lot.objects.create(bien=self.bien, designation="Vaugneray")
+        self.bail = Bail.objects.create(lot=self.lot, type=Bail.Type.NU, date_debut=date(2023, 5, 10), loyer_hc=Decimal("560"), charges=10)
+
+    def test_articles_et_messages(self):
+        from . import libelles
+        self.assertEqual(libelles.ajouter("annonce"), "Ajouter une annonce")
+        self.assertEqual(libelles.ajouter("bail"), "Ajouter un bail")
+        self.assertEqual(libelles.modifier("état des lieux"), "Modifier l'état des lieux")
+        self.assertEqual(libelles.modifier("tâche"), "Modifier la tâche")
+        self.assertEqual(libelles.ajouter("paramètres courte durée"), "Ajouter des paramètres courte durée")
+        self.assertEqual(libelles.message("L’objet loyer «\u00a0Mai\u00a0» a été modifié avec succès. Vous pouvez l’éditer à nouveau ci-dessous."),
+                         "Modifications enregistrées\u00a0: «\u00a0Mai\u00a0». Vous pouvez continuer ci-dessous.")
+        self.assertEqual(libelles.message("Autre message"), "Autre message")
+
+    def test_titres_boutons_et_fil_d_ariane(self):
+        page = self.client.get("/admin/patrimoine/annonce/add/").content.decode()
+        self.assertIn("<h1>Ajouter une annonce</h1>", page)
+        self.assertNotIn("Ajout de annonce", page)
+        page = self.client.get(f"/admin/patrimoine/bail/{self.bail.pk}/change/").content.decode()
+        self.assertIn("Modifier le bail", page)
+        self.assertIn("Ajouter un garant", page)
+        self.assertNotIn('name="_addanother"', page)  # on ne crée jamais deux baux d'affilée
+        self.assertNotIn("/admin/patrimoine/\">Patrimoine", page)
+        liste = self.client.get("/admin/patrimoine/annonce/").content.decode()
+        self.assertIn("Ajouter une annonce", liste)
+        self.assertIn('name="_addanother"', self.client.get("/admin/patrimoine/rappel/add/").content.decode())
+
+    def test_message_apres_enregistrement(self):
+        reponse = self.client.post("/admin/patrimoine/siteutile/add/", {"nom": "IRL", "url": "https://www.insee.fr", "ordre": 0}, follow=True)
+        textes = [str(m) for m in reponse.context["messages"]]
+        self.assertTrue(any(t.startswith("Enregistrement effectué") for t in textes), textes)
+
+    def test_ne_plus_rappeler_revision(self):
+        from .rappels import a_faire
+        jour = date(2026, 11, 9)
+        self.assertIn("Révision", [i["categorie"] for i in a_faire(jour)])
+        accueil = self.client.get("/admin/").content.decode()
+        self.assertIn("Ne plus rappeler", accueil)
+        self.client.post(f"/rappels/revision/{self.bail.pk}/ne-plus-rappeler/")
+        self.bail.refresh_from_db()
+        self.assertFalse(self.bail.rappel_revision)
+        self.assertNotIn("Révision", [i["categorie"] for i in a_faire(jour)])
+        self.assertIn("Assurance", [i["categorie"] for i in a_faire(jour)])
+        self.client.post(f"/rappels/assurance/{self.bail.pk}/ne-plus-rappeler/")
+        self.bail.refresh_from_db()
+        self.assertFalse(self.bail.rappel_assurance)
+
+    def test_colonnes_des_listes(self):
+        biens = self.client.get("/admin/patrimoine/bien/").content.decode()
+        self.assertIn("Rendement brut", biens)
+        self.assertIn("6,7 %", biens)  # 560 × 12 / 100 000
+        self.assertNotIn("column-date_vente", biens)
+        Bien.objects.create(proprietaire=self.bien.proprietaire, nom="Vendu", adresse="2 rue", code_postal="69000", ville="Lyon",
+                            vendu=True, date_vente=date(2024, 1, 1))
+        self.assertTrue("column-date_vente" in self.client.get("/admin/patrimoine/bien/?vente=oui").content.decode())
+        lots = self.client.get("/admin/patrimoine/lot/").content.decode()
+        self.assertNotIn('<td class="field-bien_nom">Vaugneray</td>', lots)  # le nom du bien ne répète pas la désignation
+        factures = self.client.get("/admin/patrimoine/piececomptable/").content.decode()
+        self.assertIn("Ajouter des factures", factures)
+        self.assertNotIn("Annexe 2072</a></li>", factures)
+
+    def test_dates_au_format_court(self):
+        from django.utils import formats
+        self.assertEqual(formats.date_format(date(2026, 6, 3)), "03/06/2026")

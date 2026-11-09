@@ -5,7 +5,7 @@
 .filtres select { padding: 4px; }
 .etat-scroll { overflow-x: auto; }
 </style>{% endblock %}
-{% block breadcrumbs %}<div class="breadcrumbs"><a href="{% url 'admin:index' %}">Accueil</a> › États › Loyers encaissés</div>{% endblock %}
+{% block breadcrumbs %}<div class="breadcrumbs"><a href="{% url 'admin:index' %}">Accueil</a> › <a href="{% url 'etat_loyers_encaisses' %}">États et LMNP</a> › Loyers encaissés</div>{% endblock %}
 {% block content %}
 <p>Montants en euros, par date de paiement réelle. Chaque paiement est réparti entre loyer HC et charges au prorata du loyer qu'il règle. Les mois sans paiement enregistré reprennent <a href="{% url 'admin:patrimoine_encaissementhistorique_changelist' %}">votre ancien suivi</a>.</p>
 <form method="get" class="filtres">
@@ -18,7 +18,6 @@
   </label>
   <a class="button" href="?annee={{ annee }}&proprietaire={{ proprietaire.pk|default:'' }}&format=pdf">Télécharger en PDF</a>
   <a class="button" href="?annee={{ annee }}&proprietaire={{ proprietaire.pk|default:'' }}&format=csv">Télécharger pour Excel</a>
-  <a class="button annuler" href="{% url 'admin:index' %}">← Retour à l'accueil</a>
 </form>
 <div class="etat-scroll">{% include "patrimoine/_tableau_etat.html" %}</div>
 {% endblock %}

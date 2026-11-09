@@ -1,6 +1,6 @@
 {% extends "admin/base_site.html" %}
 {% load tableau_bord %}
-{% block breadcrumbs %}<div class="breadcrumbs"><a href="{% url 'admin:index' %}">Accueil</a> › Finances › Suivi des encaissements</div>{% endblock %}
+{% block breadcrumbs %}<div class="breadcrumbs"><a href="{% url 'admin:index' %}">Accueil</a> › Encaissements</div>{% endblock %}
 {% block extrastyle %}{{ block.super }}<style>
 .carte { background: var(--body-bg); border: 1px solid var(--hairline-color); border-radius: 12px; box-shadow: 0 1px 6px rgba(16,24,40,.06); padding: 16px 18px; margin-bottom: 18px; }
 .barre { display: flex; flex-wrap: wrap; gap: 12px; align-items: end; }
@@ -22,6 +22,9 @@ table.enc td.versement, table.enc td.total { font-weight: 700; }
 table.enc tr.totaux td { font-weight: 700; border-top: 2px solid var(--border-color); background: var(--darkened-bg); }
 table.enc .occupant { display: block; font-size: .68rem; color: var(--body-quiet-color); font-weight: 400; }
 .neg { color: #c62828; }
+/* consultation par défaut ; « Modifier la courte durée » fait apparaître les champs de saisie */
+form.en-lecture table.enc input, form.en-lecture .bouton-enregistrer, form:not(.en-lecture) .bouton-modifier, form:not(.en-lecture) table.enc .lecture { display: none; }
+table.enc thead th:first-child { position: sticky; left: 0; background: var(--body-bg); z-index: 2; }
 .aide { font-size: .8rem; color: var(--body-quiet-color); }
 </style>{% endblock %}
 {% block content %}
@@ -41,7 +44,7 @@ table.enc .occupant { display: block; font-size: .68rem; color: var(--body-quiet
   <div class="tuile"><div class="l">Mouvements de cautions</div><div class="v">{{ totaux.total_cautions|floatformat:"0g" }} €</div></div>
 </div>
 
-<form method="post" class="carte">{% csrf_token %}
+<form method="post" class="carte{% if lots_courte %} en-lecture{% endif %}">{% csrf_token %}
   <input type="hidden" name="proprietaire" value="{{ proprietaire.pk }}"><input type="hidden" name="annee" value="{{ annee }}">
   {% if not lots_courte and not lots_longue %}<p>Aucun logement pour ce propriétaire.</p>{% else %}
   <div class="defile"><table class="enc">
@@ -58,7 +61,7 @@ table.enc .occupant { display: block; font-size: .68rem; color: var(--body-quiet
     <tbody>
     {% for m in mois %}
       <tr><td>{{ m.nom }}</td>
-        {% for c in m.courte %}{% for code, libelle in champs_lcd %}<td class="bloc-courte{% if forloop.first %} debut-groupe{% endif %}"><input type="text" inputmode="decimal" name="lcd-{{ c.lot.pk }}-{{ m.numero }}-{{ code }}" value="{% with v=c.valeurs|get_item:code %}{% if v %}{{ v }}{% endif %}{% endwith %}" aria-label="{{ libelle }} {{ m.nom }}"></td>{% endfor %}<td class="bloc-courte versement">{% if c.saisie %}{{ c.versement|floatformat:2 }}{% endif %}</td>{% endfor %}
+        {% for c in m.courte %}{% for code, libelle in champs_lcd %}<td class="bloc-courte{% if forloop.first %} debut-groupe{% endif %}">{% with v=c.valeurs|get_item:code %}<span class="lecture">{% if v %}{{ v|floatformat:2 }}{% endif %}</span><input type="text" inputmode="decimal" name="lcd-{{ c.lot.pk }}-{{ m.numero }}-{{ code }}" value="{% if v %}{{ v }}{% endif %}" aria-label="{{ libelle }} {{ m.nom }}">{% endwith %}</td>{% endfor %}<td class="bloc-courte versement">{% if c.saisie %}{{ c.versement|floatformat:2 }}{% endif %}</td>{% endfor %}
         {% for c in m.longue %}<td class="debut-groupe">{% if c.loyer %}{{ c.loyer|floatformat:2 }}<span class="occupant">{{ c.occupants }}</span>{% endif %}</td><td>{% if c.charges %}{{ c.charges|floatformat:2 }}{% endif %}</td><td class="{% if c.caution < 0 %}neg{% endif %}">{% if c.caution %}{{ c.caution|floatformat:2 }}{% endif %}</td>{% endfor %}
         <td class="debut-groupe">{{ m.total_loyers|floatformat:2 }}</td><td>{{ m.total_charges|floatformat:2 }}</td><td class="{% if m.total_cautions < 0 %}neg{% endif %}">{% if m.total_cautions %}{{ m.total_cautions|floatformat:2 }}{% endif %}</td><td class="total">{{ m.total|floatformat:2 }}</td></tr>
     {% endfor %}
@@ -68,7 +71,7 @@ table.enc .occupant { display: block; font-size: .68rem; color: var(--body-quiet
         <td class="debut-groupe">{{ totaux.total_loyers|floatformat:"2g" }}</td><td>{{ totaux.total_charges|floatformat:"2g" }}</td><td>{{ totaux.total_cautions|floatformat:"2g" }}</td><td>{{ totaux.total|floatformat:"2g" }}</td></tr>
     </tbody>
   </table></div>
-  {% if lots_courte %}<p style="margin-top:12px"><button type="submit" class="button default">Enregistrer la courte durée</button> <span class="aide">Saisissez les montants du relevé (ménage, commission et frais sans signe moins). Versement = CA + AirCover + régularisation − ménage − commission − frais.</span></p>{% endif %}
+  {% if lots_courte %}<p style="margin-top:12px"><button type="button" class="button bouton-modifier" onclick="this.form.classList.remove('en-lecture')">Modifier la courte durée</button><button type="submit" class="button default bouton-enregistrer">Enregistrer la courte durée</button> <span class="aide">Saisissez les montants du relevé (ménage, commission et frais sans signe moins). Versement = CA + AirCover + régularisation − ménage − commission − frais.</span></p>{% endif %}
   {% endif %}
   <p class="aide">Loyers et charges : montants dus selon les baux (au prorata des jours en cas d'entrée ou de sortie en cours de mois, révisions appliquées comprises). Cautions : dépôts encaissés (+) et restitués ou retenus (−), enregistrés dans Loyers › Dépôts. Pour qu'un logement apparaisse dans le bloc courte durée, choisissez « Location courte durée » dans sa fiche (Patrimoine › Lots).</p>
 </form>
