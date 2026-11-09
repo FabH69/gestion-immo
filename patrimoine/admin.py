@@ -1506,7 +1506,7 @@ class CandidatureAdmin(LotsALouerMixin, admin.ModelAdmin):
     inlines = [GarantCandidatureInline, PieceCandidatureInline]
     list_display = ["__str__", "statut", "situation", "revenus_mensuels", "taux_effort", "type_garantie", "recue_le"]
     list_filter = ["statut", "lot__bien__proprietaire"]
-    readonly_fields = ["lien_a_envoyer", "statut", "recue_le", "taux_effort"]
+    readonly_fields = ["lien_a_envoyer", "statut", "recue_le", "taux_effort", "suite"]
     actions = ["retenir", "refuser"]
 
     def get_fieldsets(self, request, obj=None):
@@ -1521,7 +1521,7 @@ class CandidatureAdmin(LotsALouerMixin, admin.ModelAdmin):
         reponses = [f.name for f in Candidature._meta.fields
                     if f.name not in {"id", "lot", "jeton", "statut", "cree_le", "recue_le", "consentement", *anciens}]
         return [
-            (None, {"fields": ["lot", "lien_a_envoyer", "statut", "recue_le", "taux_effort"]}),
+            (None, {"fields": ["lot", "lien_a_envoyer", "statut", "recue_le", "taux_effort", "suite"]}),
             ("Réponses du candidat", {"fields": reponses}),
         ]
 
@@ -1569,12 +1569,55 @@ class CandidatureAdmin(LotsALouerMixin, admin.ModelAdmin):
     def response_add(self, request, obj, post_url_continue=None):
         return redirect("admin:patrimoine_candidature_change", obj.pk)
 
-    @admin.action(description="Retenir : créer le locataire (et son garant)")
+    @admin.action(description="Retenir et préparer le bail")
     def retenir(self, request, queryset):
-        for c in queryset.filter(statut=Candidature.Statut.RECUE):
+        recues = list(queryset.filter(statut=Candidature.Statut.RECUE))
+        if not recues:
+            self.message_user(request, "Seuls les dossiers reçus peuvent être retenus.", messages.WARNING)
+            return None
+        if len(recues) == 1:
+            return self._retenir(request, recues[0])
+        for c in recues:
             locataire = c.creer_locataire()
             self.message_user(request, format_html('Locataire créé : <a href="{}">{}</a>. Créez ensuite le bail.',
                                                    reverse("admin:patrimoine_locataire_change", args=[locataire.pk]), locataire))
+        return None
+
+    def _retenir(self, request, candidature):
+        from urllib.parse import urlencode
+
+        locataire = candidature.retenir()
+        self.message_user(request, format_html(
+            "Dossier retenu : locataire <a href=\"{}\">{}</a> créé avec ses garants et ses pièces ; les autres candidatures du logement "
+            "sont passées en « non retenue ». Vérifiez le bail pré-rempli ci-dessous puis enregistrez.",
+            reverse("admin:patrimoine_locataire_change", args=[locataire.pk]), locataire))
+        return redirect(reverse("admin:patrimoine_bail_add") + "?" + urlencode(candidature.valeurs_bail(locataire)))
+
+    def get_urls(self):
+        return [path("<int:pk>/retenir/", self.admin_site.admin_view(self.retenir_vue), name="patrimoine_candidature_retenir")] + super().get_urls()
+
+    def retenir_vue(self, request, pk):
+        from django.core.exceptions import PermissionDenied
+
+        candidature = get_object_or_404(Candidature, pk=pk)
+        if request.method != "POST" or not self.has_change_permission(request, candidature):
+            raise PermissionDenied
+        if candidature.statut != Candidature.Statut.RECUE:
+            messages.warning(request, "Ce dossier n'est pas (ou plus) en attente : rien n'a été fait.")
+            return redirect("admin:patrimoine_candidature_change", pk)
+        return self._retenir(request, candidature)
+
+    @admin.display(description="suite")
+    def suite(self, obj):
+        if obj.statut != Candidature.Statut.RECUE:
+            return "–"
+        return format_html(
+            '<button type="submit" class="button default" formaction="{}" formnovalidate '
+            'onclick="return confirm(\'Retenir ce dossier ? Le locataire sera créé et les autres candidatures du logement passeront en « non retenue ».\')">'
+            'Retenir et préparer le bail</button>'
+            '<p class="help">Crée le locataire, ses garants et ses pièces, passe les autres candidatures du logement en « non retenue », '
+            'puis ouvre un bail pré-rempli (loyer, charges et dépôt de l\'annonce, date d\'entrée souhaitée) à vérifier.</p>',
+            reverse("admin:patrimoine_candidature_retenir", args=[obj.pk]))
 
     @admin.action(description="Ne pas retenir")
     def refuser(self, request, queryset):

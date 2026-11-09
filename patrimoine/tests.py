@@ -459,6 +459,35 @@ class CandidatureEtGarantTests(TestCase):
         bien = Bien.objects.create(proprietaire=proprio, nom="Immeuble", adresse="1 rue", code_postal="69000", ville="Lyon")
         self.lot = Lot.objects.create(bien=bien, designation="Apt 2", surface=40, nb_pieces=2)
 
+    def test_retenir_et_preparer_le_bail(self):
+        from urllib.parse import parse_qs, urlparse
+
+        from .models import Candidature, ChangementLocataire, PieceCandidature
+
+        self.lot.meuble = True
+        self.lot.save()
+        Annonce.objects.create(lot=self.lot, loyer_cc=Decimal("650"), charges=Decimal("50"), disponible_le=date(2026, 12, 1))
+        c = Candidature.objects.create(lot=self.lot, statut="recue", prenom="Léa", nom="Durand", type_garantie="visale")
+        PieceCandidature.objects.create(candidature=c, type="identite", fichier="pieces-identite/cni.pdf")
+        PieceCandidature.objects.create(candidature=c, type="salaires", fichier="pieces-identite/bulletins.pdf")
+        autre = Candidature.objects.create(lot=self.lot, statut="recue", nom="Martin")
+        changement = ChangementLocataire.objects.create(lot=self.lot, date_arrivee=date(2026, 12, 1))
+        self.client.force_login(User.objects.create_superuser("admin", "a@example.com", "x"))
+        self.assertContains(self.client.get(f"/admin/patrimoine/candidature/{c.pk}/change/"), "Retenir et préparer le bail")
+        r = self.client.post(f"/admin/patrimoine/candidature/{c.pk}/retenir/")
+        url = urlparse(r["Location"])
+        self.assertEqual(url.path, "/admin/patrimoine/bail/add/")
+        q = {k: v[0] for k, v in parse_qs(url.query).items()}
+        locataire = Locataire.objects.get(nom="Durand")
+        self.assertEqual((q["lot"], q["locataires"], q["type"], q["date_debut"]), (str(self.lot.pk), str(locataire.pk), "meuble", "01/12/2026"))
+        self.assertEqual((Decimal(q["loyer_hc"]), Decimal(q["depot_garantie"]), q["type_garantie"]), (Decimal("600"), Decimal("1200"), "visale"))
+        self.assertEqual(sorted(locataire.documents.values_list("type", flat=True)), ["identite", "justificatif"])
+        autre.refresh_from_db()
+        self.assertEqual(autre.statut, "refusee")
+        self.assertTrue(changement.taches.get(libelle__startswith="Étudier les dossiers").faite)
+        page = self.client.get(r["Location"]).content.decode()
+        self.assertIn('value="600', page)
+
     def test_formulaire_public_puis_creation_du_locataire(self):
         import tempfile
 

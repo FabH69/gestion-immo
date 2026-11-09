@@ -1239,9 +1239,44 @@ class Candidature(models.Model):
                 email=self.garant_email, telephone=self.garant_telephone, adresse=self.garant_adresse,
                 profession=self.garant_profession, revenus_mensuels=self.garant_revenus,
             )
+        # pièces du dossier rangées dans les documents du locataire (même fichier, pas de copie)
+        types = {PieceCandidature.Type.IDENTITE: DocumentLocataire.Type.IDENTITE}
+        for piece in self.pieces.all():
+            DocumentLocataire.objects.create(locataire=locataire, type=types.get(piece.type, DocumentLocataire.Type.JUSTIFICATIF),
+                                             titre=piece.get_type_display()[:150], fichier=piece.fichier.name)
         self.statut = self.Statut.RETENUE
         self.save(update_fields=["statut"])
         return locataire
+
+    def retenir(self):
+        """Dossier retenu : locataire, garants et pièces créés, autres candidatures du logement non retenues,
+        tâche « choisir le locataire » cochée. Renvoie le locataire."""
+        locataire = self.creer_locataire()
+        Candidature.objects.filter(lot=self.lot, statut__in=[self.Statut.ENVOYEE, self.Statut.RECUE]).exclude(pk=self.pk) \
+            .update(statut=self.Statut.REFUSEE)
+        for t in Tache.objects.filter(changement__lot=self.lot, changement__termine=False, faite=False,
+                                      libelle__istartswith="Étudier les dossiers"):
+            t.faite = True
+            t.save()
+        return locataire
+
+    def valeurs_bail(self, locataire):
+        """Valeurs proposées pour le nouveau bail (reprises de la dernière annonce du logement, sinon du lot)."""
+        lot = self.lot
+        annonce = lot.annonces.order_by("-pk").first()
+        meuble = lot.meuble
+        valeurs = {"lot": lot.pk, "locataires": locataire.pk, "type": Bail.Type.MEUBLE if meuble else Bail.Type.NU}
+        debut = self.date_entree_souhaitee or (annonce.disponible_le if annonce else None)
+        if debut:
+            valeurs["date_debut"] = debut.strftime("%d/%m/%Y")
+        if annonce:
+            hc = annonce.loyer_cc - annonce.charges
+            valeurs.update(loyer_hc=hc, loyer_initial=hc, charges=annonce.charges,
+                           depot_garantie=annonce.depot_garantie or hc * (2 if meuble else 1),
+                           mode_charges="forfait" if annonce.charges_forfait else ("provision" if annonce.charges else "aucune"))
+        if self.type_garantie:
+            valeurs["type_garantie"] = self.type_garantie
+        return valeurs
 
 
 class GarantCandidature(models.Model):
