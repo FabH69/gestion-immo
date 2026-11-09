@@ -11,6 +11,10 @@ WSGI="${WSGI:-/var/www/$(echo "$DOMAINE" | tr '.' '_')_wsgi.py}"
 SECRET="$HOME/.gestion-immo-secret"
 
 cd "$APPLI"
+# le code est rangé par métier (dossiers models/, views/, admin/) : les anciens fichiers uniques sont retirés
+for ancien in patrimoine/models.py patrimoine/views.py patrimoine/admin.py; do
+  if [ -d "${ancien%.py}" ]; then rm -f "$ancien"; fi
+done
 echo "1/5 Installation des bibliothèques (quelques minutes)…"
 [ -d "$VENV" ] || $PYTHON -m venv "$VENV"
 "$VENV/bin/pip" install -q --upgrade pip
