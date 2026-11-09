@@ -1,0 +1,14 @@
+{
+  "name": "Commandes de balles",
+  "short_name": "Balles",
+  "id": "/balles/",
+  "start_url": "/balles/",
+  "scope": "/balles/",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#ea481a",
+  "icons": [
+    {"src": "icones/icone-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any maskable"},
+    {"src": "icones/icone-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable"}
+  ]
+}
