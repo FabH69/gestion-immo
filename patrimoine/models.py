@@ -332,9 +332,22 @@ class Bail(models.Model):
     pdl_electricite = models.CharField("électricité : n° PDL", max_length=20, blank=True, help_text="Point de livraison, 14 chiffres (facture ou compteur Linky)")
     index_elec_entree = models.CharField("index à l'entrée", max_length=50, blank=True, help_text="En heures pleines / creuses : « HP 12345 / HC 6789 »")
     index_elec_sortie = models.CharField("index à la sortie", max_length=50, blank=True)
+    heures_creuses = models.BooleanField("heures pleines / heures creuses", default=False,
+                                         help_text="Cocher si le compteur électrique est en option heures pleines / heures creuses")
+    plages_heures_creuses = models.TextField("plages d'heures creuses", blank=True,
+                                             help_text="Une plage par ligne, ex. « 22h00 – 06h00 » puis « 12h30 – 14h30 ». "
+                                                       "Les autres heures sont en heures pleines.")
     pce_gaz = models.CharField("gaz : n° PCE", max_length=20, blank=True, help_text="Point de comptage et d'estimation, 14 chiffres ou GI + 6 chiffres")
     index_gaz_entree = models.CharField("index à l'entrée", max_length=50, blank=True)
     index_gaz_sortie = models.CharField("index à la sortie", max_length=50, blank=True)
+
+    @property
+    def liste_heures_creuses(self):
+        """Plages d'heures creuses, une par ligne (vide si le logement n'est pas en heures pleines / creuses)."""
+        if not self.heures_creuses:
+            return []
+        return [l.strip() for l in self.plages_heures_creuses.splitlines() if l.strip()]
+
     compteur_eau = models.CharField("eau froide : n° de compteur", max_length=30, blank=True)
     index_eau_froide_entree = models.CharField("index à l'entrée", max_length=50, blank=True)
     index_eau_froide_sortie = models.CharField("index à la sortie", max_length=50, blank=True)

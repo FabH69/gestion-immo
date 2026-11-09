@@ -1837,3 +1837,16 @@ class ActualiserAnnonceTests(TestCase):
         self.assertEqual(r.status_code, 302)
         a.refresh_from_db()
         self.assertTrue(a.texte.startswith("Nouveau texte"))
+
+
+class HeuresCreusesTests(TestCase):
+    def test_plages_seulement_si_case_cochee(self):
+        proprio = Proprietaire.objects.create(nom="SCI", type=Proprietaire.Type.SCI_IR)
+        bien = Bien.objects.create(proprietaire=proprio, nom="Immeuble", adresse="1 rue", code_postal="69000", ville="Lyon")
+        bail = Bail.objects.create(lot=Lot.objects.create(bien=bien, designation="Apt"), type=Bail.Type.NU,
+                                   date_debut=date(2025, 1, 1), loyer_hc=Decimal("600"),
+                                   plages_heures_creuses="22h00 – 06h00\n\n12h30 – 14h30\n")
+        self.assertEqual(bail.liste_heures_creuses, [])
+        bail.heures_creuses = True
+        self.assertEqual(bail.liste_heures_creuses, ["22h00 – 06h00", "12h30 – 14h30"])
+

@@ -730,7 +730,7 @@ class BailAdmin(LotsALouerMixin, admin.ModelAdmin):
     form = BailForm
 
     class Media:
-        js = ["patrimoine/depot_garantie.js"]
+        js = ["patrimoine/depot_garantie.js", "patrimoine/heures_creuses.js"]
     list_display = ["liste_locataires", "lot", "type", "date_debut", "colonne_loyer_initial", "colonne_loyer_actuel", "charges", "loyer_cc", "actif"]
     list_display_links = ["liste_locataires", "lot"]
     list_filter = [BailEnCoursFilter, "lot__bien__proprietaire"]
@@ -746,6 +746,7 @@ class BailAdmin(LotsALouerMixin, admin.ModelAdmin):
                                                  "commence ou finit en cours de mois). Les loyers non encore réglés sont recalculés à l'enregistrement."}),
         ("Garantie", {"fields": [("type_garantie", "detail_garantie")], "description": "Les garants se saisissent en bas de page."}),
         ("Relevés des compteurs", {"fields": [("pdl_electricite", "index_elec_entree", "index_elec_sortie"),
+                                              ("heures_creuses", "plages_heures_creuses"),
                                               ("pce_gaz", "index_gaz_entree", "index_gaz_sortie"),
                                               ("compteur_eau", "index_eau_froide_entree", "index_eau_froide_sortie"),
                                               ("compteur_eau_chaude", "index_eau_chaude_entree", "index_eau_chaude_sortie")],

@@ -180,7 +180,7 @@ CHAMPS = [
     ("État des lieux et compteurs", [
         ("Type_EDL", "Entrée ou Sortie"), ("Case_Entrée", "☒ si état des lieux d'entrée, ☐ sinon"), ("Case_Sortie", "☒ si sortie, ☐ sinon"),
         ("Date_EDL_entrée", "Date de l'état des lieux d'entrée"), ("Date_EDL_sortie", "Date de l'état des lieux de sortie"),
-        ("PDL", "N° PDL électricité"), ("PCE", "N° PCE gaz"), ("Compteur_eau", "N° du compteur d'eau froide"),
+        ("PDL", "N° PDL électricité"), ("Heures_creuses", "Plages d'heures creuses (vide si pas d'option HP/HC)"), ("PCE", "N° PCE gaz"), ("Compteur_eau", "N° du compteur d'eau froide"),
         ("Index_HP_Entrée", "Électricité heures pleines à l'entrée (ou index unique)"), ("Index_HC_Entrée", "Électricité heures creuses à l'entrée"),
         ("Index_HP_Sortie", "Électricité heures pleines à la sortie"), ("Index_HC_Sortie", "Électricité heures creuses à la sortie"),
         ("Index_Gaz_Entrée", "Gaz à l'entrée ; idem Index_Gaz_Sortie"), ("Index_Eau_froide_Entrée", "Eau froide à l'entrée ; idem _Sortie"),
@@ -304,7 +304,7 @@ def valeurs(bail, garants=None, type_edl=None, aujourdhui=None):
               "Case_Entrée": "☒" if type_edl == "entree" else "☐", "Case_Sortie": "☒" if type_edl == "sortie" else "☐",
               "Date_EDL_entrée": date_fr(edls["entree"].date) if "entree" in edls else (date_fr(bail.date_debut) if type_edl == "entree" else ""),
               "Date_EDL_sortie": date_fr(edls["sortie"].date) if "sortie" in edls else (date_fr(bail.date_fin) if type_edl == "sortie" else ""),
-              "PDL": bail.pdl_electricite, "PCE": bail.pce_gaz, "Compteur_eau": bail.compteur_eau,
+              "PDL": bail.pdl_electricite, "Heures_creuses": ", ".join(bail.liste_heures_creuses), "PCE": bail.pce_gaz, "Compteur_eau": bail.compteur_eau,
               "Nouvelle_adresse": edls["sortie"].nouvelle_adresse.replace("\n", " ") if "sortie" in edls else "",
               "Nb_clés": edls[type_edl].nb_cles if type_edl in edls else ""})
     for moment, suffixe in (("Entrée", "_entree"), ("Sortie", "_sortie")):
