@@ -111,6 +111,18 @@ ICONES = {
     "liens": '<path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>',
     "balles": '<circle cx="12" cy="12" r="9"/><path d="M5.6 5.6a9 9 0 0 1 0 12.8M18.4 5.6a9 9 0 0 0 0 12.8"/>',
     "menu": '<path d="M4 6h16M4 12h16M4 18h16"/>',
+    "controles": '<path d="M12 3 4 6v6c0 5 3.5 8 8 9 4.5-1 8-4 8-9V6z"/><path d="m9 12 2 2 4-4"/>',
+    "irl": '<path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/>',
+    "surface": '<rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h6V3M15 21v-6h6"/>',
+    "dpe": '<path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><path d="M14 3v6h6"/><path d="M12 12v4M12 18h.01"/>',
+    "mail": '<rect x="3" y="5" width="18" height="14" rx="2"/><path d="m3 7 9 6 9-6"/>',
+    "depot": '<path d="M12 3 4 6v6c0 5 3.5 8 8 9 4.5-1 8-4 8-9V6z"/>',
+    "eclair": '<path d="M13 2 4 14h7l-1 8 9-12h-7z"/>',
+    "chaudiere": '<path d="M12 3c2 3 5 5 5 9a5 5 0 0 1-10 0c0-2 1-3.5 2-4.5 0 2 1 3 2 3 0-3-1-5 1-7.5z"/>',
+    "facture": '<rect x="4" y="2" width="16" height="20" rx="2"/><path d="M8 7h8M8 11h8M8 15h5"/>',
+    "booking": '<rect x="3" y="4" width="18" height="17" rx="2"/><path d="M8 2v4M16 2v4M3 10h18"/>',
+    "banque": '<path d="M3 10 12 4l9 6M5 10v8M9.5 10v8M14.5 10v8M19 10v8M3 21h18"/>',
+    "personne": '<circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/>',
     "filtre": '<path d="M4 5h16l-6 8v5l-4 2v-7z"/>',
 }
 
@@ -166,6 +178,7 @@ def _menu():
              [("Sauvegardes", r("sauvegardes")), ("Mails (Gmail)", a("parametresmail")), ("Tâches entrée / sortie", a("tachepardefaut")),
               ("Utilisateurs", r("admin:auth_user_changelist")), ("Mot de passe", r("admin:password_change"))]),
             ("balles", "Balles", r("balles:accueil"), [], []),
+            ("controles", "Contrôles", r("controles"), [r("controles")], []),
         ]),
     ]
 
@@ -252,7 +265,7 @@ def menu_lateral(context):
                       "candidatures": "relocation", "annonces": "relocation", "cles": "relocation", "lcd": "lcd",
                       "encaissements": "finances", "prets": "finances", "etats": "etats",
                       "foncier": "compta", "lmnp": "compta", "societe": "compta",
-                      "rappels": "outils", "modeles": "outils", "liens": "outils", "balles": "balles"}
+                      "rappels": "outils", "modeles": "outils", "liens": "outils", "balles": "balles", "controles": "outils"}
     groupes, actif_trouve = [], False
     for titre, liens in _menu():
         lignes = []
@@ -265,10 +278,14 @@ def menu_lateral(context):
             pastille = pastilles.get(libelle)
             if ico in compta.REGIMES:
                 pastille = compta.a_codifier(ico).count()  # factures à codifier de cette comptabilité
+            if ico == "controles":
+                from patrimoine import controles
+
+                pastille = controles.nombre_a_traiter(user)  # contrôles qui ont au moins une ligne
             sous_liens = [{"libelle": s[0], "url": s[1], "actif": _correspond(s[1], chemin, params)}
                           for s in sous if len(s) < 3 or acces.get(s[2])]
             lignes.append({"icone": icone(ico), "libelle": libelle, "url": url, "actif": actif and not actif_trouve,
-                           "pastille": pastille, "pastille_douce": ico in compta.REGIMES, "sous": sous_liens})
+                           "pastille": pastille, "pastille_douce": ico in compta.REGIMES or ico == "controles", "sous": sous_liens})
             actif_trouve |= actif
         if lignes:
             groupes.append({"titre": titre, "liens": lignes})

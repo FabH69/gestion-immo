@@ -40,10 +40,11 @@ MODULES = [
       "admin:patrimoine_piececomptable_import"], ["admin:patrimoine_piececomptable_import"]),
     ("etats", "États, bilan LMNP et plus-value", ["patrimoine.chargelmnp"],
      ["etat_loyers_encaisses", "etat_loyers_detail", "biens_lmnp", "plus_value"], []),
-    ("outils", "Rappels, modèles (location, annonces) et sites utiles", ["patrimoine.rappel", "patrimoine.journalfait",
+    ("outils", "Rappels, contrôles, modèles (location, annonces) et sites utiles", ["patrimoine.rappel", "patrimoine.journalfait",
                                                          "patrimoine.modeledocument", "patrimoine.modeleannonce",
-                                                         "patrimoine.siteutile"],
-     ["liste_champs", "rappel_fait", "ne_plus_rappeler"], ["rappel_fait", "ne_plus_rappeler"]),
+                                                         "patrimoine.siteutile", "patrimoine.controleignore"],
+     ["liste_champs", "rappel_fait", "ne_plus_rappeler", "controles", "controle_ignorer"],
+     ["rappel_fait", "ne_plus_rappeler", "controle_ignorer"]),
     ("balles", "Balles", ["commandes.joueur", "commandes.article", "commandes.commande", "commandes.ligne"], [], []),
 ]
 LIBELLES = {code: libelle for code, libelle, *_ in MODULES}

@@ -2239,6 +2239,99 @@ class TableauxBanqueEtRappelsTests(TestCase):
         self.assertIn("impots_taxes", PieceComptable.LIBELLES_RUBRIQUES)
 
 
+class ControlesTests(TestCase):
+    """Page « Contrôles » : informations manquantes, « Ne pas contrôler », pastille du menu, mois sans facture / sans Booking."""
+
+    def setUp(self):
+        self.proprio = Proprietaire.objects.create(nom="Fabien", type=Proprietaire.Type.NOM_PROPRE)
+        self.bien = Bien.objects.create(proprietaire=self.proprio, nom="Pollionnay", adresse="1 rue", code_postal="69290",
+                                        ville="Pollionnay")
+        self.lot = Lot.objects.create(bien=self.bien, designation="T2", meuble=False, surface=Decimal("45"), classe_dpe="D")
+        self.bail = Bail.objects.create(lot=self.lot, type=Bail.Type.NU, date_debut=date(2025, 1, 1), loyer_hc=Decimal("700"),
+                                        depot_garantie=Decimal("0"))
+        self.user = User.objects.create_superuser("admin", "", "x")
+        self.client.force_login(self.user)
+        from django.core.cache import cache
+
+        cache.clear()
+
+    def resultat(self, code):
+        from . import controles
+
+        return next(r for r in controles.executer(self.user) if r["code"] == code)
+
+    def test_page_et_lignes(self):
+        self.assertEqual(self.resultat("bail_locataire")["nombre"], 1)  # bail sans locataire
+        self.assertEqual(self.resultat("bail_depot")["nombre"], 1)
+        self.assertEqual(self.resultat("lot_dpe")["nombre"], 0)
+        Lot.objects.create(bien=self.bien, designation="Parking", type="parking")  # pas concerné par surface ni DPE
+        self.assertEqual(self.resultat("lot_surface")["nombre"], 0)
+        page = self.client.get("/controles/").content.decode()
+        self.assertIn("Baux sans locataire", page)
+        self.assertIn("Bloquent un document", page)
+        self.assertIn(f"/admin/patrimoine/bail/{self.bail.pk}/change/", page)
+        self.assertIn("✓ DPE", page)  # dans « Tout est bon »
+        accueil = self.client.get("/admin/").content.decode()
+        self.assertIn("/controles/", accueil)  # entrée du menu
+
+    def test_ne_pas_controler_puis_retablir(self):
+        from . import controles
+        from .models import ControleIgnore
+
+        avant = controles.nombre_a_traiter(self.user)
+        r = self.client.post("/controles/ecarter/", {"code": "bail_depot", "cle": f"bail:{self.bail.pk}", "libelle": "T2"})
+        self.assertRedirects(r, "/controles/#bail_depot", fetch_redirect_response=False)
+        self.assertEqual(self.resultat("bail_depot")["nombre"], 0)
+        self.assertEqual(self.resultat("bail_depot")["ignores"], 1)
+        self.assertEqual(controles.nombre_a_traiter(self.user), avant - 1)
+        self.client.post("/controles/ecarter/", {"code": "inconnu", "cle": "x"})  # code inconnu : ignoré
+        self.assertEqual(ControleIgnore.objects.count(), 1)
+        self.client.post("/controles/ecarter/", {"action": "retablir"})
+        self.assertEqual(self.resultat("bail_depot")["nombre"], 1)
+
+    def test_droits(self):
+        from . import controles, droits
+
+        aide = User.objects.create_user("aide", "", "x", is_staff=True)
+        self.assertEqual(controles.executer(aide), [])  # aucun module : aucun contrôle
+        droits.appliquer(aide, {"outils": droits.CONSULTATION, "biens": droits.CONSULTATION})
+        aide = User.objects.get(pk=aide.pk)
+        self.assertEqual({r["code"] for r in controles.executer(aide)}, {"lot_surface", "lot_dpe", "chaudiere"})
+        self.client.force_login(aide)
+        self.assertEqual(self.client.get("/controles/").status_code, 200)
+        self.client.post("/controles/ecarter/", {"code": "lot_dpe", "cle": "lot:1"})  # consultation seule : refusé
+        from .models import ControleIgnore
+
+        self.assertFalse(ControleIgnore.objects.exists())
+
+    def test_mois_sans_facture_de_conciergerie_et_sans_booking(self):
+        from . import controles
+        from .models import ParametresLCD, PieceComptable, ReservationLCD
+
+        self.bien.comptabilite = "lmnp"
+        self.bien.save()
+        lcd = Lot.objects.create(bien=self.bien, designation="Studio", type="studio", meuble=True, exploitation="courte",
+                                 surface=Decimal("20"), classe_dpe="C")
+        ParametresLCD.objects.create(lot=lcd, commission_gestion=Decimal("20"))
+        for i, (arrivee, plateforme) in enumerate([(date(2026, 7, 3), "booking"), (date(2026, 8, 10), "airbnb"),
+                                                   (date(2026, 9, 12), "booking"), (date(2026, 10, 2), "booking")]):
+            ReservationLCD.objects.create(lot=lcd, plateforme=plateforme, reference=str(i), arrivee=arrivee,
+                                          depart=arrivee + timedelta_jours(2))
+        aujourdhui = date(2026, 11, 9)
+        self.assertEqual(controles.conciergerie_manquante(aujourdhui), [])  # aucune facture encore : contrôle inactif
+        PieceComptable.objects.create(bien=self.bien, rubrique="commission", fournisseur="Conciergerie du Lac",
+                                      mois_concerne=date(2026, 7, 1))
+        PieceComptable.objects.create(bien=self.bien, rubrique="commission", fournisseur="Conciergerie du Lac",
+                                      mois_concerne=date(2026, 9, 1))
+        manquants = controles.conciergerie_manquante(aujourdhui)
+        # août manque ; octobre n'est réclamé qu'à partir du 13 novembre
+        self.assertEqual([c for c, *_ in manquants], [f"conciergerie:{lcd.pk}:2026-08"])
+        self.assertIn("août 2026", manquants[0][1])
+        self.assertEqual(len(controles.conciergerie_manquante(date(2026, 11, 13))), 2)
+        booking = controles.booking_manquant(aujourdhui)
+        self.assertEqual([c for c, *_ in booking], [f"booking:{lcd.pk}:2026-08"])  # août : Airbnb seulement
+
+
 def timedelta_jours(n):
     from datetime import timedelta
 

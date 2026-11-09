@@ -93,6 +93,23 @@ class Rappel(models.Model):
         self.save()
 
 
+class ControleIgnore(models.Model):
+    """Ligne écartée de la page Contrôles (« Ne pas contrôler ») : cas voulu, ex. un dépôt de garantie réellement à 0 €."""
+
+    code = models.CharField("contrôle", max_length=30)
+    cle = models.CharField("élément", max_length=60)
+    libelle = models.CharField("libellé", max_length=200, blank=True)
+    cree_le = models.DateField("écarté le", auto_now_add=True)
+
+    class Meta:
+        verbose_name = "contrôle écarté"
+        verbose_name_plural = "contrôles écartés"
+        constraints = [models.UniqueConstraint(fields=["code", "cle"], name="controle_ignore_unique")]
+
+    def __str__(self):
+        return f"{self.code} – {self.libelle or self.cle}"
+
+
 class JournalFait(models.Model):
     """Trace des rappels cochés « Fait » depuis l'accueil, pour le filtre « Déjà fait »."""
 
