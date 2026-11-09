@@ -2,7 +2,7 @@
 from decimal import Decimal
 
 from django import forms
-from django.contrib import admin
+from django.contrib import admin, messages
 from django.urls import reverse
 from django.utils.html import format_html
 
@@ -181,6 +181,11 @@ class BienAdmin(admin.ModelAdmin):
             # case décochée : on annule ce que la vente du bien avait fait (sans toucher aux lots vendus à part)
             lots = obj.lots.filter(date_vente=avant["date_vente"]) if avant["date_vente"] else obj.lots.filter(date_vente__isnull=True)
             lots.update(vendu=False, date_vente=None)
+        if not obj.vendu:
+            from ..rappels import rappel_cfe
+
+            if rappel_cfe(obj):
+                messages.info(request, "Rappel annuel « Payer la CFE » ajouté pour ce bien (15 décembre, ★ important, 10 jours avant).")
 
     def get_form(self, request, obj=None, **kwargs):
         form = super().get_form(request, obj, **kwargs)

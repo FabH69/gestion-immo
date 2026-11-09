@@ -695,7 +695,7 @@ class TableauDeBordTests(TestCase):
         debut = timezone.localdate() - timedelta(days=360)
         bail = Bail.objects.create(lot=lot, type=Bail.Type.NU, date_debut=debut, loyer_hc=500)
         echeance = bail.prochaine_revision(timezone.localdate())
-        self.assertIn("revision/%d/fait" % bail.pk, self.client.get("/admin/").content.decode().replace("rappels/", ""))
+        self.assertIn("revision/%d/fait" % bail.pk, self.client.get("/admin/?vue=tout").content.decode().replace("rappels/", ""))
         self.client.post(f"/rappels/revision/{bail.pk}/fait/")
         bail.refresh_from_db()
         self.assertEqual(bail.date_derniere_revision, echeance)
@@ -1336,7 +1336,7 @@ class NouveauLookTests(TestCase):
                     "/admin/patrimoine/bail/", "/recherche/?q=dupont", "/admin/patrimoine/echeance/?retard=oui"]:
             self.assertEqual(self.client.get(url).status_code, 200, url)
         self.assertContains(self.client.get("/recherche/?q=dup"), "DUPONT")
-        self.assertContains(self.client.get("/admin/"), "Loyers de")
+        self.assertContains(self.client.get("/admin/"), "Encaissé en")
 
     def test_bouton_encaisser(self):
         Echeance.generer_pour_mois(date(2026, 10, 1))
@@ -1941,7 +1941,7 @@ class VocabulaireEtListesTests(TestCase):
         from .rappels import a_faire
         jour = date(2026, 11, 9)
         self.assertIn("Révision", [i["categorie"] for i in a_faire(jour)])
-        accueil = self.client.get("/admin/").content.decode()
+        accueil = self.client.get("/admin/?vue=tout").content.decode()
         self.assertIn("Ne plus rappeler", accueil)
         self.client.post(f"/rappels/revision/{self.bail.pk}/ne-plus-rappeler/")
         self.bail.refresh_from_db()
@@ -2124,3 +2124,122 @@ class ComptaEtConciergerieTests(TestCase):
         self.client.force_login(aide)
         self.assertEqual(self.client.get("/comptabilite/lmnp/").status_code, 403)
         self.assertEqual(self.client.get("/comptabilite/conciergerie/").status_code, 403)
+
+
+TABLEAU_CM = """Liste des remboursements
+   Période         Capital           Capital de        Intérêts de      Assurance et frais   Terme remboursé
+  05/06/2024         109 682,05            318,95              347,33                15,26               681,54
+  05/07/2024         109 363,10            319,96              346,32                10,81               677,09
+ 17/10/2023         Déblocage                         0,00                    96325,00                   0,00                  0,00                   0,00
+ 05/11/2023       Échéance intérêt                  96325,00                     0,00                  190,54                  18,06                 208,60
+"""
+TABLEAU_CE = """ RANG ECHEANCE   MONTANT   CAPITAL   INTERETS   ACCESSOIRES   RESTANT DU   REPORTES   REPORT
+  001     10/08/2025                        0,00                      0,00                0,00                    0,00            92 233,74                     0,00                  0,00
+  014     05/06/2025          54,50       0,00       0,00        54,50       313 262,02        114,68       0,00
+  015     05/07/2025       2 250,93     852,20   1 344,23        54,50       312 409,82          0,00       0,00
+     TOTAL DE L'ANNEE 2025 :                                                           941,17               2 914,02
+"""
+
+
+class TableauxBanqueEtRappelsTests(TestCase):
+    """Tableaux d'amortissement de la banque (lecture, remplacement du calcul) ; rappels ★ et mail ; CFE."""
+
+    def setUp(self):
+        self.proprio = Proprietaire.objects.create(nom="Fabien", type=Proprietaire.Type.NOM_PROPRE)
+        self.bien = Bien.objects.create(proprietaire=self.proprio, nom="Chasselay", adresse="1 rue", code_postal="69380",
+                                        ville="Chasselay", comptabilite="lmnp")
+        self.client.force_login(User.objects.create_superuser("admin", "", "x"))
+
+    def test_lecture_des_deux_presentations(self):
+        from . import tableaux_amortissement as ta
+
+        cm = ta.lire(TABLEAU_CM)
+        self.assertEqual([l["date"] for l in cm], [date(2023, 11, 5), date(2024, 6, 5), date(2024, 7, 5)])  # déblocage ignoré
+        self.assertEqual(cm[1]["restant"], Decimal("109363.10"))
+        self.assertEqual((cm[0]["capital"], cm[0]["interets"], cm[0]["assurance"]), (Decimal(0), Decimal("190.54"), Decimal("18.06")))
+        ce = ta.lire(TABLEAU_CE)
+        self.assertEqual([l["rang"] for l in ce], [14, 15])  # ligne à zéro et totaux ignorés
+        self.assertEqual((ce[1]["capital"], ce[1]["interets"], ce[1]["assurance"], ce[1]["restant"]),
+                         (Decimal("852.20"), Decimal("1344.23"), Decimal("54.50"), Decimal("312409.82")))
+        self.assertEqual(ta.anomalies(ce), ["le tableau se termine avec 312409.82 € restant dû (dernière page manquante ?)"])
+
+    def test_le_tableau_de_la_banque_remplace_le_calcul(self):
+        from . import tableaux_amortissement as ta
+        from .models import Pret
+
+        pret = Pret.objects.create(proprietaire=self.proprio, bien=self.bien, banque="CE", reference="X", montant=Decimal("1000"),
+                                   taux=Decimal("1.2"), duree_mois=3, date_premiere_echeance=date(2026, 1, 5),
+                                   capital_constate=Decimal("900"), capital_constate_le=date(2026, 2, 1))
+        calcule = pret.echeancier()
+        self.assertTrue(calcule)
+        lignes = [{"rang": 1, "date": date(2025, 12, 20), "capital": Decimal(0), "interets": Decimal(0), "assurance": Decimal("300"), "restant": Decimal("1000")},
+                  {"rang": 2, "date": date(2026, 1, 5), "capital": Decimal("495"), "interets": Decimal("5"), "assurance": Decimal("2"), "restant": Decimal("505")},
+                  {"rang": 3, "date": date(2026, 2, 5), "capital": Decimal("505"), "interets": Decimal("3"), "assurance": Decimal("1"), "restant": Decimal("0")}]
+        ta.enregistrer(pret, lignes)
+        pret = Pret.objects.get(pk=pret.pk)
+        self.assertEqual(pret.capital_restant_du(date(2025, 12, 1)), Decimal("1000"))
+        self.assertEqual(pret.capital_restant_du(date(2026, 1, 10)), Decimal("505"))  # le recalage est ignoré
+        self.assertEqual(pret.date_derniere_echeance, date(2026, 2, 5))
+        self.assertEqual(pret.cumul_annee(2025)["assurance"], Decimal("300"))
+        self.assertEqual(pret.cumul_annee(2026)["interets"], Decimal("8"))
+        page = self.client.get(f"/admin/patrimoine/pret/{pret.pk}/change/").content.decode()
+        self.assertIn("tableau de la banque", page)
+        self.assertNotIn("Recalage sur la banque", page)
+        self.assertEqual(self.client.get(f"/admin/patrimoine/pret/{pret.pk}/tableau/").status_code, 200)
+        self.client.post(f"/admin/patrimoine/pret/{pret.pk}/tableau/", {"action": "calcul"})
+        self.assertFalse(pret.lignes.exists())
+
+    def test_rappel_important_en_tete_et_mail(self):
+        from io import StringIO
+
+        from django.core import mail
+        from django.core.management import call_command
+        from django.test import override_settings
+
+        from .models import ParametresMail
+        from .rappels import a_faire
+
+        jour = timezone.localdate()
+        Rappel.objects.create(titre="Tondre", date=jour + timedelta_jours(2))
+        cfe = Rappel.objects.create(titre="Payer la CFE", date=jour + timedelta_jours(8), important=True, prevenir_jours=10,
+                                    bien=self.bien, periodicite=Rappel.Periodicite.ANNUEL)
+        loin = Rappel.objects.create(titre="Payer plus tard", date=jour + timedelta_jours(20), important=True, prevenir_jours=10)
+        items = a_faire(jour)
+        self.assertEqual([i["titre"] for i in items], ["Payer la CFE", "Tondre"])  # ★ en tête ; 20 jours > 10 jours : pas encore
+        accueil = self.client.get("/admin/").content.decode()
+        self.assertIn("★", accueil)
+        self.assertIn(f"/rappels/rappel/{cfe.pk}/fait/", accueil)
+        ParametresMail.objects.create(adresse="moi@example.com", mot_de_passe="x")
+        with override_settings(ENVOI_MAIL_BACKEND="django.core.mail.backends.locmem.EmailBackend"):
+            call_command("rappels_par_mail", stdout=StringIO())
+            self.assertEqual(len(mail.outbox), 1)
+            self.assertIn("Payer la CFE", mail.outbox[0].subject)
+            self.assertNotIn("Payer plus tard", mail.outbox[0].body)
+            call_command("rappels_par_mail", stdout=StringIO())  # déjà prévenu : pas de second mail avant le jour J
+            self.assertEqual(len(mail.outbox), 1)
+        loin.refresh_from_db()
+        self.assertIsNone(loin.dernier_mail)
+
+    def test_rappel_cfe_automatique(self):
+        from .rappels import rappel_cfe
+
+        r = rappel_cfe(self.bien, date(2026, 12, 20))
+        self.assertEqual((r.date, r.important, r.prevenir_jours, r.periodicite), (date(2027, 12, 15), True, 10, "annuel"))
+        self.assertIsNone(rappel_cfe(self.bien))  # pas de doublon
+        foncier = Bien.objects.create(proprietaire=self.proprio, nom="Nu", adresse="1 rue", code_postal="69000", ville="Lyon",
+                                      comptabilite="foncier")
+        self.assertIsNone(rappel_cfe(foncier))
+
+    def test_rubrique_impots_et_taxes(self):
+        from .compta import rubrique_de_charge
+        from .models import PieceComptable
+
+        self.assertEqual(rubrique_de_charge("CFE 2026"), "impots_taxes")
+        self.assertEqual(rubrique_de_charge("Taxe foncière"), "taxe_fonciere")
+        self.assertIn("impots_taxes", PieceComptable.LIBELLES_RUBRIQUES)
+
+
+def timedelta_jours(n):
+    from datetime import timedelta
+
+    return timedelta(days=n)

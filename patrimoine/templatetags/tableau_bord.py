@@ -10,11 +10,18 @@ register = template.Library()
 def bloc_a_faire(context):
     aujourdhui = timezone.localdate()
     request = context.get("request")
-    vue = "fait" if request and request.GET.get("vue") == "fait" else "a_faire"
+    vue = request.GET.get("vue") if request else ""
+    vue = vue if vue in ("fait", "tout") else "resume"
     items = a_faire(aujourdhui)
+    type_choisi = request.GET.get("type", "") if request else ""
     contexte = {"vue": vue, "nb_a_faire": len(items), "nb_retard": sum(i["en_retard"] for i in items),
-                "historique_jours": HISTORIQUE_JOURS, "csrf_token": context.get("csrf_token")}
-    contexte["items"] = deja_fait(aujourdhui) if vue == "fait" else items
+                "historique_jours": HISTORIQUE_JOURS, "csrf_token": context.get("csrf_token"), "type_choisi": type_choisi}
+    if vue == "fait":
+        contexte["items"] = deja_fait(aujourdhui)
+    elif vue == "tout":
+        contexte["items"] = [i for i in items if not type_choisi or i["categorie"] == type_choisi]
+    else:
+        contexte["groupes"] = a_faire_groupes(items, aujourdhui)
     return contexte
 
 
@@ -277,6 +284,8 @@ def _donnees_tableau_de_bord():
 
     from django.db.models import Prefetch
 
+    from datetime import timedelta
+
     from patrimoine.models import Candidature, Echeance, Lot, Paiement, Pret
 
     aujourdhui = timezone.localdate()
@@ -288,9 +297,13 @@ def _donnees_tableau_de_bord():
     retard = [e for e in Echeance.objects.exclude(statut=Echeance.Statut.PAYE).filter(date_exigibilite__lt=aujourdhui)
               .prefetch_related("paiements")]
     montant_retard = sum((e.total - sum((p.montant for p in e.paiements.all()), Decimal(0)) for e in retard), Decimal(0))
-    prets = [p for p in Pret.objects.all() if p.date_derniere_echeance >= aujourdhui]
-    crd = sum((p.capital_restant_du(aujourdhui) for p in Pret.objects.all()), Decimal(0))
+    # locatif seulement : les prêts de la résidence principale (bien sans comptabilité) sont à part
+    prets_locatifs = list(Pret.objects.exclude(bien__comptabilite=""))
+    prets = [p for p in prets_locatifs if p.date_derniere_echeance >= aujourdhui]
+    crd = sum((p.capital_restant_du(aujourdhui) for p in prets_locatifs), Decimal(0))
     mensualites = sum((p.mensualite_totale for p in prets), Decimal(0))
+    impayes = [e for e in retard if e.date_exigibilite < aujourdhui - timedelta(days=JOURS_IMPAYE)]
+    lcd = _courte_duree_mensuelle(aujourdhui)
     lots = list(Lot.objects.filter(vendu=False, bien__vendu=False).prefetch_related("baux"))
     loues = [l for l in lots if any(b.actif for b in l.baux.all())]
     courte = [l for l in lots if l.exploitation == "courte" and l not in loues]
@@ -317,11 +330,83 @@ def _donnees_tableau_de_bord():
         "nb_payes": sum(1 for e in echeances if statut(e)[0] == "ok"),
         "pourcentage": int(encaisse * 100 / attendu) if attendu else 0,
         "nb_retard": len(retard), "montant_retard": montant_retard,
-        "crd": crd, "nb_prets": len(prets), "mensualites": mensualites, "cash_flow": attendu - mensualites,
+        "nb_impayes": len(impayes), "jours_impaye": JOURS_IMPAYE, "nb_recents": len(retard) - len(impayes),
+        "montant_impayes": sum((e.total - sum((p.montant for p in e.paiements.all()), Decimal(0)) for e in impayes), Decimal(0)),
+        "jour_echeance": max(set(jours), key=jours.count) if (jours := [e.date_exigibilite.day for e in echeances]) else None,
+        "crd": crd, "nb_prets": len(prets), "mensualites": mensualites, "lcd": lcd, "cash_flow": attendu + lcd - mensualites,
         "nb_loues": len(loues), "nb_courte": len(courte), "vacants": vacants,
         "candidatures": Candidature.objects.filter(statut=Candidature.Statut.RECUE).select_related("lot__bien")[:4],
         "lignes": lignes[:7], "nb_lignes": len(lignes), "aujourdhui": aujourdhui,
     }
+
+
+JOURS_IMPAYE = 10  # un loyer est un vrai impayé après 10 jours de retard (avant, c'est souvent un virement en route)
+
+
+def _courte_duree_mensuelle(aujourdhui):
+    """Ce que rapporte la courte durée par mois, en moyenne sur les 12 derniers mois complets : net des plateformes,
+    moins la conciergerie, le ménage, les consommables et les charges du logement (hors résidence principale)."""
+    from decimal import Decimal
+
+    from patrimoine.lcd import suivi_annuel
+    from patrimoine.models import Lot
+
+    debut = (aujourdhui.replace(day=1).year - 1, aujourdhui.month)  # même mois l'an dernier
+    total = Decimal(0)
+    for lot in Lot.objects.filter(exploitation="courte", vendu=False, bien__vendu=False).exclude(bien__comptabilite=""):
+        manuels = {(e.mois.year, e.mois.month): e.versement for e in lot.encaissements_lcd.all()}
+        for annee in (debut[0], aujourdhui.year):
+            for m in suivi_annuel(lot, annee):
+                cle = (annee, m["mois"])
+                if debut <= cle < (aujourdhui.year, aujourdhui.month):
+                    total += manuels[cle] if cle in manuels else m["resultat"]
+    return (total / 12).quantize(Decimal(1))
+
+
+# Accueil, « À faire » : une ligne par type (libellé au singulier, au pluriel, bouton)
+TYPES_A_FAIRE = {
+    "Loyer": ("loyer non réglé", "loyers non réglés", "Relancer"),
+    "Révision": ("révision de loyer à faire", "révisions de loyer à faire", "Traiter"),
+    "Assurance": ("attestation d'assurance à demander", "attestations d'assurance à demander", "Demander"),
+    "Chaudière": ("attestation d'entretien de chaudière", "attestations d'entretien de chaudière", "Demander"),
+}
+
+
+def a_faire_groupes(items, aujourdhui):
+    """Regroupe la liste « À faire » par type : nombre, retard, précision et l'action la plus utile."""
+    from django.urls import reverse
+
+    groupes = {}
+    lignes = []
+    for i in items:
+        if i.get("important"):
+            jours = (i["date"] - aujourdhui).days
+            quand = ("aujourd'hui" if jours == 0 else f"en retard depuis le {i['date']:%d/%m}" if jours < 0
+                     else f"le {i['date']:%d/%m/%Y}, dans {jours} jour{'s' if jours > 1 else ''}")
+            lignes.append({"categorie": i["categorie"], "titre": i["titre"], "detail": " · ".join(x for x in (i["detail"], quand) if x),
+                           "url": i["url"], "bouton": "Ouvrir", "nombre": 1, "retard": int(i["en_retard"]), "date": i["date"],
+                           "important": True, "action": i.get("action")})
+            continue
+        groupes.setdefault(i["categorie"], []).append(i)
+    for categorie, liste in groupes.items():
+        n = len(liste)
+        un, plusieurs, bouton = TYPES_A_FAIRE.get(categorie, ("rappel", "rappels", "Voir"))
+        titre = f"{n} {un if n == 1 else plusieurs}"
+        if categorie not in TYPES_A_FAIRE:
+            titre = f"{categorie} : {liste[0]['titre']}" if n == 1 else f"{n} rappels « {categorie} »"
+        plus_ancien = min(i["date"] for i in liste)
+        detail = (liste[0]["detail"] if n == 1 else
+                  f"le plus ancien du {plus_ancien:%d/%m/%Y}" if plus_ancien < aujourdhui else f"à partir du {plus_ancien:%d/%m/%Y}")
+        if categorie == "Loyer":
+            url = reverse("relances_impayes")
+        elif n == 1:
+            url, bouton = liste[0]["url"], bouton if categorie in TYPES_A_FAIRE else "Ouvrir"
+        else:
+            from urllib.parse import urlencode
+            url = "?" + urlencode({"vue": "tout", "type": categorie})
+        lignes.append({"categorie": categorie, "titre": titre, "detail": detail, "url": url, "bouton": bouton, "nombre": n,
+                       "retard": sum(1 for i in liste if i["en_retard"]), "date": plus_ancien})
+    return sorted(lignes, key=lambda l: (not l.get("important"), not l["retard"], l["date"]))
 
 
 @register.simple_tag

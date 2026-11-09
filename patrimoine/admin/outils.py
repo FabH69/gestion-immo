@@ -19,10 +19,15 @@ class SiteUtileAdmin(admin.ModelAdmin):
 class RappelAdmin(admin.ModelAdmin):
     date_hierarchy = "date"
     navigation_par = "mois"
-    list_display = ["date", "titre", "categorie", "bien", "periodicite", "actif", "fait"]
-    list_editable = ["actif", "fait"]
-    list_filter = ["fait", "bien__proprietaire"]
-    fields = ["titre", "date", "periodicite", "categorie", "bien", "actif", "fait", "notes"]
+    list_display = ["important", "date", "titre", "categorie", "bien", "periodicite", "prevenir", "actif", "fait"]
+    list_editable = ["important", "actif", "fait"]
+    list_filter = ["important", "fait", "bien__proprietaire"]
+    fields = ["titre", "date", "periodicite", "categorie", "bien", ("important", "prevenir_jours"), "actif", "fait", "notes"]
+
+    @admin.display(description="prévenir")
+    def prevenir(self, obj):
+        jours = obj.prevenir_jours
+        return f"{jours} j avant" if jours is not None else "–"
     list_display_links = ["titre"]
     search_fields = ["titre", "notes"]
 
@@ -44,8 +49,17 @@ class RappelAdmin(admin.ModelAdmin):
 
 @admin.register(ParametresMail)
 class ParametresMailAdmin(admin.ModelAdmin):
-    fields = ["adresse", "mot_de_passe", "nom_expediteur", "alerte_nouveau_dossier", "accuse_au_candidat", "test"]
-    readonly_fields = ["test"]
+    fields = ["adresse", "mot_de_passe", "nom_expediteur", "alerte_nouveau_dossier", "accuse_au_candidat", "alerte_rappels",
+              "tache_quotidienne", "test"]
+    readonly_fields = ["tache_quotidienne", "test"]
+
+    @admin.display(description="tâche quotidienne")
+    def tache_quotidienne(self, obj):
+        from django.utils.safestring import mark_safe
+
+        return mark_safe(
+            "Pour recevoir les rappels ★ par mail, créez une fois une tâche dans PythonAnywhere › onglet <b>Tasks</b> › "
+            "« Daily », à 07:00, avec cette commande :<br><code>bash ~/gestion-immo/deploiement/tache_quotidienne.sh</code>")
 
     def get_form(self, request, obj=None, **kwargs):
         form = super().get_form(request, obj, **kwargs)

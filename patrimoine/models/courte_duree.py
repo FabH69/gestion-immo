@@ -38,7 +38,7 @@ class ChargeLMNP(models.Model):
 
     class Categorie(models.TextChoices):
         TAXE_FONCIERE = "taxe_fonciere", "Taxe foncière"
-        CFE = "cfe", "CFE"
+        CFE = "cfe", "Impôts et taxes (CFE…)"
         COPROPRIETE = "copropriete", "Charges de copropriété non récupérées"
         ASSURANCE = "assurance", "Assurance PNO"
         ENTRETIEN = "entretien", "Entretien et réparations"

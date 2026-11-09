@@ -56,7 +56,7 @@ def bilan_lot(lot, annee):
     if interets:
         charges.append(_ligne("Intérêts d'emprunt", interets, "Prêts"))
     if assurance:
-        charges.append(_ligne("Assurance emprunteur", assurance, "Prêts"))
+        charges.append(_ligne("Assurance et frais d'emprunt", assurance, "Prêts"))
 
     manuelles = list(ChargeLMNP.objects.filter(lot=lot, annee=annee))
     for c in manuelles:

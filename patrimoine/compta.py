@@ -68,7 +68,8 @@ def _norme(texte):
     return "".join(c for c in unicodedata.normalize("NFD", (texte or "").lower()) if unicodedata.category(c) != "Mn")
 
 
-MOTS_CHARGES = [("pno", ["pno", "assurance"]), ("copro", ["copro", "syndic"]), ("taxe_fonciere", ["taxe fonciere", "fonciere"]),
+MOTS_CHARGES = [("pno", ["pno", "assurance"]), ("copro", ["copro", "syndic"]), ("taxe_fonciere", ["taxe fonciere"]),
+                ("impots_taxes", ["cfe", "cotisation fonciere", "impot", "taxe"]),
                 ("electricite", ["electricite", "edf", "engie"]), ("eau", ["eau"]), ("fibre", ["fibre", "internet", "box"]),
                 ("comptable", ["comptab", "cga"])]
 
@@ -83,7 +84,8 @@ def rubrique_de_charge_lmnp(charge):
     """Rubrique d'une charge LMNP saisie à l'année (États › Charges LMNP)."""
     if charge.categorie == ChargeLMNP.Categorie.GESTION:
         return "comptable" if any(m in _norme(charge.libelle) for m in ("compta", "cga", "expert")) else "commission"
-    return {"taxe_fonciere": "taxe_fonciere", "copropriete": "copro", "assurance": "pno", "energie": "electricite"}.get(charge.categorie, "autre")
+    return {"taxe_fonciere": "taxe_fonciere", "cfe": "impots_taxes", "copropriete": "copro", "assurance": "pno",
+            "energie": "electricite"}.get(charge.categorie, "autre")
 
 
 # --- récapitulatif par rubrique --------------------------------------------------------------------------------------

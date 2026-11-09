@@ -25,5 +25,5 @@ from .relocation import (  # noqa: F401
     TacheParDefaut,
 )
 from .courte_duree import ChargeLCD, ChargeLMNP, EncaissementLCD, ParametresLCD, ReservationLCD  # noqa: F401
-from .finances import _chemin_facture, PieceComptable, Pret  # noqa: F401
+from .finances import _chemin_facture, LigneEcheancier, PieceComptable, Pret  # noqa: F401
 from .outils import JournalFait, ModeleDocument, NoteRapide, ParametresMail, Rappel, SiteUtile  # noqa: F401

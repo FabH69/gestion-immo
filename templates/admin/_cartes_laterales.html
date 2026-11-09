@@ -2,7 +2,8 @@
 {% if droits.loyers or droits.relocation == "modification" %}<div class="module carte actions-rapides">
   <h2>Actions rapides</h2>
   <div class="actions-rapides-liste">
-    {% if droits.loyers %}<a class="button" href="{% url 'envoyer_quittance' %}">Créer une quittance</a>
+    {% if droits.loyers %}<a class="button" href="{% url 'admin:patrimoine_echeance_changelist' %}">Encaisser un loyer</a>
+    <a class="button" href="{% url 'envoyer_quittance' %}">Créer une quittance</a>
     <a class="button" href="{% url 'relances_impayes' %}">Relancer un impayé</a>{% endif %}
     {% if droits.relocation == "modification" %}<a class="button" href="{% url 'admin:patrimoine_annonce_add' %}">Créer une annonce</a>{% endif %}
   </div>

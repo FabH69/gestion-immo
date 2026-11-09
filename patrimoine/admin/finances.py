@@ -57,12 +57,78 @@ class PretAdmin(admin.ModelAdmin):
     def calculs(self, obj):
         if not obj.pk:
             return "Enregistrez le prêt pour voir les calculs."
+        lignes = obj.lignes_banque()
+        if lignes:
+            source = format_html("Échéancier : <strong>tableau de la banque</strong> ({} échéances, du {} au {}).",
+                                 len(lignes), lignes[0]["date"].strftime("%d/%m/%Y"), lignes[-1]["date"].strftime("%d/%m/%Y"))
+        else:
+            source = "Échéancier : calculé à partir des conditions ci-dessus (aucun tableau de la banque importé)."
+        def e(v):
+            return f"{v:,.2f}".replace(",", "\u202f").replace(".", ",")
+
         return format_html(
-            "Mensualité hors assurance : <strong>{} €</strong> · Dernière échéance : {} · Capital restant dû aujourd'hui : <strong>{} €</strong><br>"
-            '<a href="{}" target="_blank">Tableau d\'amortissement PDF</a>',
-            obj.mensualite_hors_assurance, obj.date_derniere_echeance.strftime("%d/%m/%Y"),
-            obj.capital_restant_du(timezone.localdate()), reverse("document_amortissement", args=[obj.pk]),
+            "{}<br>Échéance habituelle : <strong>{} €</strong> dont {} € hors assurance · Dernière échéance : {} · "
+            "Capital restant dû aujourd'hui : <strong>{} €</strong><br>"
+            '<a href="{}" target="_blank">Tableau d\'amortissement PDF</a> · <a href="{}">Importer le tableau de la banque (PDF)</a>',
+            source, e(obj.mensualite_totale), e(obj.mensualite_hors_assurance), obj.date_derniere_echeance.strftime("%d/%m/%Y"),
+            e(obj.capital_restant_du(timezone.localdate())), reverse("document_amortissement", args=[obj.pk]),
+            reverse("admin:patrimoine_pret_tableau", args=[obj.pk]),
         )
+
+    def get_fieldsets(self, request, obj=None):
+        fieldsets = super().get_fieldsets(request, obj)
+        if obj and obj.pk and obj.lignes.exists():
+            # le tableau de la banque fait foi : plus besoin de recalage, les conditions sont indicatives
+            fieldsets = [(nom, {**options, "description": "Le tableau de la banque fait foi : ces conditions sont indicatives "
+                                                          "et ne changent plus l'échéancier."} if nom == "Conditions" else options)
+                         for nom, options in fieldsets if nom != "Recalage sur la banque"]
+        return fieldsets
+
+    def get_urls(self):
+        from django.urls import path
+
+        return [path("<int:pk>/tableau/", self.admin_site.admin_view(self.tableau_view), name="patrimoine_pret_tableau")] + super().get_urls()
+
+    def tableau_view(self, request, pk):
+        """Import du tableau d'amortissement remis par la banque (PDF texte du Crédit Mutuel ou de la Caisse d'Épargne)."""
+        from .. import tableaux_amortissement as ta
+
+        pret = Pret.objects.select_related("bien").filter(pk=pk).first()
+        if not pret:
+            return redirect("admin:patrimoine_pret_changelist")
+        retour = reverse("admin:patrimoine_pret_change", args=[pk])
+        if request.method == "POST":
+            if request.POST.get("action") == "calcul":
+                n = pret.lignes.count()
+                pret.lignes.all().delete()
+                messages.success(request, f"Tableau de la banque retiré ({n} échéances) : l'échéancier est de nouveau calculé.")
+                return redirect(retour)
+            fichier = request.FILES.get("fichier")
+            lignes = ta.lire(ta.texte_tableau(fichier)) if fichier else []
+            if not lignes:
+                messages.error(request, "Aucune échéance n'a pu être lue dans ce fichier. S'il s'agit d'un scan (photo ou PDF "
+                                        "numérisé), il ne contient pas de texte : transmettez-le pour une saisie manuelle.")
+                return redirect(request.path)
+            erreurs = ta.anomalies(lignes)
+            if request.POST.get("action") == "remplacer_debut" and pret.lignes.exists():
+                # avenant : on garde les échéances passées avant le nouveau tableau
+                anciennes = [l for l in pret.lignes_banque() if l["date"] < lignes[0]["date"]]
+                lignes = [{"rang": l["numero"], "date": l["date"], "capital": l["capital"], "interets": l["interets"],
+                           "assurance": l["assurance"], "restant": l["restant"]} for l in anciennes] + lignes
+                for i, l in enumerate(lignes, 1):
+                    l["rang"] = i
+            n = ta.enregistrer(pret, lignes)
+            Pret.objects.filter(pk=pk).update(capital_constate=None, capital_constate_le=None)
+            message = (f"{n} échéances importées, du {lignes[0]['date']:%d/%m/%Y} au {lignes[-1]['date']:%d/%m/%Y}. "
+                       f"Capital restant dû aujourd'hui : {pret.capital_restant_du(timezone.localdate())} €.")
+            if erreurs:
+                messages.warning(request, message + " À vérifier : " + " ; ".join(erreurs[:3]))
+            else:
+                messages.success(request, message)
+            return redirect(retour)
+        return render(request, "admin/patrimoine/pret/tableau.html", {
+            **self.admin_site.each_context(request), "pret": pret, "retour": retour, "nb_lignes": pret.lignes.count(),
+            "title": f"Tableau d'amortissement de la banque – {pret}", "opts": self.model._meta})
 
 
 class AnneeFiscaleFilter(admin.SimpleListFilter):

@@ -45,13 +45,41 @@ class Rappel(models.Model):
     categorie = models.CharField("catégorie", max_length=20, choices=Categorie.choices, default=Categorie.AUTRE)
     bien = models.ForeignKey(Bien, on_delete=models.CASCADE, null=True, blank=True, related_name="rappels")
     periodicite = models.CharField("périodicité", max_length=12, choices=Periodicite.choices, default=Periodicite.PONCTUEL)
+    important = models.BooleanField(
+        "★ important", default=False,
+        help_text="Paiement ou date limite à ne pas manquer : le rappel passe en tête de l'accueil et vous recevez un mail "
+                  "quelques jours avant (Réglages › Mails).")
+    prevenir_jours = models.PositiveSmallIntegerField(
+        "prévenir … jours avant", null=True, blank=True,
+        help_text="Le rappel apparaît dans « À faire » (et le mail part s'il est important) ce nombre de jours avant la date. "
+                  "Vide : 30 jours avant, et mail 7 jours avant.")
     actif = models.BooleanField(default=True, help_text="Décocher pour arrêter un rappel périodique sans le supprimer")
     fait = models.BooleanField(default=False)
     notes = models.TextField(blank=True)
+    dernier_mail = models.DateField("dernier mail envoyé le", null=True, blank=True, editable=False)
 
     class Meta:
         verbose_name = "rappel"
-        ordering = ["fait", "date"]
+        ordering = ["fait", "-important", "date"]
+
+    MAIL_JOURS_PAR_DEFAUT = 7
+
+    @property
+    def date_mail(self):
+        """Jour où part le mail d'un rappel important."""
+        from datetime import timedelta
+
+        return self.date - timedelta(days=self.MAIL_JOURS_PAR_DEFAUT if self.prevenir_jours is None else self.prevenir_jours)
+
+    def mail_a_envoyer(self, aujourdhui):
+        """Un mail quelques jours avant, puis un le jour même si ce n'est toujours pas fait (un seul par étape)."""
+        if not (self.important and self.actif and not self.fait):
+            return None
+        if aujourdhui >= self.date and (self.dernier_mail is None or self.dernier_mail < self.date):
+            return "jour"
+        if self.date_mail <= aujourdhui < self.date and (self.dernier_mail is None or self.dernier_mail < self.date_mail):
+            return "avant"
+        return None
 
     def __str__(self):
         return self.titre
@@ -93,6 +121,10 @@ class ParametresMail(models.Model):
                   "Ce n'est pas le mot de passe de votre compte Google.")
     nom_expediteur = models.CharField("nom affiché", max_length=100, blank=True, help_text="ex. « Fabien Hunault »")
     alerte_nouveau_dossier = models.BooleanField("me prévenir à chaque dossier de candidature reçu", default=True)
+    alerte_rappels = models.BooleanField(
+        "m'envoyer les rappels importants (★) par mail", default=True,
+        help_text="Quelques jours avant la date limite, puis le jour même si ce n'est pas fait. Nécessite la tâche quotidienne "
+                  "de PythonAnywhere (onglet Tasks).")
     accuse_au_candidat = models.BooleanField("envoyer un accusé de réception au candidat", default=True)
 
     class Meta:

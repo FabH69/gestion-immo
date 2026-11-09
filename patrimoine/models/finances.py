@@ -50,6 +50,9 @@ class Pret(models.Model):
 
     @property
     def date_derniere_echeance(self):
+        banque = self.lignes_banque()
+        if banque:
+            return banque[-1]["date"]
         if self.recale:
             lignes = self.echeancier()
             if lignes:
@@ -65,12 +68,18 @@ class Pret(models.Model):
     @property
     def mensualite_totale(self):
         """Échéance assurance comprise (constante quand l'assurance est incluse en % du capital restant dû)."""
+        courante = self._echeance_courante()
+        if courante:
+            return courante["mensualite"] + courante["assurance"]
         if self.taux_assurance and self.type == self.Type.AMORTISSABLE:
             return self._mensualite(self.montant, (self.taux + self.taux_assurance) / Decimal(1200), self.duree_mois)
         return self.mensualite_hors_assurance + self.assurance_mensuelle
 
     @property
     def mensualite_hors_assurance(self):
+        courante = self._echeance_courante()
+        if courante:
+            return courante["mensualite"]
         t = self.taux / Decimal(1200)
         if self.taux_assurance and self.type == self.Type.AMORTISSABLE:
             # Première échéance : la part d'assurance diminue ensuite avec le capital restant dû.
@@ -81,11 +90,37 @@ class Pret(models.Model):
             return (self.montant / self.duree_mois).quantize(Decimal("0.01"))
         return (self.montant * t / (1 - (1 + t) ** -self.duree_mois)).quantize(Decimal("0.01"))
 
+    def lignes_banque(self):
+        """Tableau d'amortissement remis par la banque, s'il a été importé (sinon liste vide)."""
+        if not self.pk:
+            return []
+        return [{"numero": l.rang, "date": l.date, "mensualite": l.capital + l.interets, "interets": l.interets,
+                 "capital": l.capital, "assurance": l.assurance, "restant": l.restant} for l in self.lignes.all()]
+
+    def _echeance_courante(self):
+        """Échéance habituelle du tableau de la banque : la plus fréquente des 12 prochaines (ou des dernières si le prêt
+        est terminé), pour ne pas afficher une échéance particulière (différé, première ou dernière échéance)."""
+        from collections import Counter
+
+        from django.utils import timezone
+
+        lignes = self.lignes_banque()
+        if not lignes:
+            return None
+        debut = timezone.localdate().replace(day=1)
+        proches = [l for l in lignes if l["date"] >= debut][:12] or lignes[-12:]
+        totaux = Counter(l["mensualite"] + l["assurance"] for l in proches)
+        habituelle = totaux.most_common(1)[0][0]
+        return next(l for l in proches if l["mensualite"] + l["assurance"] == habituelle)
+
     def echeancier(self):
         """Liste des échéances : (n°, date, mensualité, intérêts, capital remboursé, assurance, capital restant dû).
 
-        Avec un capital restant dû constaté, le capital repart de ce montant après la dernière échéance passée à cette
+        Le tableau de la banque, s'il a été importé, fait foi. Sinon l'échéancier est calculé. Avec un capital restant dû constaté, le capital repart de ce montant après la dernière échéance passée à cette
         date ; la mensualité ne change pas et le prêt s'arrête quand tout est remboursé (durée allongée ou raccourcie)."""
+        banque = self.lignes_banque()
+        if banque:
+            return banque
         t = self.taux / Decimal(1200)
         restant = self.montant
         mensualite = self.mensualite_hors_assurance
@@ -129,8 +164,9 @@ class Pret(models.Model):
 
     def capital_restant_du(self, a_date):
         """Capital restant dû après les échéances passées à cette date (incluse)."""
-        restant = self.montant
-        for ligne in self.echeancier():
+        lignes = self.echeancier()
+        restant = lignes[0]["restant"] + lignes[0]["capital"] if lignes else self.montant
+        for ligne in lignes:
             if ligne["date"] > a_date:
                 break
             restant = ligne["restant"]
@@ -143,6 +179,31 @@ class Pret(models.Model):
             "capital": sum((l["capital"] for l in lignes), Decimal(0)),
             "assurance": sum((l["assurance"] for l in lignes), Decimal(0)),
         }
+
+
+class LigneEcheancier(models.Model):
+    """Ligne du tableau d'amortissement remis par la banque. Quand un prêt en a, elles remplacent l'échéancier calculé :
+    différé, première échéance, assurance qui change chaque année et arrondis sont ceux de la banque."""
+
+    pret = models.ForeignKey(Pret, on_delete=models.CASCADE, related_name="lignes", verbose_name="prêt")
+    rang = models.PositiveSmallIntegerField("n°")
+    date = models.DateField("date d'échéance")
+    capital = models.DecimalField("capital remboursé", max_digits=12, decimal_places=2)
+    interets = models.DecimalField("intérêts", max_digits=12, decimal_places=2)
+    assurance = models.DecimalField("assurance et frais", max_digits=12, decimal_places=2, default=0)
+    restant = models.DecimalField("capital restant dû après l'échéance", max_digits=12, decimal_places=2)
+
+    class Meta:
+        verbose_name = "ligne du tableau d'amortissement"
+        verbose_name_plural = "lignes du tableau d'amortissement"
+        ordering = ["pret", "date", "rang"]
+
+    def __str__(self):
+        return f"{self.pret} – échéance {self.rang} du {self.date:%d/%m/%Y}"
+
+    @property
+    def echeance(self):
+        return self.capital + self.interets + self.assurance
 
 
 def _chemin_facture(instance, nom):
@@ -179,8 +240,9 @@ class PieceComptable(models.Model):
     RUBRIQUES = [
         ("Exploitation", [("commission", "Commission"), ("menage", "Ménage"), ("consommables", "Consommables")]),
         ("Charges du logement", [("electricite", "Électricité"), ("eau", "Eau"), ("fibre", "Fibre"), ("pno", "PNO"),
-                                 ("copro", "Charges copro"), ("comptable", "Comptable"), ("taxe_fonciere", "Taxe foncière")]),
-        ("Prêt", [("pret", "Rbt prêt"), ("assurance_pret", "Assurance prêt")]),
+                                 ("copro", "Charges copro"), ("comptable", "Comptable"), ("taxe_fonciere", "Taxe foncière"),
+                                 ("impots_taxes", "Impôts et taxes (CFE)")]),
+        ("Prêt", [("pret", "Rbt prêt"), ("assurance_pret", "Assurance et frais de prêt")]),
         ("Autre", [("autre", "Autre")]),
     ]
     LIBELLES_RUBRIQUES = {code: libelle for _, rubriques in RUBRIQUES for code, libelle in rubriques}

@@ -94,6 +94,7 @@ def _date(texte):
 
 # biens en LMNP ou en société : (rubrique proposée, mots entiers) ; le premier qui correspond l'emporte
 RUBRIQUES = [
+    ("impots_taxes", ["cotisation foncière des entreprises", "cotisation fonciere des entreprises", "cfe"]),
     ("taxe_fonciere", ["taxe foncière", "taxe fonciere", "avis d'impôt", "avis d'impot", "finances publiques"]),
     ("copro", ["appel de fonds", "appel de charges", "charges de copropriété", "charges de copropriete", "syndic"]),
     ("assurance_pret", ["assurance emprunteur", "assurance de prêt", "assurance de pret", "assurance du prêt", "assurance du pret"]),

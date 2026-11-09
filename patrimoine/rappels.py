@@ -10,6 +10,25 @@ HISTORIQUE_JOURS = 90
 DELAI_RETARD_JOURS = 5  # un loyer apparaît dans « À faire » après 5 jours de retard
 
 
+def rappel_cfe(bien, aujourdhui=None):
+    """Bien en LMNP ou en société : rappel annuel « Payer la CFE » au 15/12, important, 10 jours avant (créé s'il manque)."""
+    from datetime import date
+
+    from django.utils import timezone
+
+    if bien.comptabilite not in ("lmnp", "societe") or bien.rappels.filter(titre__istartswith="Payer la CFE").exists():
+        return None
+    aujourdhui = aujourdhui or timezone.localdate()
+    echeance = date(aujourdhui.year, 12, 15)
+    if echeance < aujourdhui:
+        echeance = date(aujourdhui.year + 1, 12, 15)
+    return Rappel.objects.create(
+        titre="Payer la CFE", date=echeance, categorie=Rappel.Categorie.FISCAL, bien=bien, periodicite=Rappel.Periodicite.ANNUEL,
+        important=True, prevenir_jours=10,
+        notes="Cotisation foncière des entreprises de la location meublée : avis dans l'espace professionnel d'impots.gouv.fr, "
+              "date limite de paiement le 15 décembre. Une fois payée, ajoutez la facture en rubrique « Impôts et taxes (CFE) ».")
+
+
 def _anniversaire_recent(depart, aujourdhui):
     """Échéance annuelle à partir d'une date : la plus récente passée (pas une date d'il y a dix ans), ou la prochaine."""
     echeance = _ajouter_mois(depart, 12)
@@ -22,11 +41,11 @@ def a_faire(aujourdhui, horizon_jours=PREAVIS_JOURS):
     limite = aujourdhui + timedelta(days=horizon_jours)
     items = []
 
-    def ajouter(date, titre, detail, categorie, url, action=None, stop=None):
-        if date <= limite:
+    def ajouter(date, titre, detail, categorie, url, action=None, stop=None, important=False, limite_propre=None):
+        if date <= (limite_propre or limite):
             items.append({
                 "date": date, "titre": titre, "detail": detail, "categorie": categorie,
-                "url": url, "action": action, "stop": stop, "en_retard": date < aujourdhui,
+                "url": url, "action": action, "stop": stop, "en_retard": date < aujourdhui, "important": important,
             })
 
     baux = Bail.objects.filter(actif=True).select_related("lot__bien").prefetch_related("locataires")
@@ -64,13 +83,15 @@ def a_faire(aujourdhui, horizon_jours=PREAVIS_JOURS):
                 reverse("admin:patrimoine_echeance_change", args=[e.pk]))
 
     for rappel in Rappel.objects.filter(fait=False, actif=True).select_related("bien"):
+        # « prévenir N jours avant » : le rappel n'apparaît qu'à partir de ce jour-là (30 jours avant sinon)
+        propre = aujourdhui + timedelta(days=rappel.prevenir_jours) if rappel.prevenir_jours is not None else None
         ajouter(rappel.date, rappel.titre, str(rappel.bien or ""), rappel.get_categorie_display(),
                 reverse("admin:patrimoine_rappel_change", args=[rappel.pk]),
-                action=reverse("rappel_fait", args=["rappel", rappel.pk]))
+                action=reverse("rappel_fait", args=["rappel", rappel.pk]), important=rappel.important, limite_propre=propre)
 
     # les tâches d'entrée et de sortie ont leur propre bloc sur l'accueil (bloc_taches_changement)
 
-    return sorted(items, key=lambda i: i["date"])
+    return sorted(items, key=lambda i: (not i["important"], i["date"]))
 
 
 def deja_fait(aujourdhui, jours=HISTORIQUE_JOURS):
