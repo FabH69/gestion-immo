@@ -1,5 +1,4 @@
 """Écrans des locataires, baux, garants et états des lieux."""
-from datetime import date, timedelta
 from decimal import Decimal
 
 from django import forms
@@ -16,9 +15,7 @@ from ..models import (
     Garant,
     EtatDesLieux,
     MouvementDepot,
-    Rappel,
     Locataire,
-    Lot,
 )
 from .. import fiches
 from .communs import LotsALouerMixin
@@ -118,46 +115,12 @@ class BailEnCoursFilter(admin.SimpleListFilter):
 
 
 class LocataireForm(forms.ModelForm):
-    """Fiche locataire avec rattachement à un lot et déclaration de sortie."""
-
-    lot = forms.ModelChoiceField(
-        Lot.objects.filter(vendu=False, bien__vendu=False).select_related("bien"), required=False, label="logement loué",
-        help_text="Rattache le locataire au bail en cours de ce lot. S'il n'y en a pas, un bail est créé : complétez-le ensuite.",
-    )
-    date_entree = forms.DateField(
-        label="date d'entrée", required=False, widget=forms.DateInput(attrs={"type": "date"}, format="%Y-%m-%d"),
-        help_text="Utilisée si un nouveau bail est créé (aujourd'hui par défaut).",
-    )
-    sortie = forms.BooleanField(label="Le locataire quitte le logement", required=False)
-    date_sortie = forms.DateField(label="date de sortie", required=False, widget=forms.DateInput(attrs={"type": "date"}, format="%Y-%m-%d"))
-    nouvelle_rue = forms.CharField(label="nouvelle adresse", required=False, max_length=200)
-    nouveau_code_postal = forms.CharField(label="code postal", required=False, max_length=10)
-    nouvelle_ville = forms.CharField(label="ville", required=False, max_length=100)
+    """Fiche locataire : identité et notes. Le bail se crée dans Baux › Nouveau bail (ou depuis une candidature),
+    le départ se déclare avec « Déclarer un départ »."""
 
     class Meta:
         model = Locataire
         exclude = ["garant"]
-
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        bail = self.bail_actif()
-        if bail:
-            self.fields["lot"].initial = bail.lot_id
-            self.fields["date_entree"].initial = bail.date_debut
-
-    def bail_actif(self):
-        if not self.instance.pk:
-            return None
-        return self.instance.baux.filter(actif=True).select_related("lot").order_by("-date_debut").first()
-
-    def clean(self):
-        donnees = super().clean()
-        if donnees.get("sortie"):
-            if not self.bail_actif():
-                self.add_error("sortie", "Ce locataire n'a pas de bail en cours.")
-            if not donnees.get("date_sortie"):
-                self.add_error("date_sortie", "Indiquez la date de sortie.")
-        return donnees
 
 
 class DocumentLocataireInline(admin.TabularInline):
@@ -171,10 +134,9 @@ class DocumentLocataireInline(admin.TabularInline):
 class LocataireAdmin(FicheMixin, admin.ModelAdmin):
     form = LocataireForm
     onglets = [
-        ("general", "Général", ["Identité", "Logement", "Notes"], []),
+        ("general", "Général", ["Identité", "Notes"], []),
         ("documents", "Documents", ["Documents"], ["DocumentLocataireInline"]),
         ("garants", "Garants", [], ["GarantInline"]),
-        ("sortie", "Départ", ["Sortie du locataire"], []),
     ]
 
     def contenu_fiche(self, request, obj):
@@ -185,9 +147,6 @@ class LocataireAdmin(FicheMixin, admin.ModelAdmin):
     search_fields = ["nom", "prenom", "email"]
     inlines = [DocumentLocataireInline, GarantInline]
     readonly_fields = ["encart_documents"]
-
-    class Media:
-        js = ["patrimoine/sortie_locataire.js"]
 
     def get_form(self, request, obj=None, **kwargs):
         form = super().get_form(request, obj, **kwargs)
@@ -201,17 +160,11 @@ class LocataireAdmin(FicheMixin, admin.ModelAdmin):
     def get_fieldsets(self, request, obj=None):
         identite = ("Identité", {"classes": ["fiche-compacte"], "fields": [
             ("civilite", "prenom", "nom"), ("email", "telephone"), ("date_naissance", "lieu_naissance", "nationalite"), "adresse_actuelle"]})
-        logement = ("Logement", {"classes": ["fiche-compacte"], "fields": [("lot", "date_entree")]})
         notes = ("Notes", {"classes": ["fiche-compacte"], "fields": ["notes"]})
         if not obj:
-            return [identite, logement, notes]
+            return [identite, notes]
         documents = ("Documents", {"classes": ["encart-documents"], "fields": ["encart_documents"]})
-        if obj.baux.filter(actif=True).exists():
-            sortie = ("Sortie du locataire", {"fields": ["sortie", "date_sortie", ("nouvelle_rue", "nouveau_code_postal", "nouvelle_ville")],
-                                              "classes": ["sortie-locataire", "fiche-compacte"],
-                                              "description": "Cochez pour enregistrer le départ : le bail est clôturé et les rappels de fin de bail sont créés (restitution du dépôt de garantie, fin de la garantie Visale)."})
-            return self.avec_onglets([identite, logement, notes, documents, sortie], obj)
-        return self.avec_onglets([identite, logement, notes, documents], obj)
+        return self.avec_onglets([identite, notes, documents], obj)
 
     @admin.display(description="")
     def encart_documents(self, obj):
@@ -246,72 +199,6 @@ class LocataireAdmin(FicheMixin, admin.ModelAdmin):
         else:
             blocs.append(format_html('<p class="help">Aucun document rangé : ajoutez le bail signé, l\'attestation d\'assurance… dans « Ranger un document » plus bas.</p>'))
         return format_html("{}", format_html_join("", "{}", ((b,) for b in blocs)))
-
-    def save_model(self, request, obj, form, change):
-        super().save_model(request, obj, form, change)
-        donnees = form.cleaned_data
-        bail = form.bail_actif()
-        if donnees.get("sortie") and bail:
-            rue, cp, ville = (donnees.get(k, "").strip() for k in ("nouvelle_rue", "nouveau_code_postal", "nouvelle_ville"))
-            if rue or cp or ville:
-                adresse = "\n".join(x for x in (rue, f"{cp} {ville}".strip()) if x)
-                obj.adresse_actuelle = adresse
-                obj.save(update_fields=["adresse_actuelle"])
-                edl = bail.etats_des_lieux.filter(type="sortie").first()
-                if edl and not edl.nouvelle_adresse:
-                    edl.nouvelle_adresse = adresse
-                    edl.save(update_fields=["nouvelle_adresse"])
-            self._enregistrer_sortie(request, obj, bail, donnees["date_sortie"])
-            return
-        lot = donnees.get("lot")
-        if lot and (not bail or bail.lot_id != lot.pk):
-            self._rattacher(request, obj, lot, donnees.get("date_entree"))
-
-    def _rattacher(self, request, locataire, lot, date_entree):
-        bail = lot.baux.filter(actif=True).order_by("-date_debut").first()
-        if bail:
-            bail.locataires.add(locataire)
-            messages.success(request, f"{locataire} est rattaché au bail en cours de {lot}.")
-            return
-        bail = Bail.objects.create(
-            lot=lot, type=Bail.Type.MEUBLE if lot.meuble else Bail.Type.NU, date_debut=date_entree or date.today(),
-            loyer_hc=lot.loyer_propose or 0, notes="Bail créé depuis la fiche locataire : à compléter.",
-        )
-        bail.locataires.add(locataire)
-        lien = reverse("admin:patrimoine_bail_change", args=[bail.pk])
-        messages.warning(request, format_html('Nouveau bail créé pour {} : <a href="{}">complétez le loyer, les charges, le dépôt et la garantie</a>.', lot, lien))
-
-    def _enregistrer_sortie(self, request, locataire, bail, date_sortie):
-        autres = [str(l) for l in bail.locataires.exclude(pk=locataire.pk)]
-        if autres:
-            bail.locataires.remove(locataire)
-            bail.notes = (bail.notes + "\n" if bail.notes else "") + f"{locataire} est parti le {date_sortie:%d/%m/%Y}."
-            bail.save(update_fields=["notes"])
-            messages.success(request, f"Sortie de {locataire} enregistrée. Le bail continue avec {', '.join(autres)}.")
-            return
-        bail.date_fin = date_sortie
-        bail.actif = False
-        bail.save(update_fields=["date_fin", "actif"])
-        creees = []
-        depot = bail.depot_detenu
-        if depot > 0:
-            Rappel.objects.create(
-                titre=f"Restituer le dépôt de garantie de {locataire} ({depot:.2f} €) – {bail.lot}",
-                date=date_sortie + timedelta(days=30), categorie=Rappel.Categorie.ADMINISTRATIF, bien=bail.lot.bien,
-                notes="Délai légal : 1 mois après la remise des clés si l'état des lieux de sortie est conforme, 2 mois sinon (retenues justifiées par devis ou factures). Enregistrez la restitution dans Loyers › Dépôts.",
-            )
-            creees.append("restitution du dépôt de garantie")
-        if bail.type_garantie == "visale":
-            Rappel.objects.create(
-                titre=f"Mettre fin à la garantie Visale de {locataire} – {bail.lot}",
-                date=date_sortie, categorie=Rappel.Categorie.ADMINISTRATIF, bien=bail.lot.bien,
-                notes=f"Déclarer la fin du bail sur visale.fr (espace bailleur).{' Visa : ' + bail.detail_garantie if bail.detail_garantie else ''}",
-            )
-            creees.append("fin de la garantie Visale")
-        texte = f"Sortie de {locataire} le {date_sortie:%d/%m/%Y} enregistrée, bail de {bail.lot} clôturé."
-        if creees:
-            texte += " Rappels créés : " + ", ".join(creees) + "."
-        messages.success(request, texte)
 
     @admin.display(description="présent", boolean=True)
     def present(self, obj):

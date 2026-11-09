@@ -620,7 +620,7 @@ table.controle-conciergerie td.notes-controle { white-space: normal; min-width: 
 .a-faire tr.groupe-a-faire th .detail { font-weight: 400; }
 .a-faire tr.groupe-a-faire td.action-groupe { text-align: right; white-space: nowrap; padding: 10px 16px; vertical-align: middle; }
 .dashboard .module.a-faire table td.action-groupe a { display: inline-block; vertical-align: middle; padding-right: 0; }
-.a-faire td.action-groupe .button { border-radius: 20px; padding: 6px 14px; font-size: 13px; }
+.a-faire td.action-groupe .button, .dashboard .module.a-faire table td.action-groupe a.button { border-radius: 20px; padding: 6px 14px; font-size: 13px; }
 .a-faire td.action-groupe .lien-detail { margin-right: 12px; font-size: 13px; }
 .a-faire td.filtre-a-faire { padding: 8px 16px; color: var(--body-quiet-color); font-size: 13px; }
 /* rappels importants (★) : une ligne chacun, en tête, avec le bouton « Fait » */
@@ -794,3 +794,7 @@ fieldset.fiche-compacte .fieldBox, fieldset.fiche-compacte .flex-container { min
 fieldset.fiche-compacte select { min-width: 0; text-overflow: ellipsis; }
 @media (max-width: 767px) { #content .entete-fiche h1 { font-size: 1.2rem; line-height: 1.3; } }
 @media (max-width: 767px) { .fiche fieldset.fiche-compacte .form-row > div, .barre-fixe fieldset.fiche-compacte .form-row > div { width: auto; max-width: 100%; } }
+/* Déclarer un départ : « Qui part ? » (tout le bail ou un colocataire) */
+#id_locataire_sortant { width: auto !important; }
+#id_locataire_sortant > div { width: auto !important; padding: 2px 0; }
+#id_locataire_sortant label { width: auto !important; min-width: 0 !important; float: none !important; display: inline-flex; align-items: center; gap: 6px; padding: 0 !important; }

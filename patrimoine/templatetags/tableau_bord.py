@@ -1,28 +1,19 @@
 from django import template
 from django.utils import timezone
 
-from patrimoine.rappels import HISTORIQUE_JOURS, a_faire, deja_fait
+from patrimoine.rappels import a_faire
 
 register = template.Library()
 
 
 @register.inclusion_tag("patrimoine/_a_faire.html", takes_context=True)
 def bloc_a_faire(context):
+    """Accueil : le résumé de la page À faire, une ligne par type (le détail est sur la page À faire)."""
     aujourdhui = timezone.localdate()
-    request = context.get("request")
-    vue = request.GET.get("vue") if request else ""
-    vue = vue if vue in ("fait", "tout") else "resume"
-    items = a_faire(aujourdhui)
-    type_choisi = request.GET.get("type", "") if request else ""
-    contexte = {"vue": vue, "nb_a_faire": len(items), "nb_retard": sum(i["en_retard"] for i in items),
-                "historique_jours": HISTORIQUE_JOURS, "csrf_token": context.get("csrf_token"), "type_choisi": type_choisi}
-    if vue == "fait":
-        contexte["items"] = deja_fait(aujourdhui)
-    elif vue == "tout":
-        contexte["items"] = [i for i in items if not type_choisi or i["categorie"] == type_choisi]
-    else:
-        contexte["groupes"] = a_faire_groupes(items, aujourdhui)
-    return contexte
+    relocation = bool((context.get("droits") or {}).get("relocation"))
+    items = a_faire(aujourdhui, avec_taches=relocation)
+    return {"nb_a_faire": len(items), "nb_retard": sum(i["en_retard"] for i in items), "csrf_token": context.get("csrf_token"),
+            "groupes": a_faire_groupes(items, aujourdhui), "modifiable": (context.get("droits") or {}).get("outils") == "modification"}
 
 
 @register.inclusion_tag("patrimoine/_taches_changement.html", takes_context=True)
@@ -153,6 +144,7 @@ def _menu():
     return [
         (None, [
             ("accueil", "Tableau de bord", r("admin:index"), ["/admin/$"], []),
+            ("rappels", "À faire", r("a_faire"), [r("a_faire"), a("rappel"), a("tache")], []),
             ("biens", "Biens et lots", a("bien"), [a("bien"), a("lot")],
              [("Lots", a("lot")), ("Propriétaires", a("proprietaire")), ("Syndics", a("syndic"))]),
             ("locataires", "Locataires", a("locataire"), [a("locataire")], []),
@@ -179,7 +171,6 @@ def _menu():
         ]),
         ("Comptabilité", _menu_compta()),
         ("Outils", [
-            ("rappels", "Rappels", a("rappel"), [a("rappel")], []),
             ("modeles", "Modèles", a("modeledocument"), [a("modeledocument"), a("modeleannonce"), r("liste_champs")],
              [("Modèles location", a("modeledocument")), ("Annonces", a("modeleannonce")), ("Liste des champs", r("liste_champs"))]),
             ("liens", "Sites utiles", a("siteutile"), [a("siteutile")], []),
@@ -396,6 +387,7 @@ TYPES_A_FAIRE = {
     "Révision": ("révision de loyer à faire", "révisions de loyer à faire", "Traiter"),
     "Assurance": ("attestation d'assurance à demander", "attestations d'assurance à demander", "Demander"),
     "Chaudière": ("attestation d'entretien de chaudière", "attestations d'entretien de chaudière", "Demander"),
+    "Entrée et sortie": ("tâche d'entrée ou de sortie", "tâches d'entrée et de sortie", "Voir"),
 }
 
 
@@ -429,10 +421,10 @@ def a_faire_groupes(items, aujourdhui):
         elif n == 1:
             url, bouton = liste[0]["url"], bouton if categorie in TYPES_A_FAIRE else "Ouvrir"
         else:
-            from urllib.parse import urlencode
-            url = "?" + urlencode({"vue": "tout", "type": categorie})
+            url = reverse("a_faire") + f"?type={liste[0].get('genre', '')}"
         lignes.append({"categorie": categorie, "titre": titre, "detail": detail, "url": url, "bouton": bouton, "nombre": n,
-                       "retard": sum(1 for i in liste if i["en_retard"]), "date": plus_ancien})
+                       "retard": sum(1 for i in liste if i["en_retard"]), "date": plus_ancien,
+                       "detail_url": reverse("a_faire") + f"?type={liste[0].get('genre', '')}"})
     return sorted(lignes, key=lambda l: (not l.get("important"), not l["retard"], l["date"]))
 
 

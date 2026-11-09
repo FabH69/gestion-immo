@@ -9,6 +9,13 @@ from .biens import Lot
 from .location import Bail, DocumentLocataire, Garant, Locataire, TYPES_GARANTIE
 
 
+CLOTURER_BAIL = "cloturer_bail"
+
+
+def code_de_tache(libelle):
+    return CLOTURER_BAIL if libelle.lower().startswith("clôturer le bail") else ""
+
+
 class ChangementLocataire(models.Model):
     """Départ d'un locataire et/ou arrivée d'un nouveau sur un lot, avec sa check-list."""
 
@@ -17,6 +24,12 @@ class ChangementLocataire(models.Model):
         Bail, on_delete=models.SET_NULL, null=True, blank=True, related_name="+", verbose_name="bail sortant",
         help_text="Rempli automatiquement avec le bail actif du lot si laissé vide.",
     )
+    locataire_sortant = models.ForeignKey(
+        Locataire, on_delete=models.SET_NULL, null=True, blank=True, related_name="+", verbose_name="qui part",
+        help_text="Vide : tout le bail se termine. Un colocataire : il quitte le bail, qui continue avec les autres.",
+    )
+    nouvelle_adresse = models.TextField("nouvelle adresse", blank=True,
+                                        help_text="Reprise sur la fiche du locataire et l'état des lieux de sortie quand le bail est clôturé.")
     date_conge = models.DateField("réception du congé", null=True, blank=True)
     date_depart = models.DateField("départ prévu", null=True, blank=True,
                                    help_text="Si vide, calculé depuis le congé : 3 mois en location nue, 1 mois en meublé.")
@@ -63,7 +76,7 @@ class ChangementLocataire(models.Model):
         for ordre, (phase, libelle, aide, reference, decalage) in enumerate(modele):
             Tache.objects.create(
                 changement=self, ordre=ordre, phase=phase, libelle=libelle, aide=aide,
-                reference=reference, decalage_jours=decalage,
+                reference=reference, decalage_jours=decalage, code=code_de_tache(libelle),
             )
         self.recalculer_echeances()
 
@@ -73,6 +86,67 @@ class ChangementLocataire(models.Model):
             base = self._date_reference(tache.reference)
             tache.echeance = base + timedelta(days=tache.decalage_jours) if base else None
             tache.save(update_fields=["echeance"])
+
+    @property
+    def date_fin_bail(self):
+        return self.date_depart or self.date_conge or date.today()
+
+    def partants(self):
+        """Locataires qui partent : le colocataire choisi, sinon tous ceux du bail."""
+        if not self.bail_sortant:
+            return []
+        if self.locataire_sortant_id:
+            return [self.locataire_sortant]
+        return list(self.bail_sortant.locataires.all())
+
+    def cloturer_bail(self):
+        """Tâche « Clôturer le bail » cochée : fin du bail (ou départ du seul colocataire), nouvelle adresse reportée."""
+        from .outils import Rappel
+
+        bail = self.bail_sortant
+        if bail is None:
+            return "Aucun bail à clôturer pour ce changement."
+        quand = self.date_fin_bail
+        partants = self.partants()
+        adresse = self.nouvelle_adresse.strip()
+        for loc in partants:
+            if adresse and loc.adresse_actuelle != adresse:
+                loc.adresse_actuelle = adresse
+                loc.save(update_fields=["adresse_actuelle"])
+        restants = [l for l in bail.locataires.all() if l not in partants]
+        if self.locataire_sortant_id and restants:
+            bail.locataires.remove(self.locataire_sortant)
+            bail.notes = (bail.notes + "\n" if bail.notes else "") + f"{self.locataire_sortant} est parti le {quand:%d/%m/%Y}."
+            bail.save(update_fields=["notes"])
+            return f"{self.locataire_sortant} a quitté le bail de {self.lot}, qui continue avec {', '.join(str(l) for l in restants)}."
+        if adresse:
+            edl = bail.etats_des_lieux.filter(type="sortie").first()
+            if edl and not edl.nouvelle_adresse:
+                edl.nouvelle_adresse = adresse
+                edl.save(update_fields=["nouvelle_adresse"])
+        bail.date_fin, bail.actif = quand, False
+        bail.save(update_fields=["date_fin", "actif"])
+        if bail.type_garantie == "visale" and not Rappel.objects.filter(titre__startswith="Mettre fin à la garantie Visale", bien=bail.lot.bien, fait=False).exists():
+            Rappel.objects.create(
+                titre=f"Mettre fin à la garantie Visale de {', '.join(str(l) for l in partants)} – {bail.lot}",
+                date=quand, categorie=Rappel.Categorie.ADMINISTRATIF, bien=bail.lot.bien,
+                notes=f"Déclarer la fin du bail sur visale.fr (espace bailleur).{' Visa : ' + bail.detail_garantie if bail.detail_garantie else ''}",
+            )
+        return f"Bail de {self.lot} clôturé le {quand:%d/%m/%Y} : plus de loyers à partir de cette date."
+
+    def rouvrir_bail(self):
+        """Tâche « Clôturer le bail » décochée : on revient en arrière."""
+        bail = self.bail_sortant
+        if bail is None:
+            return ""
+        if self.locataire_sortant_id and bail.actif:
+            bail.locataires.add(self.locataire_sortant)
+            return f"{self.locataire_sortant} est de nouveau sur le bail de {self.lot}."
+        if not bail.actif and bail.date_fin == self.date_fin_bail:
+            bail.date_fin, bail.actif = None, True
+            bail.save(update_fields=["date_fin", "actif"])
+            return f"Bail de {self.lot} rouvert."
+        return ""
 
     @property
     def avancement(self):
@@ -97,6 +171,7 @@ class Tache(models.Model):
     faite = models.BooleanField("faite", default=False)
     date_faite = models.DateField("faite le", null=True, blank=True)
     commentaire = models.CharField(max_length=255, blank=True)
+    code = models.CharField(max_length=20, blank=True, editable=False, help_text="« cloturer_bail » : cochée, elle clôture le bail")
 
     class Meta:
         verbose_name = "tâche"
@@ -110,7 +185,11 @@ class Tache(models.Model):
             self.date_faite = date.today()
         if not self.faite:
             self.date_faite = None
+        avant = Tache.objects.filter(pk=self.pk).values_list("faite", flat=True).first() if self.pk else False
         super().save(*args, **kwargs)
+        self.message = ""
+        if self.code == CLOTURER_BAIL and bool(avant) != self.faite:
+            self.message = self.changement.cloturer_bail() if self.faite else self.changement.rouvrir_bail()
 
 
 class TacheParDefaut(models.Model):

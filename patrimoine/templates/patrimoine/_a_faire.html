@@ -2,36 +2,21 @@
   <table style="width:100%">
     <caption>
       <span class="onglets">
-        <a href="?" class="onglet{% if vue == 'resume' %} actif{% endif %}">À faire <span class="compte">{{ nb_a_faire }}</span></a>
-        <a href="?vue=tout" class="onglet{% if vue == 'tout' %} actif{% endif %}">Tout le détail</a>
-        <a href="?vue=fait" class="onglet{% if vue == 'fait' %} actif{% endif %}">Déjà fait</a>
+        <a href="{% url 'a_faire' %}" class="onglet actif">À faire <span class="compte">{{ nb_a_faire }}</span></a>
+        <a href="{% url 'a_faire' %}" class="onglet">Tout voir</a>
+        <a href="{% url 'a_faire' %}?vue=fait" class="onglet">Déjà fait</a>
       </span>
-      {% if vue != "fait" and nb_retard %}<span class="pastille-retard">{{ nb_retard }} en retard</span>{% endif %}
-      <a href="{% url 'admin:patrimoine_rappel_add' %}" class="ajout-rappel">+ Ajouter un rappel</a>
+      {% if nb_retard %}<span class="pastille-retard">{{ nb_retard }} en retard</span>{% endif %}
+      {% if modifiable %}<a href="{% url 'admin:patrimoine_rappel_add' %}" class="ajout-rappel">+ Rappel</a>{% endif %}
     </caption>
-    {% if vue == "resume" %}
     {% for g in groupes %}
     <tr class="groupe-a-faire{% if g.important %} important{% endif %}">
       <th scope="row">{% if g.important %}<span class="etoile" title="Rappel important">★</span> {% endif %}<a href="{{ g.url }}">{{ g.titre }}</a>{% if g.retard %} <span class="pill rouge">{% if g.important %}en retard{% else %}{{ g.retard }} en retard{% endif %}</span>{% endif %}<div class="detail">{{ g.detail }}</div></th>
-      <td class="action-groupe">{% if g.important and g.action %}<form method="post" action="{{ g.action }}" class="form-fait">{% csrf_token %}<button type="submit" class="button bouton-fait">Fait</button></form>{% else %}{% if g.nombre > 1 and g.categorie != "Loyer" %}<a class="lien-detail" href="?vue=tout&type={{ g.categorie|urlencode }}">Voir les {{ g.nombre }}</a>{% endif %}<a class="button" href="{{ g.url }}">{{ g.bouton }}</a>{% endif %}</td>
+      <td class="action-groupe">{% if g.important and g.action %}{% if modifiable %}<form method="post" action="{{ g.action }}" class="form-fait">{% csrf_token %}<button type="submit" class="button bouton-fait">Fait</button></form>{% endif %}{% else %}{% if g.nombre > 1 and g.detail_url != g.url %}<a class="lien-detail" href="{{ g.detail_url }}">Voir les {{ g.nombre }}</a>{% endif %}<a class="button" href="{{ g.url }}">{{ g.bouton }}</a>{% endif %}</td>
     </tr>
     {% empty %}
     <tr><td colspan="2" style="padding:16px;color:var(--body-quiet-color)">Rien à faire dans les 30 prochains jours.</td></tr>
     {% endfor %}
-    {% else %}
-    {% if vue == "tout" and type_choisi %}<tr><td colspan="4" class="filtre-a-faire">Type : <b>{{ type_choisi }}</b> · <a href="?vue=tout">tout afficher</a></td></tr>{% endif %}
-    {% for i in items %}
-    <tr>
-      <td class="coche-cellule">{% if vue == "fait" %}<input type="checkbox" checked disabled aria-label="Fait">{% elif i.action %}<form method="post" action="{{ i.action }}">{% csrf_token %}<input type="checkbox" class="case-fait" title="Cocher quand c'est fait" aria-label="Marquer « {{ i.titre }} » comme fait" onchange="this.form.submit()"></form>{% endif %}</td>
-      <td class="date{% if i.en_retard %} retard{% endif %}">{{ i.date|date:"d/m/Y" }}</td>
-      <td><span class="categorie">{{ i.categorie }}</span></td>
-      <th scope="row">{% if i.important %}<span class="etoile" title="Rappel important">★</span> {% endif %}<a href="{{ i.url }}">{{ i.titre }}</a>{% if i.detail %}<div class="detail">{{ i.detail }}</div>{% endif %}
-        {% if i.stop and vue == "tout" %}<form method="post" action="{{ i.stop }}" class="ne-plus-rappeler">{% csrf_token %}<button type="submit" onclick="return confirm('Ne plus rappeler pour ce bail ? Vous pourrez réactiver le rappel sur la fiche du bail.')">Ne plus rappeler</button></form>{% endif %}</th>
-    </tr>
-    {% empty %}
-    <tr><td colspan="4" style="padding:16px;color:var(--body-quiet-color)">{% if vue == "fait" %}Rien de fait ces {{ historique_jours }} derniers jours.{% else %}Rien à faire dans les 30 prochains jours.{% endif %}</td></tr>
-    {% endfor %}
-    {% endif %}
   </table>
-  {% if vue == "resume" %}<p class="aide-bloc">Une ligne par type d'action, retards et 30 prochains jours. « Tout le détail » permet de cocher chaque ligne.</p>{% elif vue == "tout" %}<p class="aide-bloc">Échéances des 30 prochains jours et retards. Cochez une ligne quand c'est fait.</p>{% else %}<p class="aide-bloc">Ce qui a été fait ces {{ historique_jours }} derniers jours.</p>{% endif %}
+  <p class="aide-bloc">Une ligne par type : loyers, révisions, assurances, entrées et sorties, vos rappels. Retards et 30 prochains jours.</p>
 </div>

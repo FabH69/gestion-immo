@@ -277,7 +277,8 @@ def fiche_locataire(locataire):
         if word:
             f.action("word", "Modèles Word", sous=word)
     if bail:
-        f.action("depart", "Déclarer un départ", reverse("admin:patrimoine_changementlocataire_add") + f"?lot={bail.lot_id}&bail_sortant={bail.pk}")
+        seul = "" if bail.locataires.count() < 2 else f"&locataire_sortant={locataire.pk}"  # colocation : seulement lui par défaut
+        f.action("depart", "Déclarer un départ", reverse("admin:patrimoine_changementlocataire_add") + f"?lot={bail.lot_id}&bail_sortant={bail.pk}{seul}")
     elif not baux:
         f.action("nouveau", "Créer son bail", reverse("admin:patrimoine_bail_add") + f"?locataires={locataire.pk}")
 

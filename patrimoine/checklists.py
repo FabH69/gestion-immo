@@ -40,9 +40,10 @@ MODELE_CHANGEMENT_LOCATAIRE = [
     (DEPART, "Régulariser les charges",
      "En copropriété, une retenue de 20 % du dépôt est possible jusqu'à l'approbation des comptes annuels.",
      "depart", 60),
-    (DEPART, "Clôturer le bail dans l'application",
-     "Saisir la date de fin et décocher « actif » pour arrêter la génération des loyers.",
-     "depart", 1),
+    (DEPART, "Clôturer le bail",
+     "Cochée, elle met la date de fin (le départ) et passe le bail en terminé : plus de loyers après cette date. "
+     "Si seul un colocataire part, il quitte le bail, qui continue avec les autres. Décochée, elle rouvre le bail.",
+     "depart", 0),
 
     # --- Entrée du nouveau locataire ---
     (ARRIVEE, "Vérifier les diagnostics obligatoires",

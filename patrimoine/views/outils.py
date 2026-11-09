@@ -8,8 +8,17 @@ from django.views.decorators.clickjacking import xframe_options_sameorigin
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.utils import timezone
+from django.utils.http import url_has_allowed_host_and_scheme
 from django.views.decorators.http import require_POST
 from ..models import Bail, Candidature, JournalFait, Lot, Rappel, Tache
+
+
+def _retour(request):
+    """Retour à la page d'où vient le clic (page À faire ou accueil)."""
+    suite = request.POST.get("next") or request.GET.get("next")
+    if suite and url_has_allowed_host_and_scheme(suite, allowed_hosts={request.get_host()}):
+        return redirect(suite)
+    return redirect("admin:index")
 
 
 def _lieu(bail):
@@ -53,8 +62,39 @@ def rappel_fait(request, type_rappel, pk):
         tache = get_object_or_404(Tache, pk=pk)
         tache.faite = True
         tache.save()
-        messages.success(request, "Tâche cochée.")
-    return redirect("admin:index")
+        messages.success(request, tache.message or "Tâche cochée.")
+    return _retour(request)
+
+
+@staff_member_required
+def a_faire(request):
+    """Page « À faire » : loyers, révisions, assurances, entrées et sorties et rappels saisis, en une seule liste."""
+    from collections import Counter
+
+    from .. import droits
+    from ..rappels import GENRES, HISTORIQUE_JOURS, a_faire as calculer, deja_fait
+
+    aujourdhui = timezone.localdate()
+    jours = int(request.GET["jours"]) if request.GET.get("jours") in ("30", "90", "365") else 30
+    vue = "fait" if request.GET.get("vue") == "fait" else ""
+    genre = request.GET.get("type", "")
+    relocation = droits.niveau(request.user, "relocation")
+    items = calculer(aujourdhui, jours, avec_taches=bool(relocation))
+    comptes = Counter(i["genre"] for i in items)
+    filtres = [{"code": code, "libelle": libelle, "nombre": comptes[code]} for code, libelle in GENRES
+               if comptes[code] or code in ("loyers", "revisions", "assurances", "rappels") or (code == "entrees" and relocation)]
+    if genre not in comptes and genre not in {f["code"] for f in filtres}:
+        genre = ""
+    modifiable = {"outils": droits.niveau(request.user, "outils") == droits.MODIFICATION,
+                  "entrees": relocation == droits.MODIFICATION}
+    lignes = deja_fait(aujourdhui) if vue == "fait" else [i for i in items if not genre or i["genre"] == genre]
+    for i in lignes:
+        i["cochable"] = bool(i.get("action")) and modifiable["entrees" if i.get("genre") == "entrees" else "outils"]
+    return render(request, "patrimoine/a_faire.html", {
+        **admin.site.each_context(request), "title": "À faire", "lignes": lignes, "filtres": filtres, "genre": genre, "vue": vue,
+        "jours": jours, "total": len(items), "retard": sum(i["en_retard"] for i in items), "historique_jours": HISTORIQUE_JOURS,
+        "peut_ajouter": modifiable["outils"], "ici": request.get_full_path(),
+    })
 
 
 @require_POST
@@ -69,7 +109,7 @@ def ne_plus_rappeler(request, type_rappel, pk):
         JournalFait.objects.create(titre=f"Rappel de {libelle} désactivé", detail=_lieu(bail), categorie="Révision" if type_rappel == "revision" else "Assurance",
                                    url=reverse("admin:patrimoine_bail_change", args=[pk]))
         messages.success(request, f"{_lieu(bail)} : la {libelle} ne sera plus rappelée. Pour la réactiver, cochez la case sur la fiche du bail.")
-    return redirect("admin:index")
+    return _retour(request)
 
 
 @require_POST
@@ -78,8 +118,8 @@ def tache_faite(request, pk):
     tache = get_object_or_404(Tache, pk=pk)
     tache.faite = True
     tache.save()
-    messages.success(request, f"Tâche « {tache.libelle} » cochée.")
-    return redirect("admin:index")
+    messages.success(request, f"Tâche « {tache.libelle} » cochée." + (f" {tache.message}" if tache.message else ""))
+    return _retour(request)
 
 
 @xframe_options_sameorigin  # aperçu des factures au survol (cadre sur la même adresse)

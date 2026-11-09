@@ -37,14 +37,19 @@ def _anniversaire_recent(depart, aujourdhui):
     return echeance
 
 
-def a_faire(aujourdhui, horizon_jours=PREAVIS_JOURS):
+# filtres de la page « À faire » : (code, libellé)
+GENRES = [("loyers", "Loyers"), ("revisions", "Révisions"), ("assurances", "Assurances"), ("chaudieres", "Chaudières"),
+          ("entrees", "Entrées et sorties"), ("rappels", "Mes rappels")]
+
+
+def a_faire(aujourdhui, horizon_jours=PREAVIS_JOURS, avec_taches=False):
     limite = aujourdhui + timedelta(days=horizon_jours)
     items = []
 
-    def ajouter(date, titre, detail, categorie, url, action=None, stop=None, important=False, limite_propre=None):
+    def ajouter(date, titre, detail, categorie, url, action=None, stop=None, important=False, limite_propre=None, genre="rappels"):
         if date <= (limite_propre or limite):
             items.append({
-                "date": date, "titre": titre, "detail": detail, "categorie": categorie,
+                "date": date, "titre": titre, "detail": detail, "categorie": categorie, "genre": genre,
                 "url": url, "action": action, "stop": stop, "en_retard": date < aujourdhui, "important": important,
             })
 
@@ -57,20 +62,20 @@ def a_faire(aujourdhui, horizon_jours=PREAVIS_JOURS):
         if revision and bail.rappel_revision:
             ajouter(revision, "Réviser le loyer (IRL)", lieu, "Révision", reverse("revision_loyer", args=[bail.pk]),
                     action=reverse("rappel_fait", args=["revision", bail.pk]),
-                    stop=reverse("ne_plus_rappeler", args=["revision", bail.pk]))
+                    stop=reverse("ne_plus_rappeler", args=["revision", bail.pk]), genre="revisions")
 
         echeance = _anniversaire_recent(bail.date_attestation_assurance or bail.date_debut, aujourdhui)
         if bail.rappel_assurance:
             ajouter(echeance, "Demander l'attestation d'assurance habitation", lieu, "Assurance",
                     reverse("admin:patrimoine_bail_change", args=[bail.pk]),
                     action=reverse("rappel_fait", args=["assurance", bail.pk]),
-                    stop=reverse("ne_plus_rappeler", args=["assurance", bail.pk]))
+                    stop=reverse("ne_plus_rappeler", args=["assurance", bail.pk]), genre="assurances")
 
         if bail.lot.chaudiere_gaz:
             echeance = _anniversaire_recent(bail.lot.date_entretien_chaudiere or bail.date_debut, aujourdhui)
             ajouter(echeance, "Demander l'attestation d'entretien de la chaudière", lieu, "Chaudière",
                     reverse("admin:patrimoine_lot_change", args=[bail.lot.pk]),
-                    action=reverse("rappel_fait", args=["chaudiere", bail.lot.pk]))
+                    action=reverse("rappel_fait", args=["chaudiere", bail.lot.pk]), genre="chaudieres")
 
     # loyers en retard de plus de 5 jours (12 derniers mois) : un rappel par loyer, réglé dès que le paiement est saisi
     impayes = (Echeance.objects.exclude(statut=Echeance.Statut.PAYE)
@@ -80,7 +85,7 @@ def a_faire(aujourdhui, horizon_jours=PREAVIS_JOURS):
         noms = ", ".join(str(l) for l in e.bail.locataires.all())
         ajouter(e.date_exigibilite, f"Loyer de {e.periode:%m/%Y} non réglé : {e.reste_du:.2f} €".replace(".", ","),
                 f"{e.bail.lot} – {noms}" if noms else str(e.bail.lot), "Loyer",
-                reverse("admin:patrimoine_echeance_change", args=[e.pk]))
+                reverse("admin:patrimoine_echeance_change", args=[e.pk]), genre="loyers")
 
     for rappel in Rappel.objects.filter(fait=False, actif=True).select_related("bien"):
         # « prévenir N jours avant » : le rappel n'apparaît qu'à partir de ce jour-là (30 jours avant sinon)
@@ -89,7 +94,14 @@ def a_faire(aujourdhui, horizon_jours=PREAVIS_JOURS):
                 reverse("admin:patrimoine_rappel_change", args=[rappel.pk]),
                 action=reverse("rappel_fait", args=["rappel", rappel.pk]), important=rappel.important, limite_propre=propre)
 
-    # les tâches d'entrée et de sortie ont leur propre bloc sur l'accueil (bloc_taches_changement)
+    if avec_taches:
+        taches = (Tache.objects.filter(faite=False, changement__termine=False, echeance__isnull=False)
+                  .select_related("changement__lot__bien"))
+        for t in taches:
+            sens = "Sortie" if t.phase == Tache.Phase.DEPART else "Entrée"
+            ajouter(t.echeance, t.libelle, f"{t.changement.lot} · {sens.lower()}", "Entrée et sortie",
+                    reverse("admin:patrimoine_changementlocataire_change", args=[t.changement_id]),
+                    action=reverse("tache_faite", args=[t.pk]), genre="entrees")
 
     return sorted(items, key=lambda i: (not i["important"], i["date"]))
 

@@ -44,7 +44,7 @@ MODULES = [
     ("outils", "Rappels, contrôles, modèles (location, annonces) et sites utiles", ["patrimoine.rappel", "patrimoine.journalfait",
                                                          "patrimoine.modeledocument", "patrimoine.modeleannonce",
                                                          "patrimoine.siteutile", "patrimoine.controleignore"],
-     ["liste_champs", "rappel_fait", "ne_plus_rappeler", "controles", "controle_ignorer"],
+     ["liste_champs", "rappel_fait", "ne_plus_rappeler", "controles", "controle_ignorer", "a_faire"],
      ["rappel_fait", "ne_plus_rappeler", "controle_ignorer"]),
     ("balles", "Balles", ["commandes.joueur", "commandes.article", "commandes.commande", "commandes.ligne"], [], []),
 ]

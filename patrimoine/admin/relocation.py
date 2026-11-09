@@ -1,5 +1,6 @@
 """Écrans des changements de locataire (tâches), candidatures et annonces."""
 from datetime import timedelta
+from django import forms
 from django.contrib import admin, messages
 from django.shortcuts import get_object_or_404, redirect
 from django.urls import path, reverse
@@ -16,6 +17,7 @@ from ..models import (
     Annonce,
     Candidature,
     ChangementLocataire,
+    Locataire,
     Lot,
     Tache,
     TacheParDefaut,
@@ -62,18 +64,79 @@ class TacheEntreeInline(TacheInlineBase):
     verbose_name_plural = "2. Entrée du nouveau locataire"
 
 
+class ChangementForm(forms.ModelForm):
+    """« Qui part ? » : tout le bail, ou seulement l'un des colocataires (choix proposé s'ils sont plusieurs)."""
+
+    locataire_sortant = forms.ModelChoiceField(Locataire.objects.all(), required=False, widget=forms.RadioSelect, blank=True,
+                                               empty_label="Tout le bail", label="Qui part")
+
+    class Meta:
+        model = ChangementLocataire
+        fields = "__all__"
+        widgets = {"nouvelle_adresse": forms.Textarea(attrs={"rows": 2})}
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        bail = self.data.get("bail_sortant") or self.initial.get("bail_sortant") or self.instance.bail_sortant_id
+        try:
+            bail = int(getattr(bail, "pk", bail) or 0)
+        except (TypeError, ValueError):
+            bail = 0
+        choix = Locataire.objects.filter(baux__pk=bail)
+        if self.instance.locataire_sortant_id:  # déjà parti : il n'est plus sur le bail
+            choix = choix | Locataire.objects.filter(pk=self.instance.locataire_sortant_id)
+        champ = self.fields["locataire_sortant"]
+        champ.queryset = choix.distinct().order_by("nom")
+        champ.label_from_instance = lambda l: f"Seulement {l}"
+        champ.help_text = "Seulement un colocataire : il quitte le bail, qui continue avec les autres."
+        if champ.queryset.count() < 2 and not self.instance.locataire_sortant_id:
+            champ.widget = forms.HiddenInput()
+
+
 @admin.register(ChangementLocataire)
 class ChangementLocataireAdmin(LotsALouerMixin, admin.ModelAdmin):
+    form = ChangementForm
     date_hierarchy = "date_depart"
     navigation_par = "annee"
-    list_display = ["lot", "locataire_sortant", "date_conge", "date_depart", "date_arrivee", "avancement_affiche", "prochaine_tache", "termine"]
+    list_display = ["lot", "qui_part", "date_conge", "date_depart", "date_arrivee", "avancement_affiche", "prochaine_tache", "termine"]
     list_filter = ["termine", "lot__bien__proprietaire"]
-    fields = ["lot", "bail_sortant", "date_conge", "date_depart", "date_arrivee", "termine", "notes"]
+    fieldsets = [
+        ("Départ", {"fields": ["lot", "bail_sortant", "locataire_sortant", ("date_conge", "date_depart"), "nouvelle_adresse"],
+                    "description": "Les tâches de sortie et d'entrée sont créées à l'enregistrement. La tâche « Clôturer le bail », "
+                                   "une fois cochée, met la date de fin et termine le bail (ou retire seulement le colocataire)."}),
+        ("Arrivée", {"fields": ["date_arrivee"]}),
+        (None, {"fields": ["termine", "notes"]}),
+    ]
     inlines = [TacheSortieInline, TacheEntreeInline]
 
-    @admin.display(description="locataire sortant")
-    def locataire_sortant(self, obj):
+    def get_inlines(self, request, obj):
+        return self.inlines if obj else []  # les tâches sont créées à l'enregistrement
+
+    def get_form(self, request, obj=None, **kwargs):
+        form = super().get_form(request, obj, **kwargs)
+        for nom in ("lot", "bail_sortant"):
+            if nom in form.base_fields:
+                w = form.base_fields[nom].widget
+                w.can_add_related = w.can_change_related = w.can_delete_related = w.can_view_related = False
+        return form
+
+    def add_view(self, request, form_url="", extra_context=None):
+        if request.GET.get("bail_sortant"):
+            extra_context = {**(extra_context or {}), "title": "Déclarer un départ"}
+        return super().add_view(request, form_url, extra_context)
+
+    @admin.display(description="qui part")
+    def qui_part(self, obj):
+        if obj.locataire_sortant_id:
+            return f"{obj.locataire_sortant} (colocataire)"
         return ", ".join(str(l) for l in obj.bail_sortant.locataires.all()) if obj.bail_sortant else "–"
+
+    def save_formset(self, request, form, formset, change):
+        super().save_formset(request, form, formset, change)
+        for f in formset.forms:
+            message = getattr(f.instance, "message", "")
+            if message:
+                messages.success(request, message)
 
     @admin.display(description="avancement")
     def avancement_affiche(self, obj):

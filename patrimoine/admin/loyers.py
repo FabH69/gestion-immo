@@ -310,13 +310,21 @@ class DepotEnCoursFilter(admin.SimpleListFilter):
 
 @admin.register(MouvementDepot)
 class MouvementDepotAdmin(admin.ModelAdmin):
+    """Vue d'ensemble en lecture : un dépôt s'encaisse et se restitue sur la fiche du bail (onglet Argent)."""
     navigation_par = "annee"
     list_display = ["date", "type", "montant_affiche", "logement", "locataires", "proprietaire", "mode", "justification", "recu"]
+    list_display_links = None
     list_select_related = ["bail__lot__bien__proprietaire"]
 
-    @admin.display(description="logement", ordering="bail__lot__bien__nom")
+    def has_add_permission(self, request):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return False
+
+    @admin.display(description="bail", ordering="bail__lot__bien__nom")
     def logement(self, obj):
-        return str(obj.bail.lot)
+        return format_html('<a href="{}#argent">{}</a>', reverse("admin:patrimoine_bail_change", args=[obj.bail_id]), obj.bail.lot)
 
     @admin.display(description="locataire")
     def locataires(self, obj):

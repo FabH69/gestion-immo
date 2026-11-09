@@ -131,11 +131,12 @@ class ChangementLocataireTests(TestCase):
         self.client.login(username="admin", password="x")
         c = ChangementLocataire.objects.create(lot=self.lot, date_depart=date(2026, 12, 20))
         page = self.client.get("/admin/").content.decode()
-        self.assertIn("Entrées et sorties de locataires", page)
+        self.assertIn("tâche d&#x27;entrée ou de sortie", page)  # une ligne dans le résumé À faire de l'accueil
         self.assertNotIn("<h2>Logements", page)
         tache = c.taches.filter(faite=False, echeance__isnull=False).order_by("echeance").first()
-        self.assertIn(tache.libelle.replace("'", "&#x27;"), page)
-        self.client.post(f"/taches/{tache.pk}/faite/")
+        self.assertIn(tache.libelle.replace("'", "&#x27;"), self.client.get("/a-faire/?type=entrees").content.decode())
+        r = self.client.post(f"/taches/{tache.pk}/faite/", {"next": "/a-faire/?type=entrees"})
+        self.assertEqual(r["Location"], "/a-faire/?type=entrees")
         from .models import TacheParDefaut
         TacheParDefaut.objects.filter(libelle__startswith="Organiser les visites").update(actif=False)
         self.assertNotIn("Organiser les visites", self.client.get("/admin/patrimoine/tachepardefaut/").content.decode())
@@ -683,7 +684,7 @@ class TableauDeBordTests(TestCase):
         self.assertNotIn("Loyers encaissés par mois et par année</a></th>", page)
         self.client.post(f"/rappels/rappel/{rappel.pk}/fait/")
         self.assertNotIn("AG copropriété", self.client.get("/admin/").content.decode())
-        fait = self.client.get("/admin/?vue=fait").content.decode()
+        fait = self.client.get("/a-faire/?vue=fait").content.decode()
         self.assertIn("AG copropriété", fait)
         self.assertEqual(JournalFait.objects.count(), 1)
 
@@ -695,7 +696,7 @@ class TableauDeBordTests(TestCase):
         debut = timezone.localdate() - timedelta(days=360)
         bail = Bail.objects.create(lot=lot, type=Bail.Type.NU, date_debut=debut, loyer_hc=500)
         echeance = bail.prochaine_revision(timezone.localdate())
-        self.assertIn("revision/%d/fait" % bail.pk, self.client.get("/admin/?vue=tout").content.decode().replace("rappels/", ""))
+        self.assertIn("revision/%d/fait" % bail.pk, self.client.get("/a-faire/?type=revisions").content.decode().replace("rappels/", ""))
         self.client.post(f"/rappels/revision/{bail.pk}/fait/")
         bail.refresh_from_db()
         self.assertEqual(bail.date_derniere_revision, echeance)
@@ -857,57 +858,63 @@ class FicheLocataireTests(TestCase):
         d.update(extra)
         return d
 
-    def test_rattachement_cree_un_bail(self):
-        r = self.client.post("/admin/patrimoine/locataire/add/", self._donnees(lot=self.lot.pk, date_entree="2026-11-01"))
-        self.assertEqual(r.status_code, 302, r.content.decode()[:3000])
-        bail = Bail.objects.get(lot=self.lot)
-        self.assertEqual(bail.type, Bail.Type.MEUBLE)
-        self.assertEqual(bail.date_debut, date(2026, 11, 1))
-        self.assertEqual(list(bail.locataires.values_list("nom", flat=True)), ["DUPONT"])
-
-    def test_rattachement_au_bail_existant(self):
+    def test_fiche_sans_logement_ni_case_de_sortie(self):
+        """Un bail se crée dans Baux › Nouveau bail ; un départ se déclare avec « Déclarer un départ »."""
+        loc = Locataire.objects.create(nom="DUPONT", prenom="Jean")
         bail = Bail.objects.create(lot=self.lot, type=Bail.Type.NU, date_debut=date(2025, 1, 1), loyer_hc=600)
-        self.client.post("/admin/patrimoine/locataire/add/", self._donnees(lot=self.lot.pk))
-        self.assertEqual(Bail.objects.count(), 1)
-        self.assertEqual(bail.locataires.count(), 1)
+        bail.locataires.add(loc)
+        page = self.client.get(f"/admin/patrimoine/locataire/{loc.pk}/change/").content.decode()
+        self.assertNotIn("Le locataire quitte le logement", page)
+        self.assertNotIn("logement loué", page)
+        self.assertIn(f"/admin/patrimoine/changementlocataire/add/?lot={self.lot.pk}&amp;bail_sortant={bail.pk}", page)
+        self.assertNotIn("logement loué", self.client.get("/admin/patrimoine/locataire/add/").content.decode())
+        r = self.client.post("/admin/patrimoine/locataire/add/", self._donnees(nom="NOUVEAU", lot=self.lot.pk))
+        self.assertEqual(r.status_code, 302)
+        self.assertEqual(Bail.objects.count(), 1)  # aucun bail créé depuis la fiche locataire
 
-    def test_sortie_cree_les_rappels(self):
+    def _depart(self, bail, **kwargs):
+        from .models import ChangementLocataire
+
+        c = ChangementLocataire.objects.create(lot=self.lot, bail_sortant=bail, date_depart=date(2026, 11, 15), **kwargs)
+        return c, c.taches.get(code="cloturer_bail")
+
+    def test_cloturer_le_bail(self):
         loc = Locataire.objects.create(nom="DUPONT", prenom="Jean")
         bail = Bail.objects.create(lot=self.lot, type=Bail.Type.NU, date_debut=date(2025, 1, 1), loyer_hc=600, type_garantie="visale", detail_garantie="V123")
         bail.locataires.add(loc)
-        MouvementDepot.objects.create(bail=bail, date=date(2025, 1, 1), montant=600)
-        page = self.client.get(f"/admin/patrimoine/locataire/{loc.pk}/change/").content.decode()
-        self.assertIn("Le locataire quitte le logement", page)
-        self.assertIn("Documents", page)
-        r = self.client.post(f"/admin/patrimoine/locataire/{loc.pk}/change/", self._donnees(
-            lot=self.lot.pk, sortie="on", date_sortie="2026-11-15", nouvelle_rue="5 rue Neuve", nouveau_code_postal="69003", nouvelle_ville="Lyon"))
-        self.assertEqual(r.status_code, 302, r.content.decode()[:3000])
-        loc.refresh_from_db()
-        self.assertEqual(loc.adresse_actuelle, "5 rue Neuve\n69003 Lyon")
+        c, tache = self._depart(bail, nouvelle_adresse="5 rue Neuve\n69003 Lyon")
+        self.assertEqual(tache.libelle, "Clôturer le bail")
+        self.assertTrue(bail.actif)  # rien ne change tant que la tâche n'est pas cochée
+        r = self.client.post(f"/taches/{tache.pk}/faite/")
+        self.assertEqual(r.status_code, 302)
         bail.refresh_from_db()
-        self.assertFalse(bail.actif)
-        self.assertEqual(bail.date_fin, date(2026, 11, 15))
-        titres = list(Rappel.objects.values_list("titre", flat=True))
-        self.assertTrue(any("dépôt de garantie" in t and "600.00" in t for t in titres), titres)
-        self.assertTrue(any("Visale" in t for t in titres), titres)
-        self.assertEqual(Rappel.objects.get(titre__contains="dépôt").date, date(2026, 12, 15))
-
-    def test_sortie_sans_depot_ni_visale(self):
-        loc = Locataire.objects.create(nom="MARTIN")
-        bail = Bail.objects.create(lot=self.lot, type=Bail.Type.NU, date_debut=date(2025, 1, 1), loyer_hc=600, type_garantie="garant")
-        bail.locataires.add(loc)
-        self.client.post(f"/admin/patrimoine/locataire/{loc.pk}/change/", self._donnees(nom="MARTIN", lot=self.lot.pk, sortie="on", date_sortie="2026-11-15"))
-        self.assertFalse(Bail.objects.get().actif)
-        self.assertEqual(Rappel.objects.count(), 0)
+        loc.refresh_from_db()
+        self.assertEqual((bail.actif, bail.date_fin), (False, date(2026, 11, 15)))
+        self.assertEqual(loc.adresse_actuelle, "5 rue Neuve\n69003 Lyon")
+        self.assertTrue(Rappel.objects.filter(titre__contains="Visale").exists())
+        tache.refresh_from_db()
+        tache.faite = False  # décochée : le bail est rouvert
+        tache.save()
+        bail.refresh_from_db()
+        self.assertEqual((bail.actif, bail.date_fin), (True, None))
 
     def test_colocataire_qui_part(self):
         a, b = Locataire.objects.create(nom="A"), Locataire.objects.create(nom="B")
         bail = Bail.objects.create(lot=self.lot, type=Bail.Type.NU, date_debut=date(2025, 1, 1), loyer_hc=600)
         bail.locataires.add(a, b)
-        self.client.post(f"/admin/patrimoine/locataire/{a.pk}/change/", self._donnees(nom="A", prenom="", lot=self.lot.pk, sortie="on", date_sortie="2026-11-15"))
+        page = self.client.get(f"/admin/patrimoine/changementlocataire/add/?lot={self.lot.pk}&bail_sortant={bail.pk}&locataire_sortant={a.pk}").content.decode()
+        self.assertIn("Tout le bail", page)
+        self.assertIn("Seulement A", page)
+        self.assertRegex(page, rf'value="{a.pk}"[^>]*checked')
+        c, tache = self._depart(bail, locataire_sortant=a, nouvelle_adresse="Ailleurs")
+        tache.faite = True
+        tache.save()
         bail.refresh_from_db()
+        a.refresh_from_db()
         self.assertTrue(bail.actif)
         self.assertEqual(list(bail.locataires.all()), [b])
+        self.assertEqual(a.adresse_actuelle, "Ailleurs")
+        self.assertIn("B", tache.message)
 
 
 class RecuDepotWordTests(TestCase):
@@ -1941,7 +1948,7 @@ class VocabulaireEtListesTests(TestCase):
         from .rappels import a_faire
         jour = date(2026, 11, 9)
         self.assertIn("Révision", [i["categorie"] for i in a_faire(jour)])
-        accueil = self.client.get("/admin/?vue=tout").content.decode()
+        accueil = self.client.get("/a-faire/").content.decode()
         self.assertIn("Ne plus rappeler", accueil)
         self.client.post(f"/rappels/revision/{self.bail.pk}/ne-plus-rappeler/")
         self.bail.refresh_from_db()
@@ -2462,3 +2469,28 @@ class ComparatifNueTests(TestCase):
         self.assertEqual(sorted(self.c.lignes.values_list("libelle", flat=True)), ["Mobilier", "Taxe foncière (part)"])
         page = self.client.get(url).content.decode()
         self.assertNotIn("GLI (assurance", page)  # GLI à 0 : ligne retirée
+
+
+class UneSeuleFaconTests(TestCase):
+    """Page « À faire » (une seule liste) et dépôts de garantie en lecture."""
+
+    def setUp(self):
+        self.client.force_login(User.objects.create_superuser("admin", "a@a.fr", "x"))
+        proprio = Proprietaire.objects.create(nom="SCI ALFAB", type=Proprietaire.Type.SCI_IR)
+        bien = Bien.objects.create(proprietaire=proprio, nom="Vaugneray", adresse="1 rue", code_postal="69670", ville="Vaugneray")
+        self.lot = Lot.objects.create(bien=bien, designation="Vaugneray")
+        self.bail = Bail.objects.create(lot=self.lot, type=Bail.Type.NU, date_debut=date(2023, 5, 10), loyer_hc=560, depot_garantie=560)
+
+    def test_page_a_faire(self):
+        Rappel.objects.create(titre="AG copropriété", date=timezone.localdate())
+        page = self.client.get("/a-faire/").content.decode()
+        for texte in ("AG copropriété", "Mes rappels", "Entrées et sorties", "+ Rappel", 'href="/a-faire/"'):
+            self.assertIn(texte, page)
+        self.assertIn("AG copropriété", self.client.get("/a-faire/?type=rappels").content.decode())
+        self.assertNotIn("AG copropriété", self.client.get("/a-faire/?type=loyers").content.decode())
+
+    def test_depots_en_lecture(self):
+        MouvementDepot.objects.create(bail=self.bail, date=date(2023, 5, 10), montant=560)
+        liste = self.client.get("/admin/patrimoine/mouvementdepot/").content.decode()
+        self.assertIn(f"/admin/patrimoine/bail/{self.bail.pk}/change/#argent", liste)
+        self.assertEqual(self.client.get("/admin/patrimoine/mouvementdepot/add/").status_code, 403)
