@@ -1348,6 +1348,9 @@ class NouveauLookTests(TestCase):
     def test_bouton_encaisser(self):
         Echeance.generer_pour_mois(date(2026, 10, 1))
         e = Echeance.objects.get()
+        liste = self.client.get("/admin/patrimoine/echeance/?periode__year=2026").content.decode()
+        self.assertIn(f'formaction="/admin/patrimoine/echeance/{e.pk}/encaisser/"', liste)
+        self.assertNotIn("form-encaisser", liste)  # pas de formulaire imbriqué dans celui de la liste (1er bouton inopérant)
         self.client.post(f"/admin/patrimoine/echeance/{e.pk}/encaisser/")
         e.refresh_from_db()
         self.assertEqual(e.statut, Echeance.Statut.PAYE)

@@ -123,7 +123,13 @@ class EcheanceAdmin(admin.ModelAdmin):
             Paiement.objects.create(echeance=e, date=timezone.localdate(), montant=e.reste_du)
             self.message_user(request, f"{e} : {e.total} € encaissés aujourd'hui (virement). Pour un autre mode ou une autre date, ouvrez le loyer.",
                               messages.SUCCESS)
-        return redirect(request.POST.get("retour") or "admin:patrimoine_echeance_changelist")
+        # retour à la liste telle qu'elle était (filtres, période)
+        from django.utils.http import url_has_allowed_host_and_scheme
+
+        retour = request.POST.get("retour") or request.META.get("HTTP_REFERER") or ""
+        if not url_has_allowed_host_and_scheme(retour, allowed_hosts={request.get_host()}):
+            retour = "admin:patrimoine_echeance_changelist"
+        return redirect(retour)
 
     def generer_view(self, request):
         aujourdhui = timezone.localdate()
@@ -200,9 +206,11 @@ class EcheanceAdmin(admin.ModelAdmin):
             return pdf
         if obj.date_exigibilite < timezone.localdate():
             pdf = format_html('{} <a class="lien-action" href="{}?bail={}">Relancer</a>', pdf, reverse("relances_impayes"), obj.bail_id)
-        return format_html('<form method="post" action="{}" class="form-encaisser"><input type="hidden" name="csrfmiddlewaretoken" value="{}">'
-                           '<button type="submit" class="bouton-encaisser" title="Enregistrer le paiement du reste dû, aujourd\'hui, par virement">Encaisser</button></form>{}',
-                           reverse("admin:patrimoine_echeance_encaisser", args=[obj.pk]), self._csrf, pdf)
+        # pas de formulaire dans la cellule : la liste est déjà un formulaire (un formulaire imbriqué casse le premier bouton) ;
+        # le bouton envoie le formulaire de la liste, avec son jeton, vers l'adresse d'encaissement de la ligne
+        return format_html('<button type="submit" class="bouton-encaisser" formmethod="post" formaction="{}" formnovalidate '
+                           'title="Enregistrer le paiement du reste dû, aujourd\'hui, par virement">Encaisser</button>{}',
+                           reverse("admin:patrimoine_echeance_encaisser", args=[obj.pk]), pdf)
 
     def get_changelist_instance(self, request):
         from django.middleware.csrf import get_token
