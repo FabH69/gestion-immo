@@ -19,6 +19,8 @@ table.bilan tr.fort td { font-size: 1.05rem; font-weight: 700; background: var(-
 .neg { color: #c62828; }
 .pos { color: #2e7d32; }
 .aide { font-size: .8rem; color: var(--body-quiet-color); line-height: 1.5; }
+.choix-bien { display: flex; flex-wrap: wrap; gap: 6px; }
+.choix-bien .chip { font-size: .85rem; padding: 5px 12px; }
 .liens { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 12px; }
 </style>{% endblock %}
 {% block content %}
@@ -26,6 +28,7 @@ table.bilan tr.fort td { font-size: 1.05rem; font-weight: 700; background: var(-
 <div class="carte">
   <form method="get" class="barre">
     <div><label>Année</label>{% boutons_annees annees annee %}<input type="hidden" name="annee" value="{{ annee }}"></div>
+    {% if lots_lmnp|length > 1 %}<div><label>Bien</label><div class="choix-bien"><a class="chip{% if not lot_choisi %} actif{% endif %}" href="?annee={{ annee }}">Tous</a>{% for l in lots_lmnp %}<a class="chip{% if l == lot_choisi %} actif{% endif %}" href="?annee={{ annee }}&lot={{ l.pk }}">{{ l.bien.nom }}{% if l.designation != l.bien.nom %} – {{ l.designation }}{% endif %}</a>{% endfor %}</div></div>{% endif %}
     <a class="button" href="{% url 'admin:patrimoine_chargelmnp_add' %}?annee={{ annee }}">+ Ajouter une charge ou un amortissement</a>
   </form>
 </div>
@@ -60,7 +63,7 @@ table.bilan tr.fort td { font-size: 1.05rem; font-weight: 700; background: var(-
 </div>
 
 <div class="carte">
-  <h2>Total LMNP {{ annee }}</h2>
+  <h2>{% if lot_choisi %}Total {{ lot_choisi.bien.nom }} {{ annee }}{% else %}Total LMNP {{ annee }}{% endif %}</h2>
   <table class="bilan">
     <tr><td>Recettes</td><td class="m">{{ total.total_recettes|floatformat:"2g" }} €</td></tr>
     <tr><td>Charges</td><td class="m">− {{ total.total_charges|floatformat:"2g" }} €</td></tr>

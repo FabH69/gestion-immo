@@ -79,8 +79,15 @@ def bilan_lot(lot, annee):
     }
 
 
-def bilan(annee):
-    lots = Lot.objects.filter(lmnp=True).select_related("bien__proprietaire").order_by("bien__nom", "designation")
+def lots_lmnp():
+    return Lot.objects.filter(lmnp=True).select_related("bien__proprietaire").order_by("bien__nom", "designation")
+
+
+def bilan(annee, lot_id=None):
+    """Bilan de tous les biens en LMNP, ou d'un seul (lot_id)."""
+    lots = lots_lmnp()
+    if lot_id:
+        lots = lots.filter(pk=lot_id)
     blocs = [bilan_lot(l, annee) for l in lots]
     total = {k: sum((b[k] for b in blocs), ZERO) for k in ("total_recettes", "total_charges", "resultat", "amortissements", "amort_deduit", "amort_reporte", "resultat_fiscal", "micro_imposable")}
     return {"blocs": blocs, "total": total}

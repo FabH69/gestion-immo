@@ -207,9 +207,11 @@ def biens_lmnp(request):
     annee = int(request.GET.get("annee") or aujourdhui.year)
     from .compta import onglets
 
+    lots = list(lmnp.lots_lmnp())
+    lot = next((l for l in lots if str(l.pk) == request.GET.get("lot")), None)
     contexte = {**admin.site.each_context(request), "title": f"Bilan LMNP (2031) – {annee}", "annee": annee,
-                "annees": annees_disponibles(), **lmnp.bilan(annee), "onglets": onglets("lmnp", "2031"), "libelle_regime": "LMNP",
-                "lien_regime": reverse("compta_lmnp")}
+                "annees": annees_disponibles(), **lmnp.bilan(annee, lot.pk if lot else None), "onglets": onglets("lmnp", "2031"),
+                "libelle_regime": "LMNP", "lien_regime": reverse("compta_lmnp"), "lots_lmnp": lots, "lot_choisi": lot}
     return render(request, "patrimoine/lmnp.html", contexte)
 
 
