@@ -19,6 +19,7 @@ table.bilan tr.fort td { font-size: 1.05rem; font-weight: 700; background: var(-
 .neg { color: #c62828; }
 .pos { color: #2e7d32; }
 .aide { font-size: .8rem; color: var(--body-quiet-color); line-height: 1.5; }
+select.choix-annee { height: 34px !important; border-radius: 999px; padding: 0 12px; font-weight: 600; min-width: 110px; }
 .choix-bien { display: flex; flex-wrap: wrap; gap: 6px; }
 .choix-bien .chip { font-size: .85rem; padding: 5px 12px; }
 .liens { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 12px; }
@@ -27,7 +28,7 @@ table.bilan tr.fort td { font-size: 1.05rem; font-weight: 700; background: var(-
 {% include "patrimoine/_onglets_compta.html" %}
 <div class="carte">
   <form method="get" class="barre">
-    <div><label>Année</label>{% boutons_annees annees annee %}<input type="hidden" name="annee" value="{{ annee }}"></div>
+    <div><label for="annee">Année</label><select id="annee" name="annee" class="choix-annee" onchange="this.form.submit()">{% for a in annees %}<option value="{{ a }}"{% if a == annee %} selected{% endif %}>{{ a }}</option>{% endfor %}</select>{% if lot_choisi %}<input type="hidden" name="lot" value="{{ lot_choisi.pk }}">{% endif %}</div>
     {% if lots_lmnp|length > 1 %}<div><label>Bien</label><div class="choix-bien"><a class="chip{% if not lot_choisi %} actif{% endif %}" href="?annee={{ annee }}">Tous</a>{% for l in lots_lmnp %}<a class="chip{% if l == lot_choisi %} actif{% endif %}" href="?annee={{ annee }}&lot={{ l.pk }}">{{ l.bien.nom }}{% if l.designation != l.bien.nom %} – {{ l.designation }}{% endif %}</a>{% endfor %}</div></div>{% endif %}
     <a class="button" href="{% url 'admin:patrimoine_chargelmnp_add' %}?annee={{ annee }}">+ Ajouter une charge ou un amortissement</a>
   </form>
