@@ -321,6 +321,14 @@ class EtatDesLieux(models.Model):
     nb_cles = models.CharField("clés et badges remis", max_length=100, blank=True)
     nouvelle_adresse = models.TextField("nouvelle adresse du locataire (sortie)", blank=True)
     observations = models.TextField(blank=True)
+    # saisie pièce par pièce sur téléphone, signée à l'écran puis verrouillée
+    signataire_bailleur = models.CharField("signataire pour le bailleur", max_length=150, blank=True)
+    signataire_locataire = models.CharField("signataire(s) pour le locataire", max_length=200, blank=True)
+    signature_bailleur = models.TextField(blank=True, editable=False)
+    signature_locataire = models.TextField(blank=True, editable=False)
+    bailleur_signe_le = models.DateTimeField("bailleur signé le", null=True, blank=True, editable=False)
+    signe_le = models.DateTimeField("signé et verrouillé le", null=True, blank=True, editable=False)
+    empreinte = models.CharField("empreinte SHA-256 du document signé", max_length=64, blank=True, editable=False)
 
     class Meta:
         verbose_name = "état des lieux"
@@ -349,6 +357,81 @@ class EtatDesLieux(models.Model):
         super().save(*args, **kwargs)
         if a_completer:
             self.bail.save(update_fields=a_completer)
+
+    @property
+    def signe(self):
+        return self.signe_le is not None
+
+    def edl_entree(self):
+        """Pour une sortie : l'état des lieux d'entrée du même bail (le plus récent), qui sert de référence."""
+        if self.type != self.Type.SORTIE:
+            return None
+        return self.bail.etats_des_lieux.filter(type=self.Type.ENTREE).exclude(pk=self.pk).order_by("-date", "-pk").first()
+
+
+def _chemin_photo_edl(instance, nom):
+    import secrets
+
+    return f"etats-des-lieux/{instance.edl_id}/{secrets.token_hex(6)}.jpg"
+
+
+class ElementEDL(models.Model):
+    """Une ligne de l'état des lieux : un élément d'une pièce (sol, murs…), un compteur ou un meuble de l'inventaire."""
+
+    class Etat(models.TextChoices):
+        NEUF = "neuf", "Neuf"
+        TRES_BON = "tb", "Très bon"
+        BON = "b", "Bon"
+        USAGE = "u", "Usagé"
+        MAUVAIS = "m", "Mauvais"
+        ABSENT = "absent", "Absent / hors service"
+
+    edl = models.ForeignKey(EtatDesLieux, on_delete=models.CASCADE, related_name="elements")
+    piece = models.CharField("pièce", max_length=100)
+    ordre = models.PositiveSmallIntegerField(default=0)
+    nom = models.CharField("élément", max_length=150)
+    etat = models.CharField("état", max_length=10, choices=Etat.choices, blank=True)
+    quantite = models.PositiveSmallIntegerField("quantité", null=True, blank=True)
+    commentaire = models.TextField(blank=True)
+    etat_entree = models.CharField("état à l'entrée", max_length=10, choices=Etat.choices, blank=True, editable=False)
+    commentaire_entree = models.TextField("commentaire à l'entrée", blank=True, editable=False)
+    element_entree = models.ForeignKey("self", null=True, blank=True, on_delete=models.SET_NULL, editable=False, related_name="+")
+
+    class Meta:
+        verbose_name = "élément d'état des lieux"
+        verbose_name_plural = "éléments d'état des lieux"
+        ordering = ["ordre", "pk"]
+
+    def __str__(self):
+        return f"{self.piece} – {self.nom}"
+
+    RANG = {"neuf": 5, "tb": 4, "b": 3, "u": 2, "m": 1, "absent": 0}
+
+    @property
+    def degrade(self):
+        """Sortie : l'état est moins bon qu'à l'entrée."""
+        if not (self.etat and self.etat_entree):
+            return False
+        return self.RANG[self.etat] < self.RANG[self.etat_entree]
+
+
+class PhotoEDL(models.Model):
+    """Photo prise pendant l'état des lieux : heure de réception par le serveur, date de prise de vue (si l'appareil la donne) et empreinte du fichier."""
+
+    edl = models.ForeignKey(EtatDesLieux, on_delete=models.CASCADE, related_name="photos")
+    element = models.ForeignKey(ElementEDL, on_delete=models.CASCADE, related_name="photos")
+    image = models.ImageField(upload_to=_chemin_photo_edl, storage=stockage_prive)
+    recue_le = models.DateTimeField("reçue par le serveur le", auto_now_add=True)
+    prise_le = models.DateTimeField("prise de vue (appareil)", null=True, blank=True)
+    empreinte = models.CharField("empreinte SHA-256", max_length=64)
+
+    class Meta:
+        verbose_name = "photo d'état des lieux"
+        verbose_name_plural = "photos d'état des lieux"
+        ordering = ["recue_le", "pk"]
+
+    def __str__(self):
+        return f"Photo {self.element} – {self.recue_le:%d/%m/%Y %H:%M}"
 
 
 class RevisionLoyer(models.Model):

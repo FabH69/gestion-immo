@@ -6,10 +6,12 @@ from .biens import _chemin_photo, Bien, Lot, PhotoLot, Proprietaire, Syndic  # n
 from .location import (  # noqa: F401
     Bail,
     DocumentLocataire,
+    ElementEDL,
     EtatDesLieux,
     Garant,
     Locataire,
     mois_depot_maximum,
+    PhotoEDL,
     RevisionLoyer,
     TYPES_GARANTIE,
 )

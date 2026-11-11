@@ -2512,3 +2512,124 @@ class UneSeuleFaconTests(TestCase):
         liste = self.client.get("/admin/patrimoine/echeance/").content.decode()
         self.assertIn('id="recherche-globale"', liste)  # la recherche globale reste en haut des listes
         self.assertIn("Filtrer ces loyers", liste)
+
+
+class EtatDesLieuxTelephoneTests(TestCase):
+    """État des lieux pièce par pièce : photos horodatées, signatures, verrouillage, sortie comparée à l'entrée."""
+
+    def setUp(self):
+        import tempfile
+
+        from django.contrib.auth.models import User
+        self.dossier = tempfile.mkdtemp()
+        reglage = self.settings(PRIVE_ROOT=self.dossier)
+        reglage.enable()
+        self.addCleanup(reglage.disable)
+        self.client.force_login(User.objects.create_superuser("admin", "a@a.fr", "x"))
+        proprio = Proprietaire.objects.create(nom="SCI EDL", type=Proprietaire.Type.SCI_IR)
+        bien = Bien.objects.create(nom="Immeuble E", proprietaire=proprio, adresse="1 rue", code_postal="69000", ville="Lyon")
+        lot = Lot.objects.create(bien=bien, designation="T2", nb_pieces=2, meuble=True, loyer_propose=650)
+        self.bail = Bail.objects.create(lot=lot, type=Bail.Type.MEUBLE, date_debut=date(2025, 1, 1), loyer_hc=600)
+        self.bail.locataires.add(Locataire.objects.create(nom="DURAND", prenom="Léa"))
+
+    def tearDown(self):
+        import shutil
+
+        shutil.rmtree(self.dossier, ignore_errors=True)
+
+    def _photo(self):
+        import io
+
+        from django.core.files.uploadedfile import SimpleUploadedFile
+        from PIL import Image
+        tampon = io.BytesIO()
+        image = Image.new("RGB", (2400, 1600), (200, 180, 150))
+        exif = image.getexif()
+        exif[306] = "2026:11:11 10:15:00"
+        image.save(tampon, "JPEG", exif=exif)
+        return SimpleUploadedFile("photo.jpg", tampon.getvalue(), content_type="image/jpeg")
+
+    def _signer(self, edl, n_etapes):
+        signature = "data:image/png;base64," + "A" * 400
+        url = f"/etats-des-lieux/{edl.pk}/saisie/?etape={n_etapes - 1}"
+        self.client.post(url, {"qui": "bailleur", "signature": signature})
+        return self.client.post(url, {"qui": "locataire", "signature": signature})
+
+    def test_entree_puis_sortie_comparee(self):
+        from .models import ElementEDL, EtatDesLieux
+        from . import edl as logique
+        r = self.client.post(f"/baux/{self.bail.pk}/etat-des-lieux/entree/", {"signataire_bailleur": "SCI EDL"})
+        entree = EtatDesLieux.objects.get(type="entree")
+        self.assertRedirects(r, f"/etats-des-lieux/{entree.pk}/saisie/?etape=1", fetch_redirect_response=False)
+        pieces = logique.pieces(entree)
+        self.assertEqual([p for p, _ in pieces], ["Entrée", "Séjour", "Cuisine", "Chambre", "Salle de bains", "WC", logique.PIECE_INVENTAIRE])
+        sol = pieces[0][1][0]
+        page = self.client.get(f"/etats-des-lieux/{entree.pk}/saisie/?etape=1").content.decode()
+        self.assertIn('capture="environment"', page)
+        self.client.post(f"/etats-des-lieux/{entree.pk}/saisie/?etape=1",
+                         {f"etat-{sol.pk}": "tb", f"commentaire-{sol.pk}": "Parquet neuf", f"photos-{sol.pk}": self._photo(), "action": "photos"})
+        sol.refresh_from_db()
+        self.assertEqual((sol.etat, sol.commentaire), ("tb", "Parquet neuf"))
+        photo = sol.photos.get()
+        self.assertEqual(len(photo.empreinte), 64)
+        self.assertEqual(timezone.localtime(photo.prise_le).hour, 10)
+        self.assertLessEqual(max(photo.image.width, photo.image.height), logique.TAILLE_PHOTO)
+        self.assertTrue(photo.image.path.startswith(self.dossier))  # hors du dossier public
+        n = len(logique.pieces(entree)) + 3
+        r = self._signer(entree, n)
+        self.assertRedirects(r, f"/etats-des-lieux/{entree.pk}/", fetch_redirect_response=False)
+        entree.refresh_from_db()
+        self.assertTrue(entree.signe and entree.bailleur_signe_le and entree.empreinte)
+        self.assertTrue(logique.integre(entree))
+        self.assertIn("Document intact", self.client.get(f"/etats-des-lieux/{entree.pk}/").content.decode())
+        # verrouillé : la saisie renvoie vers le résumé, la fiche n'est plus modifiable
+        self.assertRedirects(self.client.get(f"/etats-des-lieux/{entree.pk}/saisie/"), f"/etats-des-lieux/{entree.pk}/", fetch_redirect_response=False)
+        self.client.post(f"/etats-des-lieux/{entree.pk}/saisie/?etape=1", {f"etat-{sol.pk}": "m"})
+        sol.refresh_from_db()
+        self.assertEqual(sol.etat, "tb")
+        self.assertEqual(self.client.post(f"/admin/patrimoine/etatdeslieux/{entree.pk}/change/", {}).status_code, 403)
+        # toute retouche se voit
+        ElementEDL.objects.filter(pk=sol.pk).update(commentaire="retouché")
+        self.assertFalse(logique.integre(entree))
+        ElementEDL.objects.filter(pk=sol.pk).update(commentaire="Parquet neuf")
+        pdf = self.client.get(f"/etats-des-lieux/{entree.pk}/document.pdf")
+        self.assertEqual(pdf["Content-Type"], "application/pdf")
+
+        # sortie : même liste, état d'entrée rappelé, dégradations relevées
+        self.client.post(f"/baux/{self.bail.pk}/etat-des-lieux/sortie/", {})
+        sortie = EtatDesLieux.objects.get(type="sortie")
+        sol_sortie = sortie.elements.get(piece="Entrée", nom="Sol")
+        self.assertEqual((sol_sortie.etat_entree, sol_sortie.commentaire_entree), ("tb", "Parquet neuf"))
+        self.assertEqual(sortie.elements.count(), entree.elements.count())
+        page = self.client.get(f"/etats-des-lieux/{sortie.pk}/saisie/?etape=1").content.decode()
+        self.assertIn("À l'entrée", page)
+        self.assertIn(photo.image.name, page)
+        self.client.post(f"/etats-des-lieux/{sortie.pk}/saisie/?etape=1", {f"etat-{sol_sortie.pk}": "u", f"commentaire-{sol_sortie.pk}": "Rayures"})
+        self.assertEqual([e.pk for e in logique.differences(sortie)], [sol_sortie.pk])
+        self.assertIn("1 élément dégradé", self.client.get(f"/etats-des-lieux/{sortie.pk}/saisie/?etape={n - 1}").content.decode())
+        # reprendre la sortie depuis le bail ne crée pas un deuxième brouillon
+        self.client.get(f"/baux/{self.bail.pk}/etat-des-lieux/sortie/")
+        self.assertEqual(EtatDesLieux.objects.filter(type="sortie").count(), 1)
+
+    def test_locataire_ne_signe_pas_avant_le_bailleur(self):
+        from .models import EtatDesLieux
+        self.client.post(f"/baux/{self.bail.pk}/etat-des-lieux/entree/", {})
+        edl = EtatDesLieux.objects.get()
+        n = edl.elements.values("piece").distinct().count() + 3
+        self.client.post(f"/etats-des-lieux/{edl.pk}/saisie/?etape={n - 1}", {"qui": "locataire", "signature": "data:image/png;base64," + "A" * 400})
+        edl.refresh_from_db()
+        self.assertFalse(edl.signe)
+        self.client.post(f"/etats-des-lieux/{edl.pk}/saisie/?etape={n - 1}", {"qui": "bailleur", "signature": "pas une image"})
+        edl.refresh_from_db()
+        self.assertFalse(edl.signature_bailleur)
+
+    def test_ajouter_et_retirer_une_piece(self):
+        from .models import EtatDesLieux
+        self.client.post(f"/baux/{self.bail.pk}/etat-des-lieux/entree/", {})
+        edl = EtatDesLieux.objects.get()
+        url = f"/etats-des-lieux/{edl.pk}/saisie/?etape=0"
+        self.client.post(url, {"action": "ajouter_piece", "nouvelle_piece": "Cave"})
+        self.assertTrue(edl.elements.filter(piece="Cave").exists())
+        self.client.post(url, {"action": "retirer_piece:Cave"})
+        self.assertFalse(edl.elements.filter(piece="Cave").exists())
+        self.assertIn("/etat-des-lieux/entree/", self.client.get(f"/admin/patrimoine/bail/{self.bail.pk}/change/").content.decode())

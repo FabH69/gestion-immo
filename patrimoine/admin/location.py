@@ -5,6 +5,7 @@ from django import forms
 from django.contrib import admin, messages
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import path, reverse
+from django.utils import timezone
 from django.utils.html import format_html, format_html_join
 
 from ..models import (
@@ -415,6 +416,10 @@ class BailAdmin(FicheMixin, LotsALouerMixin, admin.ModelAdmin):
     def documents(self, obj):
         if not obj.pk:
             return "Enregistrez le bail pour générer les documents."
+        edl_tel = format_html(
+            "<p style='margin:0 0 10px'><strong>État des lieux sur téléphone :</strong> <a href='{}'>entrée</a> · <a href='{}'>sortie</a>"
+            " <span class='help'>(pièce par pièce, photos horodatées, signature à l'écran)</span></p>",
+            reverse("edl_commencer", args=[obj.pk, "entree"]), reverse("edl_commencer", args=[obj.pk, "sortie"]))
         liens = [
             (reverse("revision_loyer", args=[obj.pk]), "Réviser le loyer"),
             (reverse("document_bail", args=[obj.pk]), "Bail PDF"),
@@ -443,9 +448,9 @@ class BailAdmin(FicheMixin, LotsALouerMixin, admin.ModelAdmin):
                 "<p style='margin-top:10px'><strong>Mes modèles Word :</strong> {}</p>",
                 format_html(" · ".join('<a href="{}">{}</a>' for _ in mes_modeles), *[x for l in mes_modeles for x in l]))
         return format_html(
-            "{}{}<p class='help'>Les champs manquants apparaissent « à compléter » : complétez la fiche du lot, du locataire ou du propriétaire. "
+            "{}{}{}<p class='help'>Les champs manquants apparaissent « à compléter » : complétez la fiche du lot, du locataire ou du propriétaire. "
             "Vérifiez le bail avec le modèle officiel (décret n° 2015-587) avant signature. Vos modèles Word se gèrent dans le menu Modèles.</p>",
-            format_html(" · ".join('<a href="{}" target="_blank">{}</a>' for _ in liens), *[x for l in liens for x in l]), bloc_word,
+            edl_tel, format_html(" · ".join('<a href="{}" target="_blank">{}</a>' for _ in liens), *[x for l in liens for x in l]), bloc_word,
         )
 
     @admin.display(description="locataires", ordering="locataires__nom")
@@ -505,16 +510,46 @@ class BailAdmin(FicheMixin, LotsALouerMixin, admin.ModelAdmin):
 class EtatDesLieuxAdmin(admin.ModelAdmin):
     date_hierarchy = "date"
     navigation_par = "annee"
-    list_display = ["date", "type", "bail", "document"]
+    list_display = ["date", "type", "bail", "statut", "document"]
     list_filter = ["type", "bail__lot__bien__proprietaire"]
-    readonly_fields = ["document"]
-    fields = ["bail", "type", "date", ("compteur_electricite", "compteur_gaz"), ("compteur_eau_froide", "compteur_eau_chaude"), "nb_cles", "nouvelle_adresse", "observations", "document"]
+    readonly_fields = ["saisie", "document"]
+    fields = ["saisie", "bail", "type", "date", ("compteur_electricite", "compteur_gaz"), ("compteur_eau_froide", "compteur_eau_chaude"), "nb_cles", "nouvelle_adresse", "observations", "document"]
+
+    def has_change_permission(self, request, obj=None):
+        """Signé : plus rien ne se modifie (la fiche reste consultable), sinon l'empreinte ne correspondrait plus."""
+        if obj and obj.signe:
+            return False
+        return super().has_change_permission(request, obj)
+
+    def has_delete_permission(self, request, obj=None):
+        if obj and obj.signe:
+            return False
+        return super().has_delete_permission(request, obj)
+
+    @admin.display(description="statut")
+    def statut(self, obj):
+        if obj.signe:
+            return format_html('<a class="pill ok" href="{}">Signé le {}</a>', reverse("edl_resume", args=[obj.pk]), f"{timezone.localtime(obj.signe_le):%d/%m/%Y}")
+        if obj.elements.exists():
+            return format_html('<a class="pill orange" href="{}">En cours</a>', reverse("edl_saisie", args=[obj.pk]))
+        return "Fiche papier"
+
+    @admin.display(description="saisie pièce par pièce")
+    def saisie(self, obj):
+        if not obj or not obj.pk:
+            return "Plus simple : depuis la fiche du bail, « Faire l'état des lieux sur téléphone »."
+        if obj.signe:
+            return format_html('Signé et verrouillé le {}. <a href="{}">Voir l\'état des lieux signé et vérifier son intégrité</a>',
+                               f"{timezone.localtime(obj.signe_le):%d/%m/%Y à %H:%M:%S}", reverse("edl_resume", args=[obj.pk]))
+        texte = "Continuer la saisie pièce par pièce" if obj.elements.exists() else "Saisir pièce par pièce sur téléphone (photos, signatures)"
+        return format_html('<a class="button" href="{}">{}</a>', reverse("edl_saisie", args=[obj.pk]), texte)
 
     @admin.display(description="document")
     def document(self, obj):
         if not obj.pk:
             return "Enregistrez pour générer la fiche pré-remplie."
-        return format_html('<a href="{}" target="_blank">Fiche PDF pré-remplie</a>', reverse("document_edl", args=[obj.pk]))
+        texte = "PDF avec photos et signatures" if obj.elements.exists() else "Fiche PDF pré-remplie"
+        return format_html('<a href="{}" target="_blank">{}</a>', reverse("document_edl", args=[obj.pk]), texte)
 
 
 class GarantActifFilter(admin.SimpleListFilter):

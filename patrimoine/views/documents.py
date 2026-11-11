@@ -18,7 +18,45 @@ def document_bail(request, pk):
     return _pdf(render_to_string("patrimoine/bail.html", contexte), f"bail {bail.lot} {bail.date_debut:%Y-%m-%d}")
 
 
+def _photo_pour_pdf(photo):
+    """Photo réduite en ligne dans le PDF (data URI) : le fichier d'origine reste dans le stockage privé."""
+    import base64
+    import io
+
+    from PIL import Image
+
+    try:
+        with photo.image.open("rb") as f:
+            image = Image.open(f)
+            image.thumbnail((900, 900))
+            tampon = io.BytesIO()
+            image.convert("RGB").save(tampon, "JPEG", quality=78)
+    except (FileNotFoundError, OSError):
+        return ""
+    return "data:image/jpeg;base64," + base64.b64encode(tampon.getvalue()).decode()
+
+
+def _rendu_edl_detaille(bail, edl):
+    from .. import edl as logique
+
+    contexte = _contexte_bail(bail)
+    liste = logique.pieces(edl)
+    numero = 0
+    for _, elements in liste:
+        for e in elements:
+            e.liste_photos = list(e.photos.all())
+            for p in e.liste_photos:
+                numero += 1
+                p.numero, p.donnees = numero, _photo_pour_pdf(p)
+    sortie = edl.type == EtatDesLieux.Type.SORTIE
+    contexte.update(edl=edl, pieces=liste, sortie=sortie, entree=edl.edl_entree() if sortie else None, nb_photos=numero,
+                    differences=logique.differences(edl) if sortie else [])
+    return _pdf(render_to_string("patrimoine/etat_des_lieux_detaille.html", contexte), f"etat des lieux {edl.get_type_display()} {bail.lot} {edl.date}")
+
+
 def _rendu_edl(bail, edl):
+    if edl.pk and edl.elements.exists():
+        return _rendu_edl_detaille(bail, edl)
     contexte = _contexte_bail(bail)
     contexte.update(
         edl=edl,
