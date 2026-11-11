@@ -113,6 +113,17 @@ class CommandeTests(TestCase):
         self.assertContains(r, "125,10 €")
         self.assertNotContains(r, "<th>Commission</th>")
 
+    def test_supprimer_commande(self):
+        Ligne.objects.create(commande=self.c, joueur=self.julie, article=self.tube, quantite=2)
+        r = self.client.get(reverse("balles:accueil"))
+        self.assertContains(r, reverse("balles:commande_supprimer", args=[self.c.pk]))
+        self.assertEqual(self.client.get(reverse("balles:commande_supprimer", args=[self.c.pk])).status_code, 405)
+        r = self.client.post(reverse("balles:commande_supprimer", args=[self.c.pk]))
+        self.assertRedirects(r, reverse("balles:accueil"))
+        self.assertFalse(Commande.objects.exists())
+        self.assertFalse(Ligne.objects.exists())
+        self.assertTrue(Joueur.objects.filter(pk=self.julie.pk).exists())
+
     def test_connexion_obligatoire(self):
         self.client.logout()
         r = self.client.get(reverse("balles:accueil"))
