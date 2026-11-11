@@ -1,6 +1,8 @@
 {% extends "admin/base.html" %}
 {% load static tableau_bord %}
 {% block title %}{% if subtitle %}{{ subtitle }} | {% endif %}{{ title }} | {{ site_title|default:_('Django site admin') }}{% endblock %}
+{# toujours en clair : le mode sombre du téléphone rendait des textes illisibles #}
+{% block dark-mode-vars %}<meta name="color-scheme" content="light"><script>document.documentElement.dataset.theme = "light";</script>{% endblock %}
 {% block extrastyle %}{{ block.super }}
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap">
@@ -19,13 +21,12 @@
 {% endblock %}
 {% block branding %}
 <div id="site-name"><a href="{% url 'admin:index' %}"><span class="logo">⌂</span> {{ site_header|default:_('Django administration') }}</a></div>
-{% if user.is_anonymous %}{% include "admin/color_theme_toggle.html" %}{% endif %}
 {% endblock %}
 {% block usertools %}{% if has_permission %}
 <form id="recherche-globale" action="{% url 'recherche' %}" method="get" role="search">
   <input type="search" name="q" value="{% if request.resolver_match.url_name == 'recherche' %}{{ request.GET.q|default:'' }}{% endif %}" placeholder="Rechercher un locataire, un bail, un bien…" aria-label="Rechercher partout"><kbd class="raccourci" title="Touche / pour rechercher">/</kbd>
 </form>
-<div id="user-tools">{% include "admin/color_theme_toggle.html" %}</div>
+<div id="user-tools"></div>
 {% endif %}{% endblock %}
 {% block nav-global %}{% if user.is_active and user.is_staff %}
 <button type="button" id="bouton-menu" aria-label="Ouvrir le menu" onclick="document.body.classList.toggle('menu-ouvert')">{% icone "menu" 22 %}</button>
