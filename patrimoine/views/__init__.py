@@ -73,3 +73,4 @@ from .controles import controle_ignorer, controles  # noqa: F401
 from .depot import depot_bail  # noqa: F401
 from .comparatif import comparatif_lcd  # noqa: F401
 from .edl import edl_commencer, edl_resume, edl_saisie  # noqa: F401
+from .gerer_lcd import lcd_accueil, lcd_calendrier, lcd_calendriers  # noqa: F401

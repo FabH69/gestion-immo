@@ -1,0 +1,39 @@
+{% extends "admin/base_site.html" %}
+{% load static %}
+{% block extrastyle %}{{ block.super }}<link rel="stylesheet" href="{% static 'patrimoine/lcd.css' %}">{% endblock %}
+{% block breadcrumbs %}<div class="breadcrumbs"><a href="{% url 'admin:index' %}">Accueil</a> › Gérer mon bien en courte durée</div>{% endblock %}
+{% block content_title %}<h1>Gérer mon bien en courte durée</h1>{% endblock %}
+{% block content %}
+{% include "patrimoine/_lcd_barre.html" %}
+{% if not lot %}<p>Aucun logement en courte durée. Passez un lot en « courte durée » (fiche du lot, mode d'exploitation) pour le voir ici.</p>{% else %}
+<div class="lcd-tuiles">
+  <div class="lcd-tuile"><div class="l">Occupation en {{ nom_mois }}</div><div class="v">{{ k.occupation_mois }} %</div><div class="s">{{ k.nuits_mois }} nuit{{ k.nuits_mois|pluralize }} sur {{ k.jours_mois }}</div><div class="jauge"><span style="width:{{ k.occupation_mois }}%"></span></div></div>
+  <div class="lcd-tuile"><div class="l">30 prochains jours</div><div class="v">{{ k.occupation_30 }} %</div><div class="s">{{ k.libres_30 }} nuit{{ k.libres_30|pluralize }} encore libre{{ k.libres_30|pluralize }}</div><div class="jauge"><span style="width:{{ k.occupation_30 }}%"></span></div></div>
+  <div class="lcd-tuile"><div class="l">Revenu net {{ annee }} à ce jour</div><div class="v">{{ k.cumul.net|floatformat:0 }} €</div><div class="s">{% if k.ecart_cumul is not None %}<span class="{% if k.ecart_cumul >= 0 %}hausse{% else %}baisse{% endif %}">{% if k.ecart_cumul >= 0 %}+{% endif %}{{ k.ecart_cumul|floatformat:0 }} %</span> vs {{ annee|add:"-1" }} à la même date{% else %}après commissions des plateformes{% endif %}</div></div>
+  <div class="lcd-tuile"><div class="l">Prix moyen par nuit {{ annee }}</div><div class="v">{% if k.cumul.nuits %}{{ k.cumul.prix_nuit|floatformat:0 }} €{% else %}–{% endif %}</div><div class="s">{{ k.cumul.nuits }} nuits · {{ k.cumul.sejours }} séjour{{ k.cumul.sejours|pluralize }} · remplissage {{ k.cumul.remplissage|floatformat:0 }}&nbsp;%</div></div>
+</div>
+
+<div class="lcd-deux">
+  <div class="lcd-carte">
+    <h2><span style="text-transform:capitalize">{{ nom_mois }}</span><a href="{% url 'lcd_calendrier' %}?lot={{ lot.pk }}">Ouvrir le calendrier</a></h2>
+    {% include "patrimoine/_lcd_grille.html" with mini=True %}
+  </div>
+  <div>
+    <div class="lcd-carte">
+      <h2>{% if k.en_cours %}En ce moment{% else %}Prochains séjours{% endif %}</h2>
+      <ul class="sejours">
+        {% if k.en_cours %}<li><span class="pastille p-{{ k.en_cours.plateforme }}"></span><div><strong>{{ k.en_cours.titre }}</strong><div class="quand">dans les lieux jusqu'au {{ k.en_cours.fin|date:"D d/m" }} · {{ k.en_cours.source }}</div></div>{% if k.en_cours.montant %}<span class="montant">{{ k.en_cours.montant|floatformat:0 }} €</span>{% endif %}</li>{% endif %}
+        {% for s in k.a_venir %}<li><span class="pastille p-{{ s.plateforme }}"></span><div><strong>{{ s.titre }}</strong><div class="quand">{{ s.debut|date:"D d/m" }} → {{ s.fin|date:"D d/m" }} · {{ s.nuits }} nuit{{ s.nuits|pluralize }} · {{ s.source }}</div></div>{% if s.montant %}<span class="montant">{{ s.montant|floatformat:0 }} €</span>{% endif %}</li>
+        {% empty %}{% if not k.en_cours %}<li class="quand">Aucun séjour à venir connu.{% if not calendriers %} Ajoutez vos calendriers .ics avec la roue crantée pour voir les réservations dès qu'elles arrivent.{% endif %}</li>{% endif %}{% endfor %}
+      </ul>
+    </div>
+    <div class="lcd-carte">
+      <h2>Ce mois-ci</h2>
+      <p style="margin:0">Chiffre d'affaires <strong>{{ k.brut_mois|floatformat:0 }} €</strong> · net <strong>{{ k.net_mois|floatformat:0 }} €</strong></p>
+      <p class="aide-ics" style="margin:6px 0 0">Les montants viennent des exports Airbnb et Booking importés dans le suivi mensuel. Les calendriers .ics donnent les dates, pas les prix.</p>
+    </div>
+    <div class="liens-lcd"><a class="button" href="{% url 'suivi_lcd' %}?lot={{ lot.pk }}">Suivi mensuel et import des exports</a><a href="{% url 'admin:patrimoine_reservationlcd_changelist' %}?lot__id__exact={{ lot.pk }}">Réservations</a><a href="{% url 'comparatif_lcd' %}">Comparatif location nue</a></div>
+  </div>
+</div>
+{% endif %}
+{% endblock %}

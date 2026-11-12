@@ -197,3 +197,55 @@ class LigneComparatif(models.Model):
 
     def __str__(self):
         return f"{self.libelle} ({self.montant_annuel} €/an)"
+
+
+class CalendrierICS(models.Model):
+    """Calendrier exporté par Airbnb, Booking ou un autre site (format .ics) : lien relu chaque jour, ou fichier importé à la main."""
+
+    class Plateforme(models.TextChoices):
+        AIRBNB = "airbnb", "Airbnb"
+        BOOKING = "booking", "Booking"
+        DIRECT = "direct", "Direct"
+        AUTRE = "autre", "Autre"
+
+    lot = models.ForeignKey(Lot, on_delete=models.CASCADE, related_name="calendriers_ics")
+    nom = models.CharField(max_length=80, help_text="ex. « Airbnb », « Booking », « Abritel »")
+    plateforme = models.CharField(max_length=10, choices=Plateforme.choices, default=Plateforme.AIRBNB)
+    url = models.URLField("lien du calendrier (.ics)", max_length=1000, blank=True,
+                          help_text="Lien « Exporter le calendrier » de la plateforme. Sans lien, importez le fichier .ics à la main.")
+    actif = models.BooleanField(default=True)
+    derniere_synchro = models.DateTimeField("dernière mise à jour", null=True, blank=True)
+    dernier_message = models.CharField(max_length=255, blank=True)
+
+    class Meta:
+        verbose_name = "calendrier .ics"
+        verbose_name_plural = "calendriers .ics"
+        ordering = ["lot", "nom"]
+
+    def __str__(self):
+        return f"{self.nom} – {self.lot}"
+
+
+class EvenementICS(models.Model):
+    """Période lue dans un calendrier .ics : réservée, ou bloquée par le propriétaire."""
+
+    calendrier = models.ForeignKey(CalendrierICS, on_delete=models.CASCADE, related_name="evenements")
+    uid = models.CharField(max_length=255)
+    debut = models.DateField("arrivée")
+    fin = models.DateField("départ")
+    resume = models.CharField("intitulé", max_length=255, blank=True)
+    reference = models.CharField("n° de réservation", max_length=40, blank=True)
+    bloque = models.BooleanField("bloqué (pas une réservation)", default=False)
+
+    class Meta:
+        verbose_name = "période de calendrier"
+        verbose_name_plural = "périodes de calendrier"
+        ordering = ["debut"]
+        constraints = [models.UniqueConstraint(fields=["calendrier", "uid"], name="evenement_ics_unique")]
+
+    def __str__(self):
+        return f"{self.calendrier.nom} {self.debut:%d/%m} → {self.fin:%d/%m/%Y}"
+
+    @property
+    def nuits(self):
+        return (self.fin - self.debut).days

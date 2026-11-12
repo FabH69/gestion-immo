@@ -1,0 +1,91 @@
+/* Courte durée › Gérer mon bien : indicateurs, calendrier du mois, réglage des calendriers .ics */
+.lcd-barre { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-bottom: 16px; }
+.lcd-barre .chips { display: flex; flex-wrap: wrap; gap: 6px; flex: 1 1 auto; }
+.lcd-barre .chip { font-size: .85rem; padding: 5px 12px; }
+.roue { display: inline-flex; align-items: center; justify-content: center; gap: 6px; height: 36px; padding: 0 12px; border-radius: 999px; border: 1px solid var(--border-color); background: var(--body-bg); color: var(--body-fg); font-size: .85rem; font-weight: 600; text-decoration: none; }
+.roue:hover { background: var(--darkened-bg); text-decoration: none; }
+.roue svg { width: 18px; height: 18px; }
+.lcd-tuiles { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-bottom: 16px; }
+.lcd-tuile { background: var(--body-bg); border: 1px solid var(--hairline-color); border-radius: 12px; padding: 12px 14px; }
+.lcd-tuile .l { font-size: .78rem; color: var(--body-quiet-color); }
+.lcd-tuile .v { font-size: 1.45rem; font-weight: 700; color: var(--body-loud-color); line-height: 1.25; }
+.lcd-tuile .s { font-size: .75rem; color: var(--body-quiet-color); }
+.lcd-tuile .jauge { height: 5px; border-radius: 3px; background: var(--darkened-bg); margin-top: 6px; overflow: hidden; }
+.lcd-tuile .jauge span { display: block; height: 100%; background: var(--primary); }
+.hausse { color: var(--ok); font-weight: 600; } .baisse { color: var(--rouge); font-weight: 600; }
+.lcd-deux { display: grid; grid-template-columns: 1.6fr 1fr; gap: 16px; align-items: start; }
+.lcd-carte { background: var(--body-bg); border: 1px solid var(--hairline-color); border-radius: 12px; padding: 14px 16px; margin-bottom: 16px; }
+.lcd-carte h2 { margin: 0 0 10px; font-size: 1rem; display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+.lcd-carte h2 a { font-size: .82rem; font-weight: 600; }
+.sejours { list-style: none; margin: 0; padding: 0; }
+.sejours li { display: flex; gap: 10px; align-items: center; padding: 8px 0; border-bottom: 1px solid var(--hairline-color); }
+.sejours li:last-child { border-bottom: 0; }
+.sejours .pastille { width: 10px; height: 10px; border-radius: 50%; flex: none; }
+.sejours .quand { font-size: .78rem; color: var(--body-quiet-color); }
+.sejours .montant { margin-left: auto; font-weight: 600; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.liens-lcd { display: flex; flex-wrap: wrap; gap: 8px; }
+.liens-lcd a { font-size: .85rem; }
+
+/* couleurs par plateforme */
+.p-airbnb { background: #e8505b; } .p-booking { background: #2e5ea8; } .p-direct { background: #2f8a57; } .p-autre { background: #8a6bbf; } .p-bloque { background: repeating-linear-gradient(45deg, #b8c0c0, #b8c0c0 4px, #d6dbdb 4px, #d6dbdb 8px); }
+
+/* calendrier */
+.cal-entete { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 10px; }
+.cal-entete h2 { margin: 0; font-size: 1.1rem; text-transform: capitalize; }
+.cal-entete .nav-mois { display: flex; gap: 6px; }
+.cal-entete .nav-mois a { display: inline-flex; align-items: center; justify-content: center; min-width: 36px; height: 34px; padding: 0 10px; border: 1px solid var(--border-color); border-radius: 999px; text-decoration: none; font-weight: 600; font-size: .85rem; }
+.cal { display: grid; grid-template-columns: repeat(7, 1fr); border-top: 1px solid var(--hairline-color); border-left: 1px solid var(--hairline-color); }
+.cal .jsem { font-size: .72rem; color: var(--body-quiet-color); text-align: center; padding: 4px 0; border-right: 1px solid var(--hairline-color); border-bottom: 1px solid var(--hairline-color); text-transform: uppercase; }
+.cal .jour { position: relative; min-height: 64px; border-right: 1px solid var(--hairline-color); border-bottom: 1px solid var(--hairline-color); padding: 3px 4px; font-size: .78rem; }
+.cal .jour.hors { background: var(--darkened-bg); color: var(--body-quiet-color); }
+.cal .jour.passe .num { color: var(--body-quiet-color); }
+.cal .jour.auj .num { background: var(--primary); color: #fff; border-radius: 999px; padding: 0 6px; font-weight: 700; }
+.cal .num { position: relative; z-index: 2; display: inline-block; }
+.cal .demi { position: absolute; top: 26px; height: 22px; }
+.cal .demi.g { left: 0; width: 50%; }
+.cal .demi.d { right: 0; width: 50%; }
+.cal .demi.d.debut { border-radius: 11px 0 0 11px; }
+.cal .demi.g.fin { border-radius: 0 11px 11px 0; width: calc(50% - 3px); }
+.cal .etiq { position: absolute; top: 28px; left: 52%; z-index: 3; max-width: 190%; overflow: hidden; text-overflow: ellipsis; color: #fff; font-size: .72rem; font-weight: 600; white-space: nowrap; pointer-events: none; text-shadow: 0 1px 1px rgba(0,0,0,.25); }
+.cal .jour.lundi .etiq { left: 4px; }
+.cal .jour.passe .demi { opacity: .55; }
+.cal.mini .jour { min-height: 44px; }
+.cal.mini .demi { top: 22px; height: 14px; }
+.cal.mini .etiq { display: none; }
+.legende { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 10px; font-size: .78rem; color: var(--body-quiet-color); }
+.legende span { display: inline-flex; align-items: center; gap: 5px; }
+.legende i { display: inline-block; width: 14px; height: 10px; border-radius: 3px; }
+
+/* réglage des calendriers */
+.cal-source { border: 1px solid var(--hairline-color); border-radius: 12px; padding: 12px 14px; margin-bottom: 10px; }
+.cal-source .tete { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.cal-source .tete strong { font-size: 1rem; }
+.cal-source .info { font-size: .8rem; color: var(--body-quiet-color); margin: 4px 0 8px; }
+.cal-source .info.erreur { color: var(--rouge); }
+.cal-source form { display: inline; margin: 0; }
+.cal-source .actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.cal-source .actions button, .cal-source .actions label.fichier { font-size: .82rem; padding: 6px 12px; border-radius: 999px; border: 1px solid var(--border-color); background: var(--body-bg); color: var(--body-fg); cursor: pointer; font-weight: 600; }
+.cal-source .actions button.danger { color: var(--rouge); }
+.cal-source .actions label.fichier input { display: none; }
+.cal-source .lien { display: flex; gap: 6px; margin-top: 8px; }
+.cal-source .lien input { flex: 1; min-width: 0; }
+.form-ajout { display: grid; grid-template-columns: 1fr 1fr; gap: 10px 14px; }
+.form-ajout .plein { grid-column: 1 / -1; }
+.form-ajout label { display: block; font-size: .8rem; font-weight: 600; margin-bottom: 3px; }
+.form-ajout input[type=text], .form-ajout input[type=url], .form-ajout select { width: 100%; box-sizing: border-box; }
+.aide-ics { font-size: .82rem; color: var(--body-quiet-color); }
+.aide-ics li { margin-bottom: 4px; }
+.en-pause { opacity: .6; }
+
+@media (max-width: 900px) {
+  .lcd-tuiles { grid-template-columns: repeat(2, 1fr); }
+  .lcd-deux { grid-template-columns: 1fr; }
+}
+@media (max-width: 767px) {
+  .cal .jour { min-height: 48px; padding: 2px; font-size: .72rem; }
+  .cal .demi { top: 22px; height: 14px; }
+  .cal .etiq { display: none; }
+  .form-ajout { grid-template-columns: 1fr; }
+  .lcd-tuile .v { font-size: 1.2rem; }
+}
+.visuellement-cache { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }

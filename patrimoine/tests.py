@@ -2633,3 +2633,110 @@ class EtatDesLieuxTelephoneTests(TestCase):
         self.client.post(url, {"action": "retirer_piece:Cave"})
         self.assertFalse(edl.elements.filter(piece="Cave").exists())
         self.assertIn("/etat-des-lieux/entree/", self.client.get(f"/admin/patrimoine/bail/{self.bail.pk}/change/").content.decode())
+
+
+ICS_AIRBNB = """BEGIN:VCALENDAR\r
+VERSION:2.0\r
+BEGIN:VEVENT\r
+DTEND;VALUE=DATE:20261116\r
+DTSTART;VALUE=DATE:20261113\r
+UID:aaa111@airbnb.com\r
+DESCRIPTION:Reservation URL: https://www.airbnb.com/hosting/reservations/de\r
+ tails/HMTEST1234\r
+SUMMARY:Reserved\r
+END:VEVENT\r
+BEGIN:VEVENT\r
+DTEND;VALUE=DATE:20261203\r
+DTSTART;VALUE=DATE:20261201\r
+UID:ccc333@airbnb.com\r
+SUMMARY:Airbnb (Not available)\r
+END:VEVENT\r
+END:VCALENDAR\r
+"""
+
+
+class GererCourteDureeTests(TestCase):
+    """Courte durée › Gérer mon bien : calendriers .ics, occupation, indicateurs."""
+
+    def setUp(self):
+        from .models import CalendrierICS
+        self.client.force_login(User.objects.create_superuser("admin", "a@a.fr", "x"))
+        proprio = Proprietaire.objects.create(nom="SCI LCD", type=Proprietaire.Type.SCI_IR)
+        bien = Bien.objects.create(nom="Maison", proprietaire=proprio, adresse="1 rue", code_postal="69000", ville="Lyon")
+        self.lot = Lot.objects.create(bien=bien, designation="Studio", exploitation="courte")
+        self.cal = CalendrierICS.objects.create(lot=self.lot, nom="Airbnb", plateforme="airbnb")
+
+    def test_lecture_et_import(self):
+        from . import ical
+        evenements = ical.lire(ICS_AIRBNB)
+        self.assertEqual([(e["debut"], e["fin"]) for e in evenements], [(date(2026, 11, 13), date(2026, 11, 16)), (date(2026, 12, 1), date(2026, 12, 3))])
+        with self.settings(USE_TZ=True):
+            ical.importer(self.cal, ICS_AIRBNB)
+        reserve, bloque = self.cal.evenements.order_by("debut")
+        self.assertEqual((reserve.reference, reserve.bloque), ("HMTEST1234", False))
+        self.assertTrue(bloque.bloque)
+        with self.assertRaises(ValueError):
+            ical.lire("pas un calendrier")
+
+    def test_annulation_et_historique(self):
+        from . import ical
+        from .models import EvenementICS
+        EvenementICS.objects.create(calendrier=self.cal, uid="ancien", debut=date(2020, 1, 1), fin=date(2020, 1, 3))
+        EvenementICS.objects.create(calendrier=self.cal, uid="annule", debut=date(2099, 1, 1), fin=date(2099, 1, 3))
+        ical.importer(self.cal, ICS_AIRBNB)
+        uids = set(self.cal.evenements.values_list("uid", flat=True))
+        self.assertIn("ancien", uids)  # séjour passé gardé
+        self.assertNotIn("annule", uids)  # séjour futur disparu du calendrier = annulé
+        ical.importer(self.cal, ICS_AIRBNB)
+        self.assertEqual(self.cal.evenements.count(), 3)  # pas de doublon en réimportant
+
+    def test_occupation_sans_doublon_avec_les_reservations(self):
+        from . import ical
+        from .models import ReservationLCD
+        ical.importer(self.cal, ICS_AIRBNB)
+        ReservationLCD.objects.create(lot=self.lot, plateforme="airbnb", reference="HMTEST1234", voyageur="Léa",
+                                      arrivee=date(2026, 11, 13), depart=date(2026, 11, 16), montant_brut=300)
+        liste = ical.sejours(self.lot, date(2026, 11, 1), date(2026, 12, 31))
+        self.assertEqual([s["titre"] for s in liste], ["Léa", "Bloqué"])
+        self.assertEqual(ical.nuits_occupees(liste, date(2026, 11, 1), date(2026, 12, 31)), 3)  # les dates bloquées ne comptent pas
+        semaines, _ = ical.mois_calendrier(self.lot, 2026, 11)
+        jours = {j["date"]: j for s in semaines for j in s}
+        self.assertEqual(jours[date(2026, 11, 13)]["sejour"]["titre"], "Léa")
+        self.assertIsNone(jours[date(2026, 11, 16)]["sejour"])
+        self.assertEqual(jours[date(2026, 11, 16)]["gauche"]["titre"], "Léa")  # jour du départ
+        k = ical.indicateurs(self.lot, date(2026, 11, 10))
+        self.assertEqual((k["nuits_mois"], k["occupation_mois"]), (3, 10))
+        self.assertEqual(k["prochaine_arrivee"]["titre"], "Léa")
+
+    def test_pages_et_roue_crantee(self):
+        from django.core.files.uploadedfile import SimpleUploadedFile
+        from .models import CalendrierICS
+        page = self.client.get(f"/courte-duree/?lot={self.lot.pk}").content.decode()
+        self.assertIn("Occupation en", page)
+        self.assertIn(f"/courte-duree/calendriers/?lot={self.lot.pk}", page)
+        self.assertEqual(self.client.get(f"/courte-duree/calendrier/?lot={self.lot.pk}&mois=2026-11").status_code, 200)
+        self.assertEqual(self.client.get(f"/courte-duree/calendrier/?lot={self.lot.pk}&mois=n'importe").status_code, 200)
+        fichier = SimpleUploadedFile("booking.ics", ICS_AIRBNB.encode(), content_type="text/calendar")
+        self.client.post("/courte-duree/calendriers/", {"lot": self.lot.pk, "action": "ajouter", "plateforme": "booking", "nom": "Booking", "fichier": fichier})
+        booking = CalendrierICS.objects.get(nom="Booking")
+        self.assertEqual(booking.evenements.count(), 2)
+        self.client.post("/courte-duree/calendriers/", {"lot": self.lot.pk, "action": "ajouter", "plateforme": "airbnb", "url": "javascript:alert(1)"})
+        self.assertEqual(CalendrierICS.objects.count(), 2)
+        self.client.post("/courte-duree/calendriers/", {"lot": self.lot.pk, "action": "pause", "calendrier": booking.pk})
+        booking.refresh_from_db()
+        self.assertFalse(booking.actif)
+        self.client.post("/courte-duree/calendriers/", {"lot": self.lot.pk, "action": "supprimer", "calendrier": booking.pk})
+        self.assertFalse(CalendrierICS.objects.filter(pk=booking.pk).exists())
+
+    def test_lien_injoignable(self):
+        from unittest import mock
+        from . import ical
+        self.cal.url = "https://exemple.invalid/cal.ics"
+        with mock.patch("patrimoine.ical.telecharger", side_effect=OSError("refusé")):
+            ok, message = ical.synchroniser(self.cal)
+        self.assertFalse(ok)
+        self.assertIn("échec", message)
+        with mock.patch("patrimoine.ical.telecharger", return_value=ICS_AIRBNB):
+            ok, _ = ical.synchroniser(self.cal)
+        self.assertTrue(ok)
+        self.assertEqual(self.cal.evenements.count(), 2)

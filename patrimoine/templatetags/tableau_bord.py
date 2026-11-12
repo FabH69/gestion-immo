@@ -159,9 +159,9 @@ def _menu():
             ("cles", "Changements de locataire", a("changementlocataire"), [a("changementlocataire")], []),
         ]),
         ("Courte durée", [
-            ("lcd", "Airbnb / Booking", r("suivi_lcd"), [r("suivi_lcd"), a("reservationlcd"), a("chargelcd"), a("parametreslcd")],
-             [("Réservations", a("reservationlcd")), ("Charges mensuelles", a("chargelcd")), ("Frais de gestion", a("parametreslcd")),
-              ("Comparatif location nue", r("comparatif_lcd"))]),
+            ("lcd", "Gérer mon bien", r("lcd_accueil"), [r("lcd_accueil"), r("suivi_lcd"), a("reservationlcd"), a("chargelcd"), a("parametreslcd")],
+             [("Calendrier", r("lcd_calendrier")), ("Suivi mensuel", r("suivi_lcd")), ("Réservations", a("reservationlcd")),
+              ("Charges mensuelles", a("chargelcd")), ("Frais de gestion", a("parametreslcd")), ("Comparatif location nue", r("comparatif_lcd"))]),
         ]),
         ("Finances", [
             ("encaissements", "Encaissements", r("suivi_encaissements"), [r("suivi_encaissements")], []),

@@ -16,8 +16,9 @@ MODULES = [
                                 "patrimoine.syndic"], [], []),
     ("locataires", "Locataires", ["patrimoine.locataire", "patrimoine.documentlocataire"],
      ["admin:patrimoine_locataire_contacter"], []),
-    ("baux", "Baux, états des lieux et garants", ["patrimoine.bail", "patrimoine.etatdeslieux", "patrimoine.garant"],
-     ["document_bail", "document_edl", "document_edl_vierge", "document_inventaire", "acte_cautionnement", "remplir_modele"], []),
+    ("baux", "Baux, états des lieux et garants", ["patrimoine.bail", "patrimoine.etatdeslieux", "patrimoine.elementedl",
+                                                   "patrimoine.photoedl", "patrimoine.garant"],
+     ["edl_commencer", "edl_saisie", "edl_resume", "document_bail", "document_edl", "document_edl_vierge", "document_inventaire", "acte_cautionnement", "remplir_modele"], []),
     ("loyers", "Loyers, quittances, relances et dépôts", ["patrimoine.echeance", "patrimoine.paiement", "patrimoine.revisionloyer",
                                                           "patrimoine.mouvementdepot", "patrimoine.relance"],
      ["document_echeance", "envoyer_quittance", "preparer_mail_quittance", "recu_depot_mouvement", "recu_depot_bail",
@@ -32,8 +33,9 @@ MODULES = [
       "tache_faite", "admin:patrimoine_candidature_retenir"],
      ["envoyer_lien_candidature", "tache_faite", "admin:patrimoine_candidature_retenir"]),
     ("lcd", "Courte durée (Airbnb / Booking)", ["patrimoine.reservationlcd", "patrimoine.chargelcd", "patrimoine.parametreslcd",
-                                               "patrimoine.encaissementlcd", "patrimoine.comparatifnue", "patrimoine.lignecomparatif"],
-     ["suivi_lcd", "comparatif_lcd"], []),
+                                               "patrimoine.encaissementlcd", "patrimoine.comparatifnue", "patrimoine.lignecomparatif",
+                                               "patrimoine.calendrierics", "patrimoine.evenementics"],
+     ["suivi_lcd", "comparatif_lcd", "lcd_accueil", "lcd_calendrier", "lcd_calendriers"], []),
     ("finances", "Encaissements, prêts et endettement", ["patrimoine.pret", "patrimoine.encaissementhistorique"],
      ["suivi_encaissements", "etat_endettement", "document_amortissement"], []),
     ("compta", "Comptabilité (revenus fonciers, LMNP, société)", ["patrimoine.piececomptable"],
@@ -52,7 +54,7 @@ LIBELLES = {code: libelle for code, libelle, *_ in MODULES}
 RESERVE_ADMIN = {"sauvegardes", "telecharger_sauvegarde", "tester_mail"}  # Réglages : administrateurs seulement
 # pièces privées : le dossier dit à quel module elles appartiennent
 DOSSIERS_PRIVES = {"factures/": ["compta"], "modeles-word/": ["outils"], "modeles-annonces/": ["outils"],
-                   "pieces-identite/": ["locataires", "baux", "relocation"]}
+                   "pieces-identite/": ["locataires", "baux", "relocation"], "etats-des-lieux/": ["baux"]}
 
 
 def _tables(code):
