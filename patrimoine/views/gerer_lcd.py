@@ -37,7 +37,7 @@ def lcd_accueil(request):
         aujourdhui = timezone.localdate()
         semaines, _ = ical.mois_calendrier(lot, aujourdhui.year, aujourdhui.month)
         contexte.update(k=ical.indicateurs(lot, aujourdhui), semaines=semaines, nom_mois=f"{MOIS[aujourdhui.month - 1]} {aujourdhui.year}",
-                        calendriers=list(lot.calendriers_ics.all()), annee=aujourdhui.year)
+                        nom_mois_court=MOIS[aujourdhui.month - 1].capitalize(), calendriers=list(lot.calendriers_ics.all()), annee=aujourdhui.year)
     return render(request, "patrimoine/lcd_accueil.html", contexte)
 
 

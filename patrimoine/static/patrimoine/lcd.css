@@ -5,7 +5,7 @@
 .roue { display: inline-flex; align-items: center; justify-content: center; gap: 6px; height: 36px; padding: 0 12px; border-radius: 999px; border: 1px solid var(--border-color); background: var(--body-bg); color: var(--body-fg); font-size: .85rem; font-weight: 600; text-decoration: none; }
 .roue:hover { background: var(--darkened-bg); text-decoration: none; }
 .roue svg { width: 18px; height: 18px; }
-.lcd-tuiles { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-bottom: 16px; }
+.lcd-tuiles { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-bottom: 16px; }
 .lcd-tuile { background: var(--body-bg); border: 1px solid var(--hairline-color); border-radius: 12px; padding: 12px 14px; }
 .lcd-tuile .l { font-size: .78rem; color: var(--body-quiet-color); }
 .lcd-tuile .v { font-size: 1.45rem; font-weight: 700; color: var(--body-loud-color); line-height: 1.25; }
@@ -89,3 +89,11 @@
   .lcd-tuile .v { font-size: 1.2rem; }
 }
 .visuellement-cache { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+.lcd-tuile .deux { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 6px; }
+.lcd-tuile .deux > div { display: flex; flex-direction: column; min-width: 0; }
+.lcd-tuile .deux > div + div { border-left: 1px solid var(--hairline-color); padding-left: 10px; }
+.lcd-tuile .deux small { font-size: .7rem; text-transform: uppercase; letter-spacing: .04em; color: var(--body-quiet-color); }
+.lcd-tuile .deux b { font-size: 1.25rem; color: var(--body-loud-color); line-height: 1.25; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.lcd-tuile .deux span { font-size: .75rem; color: var(--body-quiet-color); }
+.lcd-tuile .petit, .lcd-carte h2 .petit { font-size: .72rem; color: var(--body-quiet-color); font-weight: 400; }
+@media (max-width: 767px) { .lcd-tuile .deux b { font-size: 1.05rem; } }

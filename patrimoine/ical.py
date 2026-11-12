@@ -197,6 +197,12 @@ def indicateurs(lot, aujourdhui=None):
     en_cours = next((s for s in liste if s["debut"] <= aujourdhui < s["fin"] and not s["bloque"]), None)
     a_venir = [s for s in liste if s["debut"] > aujourdhui and not s["bloque"]][:6]
     ecart = (cumul["net"] - cumul_n1["net"]) / abs(cumul_n1["net"]) * 100 if cumul_n1["net"] else None
+    commissions = cumul["commission"] + cumul["frais"]
+    pourcent = lambda x: x / cumul["brut"] * 100 if cumul["brut"] else None  # noqa: E731
+    ce_mois = dict(mois[aujourdhui.month - 1])
+    ce_mois["commissions"] = ce_mois["commission"] + ce_mois["frais"]
+    ce_mois["commissions_pct"] = ce_mois["commissions"] / ce_mois["brut"] * 100 if ce_mois["brut"] else None
+    ce_mois["taxe_pct"] = ce_mois["taxe"] / ce_mois["brut"] * 100 if ce_mois["brut"] else None
     return {
         "occupation_mois": round(Decimal(nuits_mois) / jours_mois * 100), "nuits_mois": nuits_mois, "jours_mois": jours_mois,
         "occupation_30": round(Decimal(nuits_30) / 30 * 100), "nuits_30": nuits_30,
@@ -204,4 +210,6 @@ def indicateurs(lot, aujourdhui=None):
         "cumul": cumul, "cumul_n1": cumul_n1, "ecart_cumul": ecart,
         "en_cours": en_cours, "a_venir": a_venir, "prochaine_arrivee": a_venir[0] if a_venir else None,
         "libres_30": 30 - nuits_30,
+        "mois": ce_mois, "commissions": commissions, "commissions_pct": pourcent(commissions),
+        "taxe": cumul["taxe"], "taxe_pct": pourcent(cumul["taxe"]),
     }

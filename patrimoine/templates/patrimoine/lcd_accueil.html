@@ -7,10 +7,12 @@
 {% include "patrimoine/_lcd_barre.html" %}
 {% if not lot %}<p>Aucun logement en courte durée. Passez un lot en « courte durée » (fiche du lot, mode d'exploitation) pour le voir ici.</p>{% else %}
 <div class="lcd-tuiles">
-  <div class="lcd-tuile"><div class="l">Occupation en {{ nom_mois }}</div><div class="v">{{ k.occupation_mois }} %</div><div class="s">{{ k.nuits_mois }} nuit{{ k.nuits_mois|pluralize }} sur {{ k.jours_mois }}</div><div class="jauge"><span style="width:{{ k.occupation_mois }}%"></span></div></div>
-  <div class="lcd-tuile"><div class="l">30 prochains jours</div><div class="v">{{ k.occupation_30 }} %</div><div class="s">{{ k.libres_30 }} nuit{{ k.libres_30|pluralize }} encore libre{{ k.libres_30|pluralize }}</div><div class="jauge"><span style="width:{{ k.occupation_30 }}%"></span></div></div>
-  <div class="lcd-tuile"><div class="l">Revenu net {{ annee }} à ce jour</div><div class="v">{{ k.cumul.net|floatformat:0 }} €</div><div class="s">{% if k.ecart_cumul is not None %}<span class="{% if k.ecart_cumul >= 0 %}hausse{% else %}baisse{% endif %}">{% if k.ecart_cumul >= 0 %}+{% endif %}{{ k.ecart_cumul|floatformat:0 }} %</span> vs {{ annee|add:"-1" }} à la même date{% else %}après commissions des plateformes{% endif %}</div></div>
-  <div class="lcd-tuile"><div class="l">Prix moyen par nuit {{ annee }}</div><div class="v">{% if k.cumul.nuits %}{{ k.cumul.prix_nuit|floatformat:0 }} €{% else %}–{% endif %}</div><div class="s">{{ k.cumul.nuits }} nuits · {{ k.cumul.sejours }} séjour{{ k.cumul.sejours|pluralize }} · remplissage {{ k.cumul.remplissage|floatformat:0 }}&nbsp;%</div></div>
+  <div class="lcd-tuile"><div class="l">Occupation</div><div class="deux"><div><small>{{ nom_mois_court }}</small><b>{{ k.occupation_mois }} %</b><span>{{ k.nuits_mois }}/{{ k.jours_mois }} nuits</span></div><div><small>Cumul {{ annee }}</small><b>{{ k.cumul.remplissage|floatformat:0 }} %</b><span>{{ k.cumul.nuits }}/{{ k.cumul.jours }} nuits</span></div></div></div>
+  <div class="lcd-tuile"><div class="l">Chiffre d'affaires</div><div class="deux"><div><small>{{ nom_mois_court }}</small><b>{{ k.mois.brut|floatformat:"0g" }} €</b><span>{{ k.mois.sejours }} séjour{{ k.mois.sejours|pluralize }}</span></div><div><small>Cumul {{ annee }}</small><b>{{ k.cumul.brut|floatformat:"0g" }} €</b><span>{{ k.cumul.sejours }} séjour{{ k.cumul.sejours|pluralize }}</span></div></div></div>
+  <div class="lcd-tuile"><div class="l">Revenu net (après plateformes)</div><div class="deux"><div><small>{{ nom_mois_court }}</small><b>{{ k.mois.net|floatformat:"0g" }} €</b></div><div><small>Cumul {{ annee }}</small><b>{{ k.cumul.net|floatformat:"0g" }} €</b>{% if k.ecart_cumul is not None %}<span class="{% if k.ecart_cumul >= 0 %}hausse{% else %}baisse{% endif %}">{% if k.ecart_cumul >= 0 %}+{% endif %}{{ k.ecart_cumul|floatformat:0 }} % vs {{ annee|add:"-1" }}</span>{% endif %}</div></div></div>
+  <div class="lcd-tuile"><div class="l">Prix moyen par nuit</div><div class="deux"><div><small>{{ nom_mois_court }}</small><b>{% if k.mois.nuits %}{{ k.mois.prix_nuit|floatformat:"0g" }} €{% else %}–{% endif %}</b></div><div><small>Cumul {{ annee }}</small><b>{% if k.cumul.nuits %}{{ k.cumul.prix_nuit|floatformat:"0g" }} €{% else %}–{% endif %}</b></div></div></div>
+  <div class="lcd-tuile"><div class="l">Commissions plateformes <span class="petit">(frais de paiement compris)</span></div><div class="deux"><div><small>{{ nom_mois_court }}</small><b>{{ k.mois.commissions|floatformat:"0g" }} €</b><span>{% if k.mois.commissions_pct is not None %}{{ k.mois.commissions_pct|floatformat:1 }} % du CA{% else %}–{% endif %}</span></div><div><small>Cumul {{ annee }}</small><b>{{ k.commissions|floatformat:"0g" }} €</b><span>{% if k.commissions_pct is not None %}{{ k.commissions_pct|floatformat:1 }} % du CA{% else %}–{% endif %}</span></div></div></div>
+  <div class="lcd-tuile"><div class="l">Taxe de séjour <span class="petit">(collectée par les plateformes)</span></div><div class="deux"><div><small>{{ nom_mois_court }}</small><b>{{ k.mois.taxe|floatformat:"0g" }} €</b><span>{% if k.mois.taxe_pct is not None %}{{ k.mois.taxe_pct|floatformat:1 }} % du CA{% else %}–{% endif %}</span></div><div><small>Cumul {{ annee }}</small><b>{{ k.taxe|floatformat:"0g" }} €</b><span>{% if k.taxe_pct is not None %}{{ k.taxe_pct|floatformat:1 }} % du CA{% else %}–{% endif %}</span></div></div></div>
 </div>
 
 <div class="lcd-deux">
@@ -20,18 +22,14 @@
   </div>
   <div>
     <div class="lcd-carte">
-      <h2>{% if k.en_cours %}En ce moment{% else %}Prochains séjours{% endif %}</h2>
+      <h2>{% if k.en_cours %}En ce moment{% else %}Prochains séjours{% endif %}<span class="petit">30 prochains jours : {{ k.occupation_30 }} % réservé, {{ k.libres_30 }} nuit{{ k.libres_30|pluralize }} libre{{ k.libres_30|pluralize }}</span></h2>
       <ul class="sejours">
-        {% if k.en_cours %}<li><span class="pastille p-{{ k.en_cours.plateforme }}"></span><div><strong>{{ k.en_cours.titre }}</strong><div class="quand">dans les lieux jusqu'au {{ k.en_cours.fin|date:"D d/m" }} · {{ k.en_cours.source }}</div></div>{% if k.en_cours.montant %}<span class="montant">{{ k.en_cours.montant|floatformat:0 }} €</span>{% endif %}</li>{% endif %}
-        {% for s in k.a_venir %}<li><span class="pastille p-{{ s.plateforme }}"></span><div><strong>{{ s.titre }}</strong><div class="quand">{{ s.debut|date:"D d/m" }} → {{ s.fin|date:"D d/m" }} · {{ s.nuits }} nuit{{ s.nuits|pluralize }} · {{ s.source }}</div></div>{% if s.montant %}<span class="montant">{{ s.montant|floatformat:0 }} €</span>{% endif %}</li>
+        {% if k.en_cours %}<li><span class="pastille p-{{ k.en_cours.plateforme }}"></span><div><strong>{{ k.en_cours.titre }}</strong><div class="quand">dans les lieux jusqu'au {{ k.en_cours.fin|date:"D d/m" }} · {{ k.en_cours.source }}</div></div>{% if k.en_cours.montant %}<span class="montant">{{ k.en_cours.montant|floatformat:"0g" }} €</span>{% endif %}</li>{% endif %}
+        {% for s in k.a_venir %}<li><span class="pastille p-{{ s.plateforme }}"></span><div><strong>{{ s.titre }}</strong><div class="quand">{{ s.debut|date:"D d/m" }} → {{ s.fin|date:"D d/m" }} · {{ s.nuits }} nuit{{ s.nuits|pluralize }} · {{ s.source }}</div></div>{% if s.montant %}<span class="montant">{{ s.montant|floatformat:"0g" }} €</span>{% endif %}</li>
         {% empty %}{% if not k.en_cours %}<li class="quand">Aucun séjour à venir connu.{% if not calendriers %} Ajoutez vos calendriers .ics avec la roue crantée pour voir les réservations dès qu'elles arrivent.{% endif %}</li>{% endif %}{% endfor %}
       </ul>
     </div>
-    <div class="lcd-carte">
-      <h2>Ce mois-ci</h2>
-      <p style="margin:0">Chiffre d'affaires <strong>{{ k.brut_mois|floatformat:0 }} €</strong> · net <strong>{{ k.net_mois|floatformat:0 }} €</strong></p>
-      <p class="aide-ics" style="margin:6px 0 0">Les montants viennent des exports Airbnb et Booking importés dans le suivi mensuel. Les calendriers .ics donnent les dates, pas les prix.</p>
-    </div>
+    <p class="aide-ics">Les montants viennent des exports Airbnb et Booking importés dans le suivi mensuel. Les calendriers .ics donnent les dates, pas les prix.</p>
     <div class="liens-lcd"><a class="button" href="{% url 'suivi_lcd' %}?lot={{ lot.pk }}">Suivi mensuel et import des exports</a><a href="{% url 'admin:patrimoine_reservationlcd_changelist' %}?lot__id__exact={{ lot.pk }}">Réservations</a><a href="{% url 'comparatif_lcd' %}">Comparatif location nue</a></div>
   </div>
 </div>

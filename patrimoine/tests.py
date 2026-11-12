@@ -2707,12 +2707,17 @@ class GererCourteDureeTests(TestCase):
         k = ical.indicateurs(self.lot, date(2026, 11, 10))
         self.assertEqual((k["nuits_mois"], k["occupation_mois"]), (3, 10))
         self.assertEqual(k["prochaine_arrivee"]["titre"], "Léa")
+        ReservationLCD.objects.create(lot=self.lot, plateforme="booking", reference="B1", arrivee=date(2026, 3, 1), depart=date(2026, 3, 3),
+                                      montant_brut=200, commission=30, frais_service=4, taxe_sejour=6)
+        k = ical.indicateurs(self.lot, date(2026, 11, 10))
+        self.assertEqual((k["commissions"], k["taxe"]), (34, 6))
+        self.assertAlmostEqual(float(k["commissions_pct"]), 34 * 100 / 500)
 
     def test_pages_et_roue_crantee(self):
         from django.core.files.uploadedfile import SimpleUploadedFile
         from .models import CalendrierICS
         page = self.client.get(f"/courte-duree/?lot={self.lot.pk}").content.decode()
-        self.assertIn("Occupation en", page)
+        self.assertIn("Commissions plateformes", page)
         self.assertIn(f"/courte-duree/calendriers/?lot={self.lot.pk}", page)
         self.assertEqual(self.client.get(f"/courte-duree/calendrier/?lot={self.lot.pk}&mois=2026-11").status_code, 200)
         self.assertEqual(self.client.get(f"/courte-duree/calendrier/?lot={self.lot.pk}&mois=n'importe").status_code, 200)
