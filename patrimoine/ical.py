@@ -105,7 +105,11 @@ def synchroniser(calendrier):
     try:
         n, supprimes = importer(calendrier, telecharger(calendrier.url))
     except Exception as erreur:  # réseau coupé, site refusé par l'hébergeur, fichier illisible…
-        message = f"échec de la mise à jour : {erreur}"[:255]
+        if "Tunnel connection failed" in str(erreur) or "403" in str(erreur):
+            message = ("échec de la mise à jour : l'hébergeur bloque ce site (compte PythonAnywhere gratuit). "
+                       "Importez le fichier .ics à la main, ou passez à un compte payant")[:255]
+        else:
+            message = f"échec de la mise à jour : {erreur}"[:255]
         CalendrierICS.objects.filter(pk=calendrier.pk).update(dernier_message=message)
         return False, message
     return True, calendrier.dernier_message
