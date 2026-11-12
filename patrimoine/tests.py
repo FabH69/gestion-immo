@@ -2740,3 +2740,15 @@ class GererCourteDureeTests(TestCase):
             ok, _ = ical.synchroniser(self.cal)
         self.assertTrue(ok)
         self.assertEqual(self.cal.evenements.count(), 2)
+
+    def test_logement_passe_en_courte_duree_garde_ses_loyers(self):
+        """Passer un lot en courte durée ne fait pas disparaître ses loyers classiques du suivi des encaissements."""
+        from . import encaissements
+        bail = Bail.objects.create(lot=self.lot, type=Bail.Type.NU, date_debut=date(2024, 1, 1), date_fin=date(2025, 6, 30), loyer_hc=500, actif=False)
+        courte, longue = encaissements.lots_du_proprietaire(self.lot.bien.proprietaire, 2025)
+        self.assertIn(self.lot, courte)
+        self.assertIn(self.lot, longue)
+        janvier = encaissements.suivi(self.lot.bien.proprietaire, 2025)["mois"][0]
+        self.assertEqual(janvier["total_loyers"], 500)
+        self.assertNotIn(self.lot, encaissements.lots_du_proprietaire(self.lot.bien.proprietaire, 2026)[1])
+        self.assertTrue(Bail.objects.filter(pk=bail.pk).exists())

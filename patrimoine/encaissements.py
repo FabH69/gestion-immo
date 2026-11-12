@@ -19,7 +19,12 @@ def lots_du_proprietaire(proprietaire, annee):
     debut = date(annee, 1, 1)
     lots = (Lot.objects.filter(bien__proprietaire=proprietaire).select_related("bien")
             .exclude(vendu=True, date_vente__lt=debut).order_by("bien__nom", "designation"))
-    return [l for l in lots if l.exploitation == "courte"], [l for l in lots if l.exploitation != "courte"]
+    # un logement passé en courte durée garde ses loyers classiques des années où il était loué avec un bail
+    fin = date(annee, 12, 31)
+    avec_bail = set(Bail.objects.filter(lot__in=lots, date_debut__lte=fin).filter(Q(date_fin__isnull=True) | Q(date_fin__gte=debut))
+                    .values_list("lot_id", flat=True))
+    return ([l for l in lots if l.exploitation == "courte"],
+            [l for l in lots if l.exploitation != "courte" or l.pk in avec_bail])
 
 
 def _part_du_mois(bail, premier, dernier, entrees=()):
