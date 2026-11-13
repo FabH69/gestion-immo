@@ -46,6 +46,7 @@ INSTALLED_APPS = [
 ]
 
 MIDDLEWARE = [
+    "patrimoine.base_essai.BaseEssaiMiddleware",  # en premier : choisit la vraie base ou la base de test
     "django.middleware.security.SecurityMiddleware",
     "whitenoise.middleware.WhiteNoiseMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
@@ -53,6 +54,7 @@ MIDDLEWARE = [
     "django.middleware.csrf.CsrfViewMiddleware",
     "django.contrib.auth.middleware.AuthenticationMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
+    "patrimoine.base_essai.ComptesProtegesMiddleware",
     "patrimoine.droits.DroitsMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
     "patrimoine.sauvegarde.SauvegardeAutomatiqueMiddleware",
@@ -73,6 +75,7 @@ TEMPLATES = [
                 "django.contrib.auth.context_processors.auth",
                 "django.contrib.messages.context_processors.messages",
                 "patrimoine.droits.contexte",
+                "patrimoine.base_essai.contexte",
             ],
         },
     },
@@ -88,8 +91,15 @@ DATABASES = {
     "default": {
         "ENGINE": "django.db.backends.sqlite3",
         "NAME": BASE_DIR / "db.sqlite3",
-    }
+    },
+    # Base de test (bouton « Mode test ») : fichier à part, la vraie base n'y est jamais mêlée (patrimoine/base_essai.py)
+    "essai": {
+        "ENGINE": "django.db.backends.sqlite3",
+        "NAME": BASE_DIR / "db-essai.sqlite3",
+        "TEST": {"NAME": BASE_DIR / "db-essai-pour-tests.sqlite3"},  # un vrai fichier : la remise à zéro le recrée
+    },
 }
+DATABASE_ROUTERS = ["patrimoine.base_essai.Routeur"]
 
 
 # Password validation

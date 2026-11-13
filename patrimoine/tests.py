@@ -1563,7 +1563,7 @@ class LoyersAutomatiquesTests(TestCase):
         bien = Bien.objects.create(proprietaire=proprio, nom="Immeuble", adresse="1 rue", code_postal="69000", ville="Lyon")
         Bail.objects.create(lot=Lot.objects.create(bien=bien, designation="A"), type=Bail.Type.NU, date_debut=date(2025, 1, 1), loyer_hc=500)
         self.client.force_login(User.objects.create_superuser("admin", "a@example.com", "x"))
-        loyers_auto._dernier_jour = None
+        loyers_auto._dernier_jour = {}
         with override_settings(LOYERS_AUTO=True):
             r = self.client.get("/admin/patrimoine/echeance/")
             self.client.get("/admin/")
@@ -2757,3 +2757,78 @@ class GererCourteDureeTests(TestCase):
         self.assertEqual(janvier["total_loyers"], 500)
         self.assertNotIn(self.lot, encaissements.lots_du_proprietaire(self.lot.bien.proprietaire, 2026)[1])
         self.assertTrue(Bail.objects.filter(pk=bail.pk).exists())
+
+
+class ModeTestTests(TransactionTestCase):
+    """Bouton « Mode test » : base séparée, vierge, jamais mêlée à la vraie."""
+    databases = {"default", "essai"}
+
+    def setUp(self):
+        from . import loyers_auto
+        loyers_auto._dernier_jour = {}
+        self.admin = User.objects.create_superuser("fabien", "f@exemple.fr", "x")
+        Proprietaire.objects.create(nom="Vraie SCI", type=Proprietaire.Type.SCI_IR)
+        self.client.force_login(self.admin)
+
+    def tearDown(self):
+        from . import base_essai
+        base_essai._modele_vierge().unlink(missing_ok=True)
+
+    def _entrer(self):
+        r = self.client.post("/mode-test/entrer/")
+        self.assertEqual(r.cookies["base"].value, "essai")
+        return r
+
+    def test_base_separee_vierge_et_reconnaissable(self):
+        self._entrer()
+        page = self.client.get("/admin/patrimoine/proprietaire/").content.decode()
+        self.assertIn("bandeau-test", page)  # bandeau et couleurs orange
+        self.assertIn("#9a3412", page)
+        self.assertNotIn("Vraie SCI", page)  # vierge : aucune vraie donnée visible
+        self.client.post("/admin/patrimoine/proprietaire/add/", {"nom": "SCI d'essai", "type": "sci_ir", "pourcentage_detention": "100", "biens-TOTAL_FORMS": "0", "biens-INITIAL_FORMS": "0"})
+        self.assertEqual(list(Proprietaire.objects.using("essai").values_list("nom", flat=True)), ["SCI d'essai"])
+        self.assertEqual(list(Proprietaire.objects.using("default").values_list("nom", flat=True)), ["Vraie SCI"])
+        self.assertFalse(Echeance.objects.using("default").exists())
+        # retour aux vraies données : même session, pas besoin de se reconnecter
+        r = self.client.post("/mode-test/sortir/")
+        self.assertEqual(r.cookies["base"].value, "")
+        page = self.client.get("/admin/patrimoine/proprietaire/").content.decode()
+        self.assertIn("Vraie SCI", page)
+        self.assertNotIn("bandeau-test", page)
+        self.assertNotIn("SCI d'essai", page)
+
+    def test_remise_a_zero_et_demo(self):
+        self._entrer()
+        self.client.post("/admin/patrimoine/proprietaire/add/", {"nom": "SCI d'essai", "type": "sci_ir", "pourcentage_detention": "100", "biens-TOTAL_FORMS": "0", "biens-INITIAL_FORMS": "0"})
+        self.client.post("/mode-test/remettre-a-zero/")
+        self.assertFalse(Proprietaire.objects.using("essai").exists())
+        self.assertEqual(Proprietaire.objects.using("default").count(), 1)
+        self.client.post("/mode-test/donnees-demo/")
+        self.assertTrue(Proprietaire.objects.using("essai").filter(nom="SCI Démo 1").exists())
+        self.assertFalse(Proprietaire.objects.using("default").filter(nom="SCI Démo 1").exists())
+
+    def test_ni_mail_ni_compte_modifie(self):
+        from django.core import mail
+
+        from . import mails
+        from .models import ParametresMail
+        self._entrer()
+        reglage = ParametresMail(adresse="moi@gmail.com", mot_de_passe="secret")
+        with self.settings(ENVOI_MAIL_BACKEND="django.core.mail.backends.smtp.EmailBackend"):
+            from . import base_essai
+            with base_essai.utiliser("essai"):
+                self.assertTrue(mails.envoyer(["locataire@exemple.fr"], "Quittance", "texte", reglage_mail=reglage))
+        self.assertEqual(len(mail.outbox), 1)  # gardé en mémoire, jamais envoyé
+        self.client.post(f"/admin/auth/user/{self.admin.pk}/change/", {"username": "pirate"})
+        self.admin.refresh_from_db()
+        self.assertEqual(self.admin.username, "fabien")
+
+    def test_reserve_aux_administrateurs(self):
+        from django.contrib.auth.models import Permission
+        u = User.objects.create_user("aide", password="x", is_staff=True)
+        u.user_permissions.set(Permission.objects.filter(codename="view_proprietaire"))
+        self.client.force_login(u)
+        r = self.client.post("/mode-test/entrer/")
+        self.assertEqual(r.status_code, 403)
+        self.assertNotIn("base", r.cookies)
+        self.assertNotIn("Mode test", self.client.get("/admin/").content.decode())

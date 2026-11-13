@@ -285,6 +285,10 @@ body:not(.login) #user-tools { margin-left: auto; padding: 0; }
 .menu-sous a { color: var(--lateral-quiet) !important; padding: 5px 10px; font-size: 13px; }
 .menu-sous a:hover, .menu-sous a.actif { color: #fff !important; }
 .menu-sites { margin-top: -2px; }
+.menu-mode-test { margin: 12px 8px 0; }
+.menu-mode-test button { width: 100%; font: 600 13px var(--font-family-primary); padding: 8px 10px; border-radius: 8px; cursor: pointer;
+  background: transparent; color: #fdba74; border: 1px dashed #fdba74; }
+.menu-mode-test button:hover { background: rgba(253,186,116,.12); }
 .menu-utilisateur { display: flex; align-items: center; gap: 10px; padding: 12px 8px 4px; margin-top: 12px; border-top: 1px solid rgba(255,255,255,.1); }
 .menu-utilisateur .avatar { display: grid; place-items: center; width: 30px; height: 30px; border-radius: 50%; background: rgba(255,255,255,.15); color: #fff; font-weight: 600; font-size: 13px; }
 .menu-utilisateur .nom { color: #fff; font-weight: 500; flex: 1; }

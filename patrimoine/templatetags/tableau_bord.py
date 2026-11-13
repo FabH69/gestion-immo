@@ -290,7 +290,8 @@ def menu_lateral(context):
             actif_trouve |= actif
         if lignes:
             groupes.append({"titre": titre, "liens": lignes})
-    return {"groupes": groupes, "user": context.get("user"), "liens_utiles": sites_utiles()}
+    return {"groupes": groupes, "user": context.get("user"), "liens_utiles": sites_utiles(),
+            "csrf_token": context.get("csrf_token"), "mode_test": context.get("mode_test")}
 
 
 # --- Tableau de bord : chiffres clés ------------------------------------------------------------------------------

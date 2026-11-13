@@ -51,7 +51,7 @@ MODULES = [
     ("balles", "Balles", ["commandes.joueur", "commandes.article", "commandes.commande", "commandes.ligne"], [], []),
 ]
 LIBELLES = {code: libelle for code, libelle, *_ in MODULES}
-RESERVE_ADMIN = {"sauvegardes", "telecharger_sauvegarde", "tester_mail"}  # Réglages : administrateurs seulement
+RESERVE_ADMIN = {"sauvegardes", "telecharger_sauvegarde", "tester_mail", "essai_entrer", "essai_reinitialiser", "essai_demo"}  # Réglages : administrateurs seulement
 # pièces privées : le dossier dit à quel module elles appartiennent
 DOSSIERS_PRIVES = {"factures/": ["compta"], "modeles-word/": ["outils"], "modeles-annonces/": ["outils"],
                    "pieces-identite/": ["locataires", "baux", "relocation"], "etats-des-lieux/": ["baux"]}

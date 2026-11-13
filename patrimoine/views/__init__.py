@@ -74,3 +74,4 @@ from .depot import depot_bail  # noqa: F401
 from .comparatif import comparatif_lcd  # noqa: F401
 from .edl import edl_commencer, edl_resume, edl_saisie  # noqa: F401
 from .gerer_lcd import lcd_accueil, lcd_calendrier, lcd_calendriers  # noqa: F401
+from .essai import essai_demo, essai_entrer, essai_reinitialiser, essai_sortir  # noqa: F401

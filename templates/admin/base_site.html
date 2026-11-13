@@ -17,7 +17,27 @@
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="Immo">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<meta name="theme-color" content="#173f45">
+<meta name="theme-color" content="{% if mode_test %}#b45309{% else %}#173f45{% endif %}">
+{% if mode_test %}{# mode test : couleurs orange partout pour ne jamais confondre avec la vraie appli #}
+<style>
+  :root, html[data-theme="light"] {
+    --primary: #c2410c; --secondary: #9a3412; --header-bg: #9a3412; --lateral-bg: #7c2d12; --lateral-fg: #ffedd5; --lateral-quiet: #fdba74;
+    --button-bg: #c2410c; --button-hover-bg: #9a3412; --default-button-bg: #9a3412; --default-button-hover-bg: #7c2d12;
+    --link-fg: #c2410c; --link-hover-color: #7c2d12; --link-selected-fg: #7c2d12; --breadcrumbs-link-fg: #c2410c;
+    --selected-bg: #ffedd5; --object-tools-bg: #ffedd5; --object-tools-fg: #9a3412; --object-tools-hover-bg: #c2410c;
+    --body-bg: #fff7ed; --darkened-bg: #ffedd5; --breadcrumbs-bg: #ffedd5;
+  }
+  #bandeau-test { display: flex; margin: 12px 32px 0; border-radius: 10px; padding: 10px 14px !important; box-sizing: border-box; max-width: 100%; flex-wrap: wrap; align-items: center; gap: 8px 14px;
+    padding: 8px 16px; background: repeating-linear-gradient(-45deg, #f97316 0 14px, #ea580c 14px 28px); color: #fff;
+    font-weight: 700; box-shadow: 0 2px 8px rgba(0,0,0,.2); }
+  #bandeau-test .titre { font-size: 15px; letter-spacing: .08em; text-transform: uppercase; background: #431407; padding: 3px 10px; border-radius: 6px; }
+  #bandeau-test .texte { font-weight: 600; font-size: 13px; flex: 1 1 220px; text-shadow: 0 1px 1px rgba(0,0,0,.35); }
+  #bandeau-test form { margin: 0; display: inline; }
+  @media (max-width: 767px) { #bandeau-test { margin: 8px 12px 0; } }
+  #bandeau-test button { font: 600 13px var(--font-family-primary); padding: 6px 10px; border-radius: 8px; border: 1px solid #fff; cursor: pointer; background: #fff; color: #9a3412; }
+  #bandeau-test button.discret { background: transparent; color: #fff; }
+</style>
+{% endif %}
 {% endblock %}
 {% block branding %}
 <div id="site-name"><a href="{% url 'admin:index' %}"><span class="logo">⌂</span> {{ site_header|default:_('Django administration') }}</a></div>
@@ -46,6 +66,18 @@
 </script>
 {% endif %}{% endblock %}
 {% block nav-sidebar %}{% endblock %}
+{% block messages %}{% if mode_test %}
+<div id="bandeau-test" role="status">
+  <span class="titre">Mode test</span>
+  <span class="texte">Base de test séparée : rien de ce que tu fais ici ne touche tes vraies données.</span>
+  {% if user.is_superuser %}
+  <form method="post" action="{% url 'essai_reinitialiser' %}" onsubmit="return confirm('Effacer toute la base de test et repartir d\'une appli vierge ?')">{% csrf_token %}<button type="submit" class="discret">Remettre à zéro</button></form>
+  <form method="post" action="{% url 'essai_demo' %}" onsubmit="return confirm('Ajouter des données de démonstration dans la base de test ?')">{% csrf_token %}<button type="submit" class="discret">Données de démo</button></form>
+  {% endif %}
+  <form method="post" action="{% url 'essai_sortir' %}">{% csrf_token %}<button type="submit">Revenir à mes données</button></form>
+</div>
+{% endif %}
+{{ block.super }}{% endblock %}
 {% block footer %}{{ block.super }}
 <script>
 (function () {
