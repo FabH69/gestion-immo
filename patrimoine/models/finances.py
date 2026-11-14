@@ -268,6 +268,10 @@ class PieceComptable(models.Model):
     fichier = models.FileField("facture (PDF ou photo)", upload_to=_chemin_facture, storage=stockage_prive, blank=True,
                                validators=[FileExtensionValidator(["pdf", "jpg", "jpeg", "png", "heic"])])
     notes = models.TextField(blank=True)
+    piece_mere = models.ForeignKey("self", null=True, blank=True, on_delete=models.CASCADE, related_name="parts", editable=False,
+                                   verbose_name="facture scindée",
+                                   help_text="Part d'une facture scindée sur plusieurs rubriques ou plusieurs biens "
+                                             "(la pièce mère porte le PDF)")
 
     class Meta:
         verbose_name = "facture / pièce comptable"
@@ -310,6 +314,12 @@ class PieceComptable(models.Model):
     @property
     def a_codifier(self):
         return self.preremplie or not self.codification or self.montant is None or self.date is None
+
+    @property
+    def facture_complete(self):
+        """Pièce mère suivie de ses parts : l'ensemble des lignes d'une facture scindée (la pièce seule sinon)."""
+        mere = self.piece_mere or self
+        return [mere] + list(mere.parts.select_related("bien").order_by("pk"))
 
     @property
     def annee(self):

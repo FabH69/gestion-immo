@@ -1,0 +1,48 @@
+{% extends "admin/base_site.html" %}
+{% load tableau_bord %}
+{% block extrastyle %}{{ block.super }}<style>
+.scinder td, .scinder th { vertical-align: middle; padding: 6px 8px; }
+.scinder input.montant { width: 9em; text-align: right; }
+.scinder select { max-width: 26em; }
+.reste { font-weight: bold; padding: 8px 0; }
+.reste.ok { color: #2e7d32; } .reste.ko { color: #c62828; }
+.entete-facture { margin: 0 0 12px; }
+</style>{% endblock %}
+{% block breadcrumbs %}
+<div class="breadcrumbs"><a href="{% url 'admin:index' %}">Accueil</a> › Comptabilité › {{ libelle_regime }} › <a href="{{ lien_factures }}">Factures</a> › <a href="{% url 'admin:patrimoine_piececomptable_change' mere.pk %}">{{ mere|truncatewords:"12" }}</a> › Scinder</div>
+{% endblock %}
+{% block content %}
+<div class="module" style="padding:12px 16px">
+  <p class="entete-facture"><b>{{ mere.fournisseur|default:"Facture" }}</b>{% if mere.libelle %} – {{ mere.libelle }}{% endif %}{% if mere.date %} · {{ mere.date|date:"d/m/Y" }}{% endif %}<br>
+  Total de la facture : <b>{{ total|euros:2 }}</b></p>
+  <p class="help">Répartissez la facture sur plusieurs lignes, chacune avec son montant, sa {% if par_rubrique %}rubrique{% else %}ligne de l'annexe 2072{% endif %} et son bien. La somme des lignes doit être égale au total. Pour revenir à une seule ligne, videz les montants des autres.</p>
+  {% if erreurs %}<ul class="errorlist">{% for e in erreurs %}<li>{{ e }}</li>{% endfor %}</ul>{% endif %}
+  <form method="post">{% csrf_token %}
+    <input type="hidden" name="nb" value="{{ nb }}">
+    <table class="scinder"><thead><tr><th>#</th><th>Bien</th><th>{% if par_rubrique %}Rubrique{% else %}Ligne de l'annexe 2072{% endif %}</th><th style="text-align:right">Montant (€)</th></tr></thead><tbody>
+    {% for l in lignes %}<tr>
+      <td>{{ forloop.counter }}</td>
+      <td><select name="bien_{{ forloop.counter0 }}">{% for b in biens %}<option value="{{ b.pk }}"{% if l.bien and l.bien.pk == b.pk %} selected{% endif %}>{{ b.proprietaire.nom }} – {{ b.nom }}</option>{% endfor %}</select></td>
+      <td><select name="code_{{ forloop.counter0 }}"><option value="">---------</option>{% for groupe, choix in codes %}{% if groupe %}<optgroup label="{{ groupe }}">{% endif %}{% for c, lib in choix %}<option value="{{ c }}"{% if l.code == c %} selected{% endif %}>{{ lib }}</option>{% endfor %}{% if groupe %}</optgroup>{% endif %}{% endfor %}</select></td>
+      <td><input class="montant" name="montant_{{ forloop.counter0 }}" inputmode="decimal" value="{% if l.montant is not None %}{{ l.montant|stringformat:'s' }}{% endif %}"></td>
+    </tr>{% endfor %}
+    </tbody></table>
+    <p class="reste" id="reste" data-total="{{ total|stringformat:'s' }}"></p>
+    <div class="submit-row"><input type="submit" class="default" value="Enregistrer la répartition"> <a href="{% url 'admin:patrimoine_piececomptable_change' mere.pk %}" class="button cancel-link">Annuler</a></div>
+  </form>
+</div>
+<script>
+(function () {
+  var reste = document.getElementById("reste"), total = parseFloat(reste.dataset.total) || 0;
+  function calculer() {
+    var s = 0;
+    document.querySelectorAll("input.montant").forEach(function (i) { var v = parseFloat(i.value.replace(/\s/g, "").replace(",", ".")); if (!isNaN(v)) s += v; });
+    var r = Math.round((total - s) * 100) / 100;
+    reste.textContent = r === 0 ? "✓ La répartition est complète." : "Reste à répartir : " + r.toLocaleString("fr-FR", {minimumFractionDigits: 2}) + " €";
+    reste.className = "reste " + (r === 0 ? "ok" : "ko");
+  }
+  document.querySelectorAll("input.montant").forEach(function (i) { i.addEventListener("input", calculer); });
+  calculer();
+})();
+</script>
+{% endblock %}
