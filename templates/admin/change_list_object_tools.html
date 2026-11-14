@@ -1,0 +1,9 @@
+{% load admin_urls tableau_bord %}
+{% block object-tools-items %}
+  {% if has_add_permission %}
+  <li>
+    {% url cl.opts|admin_urlname:'add' as add_url %}
+    <a href="{% add_preserved_filters add_url is_popup to_field %}" class="addlink">{{ cl.opts.verbose_name|libelle_ajouter }}</a>
+  </li>
+  {% endif %}
+{% endblock %}

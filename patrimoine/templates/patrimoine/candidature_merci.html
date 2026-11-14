@@ -1,0 +1,8 @@
+{% extends "patrimoine/_public_base.html" %}
+{% block titre %}Dossier envoyé{% endblock %}
+{% block entete %}Dossier envoyé{% endblock %}
+{% block contenu %}
+<div class="carte"><h2>Merci {{ candidature.prenom }} !</h2>
+<p>Votre dossier pour le logement {{ lot.designation }} a bien été transmis au propriétaire. Il reviendra vers vous rapidement, par e-mail ou par téléphone.</p>
+<p class="aide">Vous pouvez encore corriger vos réponses en rouvrant le même lien tant que le dossier n'a pas été traité.</p></div>
+{% endblock %}

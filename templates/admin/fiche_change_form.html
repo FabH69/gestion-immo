@@ -1,0 +1,69 @@
+{% extends "admin/change_form.html" %}
+{% load static admin_urls tableau_bord %}
+{% comment %}Fiche (bail, locataire, lot) : en-tête, liens vers les fiches liées, barre d'actions, onglets, encart « En bref »
+et une seule barre « Enregistrer » toujours visible. Voir patrimoine/admin/fiche.py.{% endcomment %}
+{% block extrahead %}{{ block.super }}<script src="{% static 'patrimoine/fiche.js' %}" defer></script>{% endblock %}
+{% block bodyclass %}{{ block.super }}{% if fiche %} fiche{% endif %}{% if not is_popup %} barre-fixe{% endif %}{% endblock %}
+
+{% block content_title %}{% if fiche %}
+<div class="entete-fiche">
+  <a class="retour-fiche" href="{% url opts|admin_urlname:'changelist' %}">‹ {{ opts.verbose_name_plural|capfirst }}</a>
+  <h1>{{ fiche.titre }}</h1>
+  {% if fiche.badges %}<span class="badges-fiche">{% for b in fiche.badges %}{% if b.url %}<a class="pill {{ b.classe }}" href="{{ b.url }}">{{ b.texte }}</a>{% else %}<span class="pill {{ b.classe }}">{{ b.texte }}</span>{% endif %}{% endfor %}</span>{% endif %}
+  {% if fiche.sous_titre %}<p class="sous-titre-fiche">{% for s in fiche.sous_titre %}<span>{{ s }}</span>{% endfor %}</p>{% endif %}
+  {% if fiche.liens %}<p class="liens-fiche">{% for l in fiche.liens %}<a href="{{ l.url }}">{% icone l.icone 15 %}{{ l.libelle }}</a>{% endfor %}</p>{% endif %}
+</div>
+{% else %}{{ block.super }}{% endif %}{% endblock %}
+{% block content_subtitle %}{% if not fiche %}{{ block.super }}{% endif %}{% endblock %}
+
+{% block object-tools %}{% if fiche %}
+<div class="barre-actions" role="toolbar" aria-label="Actions">
+  {% for a in fiche.actions %}
+  {% if a.sous %}<details class="menu-action">
+    <summary class="bouton-action">{% icone a.icone 16 %}<span>{{ a.libelle }}</span><span class="fleche-menu" aria-hidden="true"></span></summary>
+    <div class="sous-menu">{% for s in a.sous %}<a href="{{ s.url }}"{% if s.nouvel_onglet %} target="_blank"{% endif %}>{{ s.libelle }}</a>{% endfor %}</div>
+  </details>
+  {% else %}<a class="bouton-action{% if a.principale %} principale{% endif %}" href="{{ a.url }}"{% if a.nouvel_onglet %} target="_blank"{% endif %}{% if a.titre %} title="{{ a.titre }}"{% endif %}>{% icone a.icone 16 %}<span>{{ a.libelle }}</span>{% if a.point %}<span class="point-action" title="À faire"></span>{% endif %}</a>{% endif %}
+  {% endfor %}
+  <details class="menu-action menu-plus">
+    <summary class="bouton-action" title="Plus d'actions" aria-label="Plus d'actions">⋯</summary>
+    <div class="sous-menu">
+      {% for s in fiche.menu %}<a href="{{ s.url }}"{% if s.nouvel_onglet %} target="_blank"{% endif %}>{{ s.libelle }}</a>{% endfor %}
+      <a href="{{ url_historique }}">Historique des modifications</a>
+      {% if has_delete_permission %}<a class="danger" href="{{ url_suppression }}">Supprimer…</a>{% endif %}
+    </div>
+  </details>
+</div>
+{% if onglets %}
+<nav class="onglets-fiche" aria-label="Onglets de la fiche">{% for o in onglets %}<a href="#{{ o.code }}" data-onglet="{{ o.code }}">{{ o.libelle }}{% if o.pastille %}<span class="pastille-onglet">{{ o.pastille }}</span>{% endif %}</a>{% endfor %}</nav>
+{{ onglets_inlines|json_script:"onglets-inlines" }}
+{% endif %}
+{% else %}{{ block.super }}{% endif %}{% endblock %}
+
+{% block field_sets %}{% if fiche %}<div class="fiche-grille{% if fiche.bref %} avec-bref{% endif %}"><div class="fiche-corps">{% endif %}{{ block.super }}{% endblock %}
+
+{% block after_related_objects %}{{ block.super }}{% if fiche %}
+  {% for c in fiche.contenus %}<div class="module onglet onglet-{{ c.code }} contenu-onglet">{{ c.html }}</div>{% endfor %}
+  </div>
+  {% if fiche.bref %}<aside class="fiche-bref">
+    <h2>En bref</h2>
+    {% for i in fiche.bref %}<div class="ligne-bref">
+      <div><span class="etiquette">{{ i.etiquette }}</span><b class="{{ i.classe }}">{{ i.valeur }}</b>{% if i.detail %}<small>{{ i.detail }}</small>{% endif %}</div>
+      {% if i.bouton %}<a class="bouton-bref" href="{{ i.bouton.url }}">{{ i.bouton.libelle }}</a>{% endif %}
+    </div>{% endfor %}
+  </aside>{% endif %}
+</div>
+{% endif %}{% endblock %}
+
+{% block submit_buttons_bottom %}{% if is_popup %}{{ block.super }}{% else %}
+<div class="submit-row barre-enregistrer">
+  <span class="etat-modif" aria-live="polite"></span>
+  {% url opts|admin_urlname:'changelist' as changelist_url %}
+  {% if add and has_add_permission or change and has_change_permission %}
+  <a href="{% add_preserved_filters changelist_url %}" class="annuler" title="Quitter sans enregistrer">Annuler</a>
+  <input type="submit" value="Enregistrer" class="default" name="_continue">
+  {% else %}
+  <a href="{% add_preserved_filters changelist_url %}" class="annuler">Fermer</a>
+  {% endif %}
+</div>
+{% endif %}{% endblock %}

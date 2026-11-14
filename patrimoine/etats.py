@@ -38,6 +38,21 @@ def loyers_encaisses(annee, proprietaire=None):
         ligne["loyers_hc"] += part_hc
         ligne["charges"] += p.montant - part_hc
 
+    # loyers repris d'un ancien suivi : comptés pour les mois sans paiement enregistré dans l'appli
+    from .models import EncaissementHistorique
+    deja = {(p.echeance.bail.lot_id, p.date.month) for p in paiements}
+    historiques = EncaissementHistorique.objects.filter(mois__year=annee).select_related("lot__bien__proprietaire")
+    if proprietaire:
+        historiques = historiques.filter(lot__bien__proprietaire=proprietaire)
+    for h in historiques:
+        if (h.lot_id, h.mois.month) in deja:
+            continue
+        ligne = par_lot[h.lot]
+        ligne["mois"][h.mois.month - 1] += h.montant
+        ligne["total"] += h.montant
+        ligne["loyers_hc"] += h.montant - h.charges
+        ligne["charges"] += h.charges
+
     proprietaires = {}
     for lot in sorted(par_lot, key=lambda l: (l.bien.proprietaire.nom, l.bien.nom, l.designation)):
         proprio = lot.bien.proprietaire
@@ -70,7 +85,7 @@ def endettement(a_date, proprietaire=None):
         ligne = {
             "pret": pret,
             "montant": pret.montant,
-            "mensualite": (pret.mensualite_hors_assurance + pret.assurance_mensuelle) if restant > 0 else Decimal(0),
+            "mensualite": pret.mensualite_totale if restant > 0 else Decimal(0),
             "interets": pret.cumul_annee(a_date.year)["interets"],
             "restant": restant,
         }
@@ -79,4 +94,14 @@ def endettement(a_date, proprietaire=None):
         for c in cles:
             bloc[c] += ligne[c]
             total[c] += ligne[c]
+    for bloc in blocs.values():
+        # Personne physique : prêts de la résidence principale séparés du locatif, avec un sous-total chacun.
+        rp = [l for l in bloc["lignes"] if l["pret"].bien and l["pret"].bien.residence_principale]
+        if rp:
+            locatif = [l for l in bloc["lignes"] if l not in rp]
+            bloc["groupes"] = [{"libelle": libelle, "lignes": lignes, **{c: sum((l[c] for l in lignes), Decimal(0)) for c in cles}}
+                               for libelle, lignes in (("Locatif", locatif), ("Résidence principale", rp)) if lignes]
+            bloc["lignes"] = locatif + rp
+        else:
+            bloc["groupes"] = [{"libelle": "", "lignes": bloc["lignes"]}]
     return {"blocs": list(blocs.values()), "total": total, "date": a_date, "annee": a_date.year}

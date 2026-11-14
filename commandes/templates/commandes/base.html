@@ -1,0 +1,91 @@
+{% load static %}<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#ea481a">
+<link rel="icon" type="image/png" href="{% static 'commandes/icones/favicon.png' %}">
+<link rel="apple-touch-icon" href="{% static 'commandes/icones/apple-touch-icon.png' %}">
+<link rel="manifest" href="{% static 'commandes/manifest.json' %}">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Balles">
+<title>{% block titre %}Commandes de balles{% endblock %}</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Anton&display=swap" rel="stylesheet">
+<style>
+  /* Couleurs inspirées de pickblitz.eu */
+  :root { --orange:#ea481a; --orange-fonce:#c93a10; --jaune:#e4e930; --jaune-clair:#f8f9c8; --noir:#111111; --gris:#f6f6f6; --bord:#e2e2e2; --texte:#111111; --doux:#6b6b6b; --rouge:#c62828; }
+  * { box-sizing:border-box; }
+  body { margin:0; font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif; color:var(--texte); background:#fff; font-size:16px; }
+  a { color:var(--orange); }
+  header { background:#fff; color:var(--noir); padding:14px 16px; display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center; border-bottom:4px solid var(--orange); }
+  header a, header button { color:var(--noir); text-decoration:none; font-size:.82rem; font-weight:500; text-transform:uppercase; letter-spacing:.06em; background:none; border:0; font-family:inherit; cursor:pointer; padding:0; }
+  header a:hover, header button:hover { color:var(--orange); }
+  header .logo { font-family:"Anton",Impact,"Arial Narrow Bold",sans-serif; font-style:italic; font-size:1.6rem; letter-spacing:.01em; margin-right:auto; text-transform:uppercase; }
+  header .logo span { color:var(--orange); }
+  main { max-width:960px; margin:0 auto; padding:16px; }
+  h1, h2 { font-family:"Anton",Impact,"Arial Narrow Bold",sans-serif; font-weight:400; text-transform:uppercase; letter-spacing:.02em; }
+  h1 { font-size:1.6rem; margin:8px 0 16px; }
+  h2 { font-size:1.15rem; margin:26px 0 10px; }
+  .carte { background:#fff; border:1px solid var(--bord); padding:16px; margin-bottom:16px; }
+  .chiffres { display:grid; grid-template-columns:repeat(auto-fit,minmax(140px,1fr)); gap:4px; margin-bottom:16px; }
+  .chiffre { background:var(--orange); color:#fff; padding:12px 14px; }
+  .chiffre b { display:block; font-size:1.5rem; }
+  .chiffre span { font-size:.75rem; text-transform:uppercase; letter-spacing:.05em; opacity:.9; }
+  table { width:100%; border-collapse:collapse; background:#fff; }
+  th, td { padding:9px 10px; border-bottom:1px solid var(--bord); text-align:left; vertical-align:middle; }
+  th { font-size:.75rem; color:var(--doux); text-transform:uppercase; letter-spacing:.06em; }
+  .table-wrap { overflow-x:auto; border:1px solid var(--bord); }
+  .btn { display:inline-block; padding:9px 16px; border:1px solid var(--orange); background:var(--orange); color:#fff; text-decoration:none; font-family:inherit; font-size:.8rem; text-transform:uppercase; letter-spacing:.06em; cursor:pointer; border-radius:0; }
+  .btn:hover { background:var(--orange-fonce); border-color:var(--orange-fonce); }
+  .btn.sec { background:#fff; color:var(--noir); border-color:var(--noir); }
+  .btn.sec:hover { background:var(--noir); color:#fff; }
+  .btn.petit { padding:5px 10px; font-size:.72rem; }
+  .btn.danger { border-color:var(--rouge); background:#fff; color:var(--rouge); }
+  .btn.ok { background:var(--jaune); color:var(--noir); border-color:var(--jaune); }
+  .btn.ok:hover { background:#d4d920; border-color:#d4d920; }
+  .actions { display:flex; flex-wrap:wrap; gap:8px; align-items:center; }
+  form.inline { display:inline; margin:0; }
+  .badge { display:inline-block; padding:3px 8px; font-size:.7rem; text-transform:uppercase; letter-spacing:.05em; background:var(--gris); border:1px solid var(--bord); font-family:system-ui,sans-serif; vertical-align:middle; }
+  .badge.ferme { background:#fff; border-color:var(--noir); }
+  .badge.passee { background:#fde3d9; border-color:#f6b9a2; }
+  .badge.recue { background:var(--orange); border-color:var(--orange); color:#fff; }
+  .badge.terminee { background:var(--jaune); border-color:var(--jaune); }
+  .messages { list-style:none; padding:0; margin:0 0 16px; }
+  .messages li { background:var(--jaune-clair); border-left:4px solid var(--jaune); padding:10px 14px; margin-bottom:6px; }
+  .champ { margin-bottom:14px; }
+  .champ label { display:block; font-weight:600; margin-bottom:4px; }
+  .champ input:not([type=checkbox]), .champ select, .champ textarea, .ajout select, .ajout input { width:100%; padding:9px 10px; border:1px solid #bdbdbd; border-radius:0; font:inherit; background:#fff; }
+  .champ input:focus, .champ select:focus, .champ textarea:focus, .ajout select:focus, .ajout input:focus { outline:2px solid var(--orange); outline-offset:-1px; }
+  .champ .aide { color:var(--doux); font-size:.85rem; margin-top:3px; }
+  .champ .erreur { color:var(--rouge); font-size:.9rem; }
+  .ajout { display:grid; grid-template-columns:2fr 2fr 1fr 1fr auto; gap:8px; align-items:end; }
+  @media (max-width:600px) { .ajout { grid-template-columns:1fr 1fr; } .ajout .btn { grid-column:1 / -1; } }
+  .doux { color:var(--doux); }
+  .msg-texte { white-space:pre-wrap; background:var(--gris); border-left:3px solid var(--orange); padding:10px; margin:8px 0; font-size:.95rem; }
+  input.nb { width:64px; padding:4px 6px; border:1px solid #bdbdbd; font:inherit; }
+</style>
+</head>
+<body>
+{% if mode_test %}<div style="position:sticky;top:0;z-index:50;display:flex;flex-wrap:wrap;gap:8px 14px;align-items:center;padding:8px 16px;background:repeating-linear-gradient(-45deg,#7c2d12 0 14px,#431407 14px 28px);color:#fff;font-weight:700">
+  <span style="text-transform:uppercase;letter-spacing:.08em">Mode test</span><span style="flex:1 1 200px;font-weight:500;font-size:.9rem">Base de test séparée : tes vraies commandes ne sont pas touchées.</span>
+  <form method="post" action="{% url 'essai_sortir' %}" style="margin:0">{% csrf_token %}<button style="font:inherit;padding:5px 10px;border-radius:6px;border:0;cursor:pointer">Revenir à mes données</button></form>
+</div>{% endif %}
+<header>
+  <a class="logo" href="{% url 'balles:accueil' %}">Commandes <span>balles</span></a>
+  {% if user.is_authenticated %}
+    <a href="{% url 'balles:accueil' %}">Commandes</a>
+    <a href="{% url 'balles:joueurs' %}">Joueurs</a>
+    <a href="{% url 'balles:articles' %}">Articles</a>
+    <a href="/admin/">← Gestion immo</a>
+    <form class="inline" method="post" action="{% url 'admin:logout' %}">{% csrf_token %}<button>Déconnexion</button></form>
+  {% endif %}
+</header>
+<main>
+  {% if messages %}<ul class="messages">{% for m in messages %}<li>{{ m }}</li>{% endfor %}</ul>{% endif %}
+  {% block contenu %}{% endblock %}
+</main>
+</body>
+</html>

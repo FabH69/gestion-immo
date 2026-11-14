@@ -1,0 +1,64 @@
+{% extends "admin/base_site.html" %}
+{% load tableau_bord %}
+{% block extrastyle %}{{ block.super }}<style>{% include "patrimoine/_style_etat.css" %}</style>{% endblock %}
+{% block content_title %}{% endblock %}
+{% block breadcrumbs %}{% include "patrimoine/_fil_compta.html" with page_fil="Contrôle conciergerie" %}{% endblock %}
+{% block content %}
+<div class="titre-liste titre-compta">
+  <h1>Facture {{ facture.numero }}{% if mois %} · séjours de {{ mois|date:"F Y" }}{% endif %}</h1>
+  <ul class="object-tools">
+    {% if piece.fichier %}<li><a href="{{ piece.fichier.url }}" target="_blank">Voir la facture (PDF)</a></li>{% endif %}
+    <li class="lien-discret"><a href="{% url 'conciergerie_ajouter' %}?compta={{ regime }}">Contrôler une autre facture</a></li>
+  </ul>
+</div>
+{% include "patrimoine/_onglets_compta.html" %}
+<p class="sous-titre-compta">{{ facture.fournisseur }} · émise le {{ facture.date|date:"d/m/Y"|default:"?" }} · {{ lot.bien.nom }}{% if lot.designation != lot.bien.nom %} – {{ lot.designation }}{% endif %} · {{ lignes|length }} séjour{{ lignes|length|pluralize }} · total {{ facture.total_ttc|euros:2 }}</p>
+
+{% if anomalies %}
+<div class="bandeau-compta rouge"><b>{{ anomalies|length }} anomalie{{ anomalies|length|pluralize }}</b> à vérifier avec la conciergerie ou dans tes réservations.
+  {% if plateformes_absentes %}<br>Séjours introuvables : {% for p in plateformes_absentes %}{% if p == "booking" %}importe l'export Booking du mois{% elif p == "airbnb" %}importe l'export Airbnb du mois{% elif p == "direct" %}ajoute la réservation directe{% endif %}{% if not forloop.last %}, {% endif %}{% endfor %} (<a href="{{ lien_suivi }}">Courte durée</a>{% if "direct" in plateformes_absentes %} · <a href="{{ lien_reservation }}">ajouter une réservation</a>{% endif %}), puis rouvre cette page.{% endif %}
+</div>
+{% else %}
+<div class="bandeau-compta vert"><b>Facture conforme</b> : chaque séjour correspond aux réservations et aux frais de gestion du logement.{% if infos %} {{ infos }} arrondi{{ infos|pluralize }} d'un centime, sans conséquence.{% endif %}</div>
+{% endif %}
+
+<section class="module etat-scroll tableau-compta">
+  <table class="etat controle-conciergerie">
+    <thead><tr><th class="libelle">Séjour</th><th class="libelle">Plateforme</th><th>Net versé</th><th>Base facturée</th><th>Taux</th><th>Honoraire</th><th>Ménage</th><th>Conso.</th><th>Total</th><th class="libelle">Contrôle</th></tr></thead>
+    <tbody>
+    {% for l in lignes %}
+      <tr class="etat-{{ l.etat }}">
+        <td class="libelle sejour">{% if l.arrivee %}{{ l.arrivee|date:"d/m" }} → {{ l.depart|date:"d/m" }}{% else %}{{ l.texte|truncatechars:40 }}{% endif %}</td>
+        <td class="libelle">{% if l.reservation %}<a href="{% url 'admin:patrimoine_reservationlcd_change' l.reservation.pk %}">{{ l.reservation.get_plateforme_display }}</a>{% else %}{{ l.plateforme|capfirst|default:"–" }}{% endif %}</td>
+        <td>{% if l.reservation %}{{ l.reservation.net|euros:2 }}{% else %}–{% endif %}</td>
+        <td>{{ l.base|euros:2 }}</td>
+        <td>{{ l.taux|floatformat:"-2" }} %</td>
+        <td>{{ l.honoraire|euros:2 }}</td>
+        <td>{{ l.menage|euros:2 }}</td>
+        <td>{{ l.consommables|euros:2 }}</td>
+        <td class="fort">{{ l.ttc|euros:2 }}</td>
+        <td class="libelle notes-controle">{% for n in l.notes %}<span class="pill {% if n.0 == 'alerte' %}rouge{% else %}gris{% endif %}">{% if n.0 == 'alerte' %}Anomalie{% else %}Info{% endif %}</span> {{ n.1 }}{% if not forloop.last %}<br>{% endif %}{% empty %}<span class="pill ok">OK</span>{% endfor %}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+    <tfoot><tr class="total"><td class="libelle" colspan="5">Total des lignes</td><td>{{ totaux.honoraire|euros:2 }}</td><td>{{ totaux.menage|euros:2 }}</td><td>{{ totaux.consommables|euros:2 }}</td><td>{{ totaux.ttc|euros:2 }}</td><td class="libelle">{% if facture.total_ttc != None %}Facture : {{ facture.total_ttc|euros:2 }}{% endif %}</td></tr></tfoot>
+  </table>
+</section>
+
+{% if non_facturees %}
+<section class="module carte-compta">
+  <h2>Séjours du mois absents de la facture</h2>
+  <p class="aide-compta">Ces réservations de {{ mois|date:"F Y" }} ne figurent pas sur la facture : la conciergerie ne les a peut-être pas gérées, ou elles seront sur la facture suivante.</p>
+  <ul>{% for r in non_facturees %}<li><a href="{% url 'admin:patrimoine_reservationlcd_change' r.pk %}">{{ r.arrivee|date:"d/m" }} → {{ r.depart|date:"d/m" }}</a> · {{ r.get_plateforme_display }} · net {{ r.net|euros:2 }}</li>{% endfor %}</ul>
+</section>
+{% endif %}
+
+<section class="module carte-compta">
+  <h2>Enregistrée en comptabilité {{ libelle_regime }}</h2>
+  <ul class="pieces-liees">
+    <li><a href="{% url 'admin:patrimoine_piececomptable_change' piece.pk %}">{{ piece.get_rubrique_display }} : {{ piece.montant|euros:2 }}</a>{% if piece.preremplie %} <span class="pill orange">à répartir</span>{% endif %}</li>
+    {% for p in pieces_liees %}<li><a href="{% url 'admin:patrimoine_piececomptable_change' p.pk %}">{{ p.get_rubrique_display }} : {{ p.montant|euros:2 }}</a></li>{% endfor %}
+  </ul>
+  <p class="aide-compta">Dans le récapitulatif, ces montants remplacent pour {{ mois|date:"F Y"|default:"ce mois" }} l'estimation tirée des réservations.</p>
+</section>
+{% endblock %}

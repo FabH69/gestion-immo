@@ -1,0 +1,22 @@
+{% extends "admin/change_form.html" %}
+{% block breadcrumbs %}
+<div class="breadcrumbs"><a href="{% url 'admin:index' %}">Accueil</a> › Comptabilité{% if libelle_regime %} › {{ libelle_regime }}{% endif %} › <a href="{{ lien_factures }}">Factures</a> › {% if add %}{{ title }}{% else %}{{ original|truncatewords:"18" }}{% endif %}</div>
+{% endblock %}
+{% block admin_change_form_document_ready %}{{ block.super }}
+{{ regimes_des_biens|json_script:"regimes-des-biens" }}
+<script>
+(function () {
+  // Revenus fonciers : ligne 2072 ; LMNP et société : rubrique et mois concerné. Le choix du bien décide.
+  var regimes = JSON.parse(document.getElementById("regimes-des-biens").textContent), bien = document.getElementById("id_bien");
+  var ligne = document.querySelector(".form-row.field-ligne"), rubrique = document.querySelector(".form-row.field-rubrique");
+  if (!bien || !ligne || !rubrique) return;
+  function montrer() {
+    var r = regimes[bien.value] || "{{ regime|escapejs }}";
+    ligne.hidden = r === "lmnp" || r === "societe";
+    rubrique.hidden = r === "foncier";
+  }
+  bien.addEventListener("change", montrer);
+  montrer();
+})();
+</script>
+{% endblock %}

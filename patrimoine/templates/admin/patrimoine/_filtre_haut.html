@@ -1,0 +1,6 @@
+{% if f.annees %}<div class="groupe-filtre" role="group" aria-label="Année">{% for c in f.choix %}<a href="{{ c.url }}" class="chip{% if c.actif %} actif{% endif %}">{{ c.libelle }}</a>{% endfor %}</div>
+{% if f.anterieures %}<label class="filtre-select{% if f.anterieure_active %} actif{% endif %}"><span>Années antérieures</span>
+  <select onchange="if(this.value)window.location.href=this.value"><option value="">–</option>{% for c in f.anterieures %}<option value="{{ c.url }}"{% if c.actif %} selected{% endif %}>{{ c.libelle }}</option>{% endfor %}</select></label>{% endif %}
+{% elif f.boutons %}<div class="groupe-filtre" role="group" aria-label="{{ f.titre }}">{% if f.avec_titre %}<span class="titre-filtre">{{ f.titre }} :</span>{% endif %}{% for c in f.choix %}<a href="{{ c.url }}" class="chip{% if c.actif %} actif{% endif %}">{{ c.libelle }}</a>{% endfor %}</div>
+{% else %}<label class="filtre-select{% if not f.tous %} actif{% endif %}"><span>{{ f.titre }}</span>
+  <select onchange="window.location.href=this.value">{% for c in f.choix %}<option value="{{ c.url }}"{% if c.actif %} selected{% endif %}>{{ c.libelle }}</option>{% endfor %}</select></label>{% endif %}

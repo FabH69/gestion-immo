@@ -1,0 +1,33 @@
+{% extends "admin/base_site.html" %}
+{% block breadcrumbs %}<div class="breadcrumbs"><a href="{% url 'admin:index' %}">Accueil</a> › Réglages › Sauvegardes</div>{% endblock %}
+{% block extrastyle %}{{ block.super }}<style>
+.carte { background: var(--body-bg); border: 1px solid var(--hairline-color); border-radius: 12px; box-shadow: 0 1px 6px rgba(16,24,40,.06); padding: 16px 18px; margin-bottom: 18px; max-width: 900px; }
+.carte h2 { margin: 0 0 8px; font-size: 1.1rem; }
+.aide { font-size: .85rem; color: var(--body-quiet-color); line-height: 1.55; }
+table.sauv { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
+table.sauv td, table.sauv th { padding: 8px 6px; border-bottom: 1px solid var(--hairline-color); text-align: left; }
+table.sauv td.m { text-align: right; white-space: nowrap; }
+.actions { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+</style>{% endblock %}
+{% block content %}
+<div class="carte">
+  <h2>Sauvegarder maintenant</h2>
+  <p class="aide">Une sauvegarde contient toutes les données (base), les photos et les pièces d'identité des garants. Elle est faite <strong>automatiquement chaque jour</strong> dès que vous utilisez l'application ; les {{ a_garder }} dernières restent sur le serveur. Pour être à l'abri d'un problème chez l'hébergeur, téléchargez-en une de temps en temps (par exemple chaque mois) et rangez-la sur votre ordinateur ou votre Drive.</p>
+  <form method="post" class="actions">{% csrf_token %}
+    <button type="submit" class="button default">Créer et télécharger une sauvegarde</button>
+  </form>
+</div>
+
+<div class="carte">
+  <h2>Sauvegardes sur le serveur</h2>
+  {% if fichiers %}
+  <table class="sauv">
+    <tr><th>Date</th><th>Fichier</th><th class="m">Taille</th><th></th></tr>
+    {% for f in fichiers %}<tr><td>{{ f.date|date:"d/m/Y à H:i" }}</td><td>{{ f.nom }}</td><td class="m">{{ f.taille|filesizeformat }}</td>
+      <td class="m"><a href="{% url 'telecharger_sauvegarde' f.nom %}">Télécharger</a></td></tr>{% endfor %}
+  </table>
+  {% else %}<p class="aide">Aucune sauvegarde pour l'instant : la première sera faite automatiquement, ou cliquez sur le bouton ci-dessus.</p>{% endif %}
+  <p class="aide" style="margin-top:12px">Le fichier contient des données personnelles (pièces d'identité) : ne le partagez pas. Pour restaurer une sauvegarde, il suffit de remettre en place la base et les dossiers qu'elle contient (mode d'emploi dans le fichier LISEZMOI du zip).</p>
+</div>
+{% if telecharger %}<iframe src="{% url 'telecharger_sauvegarde' telecharger %}" style="display:none" title="téléchargement"></iframe>{% endif %}
+{% endblock %}

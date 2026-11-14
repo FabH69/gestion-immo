@@ -1,0 +1,18 @@
+{% extends "admin/base_site.html" %}
+{% load static %}
+{% block extrastyle %}{{ block.super }}<link rel="stylesheet" href="{% static 'patrimoine/edl.css' %}">{% endblock %}
+{% block breadcrumbs %}<div class="breadcrumbs"><a href="{% url 'admin:index' %}">Accueil</a> › <a href="{% url 'admin:patrimoine_bail_change' bail.pk %}">{{ bail.lot }}</a> › {{ title }}</div>{% endblock %}
+{% block content_title %}<h1>{{ title }}</h1><p class="sous-titre-page">{{ bail.lot }} · {{ bail.lot.bien.adresse }}, {{ bail.lot.bien.ville }}</p>{% endblock %}
+{% block content %}
+<div class="edl">
+  <form method="post">{% csrf_token %}
+    <div class="grille2">
+      <div class="champ"><label for="signataire_bailleur">Pour le bailleur</label><input type="text" id="signataire_bailleur" name="signataire_bailleur" value="{{ signataire_bailleur }}"></div>
+      <div class="champ"><label for="signataire_locataire">Locataire(s) présent(s)</label><input type="text" id="signataire_locataire" name="signataire_locataire" value="{{ signataire_locataire }}"></div>
+    </div>
+    <p class="note">{% if type_edl == "sortie" %}{% if entree_detaillee %}La liste des pièces et des éléments reprend celle de l'état des lieux d'entrée du {{ entree.date|date:"d/m/Y" }} : son état et ses photos s'affichent à côté de chaque élément, et les dégradations sont relevées à la fin.{% else %}L'état des lieux d'entrée n'a pas été fait dans l'appli : la comparaison automatique ne sera pas possible. La liste part des pièces du lot.{% endif %}{% else %}La liste part des pièces du lot{% if bail.lot.meuble %} et de l'inventaire du mobilier{% endif %}. Vous pourrez ajouter ou retirer des pièces et des éléments.{% endif %}</p>
+    <p class="note">On avance pièce par pièce : un état pour chaque élément, un commentaire si besoin, et des photos prises avec le téléphone, horodatées par le serveur. À la fin, le bailleur puis le locataire signent sur l'écran, et l'état des lieux est verrouillé.</p>
+    <div class="edl-nav"><a class="button secondaire" href="{% url 'admin:patrimoine_bail_change' bail.pk %}">Annuler</a><button type="submit" class="button">Commencer</button></div>
+  </form>
+</div>
+{% endblock %}

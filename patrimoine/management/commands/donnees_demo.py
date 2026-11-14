@@ -4,7 +4,7 @@ from decimal import Decimal
 
 from django.core.management.base import BaseCommand
 
-from patrimoine.models import Bail, Bien, ChangementLocataire, Echeance, MouvementDepot, Pret, Rappel, Locataire, Lot, Paiement, Proprietaire
+from patrimoine.models import Annonce, Bail, Bien, Candidature, PhotoLot, ChangementLocataire, Garant, Echeance, MouvementDepot, Pret, Rappel, Locataire, Lot, Paiement, Proprietaire
 
 
 class Command(BaseCommand):
@@ -13,18 +13,18 @@ class Command(BaseCommand):
     def handle(self, *args, **options):
         P = Proprietaire.Type
         nom_propre = Proprietaire.objects.create(nom="Nom propre", type=P.NOM_PROPRE)
-        sci1 = Proprietaire.objects.create(nom="SCI Démo 1", type=P.SCI_IR, adresse="1 place Bellecour\n69002 Lyon", siret="12345678900011", representant="M. Jean Exemple, gérant", iban="FR76 0000 0000 0000 0000 0000 000")
+        sci1 = Proprietaire.objects.create(nom="SCI Démo 1", type=P.SCI_IR, adresse="1 place Bellecour", code_postal="69002", ville="Lyon", rcs="RCS Lyon 123 456 789", siret="12345678900011", representant="M. Jean Exemple, gérant", iban="FR76 0000 0000 0000 0000 0000 000")
         sci2 = Proprietaire.objects.create(nom="SCI Démo 2", type=P.SCI_IS)
         sarl = Proprietaire.objects.create(nom="SARL de famille Démo", type=P.SARL_FAMILLE)
 
-        immeuble = Bien.objects.create(proprietaire=sci1, nom="Immeuble des Lilas", adresse="12 rue des Lilas", code_postal="44000", ville="Nantes")
+        immeuble = Bien.objects.create(proprietaire=sci1, nom="Immeuble des Lilas", adresse="12 rue des Lilas", code_postal="44000", ville="Nantes", type_habitat="collectif", regime_juridique="copropriete", interphone=True, fibre=True)
         maison = Bien.objects.create(proprietaire=nom_propre, nom="Maison du Port", adresse="3 quai du Port", code_postal="56100", ville="Lorient")
         residence = Bien.objects.create(proprietaire=sarl, nom="Résidence Gare", adresse="8 avenue de la Gare", code_postal="35000", ville="Rennes")
         local = Bien.objects.create(proprietaire=sci2, nom="Local centre-ville", adresse="25 place du Marché", code_postal="44000", ville="Nantes")
 
         L = Lot.Type
         lots = [
-            Lot.objects.create(bien=immeuble, designation="Apt RDC", type=L.APPARTEMENT, surface=45, nb_pieces=2, etage="Rez-de-chaussée, porte gauche", annee_construction="1975", regime_juridique="copropriete", chauffage="Individuel gaz", eau_chaude="Individuelle gaz", classe_dpe="D", equipements="Cuisine équipée (plaques, hotte), interphone, fibre", annexes="Cave n° 4"),
+            Lot.objects.create(bien=immeuble, designation="Apt RDC", type=L.APPARTEMENT, surface=45, nb_pieces=2, etage="Rez-de-chaussée, porte gauche", annee_construction="1975", mode_chauffage="individuel", chauffage="gaz", mode_eau_chaude="individuelle", eau_chaude="gaz", classe_dpe="D", equipements="Cuisine équipée (plaques, hotte), interphone, fibre", annexes="Cave n° 4"),
             Lot.objects.create(bien=immeuble, designation="Apt 1er", type=L.APPARTEMENT, surface=62, nb_pieces=3),
             Lot.objects.create(bien=immeuble, designation="Parking 1", type=L.PARKING),
             Lot.objects.create(bien=maison, designation="Maison", type=L.MAISON, surface=95, nb_pieces=4),
@@ -72,6 +72,35 @@ class Command(BaseCommand):
 
         Lot.objects.filter(pk=lots[3].pk).update(chaudiere_gaz=True, date_entretien_chaudiere=date(2025, 11, 20))
         Rappel.objects.create(titre="AG de copropriété – Immeuble des Lilas", date=date(2026, 11, 18), categorie=Rappel.Categorie.AG, bien=immeuble)
-        Rappel.objects.create(titre="Payer la taxe foncière", date=date(2026, 10, 15), categorie=Rappel.Categorie.FISCAL, annuel=True)
+        Rappel.objects.create(titre="Payer la taxe foncière", date=date(2026, 10, 15), categorie=Rappel.Categorie.FISCAL, periodicite=Rappel.Periodicite.ANNUEL)
+
+        Garant.objects.create(locataire=martin, bail=Bail.objects.get(lot=lots[0]), civilite="M.", prenom="Pierre", nom="Martin",
+                              date_naissance=date(1960, 2, 3), lieu_naissance="Angers", adresse="5 rue Neuve\n49000 Angers", lien="père", duree_mois=36)
+        Candidature.objects.create(
+            lot=lots[5], statut=Candidature.Statut.RECUE, civilite="M.", prenom="Lucas", nom="Moreau", email="lucas.moreau@example.com",
+            telephone="06 00 00 00 00", situation="cdi", employeur="Société Exemple", revenus_mensuels=Decimal("1850"), nb_occupants=1,
+            type_garantie="visale", consentement=True,
+        )
+        Lot.objects.filter(pk=lots[5].pk).update(loyer_propose=Decimal("560"), classe_dpe="D", classe_ges="B", energie_min=480, energie_max=690, energie_annee=2023,
+                                                 equipements="Kitchenette équipée, lave-linge, fibre", etage="2e étage avec ascenseur")
+        self._photos_fictives(lots[5], ["Pièce principale", "Kitchenette", "Salle d'eau", "Vue"])
+        Annonce.objects.create(lot=Lot.objects.get(pk=lots[5].pk), loyer_cc=Decimal("560"), charges=Decimal("50"), depot_garantie=Decimal("1020"),
+                               disponible_le=date(2026, 12, 1), points_forts="À 5 minutes à pied de la gare\nRésidence calme et sécurisée\nIdéal étudiant ou jeune actif")
+        Candidature.objects.create(lot=lots[5])
 
         self.stdout.write(self.style.SUCCESS("Données de démonstration créées."))
+
+    def _photos_fictives(self, lot, legendes):
+        """Images de remplacement unies (aucune vraie photo dans les données de démo)."""
+        import io
+
+        from django.core.files.uploadedfile import SimpleUploadedFile
+        from PIL import Image, ImageDraw
+
+        couleurs = ["#cfe3e1", "#f6e3b4", "#dfe7f2", "#e9dfd3"]
+        for i, legende in enumerate(legendes):
+            image = Image.new("RGB", (800, 600), couleurs[i % len(couleurs)])
+            ImageDraw.Draw(image).text((30, 30), f"Photo d'exemple : {legende}", fill="#24585c")
+            tampon = io.BytesIO()
+            image.save(tampon, "JPEG")
+            PhotoLot.objects.create(lot=lot, ordre=i, legende=legende, image=SimpleUploadedFile(f"exemple-{i}.jpg", tampon.getvalue()))

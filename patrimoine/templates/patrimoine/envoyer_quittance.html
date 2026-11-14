@@ -1,0 +1,36 @@
+{% extends "admin/base_site.html" %}
+{% block extrastyle %}{{ block.super }}<style>
+.choix-quittance { display: flex; flex-direction: column; gap: 14px; margin: 6px 0 18px; padding: 18px; max-width: 760px; }
+.choix-quittance .rang { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+.choix-quittance .rang > b { min-width: 70px; }
+.choix-quittance select { min-width: 0; max-width: 100%; flex: 1; padding: 8px 10px; border-radius: 10px; }
+.legende { color: var(--body-quiet-color); font-size: 13px; margin: 0; }
+.alerte-avis { color: #b54708; }
+</style>{% endblock %}
+{% block breadcrumbs %}<div class="breadcrumbs"><a href="{% url 'admin:index' %}">Accueil</a> › <a href="{% url 'admin:patrimoine_echeance_changelist' %}">Loyers</a> › Créer une quittance</div>{% endblock %}
+{% block content %}
+<form method="get" class="module choix-quittance">
+  <div class="rang"><b>Bail</b>
+    <select name="bail" onchange="this.form.mois && (this.form.mois.value=''); this.form.submit()">
+      <option value="">– Choisir le bail –</option>
+      {% for b in baux %}<option value="{{ b.pk }}"{% if bail and b.pk == bail.pk %} selected{% endif %}>{{ b.libelle }}</option>{% endfor %}
+    </select>
+  </div>
+  {% if bail %}
+  <div class="rang"><b>Mois</b>
+    {% if mois %}<select name="mois" onchange="this.form.submit()">
+      {% for m in mois %}<option value="{{ m.pk }}"{% if echeance and m.pk == echeance.pk %} selected{% endif %}>{{ m.libelle }}</option>{% endfor %}
+    </select>{% else %}<span class="legende">Aucun loyer enregistré pour ce bail.</span>{% endif %}
+  </div>
+  {% if echeance %}
+  {% if not est_quittance %}<p class="legende alerte-avis">Ce loyer n'est pas payé en entier : une quittance ne peut pas être délivrée, c'est un avis d'échéance qui sera préparé.</p>{% endif %}
+  <div class="rang">
+    <a class="button" href="{% url 'preparer_mail_quittance' echeance.pk %}">Préparer le mail dans Outlook</a>
+    <a class="button annuler" target="_blank" href="{% url 'document_echeance' echeance.pk %}">Voir {% if est_quittance %}la quittance{% else %}l'avis d'échéance{% endif %} (PDF)</a>
+  </div>
+  <p class="legende">{% if emails %}Destinataire : {{ emails|join:", " }}.{% else %}Aucune adresse e-mail pour ce locataire : vous pourrez la saisir dans Outlook.{% endif %}
+    Le mail s'ouvre dans Outlook avec le texte d'accompagnement et le PDF en pièce jointe ; il ne part que quand vous cliquez sur Envoyer.</p>
+  {% endif %}
+  {% endif %}
+</form>
+{% endblock %}

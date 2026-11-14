@@ -6,7 +6,9 @@
   <tbody>
   {% for bloc in blocs %}
     <tr class="proprio"><td colspan="8">{{ bloc.proprietaire.nom }} <span class="type">({{ bloc.proprietaire.get_type_display }})</span></td></tr>
-    {% for l in bloc.lignes %}
+    {% for g in bloc.groupes %}
+    {% if g.libelle %}<tr class="groupe"><td class="libelle" colspan="8">{{ g.libelle }}</td></tr>{% endif %}
+    {% for l in g.lignes %}
     <tr>
       <td class="libelle lot">{{ l.pret.banque }}{% if l.pret.reference %} n° {{ l.pret.reference }}{% endif %}{% if l.pret.type == "in_fine" %} (in fine){% endif %}</td>
       <td class="libelle">{{ l.pret.bien.nom|default:"–" }}</td>
@@ -17,6 +19,8 @@
       <td>{{ l.interets|floatformat:"2g" }}</td>
       <td class="fort">{{ l.restant|floatformat:"2g" }}</td>
     </tr>
+    {% endfor %}
+    {% if g.libelle %}<tr class="st"><td class="libelle" colspan="2">Sous-total {{ g.libelle|lower }}</td><td>{{ g.montant|floatformat:"2g" }}</td><td></td><td></td><td>{{ g.mensualite|floatformat:"2g" }}</td><td>{{ g.interets|floatformat:"2g" }}</td><td class="fort">{{ g.restant|floatformat:"2g" }}</td></tr>{% endif %}
     {% endfor %}
     <tr class="stp"><td class="libelle" colspan="2">Total {{ bloc.proprietaire.nom }}</td><td>{{ bloc.montant|floatformat:"2g" }}</td><td></td><td></td><td>{{ bloc.mensualite|floatformat:"2g" }}</td><td>{{ bloc.interets|floatformat:"2g" }}</td><td class="fort">{{ bloc.restant|floatformat:"2g" }}</td></tr>
   {% empty %}

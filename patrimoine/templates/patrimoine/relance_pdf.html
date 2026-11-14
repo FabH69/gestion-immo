@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="fr"><head><meta charset="utf-8">
+<style>
+@page { size: A4; margin: 2cm; }
+body { font-family: "DejaVu Sans", sans-serif; font-size: 10.5pt; color: #222; line-height: 1.5; }
+.expediteur { margin-bottom: 28pt; }
+.destinataire { margin-left: 52%; margin-bottom: 26pt; }
+.lieu-date { text-align: right; margin-bottom: 18pt; }
+.recommande { font-weight: bold; margin-bottom: 6pt; }
+.objet { font-weight: bold; margin-bottom: 16pt; }
+p { margin: 0 0 10pt; text-align: justify; }
+table { width: 70%; border-collapse: collapse; margin: 6pt 0 16pt; }
+td { padding: 4pt 8pt; border-bottom: 1px solid #ddd; }
+td.m { text-align: right; white-space: nowrap; }
+tr.total td { font-weight: bold; border-top: 2px solid #222; border-bottom: none; }
+.signature { margin-top: 30pt; margin-left: 52%; }
+</style></head><body>
+<div class="expediteur"><strong>{{ proprietaire.nom }}</strong>{% if proprietaire.representant %}<br>{{ proprietaire.representant }}{% endif %}<br>{{ proprietaire.adresse_complete|linebreaksbr }}{% if proprietaire.telephone %}<br>{{ proprietaire.telephone }}{% endif %}{% if proprietaire.email %}<br>{{ proprietaire.email }}{% endif %}</div>
+<div class="destinataire">{% for p in personnes %}<strong>{{ p }}</strong><br>{% endfor %}{% if garant %}{{ adresse_garant|linebreaksbr }}{% else %}{{ bien.adresse }}<br>{{ bien.code_postal }} {{ bien.ville }}{% endif %}</div>
+<div class="lieu-date">{% if proprietaire.ville %}À {{ proprietaire.ville }}, le{% else %}Le{% endif %} {{ aujourdhui|date:"j F Y" }}</div>
+{% if recommande %}<div class="recommande">Lettre recommandée avec accusé de réception</div>{% endif %}
+<div class="objet">Objet : {{ c.objet }}</div>
+<p>{{ appel }}</p>
+{% for p in c.paragraphes %}<p>{{ p }}</p>{% endfor %}
+<table>
+  {% for e, reste in lignes %}<tr><td>Loyer et charges de {{ e.periode|date:"F Y" }}</td><td class="m">{{ reste|floatformat:2 }} €</td></tr>{% endfor %}
+  <tr class="total"><td>Total dû</td><td class="m">{{ c.total }}</td></tr>
+</table>
+<p>{{ c.politesse }}</p>
+<div class="signature">{% firstof proprietaire.representant proprietaire.nom %}</div>
+</body></html>

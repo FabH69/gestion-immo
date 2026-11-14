@@ -1,25 +1,22 @@
 {% extends "admin/base_site.html" %}
+{% load tableau_bord %}
 {% block extrastyle %}{{ block.super }}<style>{% include "patrimoine/_style_etat.css" %}
 .filtres { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; margin: 10px 0 18px; }
 .filtres select { padding: 4px; }
 .etat-scroll { overflow-x: auto; }
 </style>{% endblock %}
-{% block breadcrumbs %}<div class="breadcrumbs"><a href="{% url 'admin:index' %}">Accueil</a> › États › Loyers encaissés</div>{% endblock %}
+{% block breadcrumbs %}<div class="breadcrumbs"><a href="{% url 'admin:index' %}">Accueil</a> › <a href="{% url 'etat_loyers_encaisses' %}">États</a> › Loyers encaissés</div>{% endblock %}
 {% block content %}
-<p>Montants en euros, par date de paiement réelle. Chaque paiement est réparti entre loyer HC et charges au prorata du loyer qu'il règle.</p>
+<p>Montants en euros, par date de paiement réelle. Chaque paiement est réparti entre loyer HC et charges au prorata du loyer qu'il règle. Les mois sans paiement enregistré reprennent <a href="{% url 'admin:patrimoine_encaissementhistorique_changelist' %}">votre ancien suivi</a>.</p>
 <form method="get" class="filtres">
-  <label>Année
-    <select name="annee" onchange="this.form.submit()">
-      {% for a in annees %}<option value="{{ a }}" {% if a == annee %}selected{% endif %}>{{ a }}</option>{% endfor %}
-    </select>
-  </label>
+  <label>Année {% boutons_annees annees annee %}<input type="hidden" name="annee" value="{{ annee }}"></label>
   <label>Propriétaire
     <select name="proprietaire" onchange="this.form.submit()">
       <option value="">Tous</option>
       {% for p in proprietaires_choix %}<option value="{{ p.pk }}" {% if proprietaire.pk == p.pk %}selected{% endif %}>{{ p.nom }}</option>{% endfor %}
     </select>
   </label>
-  <a class="button" href="?annee={{ annee }}&proprietaire={{ proprietaire.pk|default:'' }}&format=pdf" target="_blank">Télécharger en PDF</a>
+  <a class="button" href="?annee={{ annee }}&proprietaire={{ proprietaire.pk|default:'' }}&format=pdf">Télécharger en PDF</a>
   <a class="button" href="?annee={{ annee }}&proprietaire={{ proprietaire.pk|default:'' }}&format=csv">Télécharger pour Excel</a>
 </form>
 <div class="etat-scroll">{% include "patrimoine/_tableau_etat.html" %}</div>

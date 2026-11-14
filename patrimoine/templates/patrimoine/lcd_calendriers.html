@@ -1,0 +1,47 @@
+{% extends "admin/base_site.html" %}
+{% load static %}
+{% block extrastyle %}{{ block.super }}<link rel="stylesheet" href="{% static 'patrimoine/lcd.css' %}">{% endblock %}
+{% block breadcrumbs %}<div class="breadcrumbs"><a href="{% url 'admin:index' %}">Accueil</a> › <a href="{% url 'lcd_accueil' %}{% if lot %}?lot={{ lot.pk }}{% endif %}">Gérer mon bien</a> › Calendriers</div>{% endblock %}
+{% block content_title %}<h1>Calendriers .ics</h1><p class="sous-titre-page">Un calendrier par plateforme et par logement : Airbnb, Booking, Abritel… Vous pouvez en mettre plusieurs.</p>{% endblock %}
+{% block content %}
+{% include "patrimoine/_lcd_barre.html" %}
+{% if lot %}
+<div class="lcd-carte">
+  <h2>Calendriers de {{ lot }}</h2>
+  {% for c, total, a_venir in calendriers %}
+  <div class="cal-source{% if not c.actif %} en-pause{% endif %}">
+    <div class="tete"><span class="pastille p-{{ c.plateforme }}" style="width:12px;height:12px;border-radius:50%;display:inline-block"></span><strong>{{ c.nom }}</strong><span class="pill gris">{{ c.get_plateforme_display }}</span>{% if not c.actif %}<span class="pill orange">en pause</span>{% endif %}{% if c.url %}<span class="pill ok">mise à jour automatique</span>{% else %}<span class="pill gris">fichier importé</span>{% endif %}</div>
+    <div class="info{% if 'échec' in c.dernier_message %} erreur{% endif %}">{% if c.derniere_synchro %}Mis à jour le {{ c.derniere_synchro|date:"d/m/Y à H:i" }} · {% endif %}{{ c.dernier_message|default:"jamais mis à jour" }} · {{ a_venir }} période{{ a_venir|pluralize }} à venir, {{ total }} en tout</div>
+    <div class="actions">
+      {% if c.url %}<form method="post">{% csrf_token %}<input type="hidden" name="lot" value="{{ lot.pk }}"><input type="hidden" name="calendrier" value="{{ c.pk }}"><button type="submit" name="action" value="actualiser">Actualiser maintenant</button></form>{% endif %}
+      <form method="post" enctype="multipart/form-data">{% csrf_token %}<input type="hidden" name="lot" value="{{ lot.pk }}"><input type="hidden" name="calendrier" value="{{ c.pk }}"><input type="hidden" name="action" value="actualiser"><label class="fichier">Importer un fichier .ics<input type="file" name="fichier" accept=".ics,text/calendar" onchange="this.form.submit()"></label></form>
+      <form method="post">{% csrf_token %}<input type="hidden" name="lot" value="{{ lot.pk }}"><input type="hidden" name="calendrier" value="{{ c.pk }}"><button type="submit" name="action" value="pause">{% if c.actif %}Mettre en pause{% else %}Réactiver{% endif %}</button></form>
+      <form method="post">{% csrf_token %}<input type="hidden" name="lot" value="{{ lot.pk }}"><input type="hidden" name="calendrier" value="{{ c.pk }}"><button type="submit" name="action" value="supprimer" class="danger" onclick="return confirm('Supprimer le calendrier « {{ c.nom|escapejs }} » et ses dates ?')">Supprimer</button></form>
+    </div>
+    <form method="post" class="lien">{% csrf_token %}<input type="hidden" name="lot" value="{{ lot.pk }}"><input type="hidden" name="calendrier" value="{{ c.pk }}"><label class="visuellement-cache" for="url{{ c.pk }}">Lien du calendrier</label><input type="url" id="url{{ c.pk }}" name="url" value="{{ c.url }}" placeholder="Lien .ics (facultatif) pour la mise à jour automatique"><button type="submit" class="button" name="action" value="lien">Enregistrer le lien</button></form>
+  </div>
+  {% empty %}<p class="aide-ics">Aucun calendrier pour ce logement.</p>{% endfor %}
+</div>
+
+<div class="lcd-carte">
+  <h2>Ajouter un calendrier</h2>
+  <form method="post" enctype="multipart/form-data" class="form-ajout">{% csrf_token %}<input type="hidden" name="lot" value="{{ lot.pk }}">
+    <div><label for="plateforme">Plateforme</label><select id="plateforme" name="plateforme">{% for code, libelle in plateformes %}<option value="{{ code }}">{{ libelle }}</option>{% endfor %}</select></div>
+    <div><label for="nom">Nom</label><input type="text" id="nom" name="nom" placeholder="ex. Airbnb, Booking, Abritel"></div>
+    <div class="plein"><label for="url">Lien du calendrier (.ics)</label><input type="url" id="url" name="url" placeholder="https://www.airbnb.fr/calendar/ical/….ics"></div>
+    <div class="plein"><label for="fichier">ou fichier .ics téléchargé</label><input type="file" id="fichier" name="fichier" accept=".ics,text/calendar"></div>
+    <div class="plein"><button type="submit" class="button" name="action" value="ajouter">Ajouter le calendrier</button></div>
+  </form>
+</div>
+
+<div class="lcd-carte aide-ics">
+  <h2>Où trouver le lien ?</h2>
+  <ul>
+    <li><strong>Airbnb</strong> : Annonces › le logement › Disponibilités › Connecter des calendriers › Exporter le calendrier › copier le lien.</li>
+    <li><strong>Booking</strong> (Extranet) : Tarifs et disponibilités › Synchroniser les calendriers › Exporter le calendrier › copier le lien.</li>
+    <li>Avec un lien, l'appli relit le calendrier chaque matin (tâche quotidienne) et quand vous touchez « Actualiser ». Avec un fichier, réimportez-le de temps en temps.</li>
+    <li>Le calendrier donne les dates (réservées ou bloquées), pas les montants : ceux-ci viennent des exports importés dans le suivi mensuel. Gardez les liens pour vous : ils montrent vos dates de réservation.</li>
+  </ul>
+</div>
+{% endif %}
+{% endblock %}

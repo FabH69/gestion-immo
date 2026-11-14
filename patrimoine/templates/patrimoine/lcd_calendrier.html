@@ -1,0 +1,25 @@
+{% extends "admin/base_site.html" %}
+{% load static %}
+{% block extrastyle %}{{ block.super }}<link rel="stylesheet" href="{% static 'patrimoine/lcd.css' %}">{% endblock %}
+{% block breadcrumbs %}<div class="breadcrumbs"><a href="{% url 'admin:index' %}">Accueil</a> › <a href="{% url 'lcd_accueil' %}{% if lot %}?lot={{ lot.pk }}{% endif %}">Gérer mon bien</a> › Calendrier</div>{% endblock %}
+{% block content_title %}<h1>Calendrier</h1>{% endblock %}
+{% block content %}
+{% include "patrimoine/_lcd_barre.html" %}
+{% if lot %}
+<div class="lcd-carte">
+  <div class="cal-entete">
+    <h2>{{ nom_mois }}</h2>
+    <div class="nav-mois"><a href="?lot={{ lot.pk }}&mois={{ precedent }}" aria-label="Mois précédent">‹</a>{% if not ce_mois %}<a href="?lot={{ lot.pk }}">Aujourd'hui</a>{% endif %}<a href="?lot={{ lot.pk }}&mois={{ suivant }}" aria-label="Mois suivant">›</a></div>
+  </div>
+  {% include "patrimoine/_lcd_grille.html" %}
+  <p class="aide-ics" style="margin:8px 0 0">{{ nuits }} nuit{{ nuits|pluralize }} louée{{ nuits|pluralize }} sur {{ jours }} · occupation {{ occupation }} %{% if not calendriers %} · aucun calendrier .ics : seules les réservations importées apparaissent.{% endif %}</p>
+</div>
+<div class="lcd-carte">
+  <h2>Séjours du mois</h2>
+  <ul class="sejours">
+    {% for s in sejours %}<li><span class="pastille {% if s.bloque %}p-bloque{% else %}p-{{ s.plateforme }}{% endif %}"></span><div><strong>{{ s.titre }}</strong><div class="quand">{{ s.debut|date:"D d/m" }} → {{ s.fin|date:"D d/m" }} · {{ s.nuits }} nuit{{ s.nuits|pluralize }} · {{ s.source }}{% if s.reference %} · {{ s.reference }}{% endif %}</div></div>{% if s.montant %}<span class="montant">{{ s.montant|floatformat:0 }} €</span>{% endif %}</li>
+    {% empty %}<li class="quand">Aucun séjour ce mois-ci.</li>{% endfor %}
+  </ul>
+</div>
+{% endif %}
+{% endblock %}

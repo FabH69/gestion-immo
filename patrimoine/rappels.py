@@ -3,20 +3,54 @@ from datetime import timedelta
 
 from django.urls import reverse
 
-from .models import Bail, Rappel, Tache, _ajouter_mois
+from .models import Bail, Echeance, JournalFait, Rappel, RevisionLoyer, Tache, _ajouter_mois
 
 PREAVIS_JOURS = 30
+HISTORIQUE_JOURS = 90
+DELAI_RETARD_JOURS = 5  # un loyer apparaît dans « À faire » après 5 jours de retard
 
 
-def a_faire(aujourdhui, horizon_jours=PREAVIS_JOURS):
+def rappel_cfe(bien, aujourdhui=None):
+    """Bien en LMNP ou en société : rappel annuel « Payer la CFE » au 15/12, important, 10 jours avant (créé s'il manque)."""
+    from datetime import date
+
+    from django.utils import timezone
+
+    if bien.comptabilite not in ("lmnp", "societe") or bien.rappels.filter(titre__istartswith="Payer la CFE").exists():
+        return None
+    aujourdhui = aujourdhui or timezone.localdate()
+    echeance = date(aujourdhui.year, 12, 15)
+    if echeance < aujourdhui:
+        echeance = date(aujourdhui.year + 1, 12, 15)
+    return Rappel.objects.create(
+        titre="Payer la CFE", date=echeance, categorie=Rappel.Categorie.FISCAL, bien=bien, periodicite=Rappel.Periodicite.ANNUEL,
+        important=True, prevenir_jours=10,
+        notes="Cotisation foncière des entreprises de la location meublée : avis dans l'espace professionnel d'impots.gouv.fr, "
+              "date limite de paiement le 15 décembre. Une fois payée, ajoutez la facture en rubrique « Impôts et taxes (CFE) ».")
+
+
+def _anniversaire_recent(depart, aujourdhui):
+    """Échéance annuelle à partir d'une date : la plus récente passée (pas une date d'il y a dix ans), ou la prochaine."""
+    echeance = _ajouter_mois(depart, 12)
+    while _ajouter_mois(echeance, 12) <= aujourdhui:
+        echeance = _ajouter_mois(echeance, 12)
+    return echeance
+
+
+# filtres de la page « À faire » : (code, libellé)
+GENRES = [("loyers", "Loyers"), ("revisions", "Révisions"), ("assurances", "Assurances"), ("chaudieres", "Chaudières"),
+          ("entrees", "Entrées et sorties"), ("rappels", "Mes rappels")]
+
+
+def a_faire(aujourdhui, horizon_jours=PREAVIS_JOURS, avec_taches=False):
     limite = aujourdhui + timedelta(days=horizon_jours)
     items = []
 
-    def ajouter(date, titre, detail, categorie, url, action=None):
-        if date <= limite:
+    def ajouter(date, titre, detail, categorie, url, action=None, stop=None, important=False, limite_propre=None, genre="rappels"):
+        if date <= (limite_propre or limite):
             items.append({
-                "date": date, "titre": titre, "detail": detail, "categorie": categorie,
-                "url": url, "action": action, "en_retard": date < aujourdhui,
+                "date": date, "titre": titre, "detail": detail, "categorie": categorie, "genre": genre,
+                "url": url, "action": action, "stop": stop, "en_retard": date < aujourdhui, "important": important,
             })
 
     baux = Bail.objects.filter(actif=True).select_related("lot__bien").prefetch_related("locataires")
@@ -25,29 +59,63 @@ def a_faire(aujourdhui, horizon_jours=PREAVIS_JOURS):
         lieu = f"{bail.lot} – {noms}" if noms else str(bail.lot)
 
         revision = bail.prochaine_revision(aujourdhui)
-        if revision:
-            ajouter(revision, "Réviser le loyer (IRL)", lieu, "Révision", reverse("revision_loyer", args=[bail.pk]))
+        if revision and bail.rappel_revision:
+            ajouter(revision, "Réviser le loyer (IRL)", lieu, "Révision", reverse("revision_loyer", args=[bail.pk]),
+                    action=reverse("rappel_fait", args=["revision", bail.pk]),
+                    stop=reverse("ne_plus_rappeler", args=["revision", bail.pk]), genre="revisions")
 
-        echeance = _ajouter_mois(bail.date_attestation_assurance or bail.date_debut, 12)
-        ajouter(echeance, "Demander l'attestation d'assurance habitation", lieu, "Assurance",
-                reverse("admin:patrimoine_bail_change", args=[bail.pk]),
-                action=reverse("rappel_fait", args=["assurance", bail.pk]))
+        echeance = _anniversaire_recent(bail.date_attestation_assurance or bail.date_debut, aujourdhui)
+        if bail.rappel_assurance:
+            ajouter(echeance, "Demander l'attestation d'assurance habitation", lieu, "Assurance",
+                    reverse("admin:patrimoine_bail_change", args=[bail.pk]),
+                    action=reverse("rappel_fait", args=["assurance", bail.pk]),
+                    stop=reverse("ne_plus_rappeler", args=["assurance", bail.pk]), genre="assurances")
 
         if bail.lot.chaudiere_gaz:
-            echeance = _ajouter_mois(bail.lot.date_entretien_chaudiere or bail.date_debut, 12)
+            echeance = _anniversaire_recent(bail.lot.date_entretien_chaudiere or bail.date_debut, aujourdhui)
             ajouter(echeance, "Demander l'attestation d'entretien de la chaudière", lieu, "Chaudière",
                     reverse("admin:patrimoine_lot_change", args=[bail.lot.pk]),
-                    action=reverse("rappel_fait", args=["chaudiere", bail.lot.pk]))
+                    action=reverse("rappel_fait", args=["chaudiere", bail.lot.pk]), genre="chaudieres")
 
-    for rappel in Rappel.objects.filter(fait=False).select_related("bien"):
+    # loyers en retard de plus de 5 jours (12 derniers mois) : un rappel par loyer, réglé dès que le paiement est saisi
+    impayes = (Echeance.objects.exclude(statut=Echeance.Statut.PAYE)
+               .filter(date_exigibilite__lt=aujourdhui - timedelta(days=DELAI_RETARD_JOURS), date_exigibilite__gte=_ajouter_mois(aujourdhui, -12))
+               .select_related("bail__lot__bien").prefetch_related("bail__locataires", "paiements"))
+    for e in impayes:
+        noms = ", ".join(str(l) for l in e.bail.locataires.all())
+        ajouter(e.date_exigibilite, f"Loyer de {e.periode:%m/%Y} non réglé : {e.reste_du:.2f} €".replace(".", ","),
+                f"{e.bail.lot} – {noms}" if noms else str(e.bail.lot), "Loyer",
+                reverse("admin:patrimoine_echeance_change", args=[e.pk]), genre="loyers")
+
+    for rappel in Rappel.objects.filter(fait=False, actif=True).select_related("bien"):
+        # « prévenir N jours avant » : le rappel n'apparaît qu'à partir de ce jour-là (30 jours avant sinon)
+        propre = aujourdhui + timedelta(days=rappel.prevenir_jours) if rappel.prevenir_jours is not None else None
         ajouter(rappel.date, rappel.titre, str(rappel.bien or ""), rappel.get_categorie_display(),
                 reverse("admin:patrimoine_rappel_change", args=[rappel.pk]),
-                action=reverse("rappel_fait", args=["rappel", rappel.pk]))
+                action=reverse("rappel_fait", args=["rappel", rappel.pk]), important=rappel.important, limite_propre=propre)
 
-    taches = Tache.objects.filter(faite=False, changement__termine=False, echeance__isnull=False).select_related("changement__lot__bien")
-    for t in taches:
-        ajouter(t.echeance, t.libelle, str(t.changement.lot), "Changement de locataire",
-                reverse("admin:patrimoine_changementlocataire_change", args=[t.changement_id]),
-                action=reverse("rappel_fait", args=["tache", t.pk]))
+    if avec_taches:
+        taches = (Tache.objects.filter(faite=False, changement__termine=False, echeance__isnull=False)
+                  .select_related("changement__lot__bien"))
+        for t in taches:
+            sens = "Sortie" if t.phase == Tache.Phase.DEPART else "Entrée"
+            ajouter(t.echeance, t.libelle, f"{t.changement.lot} · {sens.lower()}", "Entrée et sortie",
+                    reverse("admin:patrimoine_changementlocataire_change", args=[t.changement_id]),
+                    action=reverse("tache_faite", args=[t.pk]), genre="entrees")
 
-    return sorted(items, key=lambda i: i["date"])
+    return sorted(items, key=lambda i: (not i["important"], i["date"]))
+
+
+def deja_fait(aujourdhui, jours=HISTORIQUE_JOURS):
+    """Ce qui a été fait ces derniers jours : rappels cochés, tâches de check-list, révisions appliquées."""
+    depuis = aujourdhui - timedelta(days=jours)
+    items = [{"date": j.date, "titre": j.titre, "detail": j.detail, "categorie": j.categorie, "url": j.url}
+             for j in JournalFait.objects.filter(date__gte=depuis)]
+    for t in Tache.objects.filter(faite=True, date_faite__gte=depuis).select_related("changement__lot__bien"):
+        items.append({"date": t.date_faite, "titre": t.libelle, "detail": str(t.changement.lot), "categorie": "Changement de locataire",
+                      "url": reverse("admin:patrimoine_changementlocataire_change", args=[t.changement_id])})
+    revisions = RevisionLoyer.objects.filter(appliquee=True, date_effet__gte=depuis, date_effet__lte=aujourdhui).select_related("bail__lot__bien")
+    for r in revisions:
+        items.append({"date": r.date_effet, "titre": f"Loyer révisé : {r.ancien_loyer} € → {r.nouveau_loyer} €", "detail": str(r.bail.lot),
+                      "categorie": "Révision", "url": reverse("admin:patrimoine_revisionloyer_change", args=[r.pk])})
+    return sorted(items, key=lambda i: i["date"], reverse=True)

@@ -1,0 +1,12 @@
+{% load l10n %}{% autoescape off %}À louer {% if lot.meuble %}meublé {% endif %}: {{ lot.get_type_display|lower }}{% if lot.nb_pieces and lot.type != "parking" and lot.type != "cave" %} de {{ lot.nb_pieces }} pièce{{ lot.nb_pieces|pluralize }}{% endif %}{% if lot.surface %} – {{ lot.surface|floatformat:"-2" }} m²{% endif %}, à {{ bien.ville }}{% if lot.etage %} ({{ lot.etage }}){% endif %}.
+{% if points %}
+Les plus :
+{% for p in points %}- {{ p }}
+{% endfor %}{% endif %}{% if lot.equipements %}
+Équipements : {{ lot.equipements }}
+{% endif %}{% if lot.annexes %}Annexes : {{ lot.annexes }}
+{% endif %}{% if lot.chauffage %}Chauffage : {{ lot.chauffage }}{% if lot.eau_chaude %} – eau chaude : {{ lot.eau_chaude }}{% endif %}
+{% endif %}{% if a.disponible_le %}
+Disponible le {{ a.disponible_le|date:"j F Y" }}.
+{% endif %}
+{% include "patrimoine/annonce_conditions.txt" %}{% endautoescape %}

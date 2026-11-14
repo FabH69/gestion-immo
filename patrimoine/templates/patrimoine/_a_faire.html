@@ -1,16 +1,22 @@
 <div class="module a-faire" style="margin-bottom:20px">
   <table style="width:100%">
-    <caption>À faire dans les 30 prochains jours{% if nb_retard %} <span class="pastille-retard">{{ nb_retard }} en retard</span>{% endif %}
-      <a href="{% url 'admin:patrimoine_rappel_add' %}" class="ajout-rappel">+ Ajouter un rappel</a></caption>
-    {% for i in items %}
-    <tr>
-      <td class="date{% if i.en_retard %} retard{% endif %}">{{ i.date|date:"d/m/Y" }}</td>
-      <td><span class="categorie">{{ i.categorie }}</span></td>
-      <th scope="row"><a href="{{ i.url }}">{{ i.titre }}</a>{% if i.detail %}<div class="detail">{{ i.detail }}</div>{% endif %}</th>
-      <td class="action">{% if i.action %}<form method="post" action="{{ i.action }}">{% csrf_token %}<button type="submit" class="button fait">Fait</button></form>{% endif %}</td>
+    <caption>
+      <span class="onglets">
+        <a href="{% url 'a_faire' %}" class="onglet actif">À faire <span class="compte">{{ nb_a_faire }}</span></a>
+        <a href="{% url 'a_faire' %}" class="onglet">Tout voir</a>
+        <a href="{% url 'a_faire' %}?vue=fait" class="onglet">Déjà fait</a>
+      </span>
+      {% if nb_retard %}<span class="pastille-retard">{{ nb_retard }} en retard</span>{% endif %}
+      {% if modifiable %}<a href="{% url 'admin:patrimoine_rappel_add' %}" class="ajout-rappel">+ Rappel</a>{% endif %}
+    </caption>
+    {% for g in groupes %}
+    <tr class="groupe-a-faire{% if g.important %} important{% endif %}">
+      <th scope="row">{% if g.important %}<span class="etoile" title="Rappel important">★</span> {% endif %}<a href="{{ g.url }}">{{ g.titre }}</a>{% if g.retard %} <span class="pill rouge">{% if g.important %}en retard{% else %}{{ g.retard }} en retard{% endif %}</span>{% endif %}<div class="detail">{{ g.detail }}</div></th>
+      <td class="action-groupe">{% if g.important and g.action %}{% if modifiable %}<form method="post" action="{{ g.action }}" class="form-fait">{% csrf_token %}<button type="submit" class="button bouton-fait">Fait</button></form>{% endif %}{% else %}{% if g.nombre > 1 and g.detail_url != g.url %}<a class="lien-detail" href="{{ g.detail_url }}">Voir les {{ g.nombre }}</a>{% endif %}<a class="button" href="{{ g.url }}">{{ g.bouton }}</a>{% endif %}</td>
     </tr>
     {% empty %}
-    <tr><td colspan="4" style="padding:16px;color:var(--body-quiet-color)">Rien à faire dans les 30 prochains jours.</td></tr>
+    <tr><td colspan="2" style="padding:16px;color:var(--body-quiet-color)">Rien à faire dans les 30 prochains jours.</td></tr>
     {% endfor %}
   </table>
+  <p class="aide-bloc">Une ligne par type : loyers, révisions, assurances, entrées et sorties, vos rappels. Retards et 30 prochains jours.</p>
 </div>

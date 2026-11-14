@@ -1,0 +1,26 @@
+{% extends "admin/base_site.html" %}
+{% load tableau_bord %}
+{% block breadcrumbs %}<div class="breadcrumbs"><a href="{% url 'admin:index' %}">Accueil</a> › <a href="{% url 'admin:patrimoine_bail_changelist' %}">Baux</a> › <a href="{{ retour }}">{{ bail }}</a> › {{ title }}</div>{% endblock %}
+{% block content_title %}<h1>{{ title }}</h1><p class="sous-titre-page">{{ bail.lot }} · {{ bail.locataires.all|join:", " }} · prévu au bail : {{ bail.depot_garantie|euros:2 }} · détenu aujourd'hui : {{ detenu|euros:2 }}</p>{% endblock %}
+{% block content %}
+<form method="post" class="module formulaire-court">{% csrf_token %}
+  {% if form.non_field_errors %}<p class="errornote">{{ form.non_field_errors|join:" " }}</p>{% endif %}
+  {% for champ in form %}
+  <div class="champ-court{% if champ.errors %} errors{% endif %}">
+    <label for="{{ champ.id_for_label }}">{{ champ.label|capfirst }}</label>
+    {{ champ }}
+    {% if champ.help_text %}<span class="help">{{ champ.help_text }}</span>{% endif %}
+    {{ champ.errors }}
+  </div>
+  {% endfor %}
+  {% if sens == "restituer" %}<p class="help">Délai légal : 1 mois après la remise des clés si l'état des lieux de sortie est conforme, 2 mois sinon.
+  Le montant restitué plus la retenue ne peuvent pas dépasser le dépôt détenu.</p>{% endif %}
+  <div class="submit-row"><a class="annuler" href="{{ retour }}">Annuler</a><input type="submit" class="default" value="{% if sens == 'encaisser' %}Encaisser{% else %}Enregistrer la restitution{% endif %}"></div>
+</form>
+{% if mouvements %}
+<div class="module"><h2>Mouvements déjà enregistrés</h2>
+<table class="historique-loyers"><thead><tr><th>Date</th><th>Mouvement</th><th>Montant</th><th>Motif</th></tr></thead><tbody>
+{% for m in mouvements %}<tr><td>{{ m.date|date:"d/m/Y" }}</td><td>{{ m.get_type_display }}</td><td>{{ m.montant|euros:2 }}</td><td>{{ m.justification|default:"" }}</td></tr>{% endfor %}
+</tbody></table></div>
+{% endif %}
+{% endblock %}

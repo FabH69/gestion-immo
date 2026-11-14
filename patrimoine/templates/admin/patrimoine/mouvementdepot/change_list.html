@@ -1,11 +1,10 @@
-{% extends "admin/change_list.html" %}
-{% block content %}
-<div class="module" style="max-width:520px;margin-bottom:16px">
-  <table style="width:100%">
-    <caption>Dépôts de garantie détenus (compte séparé des loyers)</caption>
-    {% for proprio, solde in soldes %}<tr><td>{{ proprio.nom }}</td><td style="text-align:right">{{ solde|floatformat:"2g" }} €</td></tr>{% endfor %}
-    <tr><th>Total détenu</th><th style="text-align:right">{{ total_detenu|floatformat:"2g" }} €</th></tr>
-  </table>
+{% extends "admin/patrimoine/change_list.html" %}
+{% block sous_titre %}
+{# récapitulatif sous le titre, en chiffres clés comme l'accueil #}
+<div class="kpis kpis-liste">
+  {% for proprio, solde in soldes %}<div class="kpi"><div class="kpi-l">{{ proprio.nom }}</div><div class="kpi-v">{{ solde|floatformat:"0g" }} €</div><div class="kpi-d">dépôts détenus</div></div>{% endfor %}
+  <a class="kpi" href="?en_cours=oui"><div class="kpi-l">Total des garanties en cours</div><div class="kpi-v">{{ total_detenu|floatformat:"0g" }} €</div>
+    <div class="kpi-d">{{ nb_en_cours }} {% if nb_en_cours > 1 %}baux{% else %}bail{% endif %} · voir le détail</div></a>
 </div>
-{{ block.super }}
+<p class="aide-liste">Compte séparé des loyers. Pour encaisser ou restituer un dépôt, ouvrez le bail (onglet Argent) : cliquez sur le logement.</p>
 {% endblock %}

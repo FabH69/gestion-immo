@@ -1,0 +1,20 @@
+{% extends "admin/base_site.html" %}
+{% load static %}
+{% block extrastyle %}{{ block.super }}<link rel="stylesheet" href="{% static 'patrimoine/edl.css' %}">{% endblock %}
+{% block breadcrumbs %}<div class="breadcrumbs"><a href="{% url 'admin:index' %}">Accueil</a> › <a href="{% url 'admin:patrimoine_bail_change' bail.pk %}">{{ bail.lot }}</a> › État des lieux {{ edl.get_type_display|lower }}</div>{% endblock %}
+{% block content_title %}<h1>État des lieux {% if edl.type == "entree" %}d'entrée{% else %}de sortie{% endif %}</h1><p class="sous-titre-page">{{ bail.lot }} · {{ edl.date|date:"d/m/Y" }} · signé le {{ edl.signe_le|date:"d/m/Y à H:i:s" }}</p>{% endblock %}
+{% block content %}
+<div class="edl">
+  <div class="scelle{% if not integre %} alerte{% endif %}">
+    {% if integre %}<strong>Document intact.</strong> Le contenu et les {{ nb_photos }} photo{{ nb_photos|pluralize }} correspondent à ce qui a été signé.{% else %}<strong>Attention :</strong> le contenu ou une photo ne correspond plus à ce qui a été signé.{% endif %}
+    <br>Empreinte : <code>{{ edl.empreinte }}</code>
+  </div>
+  <p><a class="button" href="{% url 'document_edl' edl.pk %}" target="_blank">Télécharger le PDF</a> &nbsp; <a href="{% url 'admin:patrimoine_etatdeslieux_change' edl.pk %}">Fiche</a></p>
+  {% if differences %}<div class="differences"><strong>{{ differences|length }} élément{{ differences|length|pluralize }} dégradé{{ differences|length|pluralize }} depuis l'entrée</strong><ul>{% for e in differences %}<li>{{ e.piece }} – {{ e.nom }} : {{ e.get_etat_entree_display }} → {{ e.get_etat_display }}{% if e.commentaire %} ({{ e.commentaire }}){% endif %}</li>{% endfor %}</ul></div>{% endif %}
+  {% for piece, elements in pieces %}
+  <h2 class="piece">{{ piece }}</h2>
+  {% for e in elements %}<div class="carte{% if e.degrade %} degrade{% endif %}"><div class="titre"><span>{{ e.nom }}{% if e.quantite is not None %} × {{ e.quantite }}{% endif %}</span><span>{{ e.get_etat_display|default:"–" }}{% if e.etat_entree %} <span class="note">(entrée : {{ e.get_etat_entree_display }})</span>{% endif %}</span></div>{% if e.commentaire %}<div>{{ e.commentaire }}</div>{% endif %}
+    {% if e.photos.all %}<div class="photos">{% for p in e.photos.all %}<figure><a href="{% url 'fichier_prive' p.image.name %}" target="_blank"><img src="{% url 'fichier_prive' p.image.name %}" alt="Photo de {{ e.nom }}" loading="lazy"></a><figcaption>{{ p.recue_le|date:"d/m H:i:s" }}</figcaption></figure>{% endfor %}</div>{% endif %}</div>{% endfor %}
+  {% endfor %}
+</div>
+{% endblock %}

@@ -1,0 +1,32 @@
+<div class="module a-faire taches-changement" style="margin-bottom:20px">
+  <table style="width:100%">
+    <caption>
+      <span class="titre-bloc">Entrées et sorties de locataires</span>
+      <a href="{% url 'admin:patrimoine_changementlocataire_add' %}" class="ajout-rappel">+ Nouveau départ / arrivée</a>
+    </caption>
+    {% for c in changements %}
+    <tr class="entete-changement">
+      <td colspan="4">
+        <a href="{% url 'admin:patrimoine_changementlocataire_change' c.changement.pk %}"><strong>{{ c.changement.lot }}</strong></a>
+        <span class="detail">
+          {% if c.changement.date_depart %}sortie le {{ c.changement.date_depart|date:"d/m/Y" }}{% endif %}{% if c.changement.date_depart and c.changement.date_arrivee %} · {% endif %}{% if c.changement.date_arrivee %}entrée le {{ c.changement.date_arrivee|date:"d/m/Y" }}{% endif %}
+          · {{ c.faites }}/{{ c.total }} faites
+        </span>
+        {% if c.retard %}<span class="pastille-retard">{{ c.retard }} en retard</span>{% endif %}
+      </td>
+    </tr>
+    {% for t in c.taches %}
+    <tr>
+      <td class="coche-cellule">{% if modifiable %}<form method="post" action="{% url 'tache_faite' t.tache.pk %}">{% csrf_token %}<input type="checkbox" class="case-fait" title="Cocher quand c'est fait" aria-label="Marquer « {{ t.tache.libelle }} » comme faite" onchange="this.form.submit()"></form>{% endif %}</td>
+      <td class="date{% if t.en_retard %} retard{% endif %}">{{ t.tache.echeance|date:"d/m/Y"|default:"–" }}</td>
+      <td><span class="categorie">{% if t.tache.phase == "depart" %}Sortie{% else %}Entrée{% endif %}</span></td>
+      <th scope="row"><a href="{% url 'admin:patrimoine_tache_change' t.tache.pk %}">{{ t.tache.libelle }}</a></th>
+    </tr>
+    {% endfor %}
+    {% if c.autres %}<tr><td></td><td colspan="3" class="detail"><a href="{% url 'admin:patrimoine_changementlocataire_change' c.changement.pk %}">+ {{ c.autres }} autre{{ c.autres|pluralize }} tâche{{ c.autres|pluralize }}</a></td></tr>{% endif %}
+    {% empty %}
+    <tr><td colspan="4" style="padding:16px;color:var(--body-quiet-color)">Aucun départ ni arrivée en cours. Déclarez un congé avec « + Nouveau départ / arrivée » : la liste des tâches est créée automatiquement.</td></tr>
+    {% endfor %}
+  </table>
+  <p class="aide-bloc">Tâches par défaut modifiables dans Réglages &gt; Tâches entrée / sortie.</p>
+</div>

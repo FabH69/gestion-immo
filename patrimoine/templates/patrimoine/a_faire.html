@@ -1,0 +1,61 @@
+{% extends "admin/base_site.html" %}
+{% block extrastyle %}{{ block.super }}<style>
+.barre-a-faire { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 14px; margin-bottom: 14px; }
+.barre-a-faire .filtres-a-faire { display: flex; flex-wrap: wrap; gap: 6px; flex: 1 1 auto; }
+.barre-a-faire .chip { font-size: .85rem; padding: 4px 12px; white-space: nowrap; }
+.barre-a-faire .chip .n { margin-left: 4px; font-size: .75rem; opacity: .75; }
+.barre-a-faire .chip.vide { opacity: .55; }
+.barre-a-faire .droite { display: flex; align-items: center; gap: 8px; margin-left: auto; }
+.barre-a-faire select { height: 32px !important; border-radius: 999px; padding: 0 12px; font-weight: 600; }
+.barre-a-faire .button.ajout { border-radius: 999px; padding: 7px 14px; white-space: nowrap; }
+.page-a-faire .module.a-faire table { width: 100%; }
+.page-a-faire .a-faire td.liens { text-align: right; white-space: nowrap; width: 1%; }
+.page-a-faire .a-faire td.date, .page-a-faire .a-faire td.type { width: 1%; white-space: nowrap; }
+.page-a-faire .a-faire td.liens a { font-size: .82rem; }
+.page-a-faire .resume-retard { color: var(--rouge); font-weight: 600; }
+.page-a-faire .lien-rappels { font-size: .85rem; margin: 10px 2px 0; }
+.visuellement-cache { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+@media (max-width: 767px) {
+  .barre-a-faire .droite { margin-left: 0; width: 100%; justify-content: space-between; }
+  .page-a-faire .a-faire td.liens { grid-column: 1 / -1; grid-row: 3; text-align: left; }
+}
+</style>{% endblock %}
+{% block breadcrumbs %}<div class="breadcrumbs"><a href="{% url 'admin:index' %}">Accueil</a> › À faire</div>{% endblock %}
+{% block content_title %}<h1>À faire</h1>
+<p class="sous-titre-page">{% if vue == "fait" %}Ce qui a été fait ces {{ historique_jours }} derniers jours.{% else %}{{ total }} chose{{ total|pluralize }} à faire{% if retard %}, dont <span class="resume-retard">{{ retard }} en retard</span>{% endif %} · retards et {% if jours == 30 %}30 prochains jours{% elif jours == 90 %}3 prochains mois{% else %}12 prochains mois{% endif %}. Cochez une ligne quand c'est fait.{% endif %}</p>{% endblock %}
+{% block content %}
+<div class="page-a-faire">
+  <div class="barre-a-faire">
+    <div class="filtres-a-faire">
+      <a class="chip{% if not genre and vue != 'fait' %} actif{% endif %}" href="?jours={{ jours }}">Tout<span class="n">{{ total }}</span></a>
+      {% for f in filtres %}<a class="chip{% if f.code == genre and vue != 'fait' %} actif{% endif %}{% if not f.nombre %} vide{% endif %}" href="?type={{ f.code }}&jours={{ jours }}">{{ f.libelle }}<span class="n">{{ f.nombre }}</span></a>{% endfor %}
+      <a class="chip{% if vue == 'fait' %} actif{% endif %}" href="?vue=fait">Déjà fait</a>
+    </div>
+    <div class="droite">
+      {% if vue != "fait" %}<form method="get" style="margin:0">{% if genre %}<input type="hidden" name="type" value="{{ genre }}">{% endif %}
+        <label class="visuellement-cache" for="jours">Horizon</label>
+        <select id="jours" name="jours" onchange="this.form.submit()"><option value="30"{% if jours == 30 %} selected{% endif %}>30 jours</option><option value="90"{% if jours == 90 %} selected{% endif %}>3 mois</option><option value="365"{% if jours == 365 %} selected{% endif %}>12 mois</option></select>
+      </form>{% endif %}
+      {% if peut_ajouter %}<a class="button ajout" href="{% url 'admin:patrimoine_rappel_add' %}">+ Rappel</a>{% endif %}
+    </div>
+  </div>
+
+  <div class="module a-faire">
+    <table>
+      {% for i in lignes %}
+      <tr>
+        <td class="coche-cellule">{% if vue == "fait" %}<input type="checkbox" checked disabled aria-label="Fait">{% elif i.cochable %}<form method="post" action="{{ i.action }}">{% csrf_token %}<input type="hidden" name="next" value="{{ ici }}"><input type="checkbox" class="case-fait" title="Cocher quand c'est fait" aria-label="Marquer « {{ i.titre }} » comme fait" onchange="this.form.submit()"></form>{% endif %}</td>
+        <td class="date{% if i.en_retard %} retard{% endif %}">{{ i.date|date:"d/m/Y" }}</td>
+        <td class="type"><span class="categorie">{{ i.categorie }}</span></td>
+        <th scope="row">{% if i.important %}<span class="etoile" title="Rappel important">★</span> {% endif %}<a href="{{ i.url }}">{{ i.titre }}</a>{% if i.detail %}<div class="detail">{{ i.detail }}</div>{% endif %}
+          {% if i.stop and i.cochable %}<form method="post" action="{{ i.stop }}" class="ne-plus-rappeler">{% csrf_token %}<input type="hidden" name="next" value="{{ ici }}"><button type="submit" onclick="return confirm('Ne plus rappeler pour ce bail ? Vous pourrez réactiver le rappel sur la fiche du bail.')">Ne plus rappeler</button></form>{% endif %}</th>
+        <td class="liens">{% if i.genre == "loyers" %}<a href="{% url 'relances_impayes' %}">Relancer</a>{% elif i.genre == "revisions" %}<a href="{{ i.url }}">Réviser</a>{% else %}<a href="{{ i.url }}">Ouvrir</a>{% endif %}</td>
+      </tr>
+      {% empty %}
+      <tr><td colspan="5" style="padding:16px;color:var(--body-quiet-color)">{% if vue == "fait" %}Rien de fait ces {{ historique_jours }} derniers jours.{% else %}Rien à faire sur cette période.{% endif %}</td></tr>
+      {% endfor %}
+    </table>
+  </div>
+  {% if genre == "rappels" or genre == "" and vue != "fait" %}<p class="lien-rappels"><a href="{% url 'admin:patrimoine_rappel_changelist' %}">Tous mes rappels</a> (périodiques, à venir, déjà faits) · <a href="{% url 'admin:patrimoine_changementlocataire_changelist' %}">Entrées et sorties en cours</a></p>{% endif %}
+</div>
+{% endblock %}
