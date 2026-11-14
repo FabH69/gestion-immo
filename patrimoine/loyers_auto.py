@@ -5,18 +5,19 @@ import logging
 from django.conf import settings
 from django.utils import timezone
 
-_dernier_jour = None
+_dernier_jour = {}  # par base : la vraie et la base de test
 
 
 def generer_si_besoin():
-    global _dernier_jour
-    aujourdhui = timezone.localdate()
-    if _dernier_jour == aujourdhui:
+    from . import base_essai
+
+    aujourdhui, base = timezone.localdate(), base_essai.active()
+    if _dernier_jour.get(base) == aujourdhui:
         return 0
     from .models import Echeance
 
     n = Echeance.generer_pour_mois(aujourdhui.replace(day=1))
-    _dernier_jour = aujourdhui
+    _dernier_jour[base] = aujourdhui
     return n
 
 

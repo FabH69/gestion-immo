@@ -7,3 +7,4 @@ staticfiles/
 donnees/
 prive/
 sauvegardes/
+db-essai*.sqlite3

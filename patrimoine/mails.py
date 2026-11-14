@@ -20,7 +20,11 @@ def envoyer(destinataires, sujet, texte, reglage_mail=None, lever=False, html=No
         return False
     from django.conf import settings
 
+    from . import base_essai
+
     backend = getattr(settings, "ENVOI_MAIL_BACKEND", "django.core.mail.backends.smtp.EmailBackend")
+    if base_essai.en_essai():  # mode test : aucun mail ne part vraiment
+        backend = "django.core.mail.backends.locmem.EmailBackend"
     connexion = get_connection(backend, host="smtp.gmail.com", port=587, use_tls=True,
                                username=r.adresse, password=r.mot_de_passe, timeout=20)
     expediteur = f"{r.nom_expediteur} <{r.adresse}>" if r.nom_expediteur else r.adresse

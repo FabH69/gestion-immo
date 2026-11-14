@@ -65,6 +65,10 @@ urlpatterns = [
     path("location-courte-duree/comparatif/", views.comparatif_lcd, name="comparatif_lcd"),
     path("simulations/plus-value/", views.plus_value, name="plus_value"),
     path("recherche/", views.recherche, name="recherche"),
+    path("mode-test/entrer/", views.essai_entrer, name="essai_entrer"),
+    path("mode-test/sortir/", views.essai_sortir, name="essai_sortir"),
+    path("mode-test/remettre-a-zero/", views.essai_reinitialiser, name="essai_reinitialiser"),
+    path("mode-test/donnees-demo/", views.essai_demo, name="essai_demo"),
     path("balles/", include("commandes.urls")),
     path("", RedirectView.as_view(url="/admin/")),
 ]

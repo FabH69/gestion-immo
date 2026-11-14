@@ -69,6 +69,10 @@
 </style>
 </head>
 <body>
+{% if mode_test %}<div style="position:sticky;top:0;z-index:50;display:flex;flex-wrap:wrap;gap:8px 14px;align-items:center;padding:8px 16px;background:repeating-linear-gradient(-45deg,#7c2d12 0 14px,#431407 14px 28px);color:#fff;font-weight:700">
+  <span style="text-transform:uppercase;letter-spacing:.08em">Mode test</span><span style="flex:1 1 200px;font-weight:500;font-size:.9rem">Base de test séparée : tes vraies commandes ne sont pas touchées.</span>
+  <form method="post" action="{% url 'essai_sortir' %}" style="margin:0">{% csrf_token %}<button style="font:inherit;padding:5px 10px;border-radius:6px;border:0;cursor:pointer">Revenir à mes données</button></form>
+</div>{% endif %}
 <header>
   <a class="logo" href="{% url 'balles:accueil' %}">Commandes <span>balles</span></a>
   {% if user.is_authenticated %}
