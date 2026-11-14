@@ -2832,3 +2832,54 @@ class ModeTestTests(TransactionTestCase):
         self.assertEqual(r.status_code, 403)
         self.assertNotIn("base", r.cookies)
         self.assertNotIn("Mode test", self.client.get("/admin/").content.decode())
+
+
+class ScissionFactureTests(TestCase):
+    """Une facture de copropriété scindée : appel de fonds (ligne 13) + régularisation de l'exercice précédent (ligne 14)."""
+
+    def setUp(self):
+        from decimal import Decimal
+
+        from .models import PieceComptable
+
+        proprio = Proprietaire.objects.create(nom="SCI Test", type=Proprietaire.Type.SCI_IR)
+        self.bien = Bien.objects.create(proprietaire=proprio, nom="Immeuble", adresse="1 rue", code_postal="69000", ville="Lyon",
+                                        comptabilite="foncier")
+        self.autre = Bien.objects.create(proprietaire=proprio, nom="Studio", adresse="2 rue", code_postal="69000", ville="Lyon",
+                                         comptabilite="foncier")
+        self.piece = PieceComptable.objects.create(bien=self.bien, date=date(2026, 4, 1), fournisseur="Syndic", libelle="Appel T2",
+                                                   montant=Decimal("1000.00"), ligne="13")
+        self.client.force_login(User.objects.create_superuser("admin", "a@example.com", "x"))
+        self.url = f"/admin/patrimoine/piececomptable/{self.piece.pk}/scinder/"
+
+    def _poster(self, lignes):
+        data = {"nb": len(lignes)}
+        for i, (bien, code, montant) in enumerate(lignes):
+            data.update({f"bien_{i}": bien.pk, f"code_{i}": code, f"montant_{i}": montant})
+        return self.client.post(self.url, data)
+
+    def test_ecran_et_somme_obligatoire(self):
+        self.assertContains(self.client.get(self.url), "Reste à répartir")
+        r = self._poster([(self.bien, "13", "800"), (self.bien, "14", "100")])
+        self.assertContains(r, "doit être égale au total")
+        self.assertEqual(self.piece.parts.count(), 0)
+
+    def test_scinder_puis_annexe_2072(self):
+        from decimal import Decimal
+
+        from .annexe2072 import colonne
+
+        r = self._poster([(self.bien, "13", "800,00"), (self.bien, "14", "150"), (self.autre, "13", "50")])
+        self.assertEqual(r.status_code, 302)
+        self.piece.refresh_from_db()
+        self.assertEqual((self.piece.montant, self.piece.ligne), (Decimal("800.00"), "13"))
+        parts = list(self.piece.parts.order_by("pk"))
+        self.assertEqual([(p.bien, p.ligne, p.montant) for p in parts],
+                         [(self.bien, "14", Decimal("150.00")), (self.autre, "13", Decimal("50.00"))])
+        self.assertEqual(parts[0].fournisseur, "Syndic")
+        v = colonne(self.bien, 2026)["valeurs"]
+        self.assertEqual((v["13"], v["14"]), (Decimal("800.00"), Decimal("150.00")))
+        self.assertEqual(colonne(self.autre, 2026)["valeurs"]["13"], Decimal("50.00"))
+        # retour à deux lignes : la part en trop est supprimée
+        self._poster([(self.bien, "13", "850"), (self.bien, "14", "150")])
+        self.assertEqual(self.piece.parts.count(), 1)

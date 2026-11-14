@@ -337,7 +337,79 @@ class PieceComptableAdmin(admin.ModelAdmin):
     def get_urls(self):
         from django.urls import path
 
-        return [path("import/", self.admin_site.admin_view(self.import_view), name="patrimoine_piececomptable_import")] + super().get_urls()
+        return [path("import/", self.admin_site.admin_view(self.import_view), name="patrimoine_piececomptable_import"),
+                path("<int:pk>/scinder/", self.admin_site.admin_view(self.scinder_view), name="patrimoine_piececomptable_scinder"),
+                ] + super().get_urls()
+
+    def scinder_view(self, request, pk):
+        """Scinde une facture en plusieurs lignes (montant, codification et bien chacune), dont la somme égale le total :
+        ex. appel de fonds de copropriété (ligne 13) + régularisation de l'exercice précédent (ligne 14). La première ligne
+        reste sur la pièce qui porte le PDF, les autres deviennent ses parts."""
+        from decimal import Decimal, InvalidOperation
+
+        from django.db import transaction
+        from django.shortcuts import get_object_or_404
+
+        piece = get_object_or_404(PieceComptable.objects.select_related("bien", "piece_mere"), pk=pk)
+        mere = piece.piece_mere or piece
+        if not self.has_change_permission(request, mere):
+            from django.core.exceptions import PermissionDenied
+            raise PermissionDenied
+        existantes = mere.facture_complete
+        total = sum((p.montant or Decimal(0) for p in existantes), Decimal(0))
+        regime = (mere.bien.comptabilite if mere.bien_id else "") or "foncier"
+        par_rubrique = regime in ("lmnp", "societe")
+        champ = "rubrique" if par_rubrique else "ligne"
+        biens = list(_biens_comptables(regime))
+        if mere.bien_id and mere.bien not in biens:
+            biens.insert(0, mere.bien)
+        codes = ([(g, list(r)) for g, r in PieceComptable.RUBRIQUES] if par_rubrique
+                 else [("", list(PieceComptable.Ligne.choices))])
+        valides = {c for _, choix in codes for c, _ in choix}
+        lignes, erreurs = [], []
+        if request.method == "POST":
+            for i in range(int(request.POST.get("nb", 0) or 0)):
+                montant = (request.POST.get(f"montant_{i}") or "").replace(" ", "").replace("\u202f", "").replace(",", ".")
+                bien_id, code = request.POST.get(f"bien_{i}", ""), request.POST.get(f"code_{i}", "")
+                if not montant:
+                    continue
+                try:
+                    montant = Decimal(montant).quantize(Decimal("0.01"))
+                except InvalidOperation:
+                    erreurs.append(f"Montant illisible : « {montant} ».")
+                    continue
+                bien = next((b for b in biens if str(b.pk) == bien_id), None)
+                if not bien or code not in valides:
+                    erreurs.append("Chaque ligne doit avoir un bien et une " + ("rubrique." if par_rubrique else "ligne de l'annexe 2072."))
+                lignes.append({"bien": bien, "montant": montant, "code": code})
+            if not lignes:
+                erreurs.append("Saisissez au moins une ligne.")
+            somme = sum((l["montant"] for l in lignes), Decimal(0))
+            if somme != total:
+                erreurs.append(f"La somme des lignes ({somme} €) doit être égale au total de la facture ({total} €). "
+                               f"Écart : {somme - total} €.")
+            if not erreurs:
+                with transaction.atomic():
+                    parts = existantes[1:]
+                    commun = {c: getattr(mere, c) for c in ("date", "date_paiement", "fournisseur", "libelle", "mois_concerne")}
+                    for n, l in enumerate(lignes):
+                        p = mere if n == 0 else (parts[n - 1] if n - 1 < len(parts) else PieceComptable(piece_mere=mere, **commun))
+                        p.bien, p.montant, p.preremplie = l["bien"], l["montant"], False
+                        setattr(p, champ, l["code"])
+                        p.save()
+                    for p in parts[len(lignes) - 1:]:
+                        p.delete()
+                messages.success(request, f"Facture répartie sur {len(lignes)} ligne{'s' if len(lignes) > 1 else ''}.")
+                return redirect("admin:patrimoine_piececomptable_change", mere.pk)
+        else:
+            lignes = [{"bien": p.bien, "montant": p.montant, "code": getattr(p, champ)} for p in existantes]
+        nb_vides = max(2, 4 - len(lignes))
+        lignes += [{"bien": mere.bien, "montant": None, "code": ""} for _ in range(nb_vides)]
+        return render(request, "admin/patrimoine/piececomptable/scinder.html", {
+            **self.admin_site.each_context(request), "opts": self.model._meta, "mere": mere, "lignes": lignes, "total": total,
+            "biens": biens, "codes": codes, "par_rubrique": par_rubrique, "erreurs": erreurs, "nb": len(lignes),
+            "libelle_regime": compta.libelle(regime), "title": "Scinder la facture",
+            "lien_factures": reverse("admin:patrimoine_piececomptable_changelist") + f"?compta={regime}"})
 
     def import_view(self, request):
         from pathlib import Path
@@ -453,6 +525,8 @@ class PieceComptableAdmin(admin.ModelAdmin):
 
     @admin.display(description="facture")
     def piece(self, obj):
+        if not obj.fichier and obj.piece_mere_id:  # part d'une facture scindée : le PDF est sur la pièce mère
+            obj = obj.piece_mere
         if not obj.fichier:
             return "–"
         image = obj.fichier.name.lower().rsplit(".", 1)[-1] in ("jpg", "jpeg", "png")
@@ -460,7 +534,7 @@ class PieceComptableAdmin(admin.ModelAdmin):
                            obj.fichier.url, "1" if image else "", "Photo" if image else "PDF")
 
     def get_queryset(self, request):
-        return super().get_queryset(request).select_related("bien")
+        return super().get_queryset(request).select_related("bien", "piece_mere")
 
     def changelist_view(self, request, extra_context=None):
         regime = _regime(request)
