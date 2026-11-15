@@ -2858,6 +2858,13 @@ class ScissionFactureTests(TestCase):
             data.update({f"bien_{i}": bien.pk, f"code_{i}": code, f"montant_{i}": montant})
         return self.client.post(self.url, data)
 
+    def test_bouton_dans_les_listes(self):
+        from .models import PieceComptable
+
+        PieceComptable.objects.filter(pk=self.piece.pk).update(preremplie=True)
+        for suite in ("", "&a_codifier=oui"):
+            self.assertContains(self.client.get("/admin/patrimoine/piececomptable/?compta=foncier" + suite), self.url)
+
     def test_ecran_et_somme_obligatoire(self):
         self.assertContains(self.client.get(self.url), "Reste à répartir")
         r = self._poster([(self.bien, "13", "800"), (self.bien, "14", "100")])
