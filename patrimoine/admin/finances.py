@@ -312,9 +312,10 @@ class PieceComptableAdmin(admin.ModelAdmin):
 
     def get_list_display(self, request):
         if self._codifier(request):
-            return self._liste_codifier(request)
+            liste = self._liste_codifier(request)
+            return liste[:1] + ["scinder"] + liste[1:]  # près du PDF : les dernières colonnes sortent de l'écran
         codif = {"foncier": "ligne_courte", "lmnp": "rubrique_courte", "societe": "rubrique_courte"}.get(_regime(request), "codification")
-        return ["date_affichee", "bien", "fournisseur", "libelle", codif, "montant_affiche", "piece"]
+        return ["date_affichee", "bien", "fournisseur", "libelle", codif, "montant_affiche", "piece", "scinder"]
 
     def get_list_display_links(self, request, list_display):
         return None if self._codifier(request) else self.list_display_links
@@ -522,6 +523,14 @@ class PieceComptableAdmin(admin.ModelAdmin):
     @admin.display(description="montant", ordering="montant")
     def montant_affiche(self, obj):
         return euros_liste(obj.montant) if obj.montant is not None else "–"
+
+    @admin.display(description="répartir")
+    def scinder(self, obj):
+        """Lien vers l'écran de scission (aussi depuis l'onglet « À codifier », où les lignes ne s'ouvrent pas)."""
+        scindee = obj.piece_mere_id or obj.parts.exists()
+        return format_html('<a href="{}" class="button" style="white-space:nowrap">{}</a>',
+                           reverse("admin:patrimoine_piececomptable_scinder", args=[obj.pk]),
+                           "Répartie" if scindee else "Scinder")
 
     @admin.display(description="facture")
     def piece(self, obj):
