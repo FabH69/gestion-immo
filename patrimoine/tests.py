@@ -2199,6 +2199,23 @@ class TableauxBanqueEtRappelsTests(TestCase):
         self.client.post(f"/admin/patrimoine/pret/{pret.pk}/tableau/", {"action": "calcul"})
         self.assertFalse(pret.lignes.exists())
 
+    def test_recapitulatif_separe_interets_et_capital(self):
+        from . import compta
+        from . import tableaux_amortissement as ta
+        from .models import Pret
+
+        pret = Pret.objects.create(proprietaire=self.proprio, bien=self.bien, banque="CE", reference="Y", montant=Decimal("1000"),
+                                   taux=Decimal("1.2"), duree_mois=2, date_premiere_echeance=date(2025, 1, 5))
+        ta.enregistrer(pret, [
+            {"rang": 1, "date": date(2025, 1, 5), "capital": Decimal("495"), "interets": Decimal("5"), "assurance": Decimal("2"), "restant": Decimal("505")},
+            {"rang": 2, "date": date(2025, 2, 5), "capital": Decimal("505"), "interets": Decimal("3"), "assurance": Decimal("1"), "restant": Decimal("0")}])
+        rec = compta.recapitulatif("lmnp", 2025)
+        lignes = {l["code"]: l["total"] for g in rec["groupes"] for l in g["lignes"]}
+        self.assertEqual(lignes["pret"], Decimal("1000"))
+        self.assertEqual(lignes["interets_pret"], Decimal("8"))
+        self.assertEqual(lignes["assurance_pret"], Decimal("3"))
+        self.assertIn("Intérêts d&#x27;emprunt", self.client.get("/comptabilite/lmnp/?annee=2025").content.decode())
+
     def test_rappel_important_en_tete_et_mail(self):
         from io import StringIO
 

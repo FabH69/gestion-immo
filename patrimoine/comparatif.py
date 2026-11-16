@@ -60,7 +60,7 @@ def courte_duree(lot, annee, jusqua):
         detail = compta.detail_bien(lot.bien, annee, jusqua)
         for rubrique, mois in detail.items():
             total = sum((c["montant"] for c in mois.values()), ZERO)
-            if rubrique in ("pret", "assurance_pret"):
+            if rubrique in ("pret", "interets_pret", "assurance_pret"):
                 pret += total
             else:
                 charges[rubrique] += total
