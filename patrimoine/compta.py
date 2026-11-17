@@ -65,8 +65,13 @@ def a_saisir(regime=None):
 
 
 def biens_2044():
-    """Biens en nom propre déclarés en revenus fonciers (déclaration 2044, ex. Pollionnay)."""
-    return Bien.objects.filter(comptabilite="foncier", proprietaire__type=Proprietaire.Type.NOM_PROPRE)
+    """Biens en location nue en nom propre, au réel (déclaration 2044, ex. Pollionnay) ; le micro-foncier n'a pas de 2044."""
+    return Bien.objects.filter(regime_fiscal="nu").exclude(option_fiscale="micro")
+
+
+def biens_2072():
+    """Biens des SCI à l'IR (déclaration 2072)."""
+    return Bien.objects.filter(regime_fiscal="sci_ir")
 
 
 # --- correspondances vers les rubriques ------------------------------------------------------------------------------
@@ -255,6 +260,18 @@ LIGNES_2044 = [  # (numéro de la 2044, libellé, ligne correspondante de l'anne
     ("250", "Intérêts et frais d'emprunt (dont assurance emprunteur)", "17", ""),
     ("", "Résultat foncier de l'immeuble (215 − 240 − 250)", "18", "total"),
 ]
+
+
+def choix_lignes_2044():
+    """Choix de codification d'une facture d'un bien en location nue : numéros de la 2044 au lieu de ceux de la 2072."""
+    numeros = {code: numero for numero, _, code, _ in LIGNES_2044 if numero}
+    numeros["9b"] = numeros["9"]
+    choix = []
+    for code, libelle in PieceComptable.Ligne.choices:
+        if code in numeros:
+            libelle = f"{numeros[code]} · {libelle.split(' · ', 1)[-1]}"
+        choix.append((code, libelle))
+    return choix
 
 
 def recap_2044(annee):

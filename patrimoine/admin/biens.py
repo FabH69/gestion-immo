@@ -130,10 +130,44 @@ class VenduFilter(admin.SimpleListFilter):
         return queryset
 
 
+class BienForm(forms.ModelForm):
+    class Meta:
+        model = Bien
+        fields = "__all__"
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        if "regime_fiscal" in self.fields:
+            self.fields["regime_fiscal"].required = True
+
+    def clean(self):
+        donnees = super().clean()
+        regime, proprio = donnees.get("regime_fiscal"), donnees.get("proprietaire")
+        if regime in Bien.REGIMES_MICRO_POSSIBLE:
+            pass
+        elif donnees.get("option_fiscale") == Bien.OptionFiscale.MICRO and regime:
+            self.add_error("option_fiscale", "Les SCI et les sociétés sont toujours au réel.")
+        if proprio and regime:
+            nom_propre = proprio.type == Proprietaire.Type.NOM_PROPRE
+            if regime in ("nu", "lmnp", "lmp") and not nom_propre:
+                self.add_error("regime_fiscal", f"« {proprio} » est une société : choisissez SCI à l'IR, société à l'IR ou à l'IS.")
+            if regime in ("sci_ir", "societe_ir", "societe_is") and nom_propre:
+                self.add_error("regime_fiscal", f"« {proprio} » est en nom propre : choisissez location nue, LMNP ou LMP.")
+        return donnees
+
+
 @admin.register(Bien)
 class BienAdmin(admin.ModelAdmin):
-    list_display = ["nom", "ville", "proprietaire", "syndic", "nb_lots", "loyers_mois", "rendement"]
-    list_filter = [VenduFilter, "proprietaire"]
+    form = BienForm
+    list_display = ["nom", "ville", "proprietaire", "regime", "syndic", "nb_lots", "loyers_mois", "rendement"]
+    list_filter = [VenduFilter, "proprietaire", "regime_fiscal"]
+
+    @admin.display(description="régime fiscal", ordering="regime_fiscal")
+    def regime(self, obj):
+        court = obj.regime_court
+        if obj.regime_fiscal in Bien.REGIMES_MICRO_POSSIBLE:
+            court += " micro" if obj.micro else " réel"
+        return f"{court} (à vérifier)" if obj.regime_a_verifier else court
 
     def get_list_display(self, request):
         """Colonnes de vente seulement quand on regarde les biens vendus (sinon des croix rouges partout)."""
@@ -166,8 +200,12 @@ class BienAdmin(admin.ModelAdmin):
     search_fields = ["nom", "adresse", "ville"]
     inlines = [LotInline]
     fieldsets = [
-        (None, {"fields": ["proprietaire", "nom", "adresse", ("code_postal", "ville"), "syndic", ("date_acquisition", "prix_acquisition"),
-                           "comptabilite"]}),
+        (None, {"fields": ["proprietaire", "nom", "adresse", ("code_postal", "ville"), "syndic", ("date_acquisition", "prix_acquisition")]}),
+        ("Régime fiscal", {"fields": [("regime_fiscal", "option_fiscale")],
+                           "description": format_html(
+                               "Choisit la comptabilité du bien, ses écrans et le formulaire à remplir : <b>2044</b> (location nue), "
+                               "<b>2072</b> (SCI à l'IR), <b>2031 / 2042-C-PRO</b> (meublé). Récapitulatif et alertes : "
+                               "Comptabilité › Régimes fiscaux.")}),
         ("L'immeuble (repris dans les baux)", {"fields": [("type_habitat", "regime_juridique")]}),
         ("Équipements à usage commun", {"classes": ["cases-a-cocher"], "fields": [
             ("gardiennage", "ascenseur", "interphone", "local_velos"),
@@ -187,6 +225,7 @@ class BienAdmin(admin.ModelAdmin):
     ]
 
     def save_model(self, request, obj, form, change):
+        obj.regime_a_verifier = False  # régime confirmé en enregistrant la fiche
         if obj.date_vente:
             obj.vendu = True
         avant = Bien.objects.filter(pk=obj.pk).values("vendu", "date_vente").first() if change else None
@@ -260,7 +299,7 @@ class LotAdmin(FicheMixin, admin.ModelAdmin):
         return format_html('<a class="button" href="{}">Créer une annonce</a> <a class="button" href="{}">Envoyer un formulaire de candidature</a>',
                            url_annonce, url_candidature)
     fieldsets = [
-        (None, {"classes": ["identite-lot"], "fields": ["bien", "designation", ("type", "surface", "nb_pieces", "meuble"), "etage", ("exploitation", "lmnp")]}),
+        (None, {"classes": ["identite-lot"], "fields": ["bien", "designation", ("type", "surface", "nb_pieces", "meuble"), "etage", ("exploitation", "tourisme_classe", "lmnp")]}),
         ("Caractéristiques (reprises dans le bail)", {"fields": ["annee_construction", ("mode_chauffage", "chauffage"), ("mode_eau_chaude", "eau_chaude"),
                                                               ("code_porte", "cave", "parking"), "classe_dpe", "equipements", "annexes", "clause_particuliere"],
                                                    "description": "Le régime de copropriété, les équipements communs et la zone tendue se règlent sur la fiche du bien."}),

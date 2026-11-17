@@ -3001,3 +3001,116 @@ class RetoursNovembreTests(TestCase):
         page = self.client.get("/admin/patrimoine/locataire/").content.decode()
         for script in ("recherche_liste.js", "calcul_montants.js", "confirmer.js"):
             self.assertIn(script, page)
+
+
+class RegimesFiscauxTests(TestCase):
+    """Régime fiscal par bien : comptabilité déduite, formulaires, tableau récapitulatif et alertes de seuils."""
+
+    def setUp(self):
+        self.client.force_login(User.objects.create_superuser("admin", "a@a.fr", "x"))
+        self.foyer = Proprietaire.objects.create(nom="Fabien & Alice", type=Proprietaire.Type.NOM_PROPRE)
+        self.sci = Proprietaire.objects.create(nom="SCI ALFAB", type=Proprietaire.Type.SCI_IR, pourcentage_detention=50)
+        self.h = Proprietaire.objects.create(nom="H-INVEST", type=Proprietaire.Type.SARL_FAMILLE)
+
+    def _bien(self, proprio, nom, **kw):
+        return Bien.objects.create(proprietaire=proprio, nom=nom, adresse="1 rue", code_postal="69000", ville=nom, **kw)
+
+    def test_regime_deduit_de_l_ancienne_comptabilite(self):
+        self.assertEqual(self._bien(self.foyer, "Pollionnay").regime_fiscal, "nu")
+        self.assertEqual(self._bien(self.sci, "Vaugneray").regime_fiscal, "sci_ir")
+        self.assertEqual(self._bien(self.foyer, "Chazay", comptabilite="lmnp").regime_fiscal, "lmnp")
+        self.assertEqual(self._bien(self.h, "Villeurbanne", comptabilite="societe").regime_fiscal, "societe_ir")
+        self.assertEqual(self._bien(self.foyer, "Maison", comptabilite="").regime_fiscal, "non_loue")
+        # changer la comptabilité par le code change aussi le régime
+        b = Bien.objects.get(nom="Pollionnay")
+        b.comptabilite = "lmnp"
+        b.save()
+        self.assertEqual(Bien.objects.get(pk=b.pk).regime_fiscal, "lmnp")
+
+    def test_le_regime_commande_la_comptabilite(self):
+        b = self._bien(self.foyer, "Chasselay", regime_fiscal="lmp")
+        self.assertEqual(b.comptabilite, "lmnp")
+        b.regime_fiscal = "non_loue"
+        b.save()
+        self.assertEqual(Bien.objects.get(pk=b.pk).comptabilite, "")
+        s = self._bien(self.sci, "Vaugneray", regime_fiscal="sci_ir", option_fiscale="micro")
+        self.assertEqual(s.option_fiscale, "reel")  # une SCI est toujours au réel
+
+    def test_2044_sans_les_biens_au_micro_foncier(self):
+        from . import compta
+
+        reel = self._bien(self.foyer, "Pollionnay", regime_fiscal="nu")
+        self._bien(self.foyer, "Craponne", regime_fiscal="nu", option_fiscale="micro")
+        self._bien(self.sci, "Vaugneray")
+        self.assertEqual(list(compta.biens_2044()), [reel])
+        self.assertEqual(compta.biens_2072().count(), 1)
+
+    def test_formulaire_du_bien(self):
+        from . import regimes
+
+        self.assertIn("4BE", regimes.formulaire(self._bien(self.foyer, "A", regime_fiscal="nu", option_fiscale="micro"))[0])
+        self.assertIn("2044", regimes.formulaire(self._bien(self.foyer, "B", regime_fiscal="nu"))[0])
+        self.assertIn("2072", regimes.formulaire(self._bien(self.sci, "C"))[0])
+        self.assertIn("2031", regimes.formulaire(self._bien(self.foyer, "D", regime_fiscal="lmnp"))[0])
+        self.assertIn("2065", regimes.formulaire(self._bien(self.h, "E", regime_fiscal="societe_is"))[0])
+
+    def test_alerte_micro_foncier_au_dela_de_15000(self):
+        from .models import PieceComptable
+        from . import regimes
+
+        b = self._bien(self.foyer, "Pollionnay", regime_fiscal="nu", option_fiscale="micro")
+        PieceComptable.objects.create(bien=b, date=date(2025, 3, 1), montant=Decimal("16000"), ligne="3", libelle="Recette")
+        s = regimes.synthese(2025)
+        self.assertEqual(s["lignes"][0]["recettes"], Decimal("16000"))
+        self.assertEqual(s["lignes"][0]["resultat"], Decimal("11200"))  # abattement de 30 %
+        self.assertTrue(any("Micro-foncier impossible" in a["texte"] for a in s["seuils"]))
+
+    def test_alertes_lmp_et_micro_bic(self):
+        from . import regimes
+
+        b = self._bien(self.foyer, "Chasselay", regime_fiscal="lmnp", option_fiscale="micro")
+        ligne = {"bien": b, "recettes": Decimal("24000"), "par_categorie": {"non_classe": Decimal("24000")}}
+        textes = " ".join(a["texte"] for a in regimes.alertes_seuils([ligne]))
+        self.assertIn("Risque de passage en LMP", textes)
+        self.assertIn("courte durée non classée", textes)
+
+    def test_alertes_incoherences_de_fiche(self):
+        from . import regimes
+
+        b = self._bien(self.foyer, "Pollionnay", regime_fiscal="nu")
+        Lot.objects.create(bien=b, designation="Studio", meuble=True)
+        textes = " ".join(a["texte"] for a in regimes.alertes_bien(b))
+        self.assertIn("meublé ou en courte durée", textes)
+        Bien.objects.filter(pk=b.pk).update(regime_fiscal="lmnp", proprietaire=self.h)
+        b.refresh_from_db()
+        self.assertTrue(any(a["niveau"] == "rouge" for a in regimes.alertes_bien(b)))
+
+    def test_page_et_menu(self):
+        self._bien(self.foyer, "Pollionnay", regime_fiscal="nu")
+        self._bien(self.sci, "Vaugneray", regime_a_verifier=True)
+        page = self.client.get("/comptabilite/regimes-fiscaux/?annee=2025").content.decode()
+        for texte in ("Régimes fiscaux – revenus 2025", "Pollionnay", "Déclaration 2044", "Déclaration 2072", "à vérifier",
+                      "Les seuils surveillés"):
+            self.assertIn(texte, page)
+        self.assertIn("Régimes fiscaux", self.client.get("/admin/").content.decode())
+
+    def test_fiche_du_bien_refuse_un_regime_incoherent(self):
+        from .admin.biens import BienForm
+
+        b = self._bien(self.sci, "Vaugneray", regime_a_verifier=True)
+        donnees = {"proprietaire": self.sci.pk, "nom": "Vaugneray", "adresse": "1 rue", "code_postal": "69670", "ville": "Vaugneray",
+                   "regime_fiscal": "nu", "option_fiscale": "reel"}
+        form = BienForm(donnees, instance=b)
+        self.assertFalse(form.is_valid())
+        self.assertIn("regime_fiscal", form.errors)
+        form = BienForm({**donnees, "regime_fiscal": "sci_ir"}, instance=b)
+        self.assertTrue(form.is_valid(), form.errors)
+
+    def test_courte_duree_classee_abattement_50(self):
+        from .lmnp import bilan_lot
+
+        b = self._bien(self.foyer, "Chasselay", regime_fiscal="lmnp")
+        lot = Lot.objects.create(bien=b, designation="Studio", meuble=True, exploitation="courte")
+        self.assertEqual(bilan_lot(lot, 2025)["abattement_micro"], Decimal(30))
+        lot.tourisme_classe = True
+        self.assertEqual(bilan_lot(lot, 2025)["abattement_micro"], Decimal(50))

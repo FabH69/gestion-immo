@@ -54,6 +54,7 @@ urlpatterns = [
     path("annonces/<int:pk>/annonce.pdf", views.annonce_pdf, name="annonce_pdf"),
     path("comptabilite/2072/", views.annexe_2072, name="annexe_2072"),
     path("comptabilite/2044/", views.recap_2044, name="recap_2044"),
+    path("comptabilite/regimes-fiscaux/", views.regimes_fiscaux, name="regimes_fiscaux"),
     path("comptabilite/lmnp/", views.compta_recap, {"regime": "lmnp"}, name="compta_lmnp"),
     path("comptabilite/societe/", views.compta_recap, {"regime": "societe"}, name="compta_societe"),
     path("comptabilite/conciergerie/", views.conciergerie_ajouter, name="conciergerie_ajouter"),
@@ -70,6 +71,7 @@ urlpatterns = [
     path("mode-test/remettre-a-zero/", views.essai_reinitialiser, name="essai_reinitialiser"),
     path("mode-test/donnees-demo/", views.essai_demo, name="essai_demo"),
     path("balles/", include("commandes.urls")),
+    path("simulateurs/", include("simulateurs.urls")),
     path("", RedirectView.as_view(url="/admin/")),
 ]
 

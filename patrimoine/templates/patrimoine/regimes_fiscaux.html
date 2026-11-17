@@ -1,0 +1,71 @@
+{% extends "admin/base_site.html" %}
+{% load tableau_bord %}
+{% block extrastyle %}{{ block.super }}<style>{% include "patrimoine/_style_etat.css" %}
+.alertes-regime { list-style: none; margin: 0 0 16px; padding: 0; }
+.alertes-regime li { list-style: none; margin: 0 0 6px; padding: 8px 12px; border-radius: 6px; border-left: 4px solid; line-height: 1.4; }
+.alertes-regime li.rouge { background: #fdecea; border-color: #c0392b; color: #6d1b13; }
+.alertes-regime li.orange { background: #fff4e0; border-color: #e08e0b; color: #5c3a00; }
+.alertes-regime li.info { background: #eaf2f8; border-color: #2e86c1; color: #1b3a50; }
+.alertes-regime li a { font-weight: 600; }
+table.regimes td { vertical-align: top; white-space: normal; }
+table.regimes td.form { min-width: 300px; }
+table.regimes th { white-space: normal; }
+table.regimes td.lots { min-width: 140px; }
+table.regimes td.montant { white-space: nowrap; }
+table.regimes .regime { font-weight: 600; }
+table.regimes .petit { font-size: .85em; color: var(--body-quiet-color, #666); }
+table.regimes .pastille-regime { display: inline-block; padding: 1px 8px; border-radius: 10px; background: #eef3f6; color: #264b5d; font-size: .85em; margin-top: 2px; }
+table.regimes .pastille-regime.a-verifier { background: #fff4e0; color: #5c3a00; }
+.legende-seuils { font-size: .9em; color: var(--body-quiet-color, #555); }
+.legende-seuils td, .legende-seuils th { text-align: left !important; white-space: normal !important; }
+</style>{% endblock %}
+{% block content_title %}{% endblock %}
+{% block breadcrumbs %}<div class="breadcrumbs"><a href="{% url 'admin:index' %}">Accueil</a> › Comptabilité › Régimes fiscaux</div>{% endblock %}
+{% block content %}
+<div class="titre-liste titre-compta"><h1>Régimes fiscaux – revenus {{ annee }}</h1></div>
+<div class="barre-compta">{% boutons_annees annees annee "civil" %}</div>
+<p class="aide-compta">Un régime par bien : il choisit la comptabilité, les écrans et le formulaire à remplir. Pour le changer, ouvrez la fiche du bien (champ « Régime fiscal » et « micro ou réel »). La courte durée est un meublé : choisissez LMNP ou LMP sur le bien, puis réglez le lot en courte durée (classé ou non).{% if en_cours %} <b>Année en cours : montants arrêtés à aujourd'hui.</b>{% endif %}</p>
+
+<section class="module carte-compta">
+  <h2>Alertes{% if nb_alertes %} ({{ nb_alertes }}){% endif %}</h2>
+  {% if seuils or nb_alertes %}
+  <ul class="alertes-regime">
+    {% for a in seuils %}<li class="{{ a.niveau }}">{{ a.texte }}</li>{% endfor %}
+    {% for l in lignes %}{% for a in l.alertes %}<li class="{{ a.niveau }}"><a href="{% url 'admin:patrimoine_bien_change' l.bien.pk %}">{{ l.bien.nom }}</a> : {{ a.texte }}</li>{% endfor %}{% endfor %}
+  </ul>
+  {% else %}<p>Aucune alerte : régimes cohérents et seuils respectés pour {{ annee }}.</p>{% endif %}
+</section>
+
+<section class="module etat-scroll tableau-compta">
+  <table class="etat regimes">
+    <thead><tr><th class="libelle">Bien</th><th class="libelle">Régime</th><th class="libelle">Lots</th>
+      <th>Recettes</th><th>Charges<br>et intérêts</th><th>Résultat<br>imposable estimé</th><th class="libelle">Formulaire à remplir</th></tr></thead>
+    <tbody>{% for l in lignes %}
+      <tr>
+        <td class="libelle"><a href="{% url 'admin:patrimoine_bien_change' l.bien.pk %}">{{ l.bien.nom }}</a>{% if l.bien.vendu %} <span class="petit">(vendu)</span>{% endif %}<br><span class="petit">{{ l.bien.proprietaire.nom }}</span></td>
+        <td class="libelle"><span class="regime">{{ l.bien.regime_court }}</span>{% if l.bien.regime_fiscal in "nu lmnp lmp" %} <span class="petit">· {% if l.bien.micro %}micro{% else %}réel{% endif %}</span>{% endif %}
+          {% if l.bien.regime_a_verifier %}<br><span class="pastille-regime a-verifier">à vérifier</span>{% endif %}</td>
+        <td class="libelle petit lots">{% for x in l.lots %}{{ x.lot.designation }} : {{ x.categorie }}{% if not forloop.last %}<br>{% endif %}{% empty %}–{% endfor %}</td>
+        <td class="montant">{{ l.recettes|euros:0 }}</td>
+        <td class="montant">{% if l.bien.micro %}<span class="petit">abattement</span>{% else %}{{ l.charges|euros:0 }}{% endif %}</td>
+        <td class="montant fort">{{ l.resultat|euros:0 }}</td>
+        <td class="libelle form">{{ l.formulaire }}<br><span class="petit">{{ l.aide }}</span>{% if l.lien %}<br><a href="{{ l.lien }}" class="petit">{{ l.libelle_lien }} ›</a>{% endif %}</td>
+      </tr>
+    {% empty %}<tr><td colspan="7" class="vide">Aucun bien.</td></tr>{% endfor %}
+    {% if lignes|length > 1 %}<tr class="total"><td class="libelle" colspan="3">Total</td><td>{{ total.recettes|euros:0 }}</td><td>{{ total.charges|euros:0 }}</td><td>{{ total.resultat|euros:0 }}</td><td></td></tr>{% endif %}
+    </tbody>
+  </table>
+</section>
+
+<section class="module carte-compta legende-seuils">
+  <h2>Les seuils surveillés (règles depuis les revenus 2025)</h2>
+  <table class="etat">
+    <tr><th>Micro-foncier (location nue)</th><td>Loyers bruts du foyer jusqu'à 15 000 € par an (part des SCI à l'IR comprise). Abattement de 30 %.</td></tr>
+    <tr><th>Micro-BIC, meublé classique ou tourisme classé</th><td>Recettes jusqu'à 77 700 € par an. Abattement de 50 %.</td></tr>
+    <tr><th>Micro-BIC, tourisme non classé (courte durée)</th><td>Recettes jusqu'à 15 000 € par an. Abattement de 30 %.</td></tr>
+    <tr><th>LMP (loueur meublé professionnel)</th><td>Recettes meublées du foyer au-delà de 23 000 € par an <b>et</b> au-delà des autres revenus d'activité du foyer (salaires…).</td></tr>
+    <tr><th>SCI à l'IR qui loue en meublé</th><td>Au-delà d'environ 10 % de recettes meublées, la SCI risque d'être soumise à l'impôt sur les sociétés.</td></tr>
+  </table>
+  <p>Ces montants sont des estimations calculées par l'appli à partir des loyers, réservations, factures et prêts. Faites valider vos déclarations par un comptable.</p>
+</section>
+{% endblock %}
