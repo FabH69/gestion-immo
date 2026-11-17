@@ -1,0 +1,57 @@
+{% extends "simulateurs/base.html" %}
+{% block titre %}Calcul des frais de notaire 2026 – ancien et neuf{% endblock %}
+{% block description %}Calculez gratuitement vos frais de notaire 2026 : droits de mutation de votre département, émoluments, ancien ou neuf.{% endblock %}
+{% block contenu %}
+<h1>Frais de notaire</h1>
+<p class="chapeau">Estimez les frais d'acquisition d'un logement ancien ou neuf, avec les droits de mutation 2026 de votre département.</p>
+<div class="deux-colonnes">
+  <form method="get" class="carte" novalidate>
+    {% for e in form.non_field_errors %}<div class="erreur">{{ e }}</div>{% endfor %}
+    {% include "simulateurs/_champ.html" with champ=form.prix %}
+    {% include "simulateurs/_champ.html" with champ=form.type_bien %}
+    {% include "simulateurs/_champ.html" with champ=form.departement %}
+    <div id="bloc-primo">{% include "simulateurs/_champ.html" with champ=form.primo_accedant %}</div>
+    <details{% if form.mobilier.value or form.mobilier.errors %} open{% endif %}><summary>Mobilier et frais divers</summary>
+      {% include "simulateurs/_champ.html" with champ=form.mobilier %}
+      {% include "simulateurs/_champ.html" with champ=form.formalites %}
+    </details>
+    <button type="submit" style="width:100%;margin-top:8px">Calculer</button>
+  </form>
+
+  <div>
+  {% if r %}
+    <div class="carte">
+      <div class="aide">Frais de notaire estimés</div>
+      <div class="gros">{{ r.total|floatformat:"0g" }} €</div>
+      <div>soit <strong>{{ r.pourcentage|floatformat:"1" }} %</strong> du prix – {% if r.type_bien == "neuf" %}neuf{% else %}ancien{% endif %}, {{ r.departement }} {{ nom_departement }}</div>
+      <div class="tuiles">
+        <div class="tuile"><div class="l">Prix d'achat</div><div class="v">{{ r.prix|floatformat:"0g" }} €</div></div>
+        <div class="tuile"><div class="l">Impôts et taxes</div><div class="v">{{ r.total_droits|floatformat:"0g" }} €</div></div>
+        <div class="tuile"><div class="l">Notaire et frais</div><div class="v">{{ r.total_notaire|floatformat:"0g" }} €</div></div>
+        <div class="tuile"><div class="l">Budget total</div><div class="v">{{ r.cout_total|floatformat:"0g" }} €</div></div>
+      </div>
+      <div class="defile"><table>
+        <tr class="groupe"><td>Droits de mutation (reversés à l'État et aux collectivités)</td><td class="m">{{ r.total_droits|floatformat:"0g" }} €</td></tr>
+        {% for l in r.droits %}<tr><td>{{ l.libelle }}<span class="detail">{{ l.detail }}</span></td><td class="m">{{ l.montant|floatformat:"0g" }} €</td></tr>{% endfor %}
+        <tr class="groupe"><td>Rémunération du notaire et frais</td><td class="m">{{ r.total_notaire|floatformat:"0g" }} €</td></tr>
+        {% for l in r.notaire %}<tr><td>{{ l.libelle }}<span class="detail">{{ l.detail }}</span></td><td class="m">{{ l.montant|floatformat:"2g" }} €</td></tr>{% endfor %}
+        <tr class="total"><td>Total des frais</td><td class="m">{{ r.total|floatformat:"0g" }} €</td></tr>
+      </table></div>
+      {% if r.base != r.prix %}<p class="note">Droits calculés sur {{ r.base|floatformat:"0g" }} € : le mobilier n'est pas taxé.</p>{% endif %}
+      <p style="margin-top:16px"><a class="bouton secondaire" href="{% url 'simulateurs:pret-immobilier' %}?capital={{ r.cout_total|floatformat:"0" }}">Simuler le prêt pour {{ r.cout_total|floatformat:"0g" }} € →</a></p>
+    </div>
+  {% else %}
+    <div class="carte"><h2>Comment ça marche ?</h2>
+      <p>Les « frais de notaire » sont surtout des <strong>impôts</strong> : environ 7 à 8 % du prix dans l'ancien, 2 à 3 % dans le neuf. Le notaire n'en garde qu'une petite partie.</p>
+      <p>Saisissez le prix et le département du bien, puis cliquez sur <strong>Calculer</strong>.</p>
+    </div>
+  {% endif %}
+    <p class="note">Barème : {{ mise_a_jour }}. Depuis 2025, la plupart des départements appliquent 5 % au lieu de 4,5 % ; les primo-accédants qui achètent leur résidence principale en sont exonérés. Les frais d'agence à la charge de l'acheteur ne sont pas comptés. Le notaire peut accorder une remise jusqu'à 20 % de ses émoluments sur la part du prix au-delà de 100 000 €.</p>
+  </div>
+</div>
+<script>
+  const radios = document.querySelectorAll("input[name=type_bien]"), primo = document.getElementById("bloc-primo");
+  const maj = () => { const neuf = document.querySelector("input[name=type_bien]:checked")?.value === "neuf"; primo.style.display = neuf ? "none" : ""; };
+  radios.forEach(r => r.addEventListener("change", maj)); maj();
+</script>
+{% endblock %}

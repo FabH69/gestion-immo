@@ -66,7 +66,7 @@ class ChangementLocataire(models.Model):
         return {"conge": self.date_conge or self.date_depart, "depart": self.date_depart, "arrivee": self.date_arrivee}[reference]
 
     def creer_taches(self):
-        """Tâches créées à partir de la liste par défaut (Réglages > Tâches d'entrée et de sortie)."""
+        """Tâches créées à partir de la liste par défaut (Paramètres > Tâches d'entrée et de sortie)."""
         from ..checklists import MODELE_CHANGEMENT_LOCATAIRE
 
         if TacheParDefaut.objects.exists():
@@ -193,7 +193,7 @@ class Tache(models.Model):
 
 
 class TacheParDefaut(models.Model):
-    """Liste des tâches créées à chaque nouveau changement de locataire (modifiable dans les Réglages)."""
+    """Liste des tâches créées à chaque nouveau changement de locataire (modifiable dans les Paramètres)."""
 
     class Reference(models.TextChoices):
         CONGE = "conge", "réception du congé"
@@ -412,7 +412,7 @@ class Annonce(models.Model):
     def titre_genere(self):
         lot = self.lot
         morceaux = [lot.get_type_display()]
-        if lot.nb_pieces and lot.type not in (Lot.Type.PARKING, Lot.Type.CAVE):
+        if lot.nb_pieces and lot.type not in (Lot.Type.PARKING, Lot.Type.GARAGE, Lot.Type.CAVE):
             morceaux.append(f"{lot.nb_pieces} pièce{'s' if lot.nb_pieces > 1 else ''}")
         if lot.meuble:
             morceaux.append("meublé")

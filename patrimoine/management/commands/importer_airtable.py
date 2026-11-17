@@ -202,7 +202,7 @@ class Command(BaseCommand):
             ref = f"location:{appart}"[:40]
             bail = Bail.objects.filter(ref_import=ref).first() or Bail(ref_import=ref, lot=lot)
             meuble = _texte(ligne.get("type Location")).lower().startswith("meubl")
-            bail.type = Bail.Type.PARKING if lot.type == Lot.Type.PARKING else Bail.Type.MEUBLE if meuble else Bail.Type.NU
+            bail.type = Bail.Type.PARKING if lot.type in (Lot.Type.PARKING, Lot.Type.GARAGE) else Bail.Type.MEUBLE if meuble else Bail.Type.NU
             if meuble and not lot.meuble:
                 lot.meuble = True
                 lot.save()

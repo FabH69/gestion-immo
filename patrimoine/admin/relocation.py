@@ -212,7 +212,7 @@ class TacheActiveFilter(admin.SimpleListFilter):
 
 @admin.register(TacheParDefaut)
 class TacheParDefautAdmin(admin.ModelAdmin):
-    """Réglages : tâches ajoutées à chaque nouveau changement de locataire."""
+    """Paramètres : tâches ajoutées à chaque nouveau changement de locataire."""
     list_display = ["libelle", "phase", "quand", "ordre", "actif"]
     list_editable = ["ordre", "actif"]
     list_filter = [TacheActiveFilter, "phase"]
@@ -319,7 +319,7 @@ class CandidatureAdmin(LotsALouerMixin, admin.ModelAdmin):
             '<p><a class="button" href="{}">Préparer le mail dans Outlook (mis en forme)</a> '
             '<a class="button" href="{}">Préparer en texte simple</a>{}</p>'
             "<p class='help'>« Mis en forme » télécharge un brouillon : ouvrez-le, il s'affiche dans Outlook prêt à envoyer. "
-            "Pour envoyer directement depuis l'appli, renseignez l'e-mail du candidat et le réglage Réglages › Mails.</p>",
+            "Pour envoyer directement depuis l'appli, renseignez l'e-mail du candidat et les Paramètres › Mails.</p>",
             url, reverse("preparer_mail_candidature", args=[obj.pk]), mailto, envoi,
         )
 

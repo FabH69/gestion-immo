@@ -25,7 +25,7 @@ chmod 600 "$SECRET"
 export DJANGO_SECRET_KEY="$(cat "$SECRET")" DJANGO_DEBUG=0 DJANGO_ALLOWED_HOSTS="$DOMAINE"
 
 echo "2/5 Base de données et fichiers de style…"
-# sauvegarde complète avant toute modification (Réglages › Sauvegardes pour la récupérer)
+# sauvegarde complète avant toute modification (Paramètres › Sauvegardes pour la récupérer)
 if [ -f db.sqlite3 ]; then
   "$VENV/bin/python" manage.py shell -c "from patrimoine import sauvegarde; print('    Sauvegarde avant mise à jour :', sauvegarde.creer().name)" \
     || { echo "ERREUR : la sauvegarde avant mise à jour a échoué, rien n'a été modifié."; exit 1; }

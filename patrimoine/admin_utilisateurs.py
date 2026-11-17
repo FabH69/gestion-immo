@@ -56,7 +56,7 @@ class UtilisateurAdmin(UserAdmin):
     list_display = ["username", "nom_complet", "email", "role", "resume_droits", "is_active"]
     list_filter = ["is_active", "is_superuser"]
     TEXTE_DROITS = ("Consultation : voir les pages et les documents sans rien pouvoir modifier. "
-                    "Modification : ajouter, modifier et supprimer. Les Réglages (sauvegardes, mails, utilisateurs) "
+                    "Modification : ajouter, modifier et supprimer. Les Paramètres (sauvegardes, mails, utilisateurs) "
                     "sont réservés aux administrateurs. Un administrateur a tous les droits : les choix ci-dessous ne comptent pas pour lui.")
     fieldsets = [
         (None, {"fields": ["username", "password"]}),
@@ -77,7 +77,7 @@ class UtilisateurAdmin(UserAdmin):
 
     def get_form(self, request, obj=None, **kwargs):
         kwargs["labels"] = {"is_superuser": "Administrateur", "is_active": "Compte actif", "last_login": "Dernière connexion"}
-        kwargs["help_texts"] = {"is_superuser": "Tous les droits, y compris les Réglages et les utilisateurs.",
+        kwargs["help_texts"] = {"is_superuser": "Tous les droits, y compris les Paramètres et les utilisateurs.",
                                 "is_active": "Décochez pour bloquer la connexion sans supprimer le compte."}
         return super().get_form(request, obj, **kwargs)
 

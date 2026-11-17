@@ -111,8 +111,38 @@ class Bien(models.Model):
 
     comptabilite = models.CharField(
         "comptabilité", max_length=10, choices=Comptabilite.choices, default=Comptabilite.FONCIER, blank=True,
-        help_text="Range le bien dans le bon menu Comptabilité et choisit la codification de ses factures : "
-                  "lignes 2072 / 2044 (revenus fonciers) ou rubriques (LMNP, société).")
+        help_text="Déduite du régime fiscal : range le bien dans le bon menu Comptabilité et choisit la codification de "
+                  "ses factures (lignes 2072 / 2044 pour les revenus fonciers, rubriques pour le meublé et les sociétés).")
+
+    class RegimeFiscal(models.TextChoices):
+        NU = "nu", "Location nue en nom propre (revenus fonciers)"
+        SCI_IR = "sci_ir", "SCI à l'IR (revenus fonciers, déclaration 2072)"
+        LMNP = "lmnp", "Meublé en nom propre : LMNP (non professionnel)"
+        LMP = "lmp", "Meublé en nom propre : LMP (professionnel)"
+        SOCIETE_IR = "societe_ir", "SARL de famille ou société à l'IR (BIC)"
+        SOCIETE_IS = "societe_is", "Société à l'IS (SCI ou SARL)"
+        NON_LOUE = "non_loue", "Non loué (résidence principale, bien vide)"
+
+    class OptionFiscale(models.TextChoices):
+        REEL = "reel", "Réel (charges réelles)"
+        MICRO = "micro", "Micro (abattement forfaitaire)"
+
+    # comptabilité tenue pour chaque régime
+    COMPTA_DU_REGIME = {"nu": "foncier", "sci_ir": "foncier", "lmnp": "lmnp", "lmp": "lmnp", "societe_ir": "societe",
+                        "societe_is": "societe", "non_loue": ""}
+    REGIMES_MICRO_POSSIBLE = ("nu", "lmnp", "lmp")
+
+    regime_fiscal = models.CharField(
+        "régime fiscal", max_length=12, choices=RegimeFiscal.choices, blank=True,
+        help_text="Choisit la comptabilité du bien, ses formulaires (2044, 2072, BIC) et les alertes de seuils. "
+                  "La courte durée (Airbnb…) est un meublé : choisissez LMNP ou LMP, puis réglez le lot en courte durée.")
+    option_fiscale = models.CharField(
+        "micro ou réel", max_length=5, choices=OptionFiscale.choices, default=OptionFiscale.REEL,
+        help_text="Micro : abattement forfaitaire (micro-foncier 30 %, micro-BIC 50 % ou 30 %). Réel : charges, intérêts "
+                  "et amortissements déduits. Les SCI et les sociétés sont toujours au réel.")
+    regime_a_verifier = models.BooleanField(
+        "régime à vérifier", default=False, editable=False,
+        help_text="Régime déduit automatiquement de l'ancienne comptabilité : à confirmer en enregistrant la fiche du bien.")
     notes = models.TextField(blank=True)
 
     EQUIPEMENTS_COMMUNS = ["gardiennage", "ascenseur", "chauffage_collectif", "antenne_tv", "vide_ordures", "interphone",
@@ -128,6 +158,58 @@ class Bien(models.Model):
     def __str__(self):
         return f"{self.nom} ({self.ville})"
 
+    def regime_deduit(self):
+        """Régime qui correspond à l'ancienne « comptabilité » du bien et au type de son propriétaire."""
+        type_proprio = self.proprietaire.type if self.proprietaire_id else ""
+        societe = type_proprio not in ("", Proprietaire.Type.NOM_PROPRE)
+        if type_proprio in (Proprietaire.Type.SCI_IS,):
+            return self.RegimeFiscal.SOCIETE_IS
+        if self.comptabilite == self.Comptabilite.FONCIER:
+            return self.RegimeFiscal.SCI_IR if societe else self.RegimeFiscal.NU
+        if self.comptabilite == self.Comptabilite.LMNP:
+            return self.RegimeFiscal.SOCIETE_IR if societe else self.RegimeFiscal.LMNP
+        if self.comptabilite == self.Comptabilite.SOCIETE:
+            return self.RegimeFiscal.SOCIETE_IR
+        return self.RegimeFiscal.NON_LOUE
+
+    @classmethod
+    def from_db(cls, db, field_names, values):
+        instance = super().from_db(db, field_names, values)
+        instance._charge = {f: getattr(instance, f) for f in ("regime_fiscal", "comptabilite") if f in field_names}
+        return instance
+
+    def save(self, *args, **kwargs):
+        # le régime fiscal commande la comptabilité ; sans régime (ancienne fiche), il se déduit de la comptabilité,
+        # de même quand seule la comptabilité a été changée par le code
+        charge = getattr(self, "_charge", {})
+        if charge and self.regime_fiscal == charge.get("regime_fiscal") and self.comptabilite != charge.get("comptabilite"):
+            self.regime_fiscal = ""
+        if not self.regime_fiscal:
+            self.regime_fiscal = self.regime_deduit()
+        self.comptabilite = self.COMPTA_DU_REGIME[self.regime_fiscal]
+        if self.regime_fiscal not in self.REGIMES_MICRO_POSSIBLE:
+            self.option_fiscale = self.OptionFiscale.REEL
+        if kwargs.get("update_fields") is not None:
+            kwargs["update_fields"] = set(kwargs["update_fields"]) | {"regime_fiscal", "comptabilite", "option_fiscale"}
+        super().save(*args, **kwargs)
+        self._charge = {"regime_fiscal": self.regime_fiscal, "comptabilite": self.comptabilite}
+
+    REGIMES_COURTS = {"nu": "Location nue", "sci_ir": "SCI à l'IR", "lmnp": "LMNP", "lmp": "LMP",
+                      "societe_ir": "Société à l'IR (BIC)", "societe_is": "Société à l'IS", "non_loue": "Non loué"}
+
+    @property
+    def regime_court(self):
+        return self.REGIMES_COURTS.get(self.regime_fiscal, "–")
+
+    @property
+    def micro(self):
+        return self.option_fiscale == self.OptionFiscale.MICRO and self.regime_fiscal in self.REGIMES_MICRO_POSSIBLE
+
+    @property
+    def meuble_fiscal(self):
+        """Vrai si le bien est déclaré en meublé (BIC) : LMNP, LMP ou société à l'IR."""
+        return self.regime_fiscal in ("lmnp", "lmp", "societe_ir")
+
 
 class Lot(models.Model):
     """Unité louable : appartement, maison, parking, local..."""
@@ -136,7 +218,8 @@ class Lot(models.Model):
         APPARTEMENT = "appartement", "Appartement"
         MAISON = "maison", "Maison"
         STUDIO = "studio", "Studio"
-        PARKING = "parking", "Parking / garage"
+        GARAGE = "garage", "Garage"
+        PARKING = "parking", "Place de parking"
         CAVE = "cave", "Cave"
         LOCAL_COMMERCIAL = "local_commercial", "Local commercial"
         BUREAU = "bureau", "Bureau"
@@ -176,6 +259,10 @@ class Lot(models.Model):
         help_text="Courte durée : suivi dans Courte durée et bloc à compléter dans Finances › Suivi des encaissements",
     )
     lmnp = models.BooleanField("exploité en LMNP", default=False, help_text="Location meublée non professionnelle : suivi dans Courte durée › Biens en LMNP")
+    tourisme_classe = models.BooleanField(
+        "meublé de tourisme classé", default=False,
+        help_text="Courte durée avec classement en étoiles (Atout France) : micro-BIC à 50 % jusqu'à 77 700 €. "
+                  "Non classé : 30 % jusqu'à 15 000 € (règles depuis les revenus 2025).")
     vendu = models.BooleanField(default=False, help_text="Lot vendu : conservé pour l'historique")
     date_vente = models.DateField("date de vente", null=True, blank=True)
     ref_import = models.CharField("référence d'import", max_length=40, blank=True, editable=False, help_text="Identifiant Airtable d'origine")

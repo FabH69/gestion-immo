@@ -17,5 +17,5 @@ td.estime { color: #777; font-style: italic; }
   {% endfor %}</tbody>
   <tfoot><tr class="total"><td class="libelle">Total des charges</td>{% for t in totaux %}<td>{{ t|euros:2 }}</td>{% endfor %}{% if colonnes|length > 1 %}<td>{{ total|euros:2 }}</td>{% endif %}</tr></tfoot>
 </table>
-<p class="legende">≈ : estimation tirée des charges mensuelles, faute de facture codée pour la rubrique. Rbt prêt : mensualités (capital + intérêts).</p>
+<p class="legende">≈ : estimation tirée des charges mensuelles, faute de facture codée pour la rubrique. Rbt prêt : part capital des mensualités ; les intérêts ont leur propre ligne.</p>
 </body></html>

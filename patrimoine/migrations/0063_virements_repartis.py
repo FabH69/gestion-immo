@@ -7,7 +7,7 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
 
     dependencies = [
-        ("patrimoine", "0058_facture_scindee"),
+        ("patrimoine", "0062_annees_cloturees"),
     ]
 
     operations = [

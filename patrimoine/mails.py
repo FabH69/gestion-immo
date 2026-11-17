@@ -1,4 +1,4 @@
-"""Envoi des mails par le compte Gmail réglé dans Réglages › Mails (smtp.gmail.com, autorisé par PythonAnywhere)."""
+"""Envoi des mails par le compte Gmail réglé dans Paramètres › Mails (smtp.gmail.com, autorisé par PythonAnywhere)."""
 import logging
 
 from django.core.mail import EmailMultiAlternatives, get_connection

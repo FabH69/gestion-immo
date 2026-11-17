@@ -2,7 +2,7 @@
 
 - une sauvegarde est faite automatiquement au premier passage dans l'application après 24 h sans sauvegarde ;
 - les 7 dernières sont gardées sur le serveur (dossier « sauvegardes ») ;
-- la page Réglages › Sauvegardes permet d'en créer une et de la télécharger pour la garder chez soi.
+- la page Paramètres › Sauvegardes permet d'en créer une et de la télécharger pour la garder chez soi.
 """
 import sqlite3
 import tempfile

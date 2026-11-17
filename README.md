@@ -74,3 +74,9 @@ Puis ouvrir http://127.0.0.1:8000/.
 Le script installe les bibliothèques, prépare la base, écrit la configuration du site (clé secrète
 dans `~/.gestion-immo-secret`, DEBUG désactivé), vérifie les PDF et crée le compte administrateur.
 Il peut être relancé après chaque mise à jour du code.
+
+## Simulateurs publics
+
+`/simulateurs/` : simulateurs gratuits, ouverts sans compte (vitrine) : frais de notaire et mensualités d'un prêt.
+Pour en ajouter un, voir `simulateurs/registre.py`. Les taux des droits de mutation se mettent à jour dans
+`simulateurs/calculs/notaire.py` (`TAUX_DEPARTEMENTAUX`, `MISE_A_JOUR`).

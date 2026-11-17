@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{% block titre %}Simulateurs immobiliers{% endblock %}</title>
+<meta name="description" content="{% block description %}Simulateurs immobiliers gratuits : frais de notaire, mensualités de prêt et plus encore.{% endblock %}">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap">
+<style>
+  :root { --primaire: #2f6f73; --fonce: #24585c; --accent: #f2c14e; --texte: #1f2933; --doux: #6b7785; --fond: #f4f7f7; --bord: #dfe5ea; --carte: #fff; --teinte: #eef4f4; --erreur: #c62828; }
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: Inter, -apple-system, "Segoe UI", Roboto, Arial, sans-serif; color: var(--texte); background: var(--fond); font-size: 15px; line-height: 1.5; }
+  a { color: var(--primaire); }
+  header { background: var(--fonce); color: #fff; padding: 14px 16px; }
+  header .contenu { max-width: 1080px; margin: 0 auto; display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+  header .marque { display: flex; align-items: center; gap: 10px; color: #fff; text-decoration: none; font-weight: 700; font-size: 1.05rem; margin-right: auto; }
+  header .logo { width: 34px; height: 34px; border-radius: 10px; background: var(--accent); color: var(--fonce); display: grid; place-items: center; font-size: 21px; }
+  header nav { display: flex; gap: 4px; flex-wrap: wrap; }
+  header nav a { color: #fff; text-decoration: none; opacity: .85; padding: 6px 10px; border-radius: 8px; font-size: .9rem; }
+  header nav a:hover, header nav a.actif { opacity: 1; background: rgba(255,255,255,.12); }
+  header .compte { background: #fff; color: var(--fonce); opacity: 1; font-weight: 600; }
+  main { max-width: 1080px; margin: 24px auto 40px; padding: 0 16px; }
+  h1 { font-size: 1.6rem; margin: 0 0 4px; }
+  .chapeau { color: var(--doux); margin: 0 0 20px; }
+  .carte { background: var(--carte); border: 1px solid var(--bord); border-radius: 14px; padding: 20px; margin-bottom: 16px; box-shadow: 0 1px 6px rgba(16,24,40,.05); }
+  .carte h2 { margin: 0 0 14px; font-size: 1.05rem; }
+  .deux-colonnes { display: grid; grid-template-columns: minmax(280px, 400px) minmax(0, 1fr); gap: 18px; align-items: start; }
+  .champ { margin-bottom: 14px; }
+  .champ > label, .champ .titre { display: block; font-weight: 500; font-size: .88rem; margin-bottom: 5px; }
+  .champ input[type=text], .champ input[type=number], .champ select { width: 100%; padding: 10px 12px; border: 1px solid var(--bord); border-radius: 10px; font: inherit; background: #fff; color: var(--texte); }
+  .champ input:focus, .champ select:focus { outline: 2px solid rgba(47,111,115,.25); border-color: var(--primaire); }
+  .champ ul { list-style: none; margin: 0; padding: 0; }
+  .champ ul label, .case { display: flex; align-items: flex-start; gap: 8px; font-weight: 400; font-size: .92rem; margin-bottom: 4px; }
+  .champ input[type=radio], .champ input[type=checkbox] { margin-top: 4px; accent-color: var(--primaire); }
+  .aide { color: var(--doux); font-size: .8rem; margin-top: 3px; }
+  .erreur { color: var(--erreur); font-size: .82rem; margin-top: 4px; }
+  .paire { display: grid; grid-template-columns: 1fr 1fr; gap: 0 12px; }
+  button, .bouton { display: inline-block; background: var(--primaire); color: #fff; border: 0; border-radius: 999px; padding: 12px 24px; font: inherit; font-weight: 600; cursor: pointer; text-decoration: none; text-align: center; }
+  button:hover, .bouton:hover { background: var(--fonce); }
+  .bouton.secondaire { background: var(--teinte); color: var(--fonce); }
+  .gros { font-size: 2rem; font-weight: 700; color: var(--fonce); line-height: 1.2; font-variant-numeric: tabular-nums; }
+  .tuiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; margin: 16px 0; }
+  .tuile { background: var(--teinte); border-radius: 10px; padding: 10px 12px; }
+  .tuile .l { font-size: .78rem; color: var(--doux); }
+  .tuile .v { font-weight: 700; font-size: 1.1rem; font-variant-numeric: tabular-nums; }
+  table { width: 100%; border-collapse: collapse; }
+  td, th { padding: 8px 6px; font-size: .92rem; border-bottom: 1px solid var(--bord); text-align: left; }
+  th { font-size: .8rem; color: var(--doux); font-weight: 600; }
+  .m { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
+  tr.total td { font-weight: 700; border-top: 2px solid var(--texte); border-bottom: 0; }
+  tr.groupe td { font-weight: 600; background: var(--teinte); }
+  td .detail { display: block; color: var(--doux); font-size: .78rem; }
+  .defile { overflow-x: auto; }
+  details summary { cursor: pointer; color: var(--primaire); font-weight: 500; margin: 6px 0; }
+  .alerte { background: #fff4e5; border: 1px solid #f5c27a; border-radius: 10px; padding: 10px 14px; margin: 12px 0; }
+  .ok { background: #e8f5ee; border: 1px solid #9fd3b4; border-radius: 10px; padding: 10px 14px; margin: 12px 0; }
+  .note { font-size: .8rem; color: var(--doux); line-height: 1.5; margin-top: 14px; }
+  .appel { background: var(--fonce); color: #fff; border-radius: 14px; padding: 20px; display: flex; gap: 16px; align-items: center; justify-content: space-between; flex-wrap: wrap; margin-top: 24px; }
+  .appel p { margin: 4px 0 0; opacity: .85; }
+  .appel .bouton { background: var(--accent); color: var(--fonce); }
+  footer { max-width: 1080px; margin: 0 auto 30px; padding: 0 16px; color: var(--doux); font-size: .8rem; }
+  @media (max-width: 820px) { .deux-colonnes { grid-template-columns: minmax(0, 1fr); } }
+  @media (max-width: 480px) { .paire { grid-template-columns: 1fr; } .gros { font-size: 1.6rem; } h1 { font-size: 1.35rem; } }
+  @media print { header nav, .appel, form, footer { display: none !important; } .deux-colonnes { grid-template-columns: 1fr; } }
+</style>
+{% block style %}{% endblock %}
+</head>
+<body>
+<header><div class="contenu">
+  <a class="marque" href="{% url 'simulateurs:accueil' %}"><span class="logo">⌂</span>Simulateurs immobiliers</a>
+  <nav>
+    {% for s in simulateurs %}{% if s.disponible %}<a href="{% url s.nom_url %}"{% if s.slug == simulateur.slug %} class="actif"{% endif %}>{{ s.titre }}</a>{% endif %}{% endfor %}
+    {% if user.is_authenticated %}<a class="compte" href="{% url 'admin:index' %}">Mon espace</a>{% else %}<a class="compte" href="{% url 'admin:login' %}">Se connecter</a>{% endif %}
+  </nav>
+</div></header>
+<main>{% block contenu %}{% endblock %}
+{% if not user.is_authenticated %}
+<div class="appel"><div><strong>Vous gérez des locations ?</strong><p>Loyers, quittances, baux, prêts, LMNP et courte durée réunis dans un seul outil.</p></div><a class="bouton" href="{% url 'admin:login' %}">Découvrir l'application</a></div>
+{% endif %}
+</main>
+<footer>Simulations indicatives, sans valeur contractuelle. Elles ne remplacent pas l'avis d'un notaire, d'une banque ou d'un conseiller.</footer>
+</body>
+</html>
