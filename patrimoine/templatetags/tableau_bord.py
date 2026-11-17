@@ -140,6 +140,8 @@ def _menu():
     """Groupes du menu : (titre, [(icône, libellé, url, préfixes qui l'activent, sous-liens)])."""
     from django.urls import reverse as r
 
+    from simulateurs.registre import disponibles
+
     a = lambda nom: r(f"admin:patrimoine_{nom}_changelist")
     return [
         (None, [
@@ -168,6 +170,8 @@ def _menu():
             ("prets", "Prêts et endettement", a("pret"), [a("pret"), r("etat_endettement")], [("Endettement à une date", r("etat_endettement"))]),
             ("etats", "États", r("etat_loyers_encaisses"), [r("etat_loyers_encaisses"), r("plus_value")],
              [("Loyers encaissés", r("etat_loyers_encaisses")), ("Simulation de plus-value", r("plus_value"))]),
+            ("euro", "Simulateurs", r("simulateurs:accueil"), [r("simulateurs:accueil")],
+             [(s.titre, r(s.nom_url)) for s in disponibles()]),
         ]),
         ("Comptabilité", _menu_compta()),
         ("Outils", [
