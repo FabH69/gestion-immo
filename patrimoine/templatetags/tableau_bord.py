@@ -95,6 +95,7 @@ ICONES = {
     "compta": '<rect x="4" y="2" width="16" height="20" rx="2"/><path d="M8 6h8M8 10h8M8 14h2M12 14h4M8 18h2M12 18h4"/>',
     "foncier": '<path d="M3 11l9-8 9 8"/><path d="M5 10v10h14V10"/><path d="M10 20v-5h4v5"/>',
     "lmnp": '<path d="M3 18v-6a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v6"/><path d="M3 15h18M6 10V7a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v3"/>',
+    "regimes": '<path d="M9 3h6l1 4H8z"/><rect x="4" y="7" width="16" height="14" rx="2"/><path d="M8 12h8M8 16h5"/>',
     "societe": '<rect x="4" y="3" width="16" height="18" rx="1"/><path d="M9 7h1M14 7h1M9 11h1M14 11h1M9 15h6"/>',
     "rappels": '<path d="M6 8a6 6 0 1 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/>',
     "modeles": '<path d="M12 20h9M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4z"/>',
@@ -193,11 +194,13 @@ def _menu_compta():
 
     factures = r("admin:patrimoine_piececomptable_changelist")
     conciergerie = r("conciergerie_ajouter")
-    entrees = []
+    entrees = [("regimes", "Régimes fiscaux", r("regimes_fiscaux"), [r("regimes_fiscaux")], [])]
     for regime in compta.regimes_utilises():
         f = f"{factures}?compta={regime}"
         if regime == "foncier":
-            sous = [("Factures", f), ("Annexe 2072 (SCI)", r("annexe_2072"))]
+            sous = [("Factures", f)]
+            if compta.biens_2072().exists():
+                sous.append(("Annexe 2072 (SCI)", r("annexe_2072")))
             if compta.biens_2044().exists():
                 sous.append(("Récapitulatif 2044", r("recap_2044")))
             entrees.append(("foncier", "Revenus fonciers", f, [f, r("annexe_2072"), r("recap_2044")], sous))
@@ -265,7 +268,7 @@ def menu_lateral(context):
     module_du_lien = {"biens": "biens", "locataires": "locataires", "baux": "baux", "loyers": "loyers",
                       "candidatures": "relocation", "annonces": "relocation", "cles": "relocation", "lcd": "lcd",
                       "encaissements": "finances", "prets": "finances", "etats": "etats",
-                      "foncier": "compta", "lmnp": "compta", "societe": "compta",
+                      "foncier": "compta", "lmnp": "compta", "societe": "compta", "regimes": "compta",
                       "rappels": "outils", "modeles": "outils", "liens": "outils", "balles": "balles", "controles": "outils"}
     groupes, actif_trouve = [], False
     for titre, liens in _menu():
@@ -279,6 +282,10 @@ def menu_lateral(context):
             pastille = pastilles.get(libelle)
             if ico in compta.REGIMES:
                 pastille = compta.a_codifier(ico).count()  # factures à codifier de cette comptabilité
+            if ico == "regimes":
+                from patrimoine import regimes
+
+                pastille = regimes.nombre_alertes_rouges()  # incohérences entre régime, propriétaire et lots
             if ico == "controles":
                 from patrimoine import controles
 

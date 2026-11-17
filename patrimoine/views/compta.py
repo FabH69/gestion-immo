@@ -25,7 +25,8 @@ def onglets(regime, actif, request=None):
     if regime in compta.PAR_RUBRIQUE:
         liste.append(("recap", "Récapitulatif", reverse(f"compta_{regime}"), None))
     if regime == "foncier":
-        liste.append(("2072", "Annexe 2072 (SCI)", reverse("annexe_2072"), None))
+        if compta.biens_2072().exists():
+            liste.append(("2072", "Annexe 2072 (SCI)", reverse("annexe_2072"), None))
         if compta.biens_2044().exists():
             liste.append(("2044", "Récapitulatif 2044", reverse("recap_2044"), None))
     liste += [("factures", "Factures", factures, None),
@@ -67,7 +68,7 @@ def compta_recap(request, regime):
 
 @staff_member_required
 def recap_2044(request):
-    """Récapitulatif 2044 des biens en nom propre déclarés en revenus fonciers (Pollionnay)."""
+    """Récapitulatif 2044 des biens en location nue en nom propre, au réel (Pollionnay)."""
     aujourdhui = timezone.localdate()
     annee = int(request.GET.get("annee") or aujourdhui.year - (1 if aujourdhui.month < 6 else 0))
     contexte = {"annee": annee, "annees": _annees(), "onglets": onglets("foncier", "2044"), **compta.recap_2044(annee)}
@@ -156,3 +157,16 @@ def controle_conciergerie(request, pk):
         "lien_suivi": reverse("suivi_lcd") + f"?lot={lot.pk}" + (f"&annee={resultat['mois'].year}" if resultat["mois"] else ""),
         "lien_reservation": reverse("admin:patrimoine_reservationlcd_add") + f"?lot={lot.pk}",
         "title": f"Contrôle de la facture {facture['numero'] or ''}".strip()})
+
+
+@staff_member_required
+def regimes_fiscaux(request):
+    """Tableau récapitulatif : régime de chaque bien, recettes, charges, formulaire à remplir et alertes de seuils."""
+    from .. import regimes
+
+    aujourdhui = timezone.localdate()
+    annee = int(request.GET.get("annee") or aujourdhui.year - (1 if aujourdhui.month < 6 else 0))
+    contexte = {"annee": annee, "annees": _annees(), "en_cours": annee == aujourdhui.year, **regimes.synthese(annee),
+                "seuils_reference": regimes}
+    return render(request, "patrimoine/regimes_fiscaux.html",
+                  {**admin.site.each_context(request), **contexte, "title": f"Régimes fiscaux – revenus {annee}"})
