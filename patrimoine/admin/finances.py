@@ -302,6 +302,12 @@ class PieceComptableForm(forms.ModelForm):
         if self.instance.pk and self.instance.bien_id and "ligne" in self.fields and "rubrique" in self.fields:
             inutile = "ligne" if self.instance.par_rubrique else "rubrique"
             self.fields[inutile].widget = forms.HiddenInput()
+        # bien en location nue (nom propre) : les lignes portent les numéros de la déclaration 2044
+        if self.instance.bien_id and "ligne" in self.fields and self.instance.bien.regime_fiscal == "nu":
+            from .. import compta
+
+            self.fields["ligne"].choices = [("", "---------")] + compta.choix_lignes_2044()
+            self.fields["ligne"].label = "ligne de la déclaration 2044"
 
     def clean_fichier(self):
         f = self.cleaned_data.get("fichier")
