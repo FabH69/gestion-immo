@@ -110,7 +110,7 @@ def conciergerie_ajouter(request):
         empreinte = PieceComptable.calculer_empreinte(fichier)
         deja = PieceComptable.objects.filter(empreinte=empreinte).first()
         if deja:
-            messages.warning(request, "Cette facture est déjà enregistrée : voici son contrôle.")
+            messages.warning(request, f"Cette facture est déjà enregistrée{f' en {deja.annee}' if deja.annee else ''} : voici son contrôle.")
             return redirect("controle_conciergerie", pk=deja.pk)
         texte = texte_pdf(fichier) if fichier.name.lower().endswith(".pdf") else ""
         if not conciergerie.est_une_facture(texte):

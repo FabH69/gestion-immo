@@ -153,7 +153,7 @@ MEDIA_URL = "media/"
 MEDIA_ROOT = BASE_DIR / "media"
 # pièces d'identité des garants : hors de media (non publié), servies seulement aux personnes connectées
 PRIVE_ROOT = BASE_DIR / "prive"
-# sauvegardes automatiques (les 7 dernières) : Réglages › Sauvegardes
+# sauvegardes automatiques (les 7 dernières) : Paramètres › Sauvegardes
 SAUVEGARDES_ROOT = BASE_DIR / "sauvegardes"
 SAUVEGARDE_AUTO = CHARGER_MODELES = "test" not in sys.argv  # pas de sauvegarde automatique pendant les tests
 LOYERS_AUTO = "test" not in sys.argv  # loyers du mois créés automatiquement (pas pendant les tests)

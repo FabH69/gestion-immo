@@ -13,7 +13,8 @@ def bloc_a_faire(context):
     relocation = bool((context.get("droits") or {}).get("relocation"))
     items = a_faire(aujourdhui, avec_taches=relocation)
     return {"nb_a_faire": len(items), "nb_retard": sum(i["en_retard"] for i in items), "csrf_token": context.get("csrf_token"),
-            "groupes": a_faire_groupes(items, aujourdhui), "modifiable": (context.get("droits") or {}).get("outils") == "modification"}
+            "groupes": a_faire_groupes(items, aujourdhui), "modifiable": (context.get("droits") or {}).get("outils") == "modification",
+            "request": context.get("request")}
 
 
 @register.inclusion_tag("patrimoine/_taches_changement.html", takes_context=True)
@@ -150,7 +151,7 @@ def _menu():
             ("accueil", "Tableau de bord", r("admin:index"), ["/admin/$"], []),
             ("rappels", "À faire", r("a_faire"), [r("a_faire"), a("rappel"), a("tache")], []),
             ("biens", "Biens et lots", a("bien"), [a("bien"), a("lot")],
-             [("Lots", a("lot")), ("Propriétaires", a("proprietaire")), ("Syndics", a("syndic"))]),
+             [("Propriétaires", a("proprietaire")), ("Lots", a("lot")), ("Syndics", a("syndic"))]),
             ("locataires", "Locataires", a("locataire"), [a("locataire")], []),
             ("baux", "Baux", a("bail"), [a("bail")], [("États des lieux", a("etatdeslieux")), ("Garants", a("garant"))]),
             ("loyers", "Loyers", a("echeance"), [a("echeance"), r("relances_impayes"), a("revisionloyer"), a("mouvementdepot")],
@@ -181,7 +182,7 @@ def _menu():
              [("Modèles location", a("modeledocument")), ("Annonces", a("modeleannonce")), ("Liste des champs", r("liste_champs"))]),
             ("liens", "Sites utiles", a("siteutile"), [a("siteutile")], []),
             ("import", "Import Excel", r("import_excel"), [r("import_excel")], []),
-            ("reglages", "Réglages", r("sauvegardes"),
+            ("reglages", "Paramètres", r("sauvegardes"),
              [r("sauvegardes"), a("parametresmail"), a("tachepardefaut"), "/admin/auth/", "/admin/password_change/"],
              [("Sauvegardes", r("sauvegardes")), ("Mails (Gmail)", a("parametresmail")), ("Tâches entrée / sortie", a("tachepardefaut")),
               ("Utilisateurs", r("admin:auth_user_changelist")), ("Mot de passe", r("admin:password_change"))]),
@@ -282,7 +283,7 @@ def menu_lateral(context):
         lignes = []
         for ico, libelle, url, prefixes, sous in liens:
             if ico == "reglages" and not (user and user.is_superuser):
-                continue  # Réglages : administrateurs seulement ; le mot de passe reste accessible dans le menu du compte
+                continue  # Paramètres : administrateurs seulement ; le mot de passe reste accessible dans le menu du compte
             if ico in module_du_lien and not acces.get(module_du_lien[ico]):
                 continue
             actif = any(_correspond(p, chemin, params) for p in prefixes)
@@ -413,13 +414,15 @@ def a_faire_groupes(items, aujourdhui):
     groupes = {}
     lignes = []
     for i in items:
-        if i.get("important"):
+        # rappels importants et rappels saisis (« Mes rappels ») : une ligne chacun, avec le bouton « Fait »
+        if i.get("important") or (i.get("genre") == "rappels" and i.get("action")):
             jours = (i["date"] - aujourdhui).days
             quand = ("aujourd'hui" if jours == 0 else f"en retard depuis le {i['date']:%d/%m}" if jours < 0
                      else f"le {i['date']:%d/%m/%Y}, dans {jours} jour{'s' if jours > 1 else ''}")
-            lignes.append({"categorie": i["categorie"], "titre": i["titre"], "detail": " · ".join(x for x in (i["detail"], quand) if x),
+            titre = i["titre"] if i.get("important") else f"{i['categorie']} : {i['titre']}"
+            lignes.append({"categorie": i["categorie"], "titre": titre, "detail": " · ".join(x for x in (i["detail"], quand) if x),
                            "url": i["url"], "bouton": "Ouvrir", "nombre": 1, "retard": int(i["en_retard"]), "date": i["date"],
-                           "important": True, "action": i.get("action")})
+                           "important": bool(i.get("important")), "action": i.get("action")})
             continue
         groupes.setdefault(i["categorie"], []).append(i)
     for categorie, liste in groupes.items():
@@ -556,9 +559,10 @@ def boutons_annees(context, annees, annee, mode=""):
 
     if mode == "civil":
         t = timezone.localdate().year
-        boutons = [{"libelle": f"Année en cours ({t})", "url": lien(t), "actif": int(annee) == t},
-                   {"libelle": f"Année précédente ({t - 1})", "url": lien(t - 1), "actif": int(annee) == t - 1}]
-        anterieures = [{"libelle": a, "url": lien(a), "actif": int(a) == int(annee)} for a in sorted({int(x) for x in annees}, reverse=True) if a < t - 1]
+        boutons = [{"libelle": f"{t} (en cours)", "url": lien(t), "actif": int(annee) == t},
+                   {"libelle": str(t - 1), "url": lien(t - 1), "actif": int(annee) == t - 1}]
+        toutes = {int(x) for x in annees} | set(range(t - 10, t - 1))  # toujours les années passées, même sans donnée
+        anterieures = [{"libelle": a, "url": lien(a), "actif": int(a) == int(annee)} for a in sorted(toutes, reverse=True) if a < t - 1]
         return {"boutons": boutons, "anterieures": anterieures, "anterieure_active": any(a["actif"] for a in anterieures)}
     boutons = []
     for a in sorted(annees, reverse=True):

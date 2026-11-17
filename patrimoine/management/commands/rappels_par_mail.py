@@ -27,7 +27,7 @@ class Command(BaseCommand):
         aujourdhui = timezone.localdate()
         reglage = mails.reglage()
         if not essai and (not reglage or not reglage.alerte_rappels):
-            self.stdout.write("Mails des rappels désactivés (Réglages › Mails).")
+            self.stdout.write("Mails des rappels désactivés (Paramètres › Mails).")
             return
         a_envoyer = []
         for r in Rappel.objects.filter(important=True, actif=True, fait=False).select_related("bien").order_by("date"):
@@ -59,4 +59,4 @@ class Command(BaseCommand):
             Rappel.objects.filter(pk__in=[r.pk for r, _ in a_envoyer]).update(dernier_mail=aujourdhui)
             self.stdout.write(self.style.SUCCESS(f"Mail envoyé à {reglage.adresse} ({n} rappel(s))."))
         else:
-            self.stderr.write("Le mail n'a pas pu partir (vérifiez Réglages › Mails).")
+            self.stderr.write("Le mail n'a pas pu partir (vérifiez Paramètres › Mails).")

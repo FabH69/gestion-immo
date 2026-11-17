@@ -4,7 +4,7 @@
   <tbody>
     {% for code, libelle, aide, montant, part in cadre_i %}
       <tr class="{% if code == 'R5' %}total{% endif %}"><td class="num">{{ code }}</td><td class="libelle"><b>{{ libelle }}</b><br><small>{{ aide }}</small></td>
-        <td class="montant">{{ montant|euros:2 }}</td><td class="montant part">{{ part|euros:2 }}</td></tr>
+        <td class="montant">{{ montant|euros }}</td><td class="montant part">{{ part|euros }}</td></tr>
     {% endfor %}
   </tbody>
 </table>

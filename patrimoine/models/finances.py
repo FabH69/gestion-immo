@@ -206,6 +206,30 @@ class LigneEcheancier(models.Model):
         return self.capital + self.interets + self.assurance
 
 
+class AnneeCloturee(models.Model):
+    """Année comptable clôturée : ses factures ne peuvent plus être ajoutées, modifiées ni supprimées (jusqu'au déverrouillage).
+    L'année d'une facture est celle de son paiement (date de la facture si la date de paiement est vide)."""
+
+    annee = models.PositiveSmallIntegerField("année", unique=True)
+    cloturee_le = models.DateTimeField("clôturée le", auto_now_add=True)
+
+    class Meta:
+        verbose_name = "année clôturée"
+        verbose_name_plural = "années clôturées"
+        ordering = ["-annee"]
+
+    def __str__(self):
+        return f"Année {self.annee} clôturée"
+
+    @classmethod
+    def annees(cls):
+        return set(cls.objects.values_list("annee", flat=True))
+
+    @classmethod
+    def est_cloturee(cls, annee):
+        return bool(annee) and cls.objects.filter(annee=annee).exists()
+
+
 def _chemin_facture(instance, nom):
     import secrets
 
@@ -231,7 +255,7 @@ class PieceComptable(models.Model):
         L13 = "13", "13 · Provisions pour charges de copropriété"
         L14 = "14", "14 · Régularisation des provisions de copropriété de l'année précédente"
         L15 = "15", "15 · Déduction spécifique"
-        L17 = "17", "17 · Frais d'emprunt (dossier, garantie, assurance hors échéancier)"
+        L17 = "17", "17 · Intérêts et frais d'emprunt, assurance emprunteur (hors échéancier du prêt)"
         NON = "non", "Non déductible (capital d'emprunt, agrandissement, mobilier…)"
 
     RECETTES = {"2", "3"}
@@ -242,7 +266,8 @@ class PieceComptable(models.Model):
         ("Charges du logement", [("electricite", "Électricité"), ("eau", "Eau"), ("fibre", "Fibre"), ("pno", "PNO"),
                                  ("copro", "Charges copro"), ("comptable", "Comptable"), ("taxe_fonciere", "Taxe foncière"),
                                  ("impots_taxes", "Impôts et taxes (CFE)")]),
-        ("Prêt", [("pret", "Rbt prêt"), ("assurance_pret", "Assurance et frais de prêt")]),
+        ("Prêt", [("pret", "Rbt prêt (capital)"), ("interets_pret", "Intérêts d'emprunt"),
+                  ("assurance_pret", "Assurance et frais de prêt")]),
         ("Autre", [("autre", "Autre")]),
     ]
     LIBELLES_RUBRIQUES = {code: libelle for _, rubriques in RUBRIQUES for code, libelle in rubriques}
@@ -298,6 +323,28 @@ class PieceComptable(models.Model):
             except Exception:
                 pass
         super().save(*args, **kwargs)
+
+    def clean(self):
+        """Année clôturée : une facture comptée dans cette année ne change plus, et aucune facture ne peut y entrer.
+        Une facture « à codifier » (pas encore comptée) reste modifiable : on peut lui donner une date de paiement plus tardive."""
+        from django.core.exceptions import ValidationError
+
+        super().clean()
+        fermees = AnneeCloturee.annees()
+        if not fermees:
+            return
+        avant = PieceComptable.objects.filter(pk=self.pk).select_related("bien").first() if self.pk else None
+        if avant and avant.est_verrouillee(fermees):
+            raise ValidationError(f"L'année {avant.annee} est clôturée : cette facture ne peut plus être modifiée. "
+                                  f"Pour la corriger, déverrouillez d'abord l'année {avant.annee} dans la liste des factures.")
+        if self.annee in fermees and not self.a_codifier:
+            raise ValidationError(f"L'année {self.annee} est clôturée : on ne peut plus y ajouter de facture. Si cette facture a été "
+                                  f"payée plus tard, indiquez sa date de paiement ; sinon, déverrouillez l'année {self.annee}.")
+
+    def est_verrouillee(self, fermees=None):
+        """Vrai si la facture est comptée dans une année clôturée."""
+        fermees = AnneeCloturee.annees() if fermees is None else fermees
+        return self.annee in fermees and not self.a_codifier
 
     @staticmethod
     def calculer_empreinte(fichier):

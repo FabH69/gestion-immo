@@ -620,7 +620,7 @@ class ImportAirtableTests(TestCase):
         self.assertEqual(Bien.objects.get().syndic.nom, "Syndic X")
         self.assertEqual(Proprietaire.objects.get().type, Proprietaire.Type.SCI_IR)
         garage = Lot.objects.get(ref_import="rec2")
-        self.assertEqual((garage.type, garage.nb_pieces), (Lot.Type.PARKING, None))
+        self.assertEqual((garage.type, garage.nb_pieces), (Lot.Type.GARAGE, None))
         self.assertEqual(Lot.objects.get(ref_import="rec1").pdl, "123")
 
 
@@ -1746,7 +1746,7 @@ class DroitsTests(TestCase):
         self.assertContains(r, "Créer une quittance")
         self.assertNotContains(r, "Revenus fonciers")  # pas d'accès à la comptabilité
         self.assertNotContains(r, "Capital restant dû")
-        self.assertNotContains(r, "Réglages")
+        self.assertNotContains(r, "Paramètres")
 
     def test_ecran_utilisateurs(self):
         from django.contrib.auth.models import User
@@ -2198,6 +2198,23 @@ class TableauxBanqueEtRappelsTests(TestCase):
         self.assertEqual(self.client.get(f"/admin/patrimoine/pret/{pret.pk}/tableau/").status_code, 200)
         self.client.post(f"/admin/patrimoine/pret/{pret.pk}/tableau/", {"action": "calcul"})
         self.assertFalse(pret.lignes.exists())
+
+    def test_recapitulatif_separe_interets_et_capital(self):
+        from . import compta
+        from . import tableaux_amortissement as ta
+        from .models import Pret
+
+        pret = Pret.objects.create(proprietaire=self.proprio, bien=self.bien, banque="CE", reference="Y", montant=Decimal("1000"),
+                                   taux=Decimal("1.2"), duree_mois=2, date_premiere_echeance=date(2025, 1, 5))
+        ta.enregistrer(pret, [
+            {"rang": 1, "date": date(2025, 1, 5), "capital": Decimal("495"), "interets": Decimal("5"), "assurance": Decimal("2"), "restant": Decimal("505")},
+            {"rang": 2, "date": date(2025, 2, 5), "capital": Decimal("505"), "interets": Decimal("3"), "assurance": Decimal("1"), "restant": Decimal("0")}])
+        rec = compta.recapitulatif("lmnp", 2025)
+        lignes = {l["code"]: l["total"] for g in rec["groupes"] for l in g["lignes"]}
+        self.assertEqual(lignes["pret"], Decimal("1000"))
+        self.assertEqual(lignes["interets_pret"], Decimal("8"))
+        self.assertEqual(lignes["assurance_pret"], Decimal("3"))
+        self.assertIn("Intérêts d&#x27;emprunt", self.client.get("/comptabilite/lmnp/?annee=2025").content.decode())
 
     def test_rappel_important_en_tete_et_mail(self):
         from io import StringIO
@@ -2890,6 +2907,173 @@ class ScissionFactureTests(TestCase):
         # retour à deux lignes : la part en trop est supprimée
         self._poster([(self.bien, "13", "850"), (self.bien, "14", "150")])
         self.assertEqual(self.piece.parts.count(), 1)
+
+
+class FacturesAnneePaiementEtClotureTests(TestCase):
+    """Factures rangées par année de paiement, message de doublon avec l'année et le lien, années clôturées."""
+
+    def setUp(self):
+        from .models import PieceComptable
+
+        sci = Proprietaire.objects.create(nom="SCI V", type=Proprietaire.Type.SCI_IR)
+        self.bien = Bien.objects.create(proprietaire=sci, nom="Vaugneray", adresse="1 rue", code_postal="69670", ville="Vaugneray",
+                                        comptabilite="foncier")
+        # appel de fonds daté de décembre 2024, payé en janvier 2025
+        self.piece = PieceComptable.objects.create(bien=self.bien, date=date(2024, 12, 18), date_paiement=date(2025, 1, 10),
+                                                   fournisseur="Syndic", libelle="Appel de fonds T1", montant=Decimal("300"), ligne="13")
+        self.client.force_login(User.objects.create_superuser("admin", "a@example.com", "x"))
+
+    def test_rangee_dans_l_annee_du_paiement(self):
+        from .annexe2072 import colonne
+
+        self.assertEqual(self.piece.annee, 2025)
+        self.assertEqual(colonne(self.bien, 2025)["valeurs"].get("13"), Decimal("300"))
+        self.assertFalse(colonne(self.bien, 2024)["valeurs"].get("13"))
+        liste = self.client.get("/admin/patrimoine/piececomptable/?compta=foncier&annee=2025")
+        self.assertEqual(list(liste.context["cl"].result_list), [self.piece])
+        self.assertContains(liste, "column-payee_le")
+        self.assertContains(liste, "10/01/2025")
+
+    def test_doublon_indique_l_annee_et_le_lien(self):
+        import tempfile
+
+        from django.core.files.uploadedfile import SimpleUploadedFile
+        from django.test import override_settings
+
+        from .models import PieceComptable
+
+        with tempfile.TemporaryDirectory() as prive, override_settings(PRIVE_ROOT=prive):
+            self.piece.fichier = SimpleUploadedFile("appel.pdf", b"%PDF-appel")
+            self.piece.empreinte = ""
+            self.piece.save()
+            r = self.client.post("/admin/patrimoine/piececomptable/import/",
+                                 {"bien": self.bien.pk, "fichiers": [SimpleUploadedFile("copie.pdf", b"%PDF-appel")]}, follow=True)
+        self.assertEqual(PieceComptable.objects.count(), 1)
+        self.assertContains(r, "Cette facture est enregistrée en 2025")
+        self.assertContains(r, f'href="/admin/patrimoine/piececomptable/{self.piece.pk}/change/"')
+        self.assertContains(r, "?compta=foncier&amp;annee=2025")
+
+    def test_annee_cloturee_verrouille_les_factures(self):
+        from .models import AnneeCloturee, PieceComptable
+
+        liste = "/admin/patrimoine/piececomptable/?compta=foncier&annee=2025"
+        self.assertContains(self.client.get(liste), "Année 2025 ouverte")
+        self.client.post("/admin/patrimoine/piececomptable/cloture/2025/", {"verrouiller": "1", "retour": liste})
+        self.assertTrue(AnneeCloturee.est_cloturee(2025))
+        self.assertContains(self.client.get(liste), "Année 2025 clôturée")
+        # fiche en lecture seule, suppression et scission refusées
+        fiche = self.client.get(f"/admin/patrimoine/piececomptable/{self.piece.pk}/change/")
+        self.assertContains(fiche, "est clôturée")
+        self.client.post(f"/admin/patrimoine/piececomptable/{self.piece.pk}/change/", {"bien": self.bien.pk, "montant": "999"})
+        self.client.post(f"/admin/patrimoine/piececomptable/{self.piece.pk}/delete/", {"post": "yes"})
+        self.client.post("/admin/patrimoine/piececomptable/", {"action": "delete_selected", "post": "yes", "_selected_action": [self.piece.pk]})
+        self.piece.refresh_from_db()
+        self.assertEqual(self.piece.montant, Decimal("300"))
+        # aucune nouvelle facture comptée dans l'année clôturée ; possible si payée l'année suivante
+        p = PieceComptable(bien=self.bien, date=date(2025, 6, 1), montant=Decimal("50"), ligne="9")
+        with self.assertRaises(Exception):
+            p.full_clean()
+        p.date_paiement = date(2026, 1, 5)
+        p.full_clean()
+        # déverrouillage : la facture redevient modifiable
+        self.client.post("/admin/patrimoine/piececomptable/cloture/2025/", {"verrouiller": "0", "retour": liste})
+        self.assertFalse(AnneeCloturee.est_cloturee(2025))
+        self.piece.montant = Decimal("310")
+        self.piece.full_clean()
+
+
+class RetoursNovembreTests(TestCase):
+    """Petites corrections demandées par Fabien (retours des 14 et 15 novembre)."""
+
+    def setUp(self):
+        self.client.force_login(User.objects.create_superuser("admin", "a@example.com", "x"))
+        self.sci = Proprietaire.objects.create(nom="SCI R", type=Proprietaire.Type.SCI_IR)
+        self.bien = Bien.objects.create(proprietaire=self.sci, nom="Immeuble R", adresse="1 rue", code_postal="69000", ville="Lyon")
+
+    def test_menu_parametres_et_ordre_biens(self):
+        page = self.client.get("/admin/").content.decode()
+        self.assertIn("Paramètres", page)
+        self.assertNotIn("Réglages", page)
+        self.assertLess(page.index("Propriétaires"), page.index(">Lots<"))
+        self.assertLess(page.index(">Lots<"), page.index("Syndics"))
+
+    def test_nouveau_locataire_a_venir_reste_visible(self):
+        Locataire.objects.create(nom="NOUVEAU")
+        page = self.client.get("/admin/patrimoine/locataire/").content.decode()
+        self.assertIn("NOUVEAU", page)
+        self.assertIn("À venir", page)
+        self.assertNotIn("NOUVEAU", self.client.get("/admin/patrimoine/locataire/?present=non").content.decode())
+        self.assertIn("NOUVEAU", self.client.get("/admin/patrimoine/locataire/?present=avenir").content.decode())
+
+    def test_types_garage_et_place_de_parking(self):
+        self.assertIn(("garage", "Garage"), Lot.Type.choices)
+        self.assertIn(("parking", "Place de parking"), Lot.Type.choices)
+        self.assertIn(("maison", "Maison"), Lot.Type.choices)
+
+    def test_2072_arrondi_et_assurance_emprunteur_ligne_17(self):
+        from .annexe2072 import annexe, part_personnelle
+        from .lecture_factures import analyser
+        from .models import PieceComptable
+
+        PieceComptable.objects.create(bien=self.bien, date=date(2025, 3, 1), libelle="Taxe", montant=Decimal("800.50"), ligne="12")
+        PieceComptable.objects.create(bien=self.bien, date=date(2025, 4, 1), libelle="Assurance", montant=Decimal("120.49"), ligne="17")
+        a = annexe([self.bien], 2025)
+        v = a["colonnes"][0]["valeurs"]
+        self.assertEqual((v["12"], v["17"]), (Decimal("801"), Decimal("120")))
+        self.assertEqual(a["colonnes"][0]["valeurs_exactes"]["12"], Decimal("800.50"))
+        self.assertEqual(part_personnelle([("R5", "", "", Decimal("-1001"))], 50)[0][4], Decimal("-501"))
+        texte = "Avis d'échéance - Assurance emprunteur - prêt immobilier n° 123\nMontant à payer : 45,20 €\nDate : 05/01/2025"
+        self.assertEqual(analyser(texte).get("ligne"), "17")
+
+    def test_annees_anterieures_toujours_proposees(self):
+        t = timezone.localdate().year
+        page = self.client.get("/admin/patrimoine/piececomptable/?compta=foncier").content.decode()
+        self.assertIn(f"{t - 1}", page)
+        self.assertIn(f">{t - 3}<", page)
+        page = self.client.get("/comptabilite/2072/").content.decode()
+        self.assertIn(f">{t - 3}<", page)
+
+    def test_piece_non_lue_et_saisie_obligatoire(self):
+        from .models import PieceComptable
+
+        piece = PieceComptable.objects.create(bien=self.bien, libelle="scan illisible")
+        url = "/admin/patrimoine/piececomptable/?compta=foncier&a_codifier=oui"
+        page = self.client.get(url).content.decode()
+        self.assertIn("À saisir à la main", page)
+        self.assertIn("1 pièce à compléter", page)
+        # enregistrer la ligne sans montant ni date : refusé, avec un message clair
+        donnees = {"form-TOTAL_FORMS": "1", "form-INITIAL_FORMS": "1", "form-0-id": str(piece.pk), "form-0-bien": str(self.bien.pk),
+                   "form-0-date": "", "form-0-date_paiement": "", "form-0-fournisseur": "Plombier", "form-0-libelle": "scan illisible",
+                   "form-0-montant": "", "form-0-ligne": "9", "_save": "Enregistrer"}
+        r = self.client.post(url, donnees)
+        self.assertContains(r, "Obligatoire : saisissez le montant.")
+        piece.refresh_from_db()
+        self.assertEqual(piece.ligne, "")
+        # action « Valider » avec une saisie en cours : la saisie est enregistrée, la pièce non lue n'est pas « validée »
+        donnees.update({"form-0-date": "2025-03-01", "form-0-montant": "358", "action": "valider_preremplies",
+                        "_selected_action": [str(piece.pk)], "index": "0"})
+        del donnees["_save"]
+        r = self.client.post(url, donnees, follow=True)
+        piece.refresh_from_db()
+        self.assertEqual((piece.montant, piece.ligne), (Decimal("358.00"), "9"))
+        self.assertContains(r, "saisie du tableau enregistrée")
+
+    def test_rappel_retour_accueil_et_bouton_fait(self):
+        accueil = self.client.get("/admin/").content.decode()
+        self.assertIn("/admin/patrimoine/rappel/add/?next=/admin/", accueil)
+        r = self.client.post("/admin/patrimoine/rappel/add/?next=/admin/", {
+            "titre": "Note BNB Google", "date": timezone.localdate().isoformat(), "periodicite": "ponctuel", "categorie": "autre",
+            "actif": "on", "notes": ""})
+        self.assertEqual(r.status_code, 302, r.context["adminform"].form.errors if r.context else "")
+        self.assertEqual(r["Location"], "/admin/")
+        accueil = self.client.get("/admin/").content.decode()
+        self.assertIn("Note BNB Google", accueil)
+        self.assertIn("bouton-fait", accueil)
+
+    def test_scripts_charges(self):
+        page = self.client.get("/admin/patrimoine/locataire/").content.decode()
+        for script in ("recherche_liste.js", "calcul_montants.js", "confirmer.js"):
+            self.assertIn(script, page)
 
 
 class RegimesFiscauxTests(TestCase):

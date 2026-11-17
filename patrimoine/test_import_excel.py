@@ -37,7 +37,7 @@ def complet():
                 "Date d'acquisition": datetime(2020, 3, 15), "Prix d'acquisition (€)": 185000}],
         Lots=[{"Bien": "Immeuble Hugo", "Désignation du lot": "Apt 1", "Type de lot": "Appartement", "Surface (m²)": "45,5",
                "Nombre de pièces": 2, "Meublé": "Oui"},
-              {"Bien": "immeuble hugo", "Désignation du lot": "Parking 3", "Type de lot": "Parking / garage"}],
+              {"Bien": "immeuble hugo", "Désignation du lot": "Parking 3", "Type de lot": "Place de parking"}],
         Locataires=[{"Nom": "Martin", "Prénom": "Julie", "Civilité": "Mme", "E-mail": "julie@exemple.fr",
                      "Date de naissance": "02/05/1990"},
                     {"Nom": "Durand", "Prénom": "Paul"}],
