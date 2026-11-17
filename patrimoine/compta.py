@@ -58,9 +58,20 @@ def a_codifier(regime=None):
     return qs.filter(bien__comptabilite=regime) if regime else qs
 
 
+def a_saisir(regime=None):
+    """Pièces importées que la lecture automatique n'a pas pu lire (montant ou date manquants) : à compléter à la main."""
+    qs = PieceComptable.objects.filter(preremplie=False).filter(Q(montant__isnull=True) | Q(date__isnull=True))
+    return qs.filter(bien__comptabilite=regime) if regime else qs
+
+
 def biens_2044():
-    """Biens en nom propre déclarés en revenus fonciers (déclaration 2044, ex. Pollionnay)."""
-    return Bien.objects.filter(comptabilite="foncier", proprietaire__type=Proprietaire.Type.NOM_PROPRE)
+    """Biens en location nue en nom propre, au réel (déclaration 2044, ex. Pollionnay) ; le micro-foncier n'a pas de 2044."""
+    return Bien.objects.filter(regime_fiscal="nu").exclude(option_fiscale="micro")
+
+
+def biens_2072():
+    """Biens des SCI à l'IR (déclaration 2072)."""
+    return Bien.objects.filter(regime_fiscal="sci_ir")
 
 
 # --- correspondances vers les rubriques ------------------------------------------------------------------------------
@@ -151,11 +162,12 @@ def detail_bien(bien, annee, jusqua=12):
             if c.active_en(date(annee, n, 1), date(annee, n, calendar.monthrange(annee, n)[1])):
                 ajouter(rubrique, n, c.montant_mensuel, "E")
 
-    # 5. prêts du bien : mensualités (capital + intérêts) et assurance
+    # 5. prêts du bien : capital remboursé, intérêts et assurance de chaque échéance
     for pret in bien.prets.all():
         for e in pret.echeancier():
             if e["date"].year == annee and e["date"].month <= jusqua:
-                ajouter("pret", e["date"].month, e["mensualite"], "P")
+                ajouter("pret", e["date"].month, e["capital"], "P")
+                ajouter("interets_pret", e["date"].month, e["interets"], "P")
                 ajouter("assurance_pret", e["date"].month, e["assurance"] or ZERO, "P")
     return d
 
@@ -223,7 +235,8 @@ def recapitulatif(regime, annee, bien_choisi=None, par_mois=False):
             "biens": liste, "sources": SOURCES}
 
 
-NOTES = {"pret": "mensualités (capital + intérêts) ; le bilan 2031 ne retient que les intérêts",
+NOTES = {"pret": "part capital des mensualités (non déductible)",
+         "interets_pret": "charge déductible (bilan 2031 / 2033)",
          "commission": "plateformes et conciergerie"}
 
 
@@ -247,6 +260,18 @@ LIGNES_2044 = [  # (numéro de la 2044, libellé, ligne correspondante de l'anne
     ("250", "Intérêts et frais d'emprunt (dont assurance emprunteur)", "17", ""),
     ("", "Résultat foncier de l'immeuble (215 − 240 − 250)", "18", "total"),
 ]
+
+
+def choix_lignes_2044():
+    """Choix de codification d'une facture d'un bien en location nue : numéros de la 2044 au lieu de ceux de la 2072."""
+    numeros = {code: numero for numero, _, code, _ in LIGNES_2044 if numero}
+    numeros["9b"] = numeros["9"]
+    choix = []
+    for code, libelle in PieceComptable.Ligne.choices:
+        if code in numeros:
+            libelle = f"{numeros[code]} · {libelle.split(' · ', 1)[-1]}"
+        choix.append((code, libelle))
+    return choix
 
 
 def recap_2044(annee):

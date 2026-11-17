@@ -250,7 +250,12 @@ def fiche_locataire(locataire):
     baux = list(locataire.baux.select_related("lot__bien__proprietaire").order_by("-actif", "-date_debut"))
     bail = next((b for b in baux if b.actif), None)
     f = Fiche(str(locataire))
-    f.badge("Présent" if bail else "Parti", "ok" if bail else "gris")
+    if bail:
+        f.badge("Présent", "ok")
+    elif baux:
+        f.badge("Parti", "gris")
+    else:
+        f.badge("À venir (sans bail)", "bleu")
     if bail:
         badge_impayes(f, [bail], reverse("admin:patrimoine_echeance_changelist") + f"?bail={bail.pk}")
     dernier = bail or (baux[0] if baux else None)

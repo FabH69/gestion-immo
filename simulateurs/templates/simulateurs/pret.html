@@ -1,0 +1,64 @@
+{% extends "simulateurs/base.html" %}
+{% block titre %}Calcul des mensualités d'un prêt immobilier{% endblock %}
+{% block description %}Calculez gratuitement la mensualité de votre prêt immobilier, le coût total, le TAEG et le tableau d'amortissement.{% endblock %}
+{% block contenu %}
+<h1>Mensualités d'un prêt immobilier</h1>
+<p class="chapeau">Mensualité, coût du crédit, TAEG et tableau d'amortissement, assurance comprise.</p>
+<div class="deux-colonnes">
+  <form method="get" class="carte" novalidate>
+    {% for e in form.non_field_errors %}<div class="erreur">{{ e }}</div>{% endfor %}
+    {% include "simulateurs/_champ.html" with champ=form.capital %}
+    <div class="paire">
+      {% include "simulateurs/_champ.html" with champ=form.taux %}
+      {% include "simulateurs/_champ.html" with champ=form.duree_annees %}
+    </div>
+    {% include "simulateurs/_champ.html" with champ=form.taux_assurance %}
+    {% include "simulateurs/_champ.html" with champ=form.mode_assurance %}
+    {% include "simulateurs/_champ.html" with champ=form.frais %}
+    <details{% if form.revenus.value or form.revenus.errors or form.autres_credits.errors %} open{% endif %}><summary>Mon taux d'endettement</summary>
+      {% include "simulateurs/_champ.html" with champ=form.revenus %}
+      {% include "simulateurs/_champ.html" with champ=form.autres_credits %}
+    </details>
+    <button type="submit" style="width:100%;margin-top:8px">Calculer</button>
+  </form>
+
+  <div>
+  {% if r %}
+    <div class="carte">
+      <div class="aide">Mensualité{% if r.assurance_mensuelle %} assurance comprise{% endif %}{% if r.mode_assurance == "restant" and r.taux_assurance %} (1<sup>re</sup> année){% endif %}</div>
+      <div class="gros">{{ r.mensualite_totale|floatformat:"2g" }} €</div>
+      {% if r.assurance_mensuelle %}<div>dont {{ r.mensualite|floatformat:"2g" }} € de crédit et {{ r.assurance_mensuelle|floatformat:"2g" }} € d'assurance</div>{% endif %}
+      <div class="tuiles">
+        <div class="tuile"><div class="l">Intérêts</div><div class="v">{{ r.cout_interets|floatformat:"0g" }} €</div></div>
+        <div class="tuile"><div class="l">Assurance</div><div class="v">{{ r.cout_assurance|floatformat:"0g" }} €</div></div>
+        <div class="tuile"><div class="l">Coût total du crédit</div><div class="v">{{ r.cout_total|floatformat:"0g" }} €</div></div>
+        <div class="tuile"><div class="l">TAEG</div><div class="v">{{ r.taeg|floatformat:"2" }} %</div></div>
+      </div>
+      <p>Vous remboursez <strong>{{ r.total_rembourse|floatformat:"0g" }} €</strong> en {{ r.duree_mois }} mois pour {{ r.capital|floatformat:"0g" }} € empruntés{% if r.frais %} (frais de {{ r.frais|floatformat:"0g" }} € compris){% endif %}.</p>
+      {% if endettement is not None %}
+        <div class="{% if endettement > endettement_max %}alerte{% else %}ok{% endif %}">Taux d'endettement : <strong>{{ endettement|floatformat:"1" }} %</strong>.
+        {% if endettement > endettement_max %}Il dépasse les {{ endettement_max|floatformat:"0" }} % que les banques appliquent en général.{% else %}Il reste sous les {{ endettement_max|floatformat:"0" }} % que les banques appliquent en général.{% endif %}</div>
+      {% endif %}
+    </div>
+    <div class="carte">
+      <h2>Tableau d'amortissement</h2>
+      <div class="defile"><table>
+        <tr><th>Année</th><th class="m">Intérêts</th><th class="m">Capital</th><th class="m">Assurance</th><th class="m">Total payé</th><th class="m">Reste dû</th></tr>
+        {% for a in r.par_annee %}<tr><td>{{ a.annee }}</td><td class="m">{{ a.interets|floatformat:"0g" }} €</td><td class="m">{{ a.capital|floatformat:"0g" }} €</td><td class="m">{{ a.assurance|floatformat:"0g" }} €</td><td class="m">{{ a.total|floatformat:"0g" }} €</td><td class="m">{{ a.restant|floatformat:"0g" }} €</td></tr>{% endfor %}
+      </table></div>
+      <details><summary>Voir le détail mois par mois</summary>
+        <div class="defile"><table>
+          <tr><th>N°</th><th class="m">Intérêts</th><th class="m">Capital</th><th class="m">Assurance</th><th class="m">Échéance</th><th class="m">Reste dû</th></tr>
+          {% for e in r.echeances %}<tr><td>{{ e.numero }}</td><td class="m">{{ e.interets|floatformat:"2g" }}</td><td class="m">{{ e.capital|floatformat:"2g" }}</td><td class="m">{{ e.assurance|floatformat:"2g" }}</td><td class="m">{{ e.total|floatformat:"2g" }}</td><td class="m">{{ e.restant|floatformat:"2g" }}</td></tr>{% endfor %}
+        </table></div>
+      </details>
+    </div>
+  {% else %}
+    <div class="carte"><h2>Comment ça marche ?</h2>
+      <p>Saisissez le montant, le taux et la durée de votre prêt. Ajoutez le taux de l'assurance emprunteur et les frais de dossier ou de garantie pour obtenir le coût réel et le TAEG.</p>
+    </div>
+  {% endif %}
+    <p class="note">Prêt amortissable à taux fixe et mensualités constantes, sans différé. Le TAEG est calculé par la méthode actuarielle à partir des échéances (assurance comprise) et des frais payés au départ ; celui de l'offre de prêt peut inclure d'autres frais (courtage, frais de tenue de compte…).</p>
+  </div>
+</div>
+{% endblock %}

@@ -70,7 +70,8 @@ def bilan_lot(lot, annee):
     resultat = total_recettes - total_charges
     # les amortissements ne peuvent pas créer de déficit : l'excédent se reporte sans limite de durée
     amort_deduit = min(amortissements, max(resultat, ZERO))
-    abattement = ABATTEMENT_MICRO["courte" if lot.exploitation == "courte" else "longue"]
+    # courte durée : 30 % si le meublé de tourisme n'est pas classé, 50 % s'il l'est (comme le meublé classique)
+    abattement = ABATTEMENT_MICRO["courte" if lot.exploitation == "courte" and not lot.tourisme_classe else "longue"]
     return {
         "lot": lot, "recettes": recettes, "charges": charges, "total_recettes": total_recettes, "total_charges": total_charges,
         "resultat": resultat, "amortissements": amortissements, "amort_deduit": amort_deduit, "amort_reporte": amortissements - amort_deduit,
@@ -80,7 +81,11 @@ def bilan_lot(lot, annee):
 
 
 def lots_lmnp():
-    return Lot.objects.filter(lmnp=True).select_related("bien__proprietaire").order_by("bien__nom", "designation")
+    """Lots des biens au régime LMNP ou LMP, et lots cochés « exploité en LMNP »."""
+    from django.db.models import Q
+
+    return Lot.objects.filter(Q(lmnp=True) | Q(bien__regime_fiscal__in=("lmnp", "lmp"))).distinct() \
+        .select_related("bien__proprietaire").order_by("bien__nom", "designation")
 
 
 def bilan(annee, lot_id=None):

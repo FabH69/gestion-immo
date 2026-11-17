@@ -5,7 +5,7 @@ Sources : loyers HC encaissés dans l'année (paiements, ou ancien suivi), factu
 """
 from collections import defaultdict
 from datetime import date
-from decimal import Decimal
+from decimal import ROUND_HALF_UP, Decimal
 
 from django.db.models import Q
 
@@ -95,8 +95,31 @@ def colonne(bien, annee):
     return {"bien": bien, "valeurs": dict(v), "detail": dict(detail)}
 
 
+LIGNES_SAISIES = ["1", "2", "3", "4", "6", "7", "8", "9", "9b", "10", "11", "12", "13", "14", "15", "17", "19", "20"]
+
+
+def euro_le_plus_proche(montant):
+    """Arrondi fiscal : à l'euro le plus proche (0,50 € et plus → euro supérieur)."""
+    return Decimal(montant).quantize(Decimal(1), ROUND_HALF_UP)
+
+
+def arrondir(valeurs):
+    """Montants du formulaire arrondis à l'euro le plus proche, ligne par ligne ; les totaux sont refaits
+    à partir des lignes arrondies, comme sur le Cerfa."""
+    v = defaultdict(lambda: ZERO, {k: euro_le_plus_proche(valeurs.get(k, ZERO)) for k in LIGNES_SAISIES})
+    v["5"] = v["1"] + v["2"] + v["3"] + v["4"]
+    v["16"] = v["6"] + v["7"] + v["8"] + v["9"] + v["10"] + v["11"] + v["12"] + v["13"] - v["14"] + v["15"]
+    v["18"] = v["5"] - v["16"] - v["17"]
+    v["21"] = v["18"] + v["19"] + v["20"]
+    return dict(v)
+
+
 def annexe(biens, annee):
-    colonnes = [colonne(b, annee) for b in biens]
+    colonnes = []
+    for b in biens:
+        c = colonne(b, annee)
+        c["valeurs_exactes"], c["valeurs"] = c["valeurs"], arrondir(c["valeurs"])  # le détail garde les centimes
+        colonnes.append(c)
     total_23 = sum((c["valeurs"]["21"] for c in colonnes), ZERO)
     pages = []
     for i in range(0, max(len(colonnes), 1), 6):  # 6 immeubles par page, comme le formulaire
@@ -119,4 +142,4 @@ def annexe(biens, annee):
 def part_personnelle(resultat, pourcentage):
     """Cadre I × % de détention du foyer : seul usage de ce pourcentage dans l'application."""
     taux = Decimal(pourcentage or 0) / 100
-    return [(code, libelle, aide, montant, (montant * taux).quantize(Decimal("0.01"))) for code, libelle, aide, montant in resultat]
+    return [(code, libelle, aide, montant, euro_le_plus_proche(montant * taux)) for code, libelle, aide, montant in resultat]
