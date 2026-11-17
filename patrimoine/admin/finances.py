@@ -139,8 +139,10 @@ class AnneeFiscaleFilter(admin.SimpleListFilter):
 
     def lookups(self, request, model_admin):
         t = timezone.localdate().year
-        anterieures = sorted({p.annee for p in PieceComptable.objects.only("date", "date_paiement")} - {None, t, t - 1}, reverse=True)
-        return [(str(t), f"Année en cours ({t})"), (str(t - 1), f"Année précédente ({t - 1})")] + [(str(a), str(a)) for a in anterieures if a < t - 1]
+        # années antérieures : toujours les 10 dernières, plus les plus anciennes qui ont des factures
+        avec_factures = {p.annee for p in PieceComptable.objects.only("date", "date_paiement")} - {None}
+        anterieures = sorted(set(range(t - 10, t - 1)) | {a for a in avec_factures if a < t - 1}, reverse=True)
+        return [(str(t), f"{t} (en cours)"), (str(t - 1), str(t - 1))] + [(str(a), str(a)) for a in anterieures]
 
     def queryset(self, request, queryset):
         if self.value():
@@ -308,6 +310,20 @@ class PieceComptableForm(forms.ModelForm):
 
             self.fields["ligne"].choices = [("", "---------")] + compta.choix_lignes_2044()
             self.fields["ligne"].label = "ligne de la déclaration 2044"
+
+    OBLIGATOIRES = {"bien": "le bien", "date": "la date de la facture", "montant": "le montant"}
+
+    def clean(self):
+        """Montant, date et bien obligatoires dès qu'on enregistre une saisie (une ligne non modifiée du tableau
+        « À codifier » reste en attente sans bloquer les autres)."""
+        donnees = super().clean()
+        if self.instance.pk and not self.has_changed():
+            return donnees
+        for champ, nom in self.OBLIGATOIRES.items():
+            if champ in self.fields and not isinstance(self.fields[champ].widget, forms.HiddenInput) \
+                    and donnees.get(champ) in (None, "") and champ not in self.errors:
+                self.add_error(champ, f"Obligatoire : saisissez {nom}.")
+        return donnees
 
     def clean_fichier(self):
         f = self.cleaned_data.get("fichier")
@@ -560,10 +576,42 @@ class PieceComptableAdmin(admin.ModelAdmin):
 
     actions = ["valider_preremplies"]
 
+    def response_action(self, request, queryset):
+        """Tableau « À codifier » : les saisies faites dans le tableau sont enregistrées avant de lancer l'action
+        (au lieu du message du navigateur « modifications non sauvegardées » qui les faisait perdre)."""
+        if self._codifier(request) and request.POST.get("form-TOTAL_FORMS"):
+            FormSet = self.get_changelist_formset(request)
+            objets = self._get_list_editable_queryset(request, FormSet.get_default_prefix())
+            formset = FormSet(request.POST, request.FILES, queryset=objets)
+            enregistrees, refusees = 0, 0
+            for form in formset.initial_forms:
+                if not form.has_changed():
+                    continue
+                if form.is_valid():
+                    obj = self.save_form(request, form, change=True)
+                    self.save_model(request, obj, form, change=True)
+                    enregistrees += 1
+                else:
+                    refusees += 1
+            if enregistrees:
+                messages.info(request, f"{enregistrees} saisie{'s' if enregistrees > 1 else ''} du tableau enregistrée{'s' if enregistrees > 1 else ''}.")
+            if refusees:
+                messages.warning(request, f"{refusees} ligne{'s' if refusees > 1 else ''} non enregistrée{'s' if refusees > 1 else ''} : "
+                                          "montant, date et bien sont obligatoires. Complétez-les puis « Enregistrer ma saisie ».")
+        return super().response_action(request, queryset)
+
     @admin.action(description="Valider les champs lus automatiquement (pièces sélectionnées)")
     def valider_preremplies(self, request, queryset):
         n = queryset.filter(preremplie=True).update(preremplie=False)
-        messages.success(request, f"{n} pièce{'s' if n > 1 else ''} validée{'s' if n > 1 else ''}.")
+        non_lues = queryset.filter(preremplie=False).filter(Q(montant__isnull=True) | Q(date__isnull=True)).count()
+        if n:
+            messages.success(request, f"{n} pièce{'s' if n > 1 else ''} validée{'s' if n > 1 else ''}.")
+        if non_lues:
+            messages.warning(request, f"{non_lues} pièce{'s' if non_lues > 1 else ''} n'{'ont' if non_lues > 1 else 'a'} pas pu être "
+                                      f"lue{'s' if non_lues > 1 else ''} automatiquement : rien à valider. Saisissez montant et date "
+                                      "à la main, puis « Enregistrer ma saisie ».")
+        elif not n:
+            messages.info(request, "Aucune des pièces sélectionnées n'avait de champs lus automatiquement.")
 
     @admin.display(description="")
     def etat_lecture(self, obj):
@@ -572,7 +620,9 @@ class PieceComptableAdmin(admin.ModelAdmin):
                                'Vérifiez la codification proposée, puis Enregistrer ou action « Valider »">{}</span>',
                                obj.get_format_electronique_display(), obj.get_format_electronique_display())
         if obj.preremplie:
-            return format_html('<span class="pill bleu" title="Champs lus dans le PDF : vérifiez-les, puis Enregistrer ou action « Valider »">lu auto</span>')
+            return format_html('<span class="pill bleu lu-auto" title="Champs lus dans le PDF : vérifiez-les, puis Enregistrer ou action « Valider »">lu auto</span>')
+        if obj.montant is None or obj.date is None:
+            return format_html('<span class="pill orange a-saisir" title="La pièce n\'a pas pu être lue : saisissez montant, date et bien">À saisir à la main</span>')
         return ""
 
     def save_model(self, request, obj, form, change):
@@ -631,7 +681,8 @@ class PieceComptableAdmin(admin.ModelAdmin):
         lien_import = reverse("admin:patrimoine_piececomptable_import") + (f"?compta={regime}" if regime else "")
         extra_context = {**(extra_context or {}), "lien_2072": reverse("annexe_2072"), "lien_import": lien_import,
                          "regime": regime, "libelle_regime": compta.libelle(regime) if regime else "",
-                         "nb_a_codifier": compta.a_codifier(regime or None).count()}
+                         "nb_a_codifier": compta.a_codifier(regime or None).count(),
+                         "nb_a_saisir": compta.a_saisir(regime or None).count() if self._codifier(request) else 0}
         if regime:
             from ..views.compta import onglets
 

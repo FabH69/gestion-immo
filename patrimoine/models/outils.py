@@ -48,7 +48,7 @@ class Rappel(models.Model):
     important = models.BooleanField(
         "★ important", default=False,
         help_text="Paiement ou date limite à ne pas manquer : le rappel passe en tête de l'accueil et vous recevez un mail "
-                  "quelques jours avant (Réglages › Mails).")
+                  "quelques jours avant (Paramètres › Mails).")
     prevenir_jours = models.PositiveSmallIntegerField(
         "prévenir … jours avant", null=True, blank=True,
         help_text="Le rappel apparaît dans « À faire » (et le mail part s'il est important) ce nombre de jours avant la date. "
@@ -145,8 +145,8 @@ class ParametresMail(models.Model):
     accuse_au_candidat = models.BooleanField("envoyer un accusé de réception au candidat", default=True)
 
     class Meta:
-        verbose_name = "réglage des mails"
-        verbose_name_plural = "réglage des mails"
+        verbose_name = "paramètres des mails"
+        verbose_name_plural = "paramètres des mails"
 
     def __str__(self):
         return f"Envoi par {self.adresse}"

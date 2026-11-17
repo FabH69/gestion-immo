@@ -3,6 +3,7 @@ from decimal import Decimal
 
 from django import forms
 from django.contrib import admin, messages
+from django.db.models import Q
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import path, reverse
 from django.utils import timezone
@@ -76,7 +77,7 @@ class PresentFilter(admin.SimpleListFilter):
     parameter_name = "present"
 
     def lookups(self, request, model_admin):
-        return [("oui", "Présents"), ("non", "Partis"), ("tous", "Tous")]
+        return [("oui", "Présents et à venir"), ("avenir", "À venir (sans bail)"), ("non", "Partis"), ("tous", "Tous")]
 
     def choices(self, changelist):
         """« Actifs » est le choix par défaut : pas de lien « Tout » de Django, remplacé par « Tous »."""
@@ -86,10 +87,13 @@ class PresentFilter(admin.SimpleListFilter):
 
     def queryset(self, request, queryset):
         valeur = self.value() or "oui"
+        # un locataire sans aucun bail (tout juste créé) est « à venir » : il reste visible dans la liste par défaut
         if valeur == "oui":
-            return queryset.filter(baux__actif=True).distinct()
+            return queryset.filter(Q(baux__actif=True) | Q(baux__isnull=True)).distinct()
+        if valeur == "avenir":
+            return queryset.filter(baux__isnull=True)
         if valeur == "non":
-            return queryset.exclude(baux__actif=True)
+            return queryset.exclude(baux__actif=True).filter(baux__isnull=False).distinct()
         return queryset
 
 
@@ -234,6 +238,8 @@ class LocataireAdmin(FicheMixin, admin.ModelAdmin):
     def statut_present(self, obj):
         if self.present(obj):
             return format_html('<span class="pill ok">Présent</span>')
+        if not obj.baux.all():
+            return format_html('<span class="pill bleu" title="Pas encore de bail : créez-le dans Baux › Nouveau bail">À venir</span>')
         return format_html('<span class="pill gris">Parti</span>')
 
     @admin.display(description="")
@@ -264,12 +270,12 @@ class LocataireAdmin(FicheMixin, admin.ModelAdmin):
             if not (sujet and texte):
                 messages.error(request, "Le sujet et le message sont obligatoires.")
             elif not mails.reglage():
-                messages.error(request, "Réglez d'abord l'envoi des mails (Réglages › Mails).")
+                messages.error(request, "Réglez d'abord l'envoi des mails (Paramètres › Mails).")
             elif mails.envoyer([locataire.email], sujet, texte):
                 messages.success(request, f"Mail envoyé à {locataire} ({locataire.email}).")
                 return redirect(retour)
             else:
-                messages.error(request, "Le mail n'est pas parti : vérifiez le réglage Réglages › Mails.")
+                messages.error(request, "Le mail n'est pas parti : vérifiez les Paramètres › Mails.")
         contexte = {**self.admin_site.each_context(request), "title": f"Contacter {locataire}", "locataire": locataire,
                     "motifs": motifs, "opts": self.model._meta, "retour": retour,
                     "sujet": request.POST.get("sujet", ""), "message": request.POST.get("message", ""),

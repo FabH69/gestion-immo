@@ -142,7 +142,7 @@ def fichier_prive(request, chemin):
 
 @staff_member_required
 def sauvegardes(request):
-    """Réglages › Sauvegardes : liste des sauvegardes du serveur, création et téléchargement."""
+    """Paramètres › Sauvegardes : liste des sauvegardes du serveur, création et téléchargement."""
     from .. import sauvegarde
 
     if request.method == "POST":

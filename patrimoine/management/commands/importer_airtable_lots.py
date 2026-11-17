@@ -30,7 +30,9 @@ def _type_proprietaire(nom):
 
 def _type_lot(tag):
     tag = tag.lower()
-    if "garage" in tag or "parking" in tag:
+    if "garage" in tag:
+        return Lot.Type.GARAGE
+    if "parking" in tag:
         return Lot.Type.PARKING
     if "maison" in tag:
         return Lot.Type.MAISON
@@ -93,7 +95,7 @@ class Command(BaseCommand):
                 notes = [f"{k} : {_texte(ligne.get(k))}" for k in ("Tel EDF", "Tel Eau") if _texte(ligne.get(k))]
                 valeurs = {
                     "bien": bien, "designation": designation, "type": type_lot, "etage": etage,
-                    "surface": _nombre(ligne.get("Superficie", "")), "nb_pieces": None if type_lot == Lot.Type.PARKING else _nombre(ligne.get("Nb_Pièce", ""), int),
+                    "surface": _nombre(ligne.get("Superficie", "")), "nb_pieces": None if type_lot in (Lot.Type.PARKING, Lot.Type.GARAGE) else _nombre(ligne.get("Nb_Pièce", ""), int),
                     "chauffage": chauffage.lower() and f"{chauffage}", "eau_chaude": eau,
                     "pdl": _texte(ligne.get("PDL")), "vendu": vendu, "notes": "\n".join(notes),
                 }

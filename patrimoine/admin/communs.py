@@ -69,6 +69,34 @@ def _message_user_libelles(self, request, message, *args, **kwargs):
 admin.ModelAdmin.message_user = _message_user_libelles
 
 
+# Retour à la page d'où l'on vient : un lien « …/add/?next=/admin/ » (ex. « + Rappel » de l'accueil) ramène à cette page
+# après « Enregistrer », au lieu de la liste de l'écran.
+def _page_d_origine(request):
+    from django.utils.http import url_has_allowed_host_and_scheme
+
+    suite = request.GET.get("next") or request.POST.get("next")
+    if suite and url_has_allowed_host_and_scheme(suite, allowed_hosts={request.get_host()}, require_https=request.is_secure()):
+        return suite
+    return None
+
+
+def _avec_retour(methode):
+    def response(self, request, *args, **kwargs):
+        reponse = methode(self, request, *args, **kwargs)
+        suite = _page_d_origine(request)
+        boutons = {"_continue", "_addanother", "_saveasnew", "_popup"}
+        if suite and reponse.status_code == 302 and not boutons & set(request.POST) and "_popup" not in request.GET:
+            from django.shortcuts import redirect
+
+            return redirect(suite)
+        return reponse
+    return response
+
+
+admin.ModelAdmin.response_add = _avec_retour(admin.ModelAdmin.response_add)
+admin.ModelAdmin.response_change = _avec_retour(admin.ModelAdmin.response_change)
+
+
 class LotsALouerMixin:
     """Ne propose que les lots non vendus ; un lot vendu déjà choisi reste affiché sur sa fiche."""
 

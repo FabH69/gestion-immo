@@ -125,7 +125,7 @@ def envoyer_lien_candidature(request, pk):
                        html=mails.html_invitation(c, lien)):
         messages.success(request, f"Lien envoyé à {email}.")
     else:
-        messages.error(request, "Le mail n'est pas parti : vérifiez le réglage Réglages › Mails (adresse et mot de passe d'application).")
+        messages.error(request, "Le mail n'est pas parti : vérifiez les Paramètres › Mails (adresse et mot de passe d'application).")
     return redirect("admin:patrimoine_candidature_change", pk)
 
 
