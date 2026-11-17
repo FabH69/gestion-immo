@@ -231,7 +231,7 @@ class PieceComptable(models.Model):
         L13 = "13", "13 · Provisions pour charges de copropriété"
         L14 = "14", "14 · Régularisation des provisions de copropriété de l'année précédente"
         L15 = "15", "15 · Déduction spécifique"
-        L17 = "17", "17 · Frais d'emprunt (dossier, garantie, assurance hors échéancier)"
+        L17 = "17", "17 · Intérêts et frais d'emprunt, assurance emprunteur (hors échéancier du prêt)"
         NON = "non", "Non déductible (capital d'emprunt, agrandissement, mobilier…)"
 
     RECETTES = {"2", "3"}

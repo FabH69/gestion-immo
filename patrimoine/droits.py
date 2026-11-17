@@ -3,7 +3,7 @@
 Chaque niveau se traduit en permissions Django sur les tables du module (consultation = « view », modification =
 « view/add/change/delete ») : les écrans d'administration les respectent d'eux-mêmes (fiches en lecture seule…).
 Le middleware ci-dessous applique les mêmes règles aux pages faites à la main (états, PDF, quittances, Balles…).
-Les administrateurs (superutilisateurs) ont tout ; les Réglages (sauvegardes, mails, utilisateurs) leur sont réservés.
+Les administrateurs (superutilisateurs) ont tout ; les Paramètres (sauvegardes, mails, utilisateurs) leur sont réservés.
 """
 from django.core.exceptions import PermissionDenied
 
@@ -51,7 +51,7 @@ MODULES = [
     ("balles", "Balles", ["commandes.joueur", "commandes.article", "commandes.commande", "commandes.ligne"], [], []),
 ]
 LIBELLES = {code: libelle for code, libelle, *_ in MODULES}
-RESERVE_ADMIN = {"sauvegardes", "telecharger_sauvegarde", "tester_mail", "essai_entrer", "essai_reinitialiser", "essai_demo"}  # Réglages : administrateurs seulement
+RESERVE_ADMIN = {"sauvegardes", "telecharger_sauvegarde", "tester_mail", "essai_entrer", "essai_reinitialiser", "essai_demo"}  # Paramètres : administrateurs seulement
 # pièces privées : le dossier dit à quel module elles appartiennent
 DOSSIERS_PRIVES = {"factures/": ["compta"], "modeles-word/": ["outils"], "modeles-annonces/": ["outils"],
                    "pieces-identite/": ["locataires", "baux", "relocation"], "etats-des-lieux/": ["baux"]}

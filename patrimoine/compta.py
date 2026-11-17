@@ -58,6 +58,12 @@ def a_codifier(regime=None):
     return qs.filter(bien__comptabilite=regime) if regime else qs
 
 
+def a_saisir(regime=None):
+    """Pièces importées que la lecture automatique n'a pas pu lire (montant ou date manquants) : à compléter à la main."""
+    qs = PieceComptable.objects.filter(preremplie=False).filter(Q(montant__isnull=True) | Q(date__isnull=True))
+    return qs.filter(bien__comptabilite=regime) if regime else qs
+
+
 def biens_2044():
     """Biens en nom propre déclarés en revenus fonciers (déclaration 2044, ex. Pollionnay)."""
     return Bien.objects.filter(comptabilite="foncier", proprietaire__type=Proprietaire.Type.NOM_PROPRE)

@@ -7,12 +7,12 @@
         <a href="{% url 'a_faire' %}?vue=fait" class="onglet">Déjà fait</a>
       </span>
       {% if nb_retard %}<span class="pastille-retard">{{ nb_retard }} en retard</span>{% endif %}
-      {% if modifiable %}<a href="{% url 'admin:patrimoine_rappel_add' %}" class="ajout-rappel">+ Rappel</a>{% endif %}
+      {% if modifiable %}<a href="{% url 'admin:patrimoine_rappel_add' %}?next={{ request.path|urlencode }}" class="ajout-rappel">+ Rappel</a>{% endif %}
     </caption>
     {% for g in groupes %}
     <tr class="groupe-a-faire{% if g.important %} important{% endif %}">
       <th scope="row">{% if g.important %}<span class="etoile" title="Rappel important">★</span> {% endif %}<a href="{{ g.url }}">{{ g.titre }}</a>{% if g.retard %} <span class="pill rouge">{% if g.important %}en retard{% else %}{{ g.retard }} en retard{% endif %}</span>{% endif %}<div class="detail">{{ g.detail }}</div></th>
-      <td class="action-groupe">{% if g.important and g.action %}{% if modifiable %}<form method="post" action="{{ g.action }}" class="form-fait">{% csrf_token %}<button type="submit" class="button bouton-fait">Fait</button></form>{% endif %}{% else %}{% if g.nombre > 1 and g.detail_url != g.url %}<a class="lien-detail" href="{{ g.detail_url }}">Voir les {{ g.nombre }}</a>{% endif %}<a class="button" href="{{ g.url }}">{{ g.bouton }}</a>{% endif %}</td>
+      <td class="action-groupe">{% if g.action %}{% if modifiable %}<form method="post" action="{{ g.action }}" class="form-fait">{% csrf_token %}<button type="submit" class="button bouton-fait">Fait</button></form>{% endif %}{% else %}{% if g.nombre > 1 and g.detail_url != g.url %}<a class="lien-detail" href="{{ g.detail_url }}">Voir les {{ g.nombre }}</a>{% endif %}<a class="button" href="{{ g.url }}">{{ g.bouton }}</a>{% endif %}</td>
     </tr>
     {% empty %}
     <tr><td colspan="2" style="padding:16px;color:var(--body-quiet-color)">Rien à faire dans les 30 prochains jours.</td></tr>
