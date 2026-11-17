@@ -1,6 +1,8 @@
 {% extends "admin/patrimoine/change_list.html" %}
 {% load tableau_bord %}
 {% block object-tools-items %}
+  <li><a href="{% url 'admin:patrimoine_echeance_virement' %}{% if request.GET.bail %}?bail={{ request.GET.bail|urlencode }}{% endif %}">Encaisser un virement</a></li>
+  <li><a href="{% url 'admin:patrimoine_versement_changelist' %}">Virements reçus</a></li>
   <li><a href="{% url 'etat_loyers_encaisses' %}" target="_blank" rel="noopener">État encaissé</a></li>
   {{ block.super }}
 {% endblock %}

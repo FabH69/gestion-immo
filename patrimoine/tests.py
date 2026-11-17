@@ -2890,3 +2890,98 @@ class ScissionFactureTests(TestCase):
         # retour à deux lignes : la part en trop est supprimée
         self._poster([(self.bien, "13", "850"), (self.bien, "14", "150")])
         self.assertEqual(self.piece.parts.count(), 1)
+
+
+class VirementRepartiTests(TestCase):
+    """Un virement qui règle plusieurs mois, un paiement partiel, un trop-perçu gardé en avance."""
+
+    def setUp(self):
+        from .models import Versement
+
+        self.Versement = Versement
+        self.client.force_login(User.objects.create_superuser("admin", "a@a.fr", "x"))
+        proprio = Proprietaire.objects.create(nom="SCI V", type=Proprietaire.Type.SCI_IR)
+        bien = Bien.objects.create(proprietaire=proprio, nom="Immeuble", adresse="1 rue", code_postal="69000", ville="Lyon")
+        lot = Lot.objects.create(bien=bien, designation="T2")
+        self.bail = Bail.objects.create(lot=lot, type=Bail.Type.NU, date_debut=date(2026, 1, 1), loyer_hc=Decimal("750"),
+                                        charges=Decimal("50"), jour_echeance=5)
+        self.bail.locataires.add(Locataire.objects.create(nom="Durand", email="d@exemple.fr"))
+        for mois in (9, 10, 11):
+            Echeance.generer_pour_mois(date(2026, mois, 1))
+        self.sept, self.oct, self.nov = Echeance.objects.order_by("periode")
+        Paiement.objects.create(echeance=self.sept, date=date(2026, 9, 5), montant=Decimal("800"))
+
+    def _envoyer(self, etape, montant, parts=None):
+        donnees = {"etape": etape, "bail": self.bail.pk, "date": "2026-11-12", "montant": montant, "mode": "virement", "notes": ""}
+        donnees.update(parts or {})
+        return self.client.post("/admin/patrimoine/echeance/virement/", donnees)
+
+    def test_repartition_proposee_du_plus_ancien_au_plus_recent(self):
+        parts = self.Versement.repartition_proposee(self.bail, Decimal("1200"))
+        self.assertEqual([(e.periode.month, p) for e, p in parts], [(10, Decimal("800")), (11, Decimal("400"))])
+
+    def test_page_et_apercu(self):
+        r = self.client.get("/admin/patrimoine/echeance/")
+        self.assertContains(r, "Encaisser un virement")
+        r = self._envoyer("repartir", "1600")
+        self.assertContains(r, f'name="part-{self.oct.pk}" value="800,00"')
+        self.assertContains(r, f'name="part-{self.nov.pk}" value="800,00"')
+        self.assertEqual(self.Versement.objects.count(), 0)  # rien n'est enregistré avant de valider
+
+    def test_un_virement_regle_deux_mois(self):
+        r = self._envoyer("valider", "1600", {f"part-{self.oct.pk}": "800", f"part-{self.nov.pk}": "800,00"})
+        self.assertEqual(r.status_code, 302)
+        v = self.Versement.objects.get()
+        self.assertEqual(v.paiements.count(), 2)
+        self.assertEqual(v.avance, 0)
+        for e in (self.oct, self.nov):
+            e.refresh_from_db()
+            self.assertEqual(e.statut, Echeance.Statut.PAYE)
+            self.assertEqual(e.paiements.get().date, date(2026, 11, 12))
+        # supprimer le virement retire ses deux parts et remet les loyers à payer
+        v.delete()
+        self.oct.refresh_from_db()
+        self.assertEqual(self.oct.statut, Echeance.Statut.A_PAYER)
+        self.assertEqual(Paiement.objects.count(), 1)
+
+    def test_repartition_corrigee_et_partiel(self):
+        self._envoyer("valider", "1000", {f"part-{self.oct.pk}": "800", f"part-{self.nov.pk}": "200"})
+        self.nov.refresh_from_db()
+        self.assertEqual(self.nov.statut, Echeance.Statut.PARTIEL)
+        self.assertEqual(self.nov.reste_du, Decimal("600"))
+        self.assertEqual(self.nov.document[0], "recu-partiel")
+        r = self.client.get(f"/admin/patrimoine/echeance/?bail={self.bail.pk}&reglement=tous")
+        self.assertContains(r, "Reçu PDF")
+
+    def test_parts_incoherentes_refusees(self):
+        r = self._envoyer("valider", "1000", {f"part-{self.oct.pk}": "900", f"part-{self.nov.pk}": "0"})
+        self.assertContains(r, "entre 0 et le reste dû")
+        r = self._envoyer("valider", "500", {f"part-{self.oct.pk}": "400", f"part-{self.nov.pk}": "400"})
+        self.assertContains(r, "dépassent le montant reçu")
+        self.assertEqual(self.Versement.objects.count(), 0)
+
+    def test_trop_percu_garde_en_avance_puis_impute(self):
+        self._envoyer("valider", "2000", {f"part-{self.oct.pk}": "800", f"part-{self.nov.pk}": "800"})
+        v = self.Versement.objects.get()
+        self.assertEqual(v.avance, Decimal("400"))
+        Echeance.generer_pour_mois(date(2026, 12, 1))
+        dec = Echeance.objects.get(periode=date(2026, 12, 1))
+        self.assertEqual(dec.statut, Echeance.Statut.PARTIEL)
+        self.assertEqual(dec.montant_paye, Decimal("400"))
+        self.assertEqual(self.Versement.objects.get().avance, 0)
+        r = self.client.get("/admin/patrimoine/versement/")
+        self.assertContains(r, "Durand")
+
+    def test_recu_paiement_partiel(self):
+        Paiement.objects.create(echeance=self.oct, date=date(2026, 10, 8), montant=Decimal("300"))
+        from .views.loyers import pdf_echeance
+
+        self.oct.refresh_from_db()
+        _, nom, est_quittance = pdf_echeance(self.oct)
+        self.assertFalse(est_quittance)
+        self.assertTrue(nom.startswith("recu-partiel-2026-10"))
+        from . import mails
+
+        texte = mails.texte_quittance(self.oct, list(self.bail.locataires.all()), "octobre 2026", False)
+        self.assertIn("reçu de votre paiement partiel", texte)
+        self.assertIn("Il reste 500,00 € à régler", texte)

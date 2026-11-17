@@ -186,7 +186,7 @@ class LocataireAdmin(FicheMixin, admin.ModelAdmin):
             liens.append((reverse("document_bail", args=[bail.pk]), "Bail PDF (modèle de l'appli)", "PDF"))
             derniere = bail.echeances.order_by("-periode").first()
             if derniere:
-                libelle = "Quittance" if derniere.statut == "paye" else "Avis d'échéance"
+                libelle = derniere.document[1]
                 liens.append((reverse("document_echeance", args=[derniere.pk]), f"{libelle} {derniere.periode:%m/%Y}", "PDF"))
             titre = f"{'Bail en cours' if bail.actif else 'Ancien bail'} – {bail.lot} – depuis le {bail.date_debut:%d/%m/%Y}"
             blocs.append(format_html('<div class="doc-bail"><div class="doc-titre">{}</div><ul>{}</ul></div>', titre, format_html_join(

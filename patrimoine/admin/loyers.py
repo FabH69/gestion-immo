@@ -4,12 +4,13 @@ from decimal import Decimal
 
 from django import forms
 from django.contrib import admin, messages
+from django.core.exceptions import PermissionDenied
 from django.shortcuts import redirect, render
 from django.urls import path, reverse
 from django.utils import timezone
 from django.utils.html import format_html
 
-from ..models import EncaissementHistorique, Bail, Echeance, MouvementDepot, RevisionLoyer, Paiement, Proprietaire
+from ..models import EncaissementHistorique, Bail, Echeance, MouvementDepot, RevisionLoyer, Paiement, Proprietaire, Versement
 from .communs import euros_liste
 
 
@@ -46,8 +47,34 @@ class EcheanceStatutFilter(admin.SimpleListFilter):
 
 class PaiementInline(admin.TabularInline):
     model = Paiement
-    fields = ["date", "montant", "mode", "notes"]
+    fields = ["date", "montant", "mode", "notes", "part_de_virement"]
+    readonly_fields = ["part_de_virement"]
     extra = 1
+
+    @admin.display(description="virement")
+    def part_de_virement(self, obj):
+        if not obj or not obj.versement_id:
+            return "–"
+        v = obj.versement
+        return format_html('<a href="{}">{} € du {}</a>', reverse("admin:patrimoine_versement_change", args=[v.pk]),
+                           euros_liste(v.montant), v.date.strftime("%d/%m/%Y"))
+
+
+class VirementForm(forms.Form):
+    """Étape 1 de « Encaisser un virement » : qui a payé, quand, combien."""
+    bail = forms.ModelChoiceField(label="Locataire et logement", queryset=Bail.objects.none())
+    date = forms.DateField(label="Date de réception", widget=forms.DateInput(attrs={"type": "date"}, format="%Y-%m-%d"))
+    montant = forms.DecimalField(label="Montant reçu (€)", max_digits=10, decimal_places=2, min_value=Decimal("0.01"))
+    mode = forms.ChoiceField(label="Mode", choices=Paiement.Mode.choices, initial=Paiement.Mode.VIREMENT)
+    notes = forms.CharField(label="Note (facultatif)", required=False, max_length=255,
+                            widget=forms.TextInput(attrs={"placeholder": "ex. virement octobre + novembre"}))
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        baux = Bail.objects.select_related("lot__bien").prefetch_related("locataires").order_by("-actif", "lot__bien__nom", "lot__designation", "-date_debut")
+        self.fields["bail"].queryset = baux
+        self.fields["bail"].label_from_instance = lambda b: (
+            f"{', '.join(str(l) for l in b.locataires.all()) or 'sans locataire'} – {b.lot}" + ("" if b.actif else " (terminé)"))
 
 
 class EnRetardFilter(admin.SimpleListFilter):
@@ -112,6 +139,7 @@ class EcheanceAdmin(admin.ModelAdmin):
         return [
             path("generer/", self.admin_site.admin_view(self.generer_view), name="patrimoine_echeance_generer"),
             path("<int:pk>/encaisser/", self.admin_site.admin_view(self.encaisser_view), name="patrimoine_echeance_encaisser"),
+            path("virement/", self.admin_site.admin_view(self.virement_view), name="patrimoine_echeance_virement"),
         ] + super().get_urls()
 
     def encaisser_view(self, request, pk):
@@ -130,6 +158,47 @@ class EcheanceAdmin(admin.ModelAdmin):
         if not url_has_allowed_host_and_scheme(retour, allowed_hosts={request.get_host()}):
             retour = "admin:patrimoine_echeance_changelist"
         return redirect(retour)
+
+    def virement_view(self, request):
+        """« Encaisser un virement » : un montant reçu réparti sur un ou plusieurs loyers, du plus ancien au plus récent ;
+        la répartition proposée peut être corrigée, et ce qui dépasse reste en avance pour les loyers suivants."""
+        if not self.has_add_permission(request):
+            raise PermissionDenied
+        etape = request.POST.get("etape") if request.method == "POST" else None
+        initial = {"date": timezone.localdate(), "bail": request.GET.get("bail")}
+        form = VirementForm(request.POST if etape else None, initial=initial)
+        contexte = {**self.admin_site.each_context(request), "title": "Encaisser un virement", "opts": self.model._meta, "form": form}
+        if not etape or not form.is_valid():
+            return render(request, "admin/patrimoine/echeance/virement.html", contexte)
+        d = form.cleaned_data
+        proposee = Versement.repartition_proposee(d["bail"], d["montant"])
+        lignes, erreurs = [], []
+        for e, part in proposee:
+            if etape == "valider":
+                brut = (request.POST.get(f"part-{e.pk}") or "").strip().replace(" ", "").replace(",", ".")
+                try:
+                    part = Decimal(brut) if brut else Decimal(0)
+                except ArithmeticError:
+                    erreurs.append(f"{e.periode:%m/%Y} : montant illisible « {brut} ».")
+                    part = Decimal(0)
+                if part < 0 or part > e.reste_du:
+                    erreurs.append(f"{e.periode:%m/%Y} : la part doit être entre 0 et le reste dû ({e.reste_du} €).")
+            lignes.append({"echeance": e, "part": part})
+        total = sum((l["part"] for l in lignes), Decimal(0))
+        if total > d["montant"]:
+            erreurs.append(f"Les parts ({total} €) dépassent le montant reçu ({d['montant']} €).")
+        if etape == "valider" and not erreurs:
+            v = Versement.objects.create(bail=d["bail"], date=d["date"], montant=d["montant"], mode=d["mode"], notes=d["notes"])
+            v.repartir([(l["echeance"], l["part"]) for l in lignes])
+            mois = ", ".join(f"{l['echeance'].periode:%m/%Y}" for l in lignes if l["part"] > 0) or "aucun loyer"
+            texte = f"{d['montant']} € encaissés le {d['date']:%d/%m/%Y}, répartis sur : {mois}."
+            if v.avance > 0:
+                texte += f" Avance gardée pour les prochains loyers : {v.avance} €."
+            self.message_user(request, texte, messages.SUCCESS)
+            return redirect(reverse("admin:patrimoine_echeance_changelist") + f"?bail={d['bail'].pk}&reglement=tous")
+        contexte.update({"lignes": lignes, "total": total, "avance": d["montant"] - total, "erreurs": erreurs, "repartir": True,
+                         "avance_existante": sum((v.avance for v in d["bail"].versements.all()), Decimal(0))})
+        return render(request, "admin/patrimoine/echeance/virement.html", contexte)
 
     def generer_view(self, request):
         aujourdhui = timezone.localdate()
@@ -183,6 +252,8 @@ class EcheanceAdmin(admin.ModelAdmin):
 
     def save_related(self, request, form, formsets, change):
         super().save_related(request, form, formsets, change)
+        if not change:
+            Versement.imputer_avances(form.instance)  # loyer créé à la main : utilise l'avance éventuelle du locataire
         form.instance.mettre_a_jour_statut()
 
     @admin.display(description="mois", ordering="periode")
@@ -200,7 +271,7 @@ class EcheanceAdmin(admin.ModelAdmin):
 
     @admin.display(description="")
     def actions_ligne(self, obj):
-        libelle = "Quittance" if obj.statut == "paye" else "Avis PDF"
+        libelle = {"paye": "Quittance", "partiel": "Reçu PDF"}.get(obj.statut, "Avis PDF")
         pdf = format_html('<a class="lien-action" href="{}" target="_blank">{}</a>', reverse("document_echeance", args=[obj.pk]), libelle)
         if obj.statut == "paye":
             return pdf
@@ -255,7 +326,7 @@ class EcheanceAdmin(admin.ModelAdmin):
     def document(self, obj):
         if not obj.pk:
             return "–"
-        libelle = "Quittance PDF" if obj.statut == "paye" else "Avis d'échéance PDF"
+        libelle = f"{obj.document[1]} PDF"
         return format_html('<a href="{}" target="_blank">{}</a>', reverse("document_echeance", args=[obj.pk]), libelle)
 
     @admin.display(description="")
@@ -300,6 +371,61 @@ class EcheanceAdmin(admin.ModelAdmin):
             Paiement.objects.create(echeance=e, date=timezone.localdate(), montant=e.reste_du)
             n += 1
         self.message_user(request, f"{n} échéance(s) marquée(s) comme payée(s).", messages.SUCCESS)
+
+
+class VersementPaiementInline(admin.TabularInline):
+    model = Paiement
+    fields = ["loyer", "montant", "date"]
+    readonly_fields = ["loyer", "montant", "date"]
+    extra = 0
+    can_delete = False
+    verbose_name = "part affectée à un loyer"
+    verbose_name_plural = "répartition sur les loyers"
+
+    def has_add_permission(self, request, obj=None):
+        return False
+
+    @admin.display(description="loyer")
+    def loyer(self, obj):
+        return format_html('<a href="{}">{}</a>', reverse("admin:patrimoine_echeance_change", args=[obj.echeance_id]),
+                           f"{obj.echeance.periode:%m/%Y}")
+
+
+@admin.register(Versement)
+class VersementAdmin(admin.ModelAdmin):
+    """Virements reçus : chacun montre sa répartition sur les loyers et l'avance qui reste. Le supprimer retire toutes ses parts."""
+    list_display = ["date", "locataire_et_logement", "montant_recu", "reparti", "avance_restante", "mode"]
+    list_filter = [BailEcheanceFilter]
+    filtres_en_liste = ("bail",)
+    date_hierarchy = "date"
+    search_fields = ["bail__lot__designation", "bail__lot__bien__nom", "bail__locataires__nom", "notes"]
+    fields = ["bail", "date", "montant", "mode", "notes", "avance_restante"]
+    readonly_fields = ["bail", "date", "montant", "mode", "avance_restante"]
+    inlines = [VersementPaiementInline]
+
+    def get_queryset(self, request):
+        return super().get_queryset(request).select_related("bail__lot__bien").prefetch_related("bail__locataires", "paiements")
+
+    def add_view(self, request, form_url="", extra_context=None):
+        return redirect("admin:patrimoine_echeance_virement")
+
+    @admin.display(description="locataire et logement", ordering="bail__lot__bien__nom")
+    def locataire_et_logement(self, obj):
+        noms = [str(l) for l in obj.bail.locataires.all()]
+        return format_html('<span class="cellule-personne"><span><b>{}</b><small>{}</small></span></span>', ", ".join(noms) or "–", obj.bail.lot)
+
+    @admin.display(description="reçu", ordering="montant")
+    def montant_recu(self, obj):
+        return euros_liste(obj.montant)
+
+    @admin.display(description="affecté aux loyers")
+    def reparti(self, obj):
+        return euros_liste(sum((p.montant for p in obj.paiements.all()), Decimal(0)))
+
+    @admin.display(description="avance restante")
+    def avance_restante(self, obj):
+        avance = obj.montant - sum((p.montant for p in obj.paiements.all()), Decimal(0))
+        return format_html("<b>{}</b>", euros_liste(avance)) if avance else "–"
 
 
 class DepotEnCoursFilter(admin.SimpleListFilter):

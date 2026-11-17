@@ -18,6 +18,8 @@ Puis ouvrir http://127.0.0.1:8000/.
 ## Loyers et quittances
 
 - Menu **Loyers** : boutons « Générer les loyers du mois » (un loyer par bail actif), puis saisie des paiements dans chaque loyer, ou action « Marquer comme payé intégralement » sur une sélection.
+- Bouton **« Encaisser un virement »** : un montant reçu est réparti sur les loyers non soldés, du plus ancien au plus récent (répartition modifiable avant de valider). Ce qui dépasse reste en avance et s'impute tout seul sur les loyers suivants. Menu **Virements reçus** : détail de chaque virement ; le supprimer retire toutes ses parts.
+- Paiement partiel : le loyer passe en « Partiel » et un **reçu de paiement partiel** PDF est proposé (la quittance arrive quand le mois est soldé).
 - Filtre « Impayés en retard » pour voir les loyers non soldés après leur date d'échéance.
 - Colonne **Document** : quittance PDF si le loyer est payé en entier, sinon avis d'échéance.
 - Automatique : les loyers du mois sont créés dès la première utilisation de l'application à partir du 1er.
