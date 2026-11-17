@@ -236,11 +236,47 @@ class ChampFichiersMultiples(forms.FileField):
         return super().clean(data, initial)
 
 
+def _facture_electronique_existante(donnees):
+    """Pièce déjà enregistrée avec le même numéro chez le même fournisseur (même facture reçue en PDF et en XML, par ex.)."""
+    if not donnees["numero"]:
+        return None
+    pieces = PieceComptable.objects.filter(numero_facture=donnees["numero"]).select_related("bien")
+    if donnees["siren"]:
+        return pieces.filter(siren_fournisseur=donnees["siren"]).first()
+    return pieces.filter(fournisseur__iexact=donnees["fournisseur"]).first() if donnees["fournisseur"] else None
+
+
+def _piece_electronique(bien, fichier, empreinte, fmt, donnees, propositions):
+    """Pièce « à codifier » créée depuis une facture électronique : les données sûres viennent du XML, la ligne 2072 ou
+    la rubrique est seulement proposée (mots-clés), d'où preremplie=True : elle reste à vérifier dans « À codifier »."""
+    from pathlib import Path
+
+    objet = donnees["objet"] or Path(fichier.name).stem.replace("_", " ")
+    if donnees["avoir"]:
+        objet = f"Avoir – {objet}"
+    notes = []
+    if donnees["echeance"]:
+        notes.append(f"Échéance de paiement : {donnees['echeance']:%d/%m/%Y}")
+    if donnees["devise"] and donnees["devise"] != "EUR":
+        notes.append(f"Devise de la facture : {donnees['devise']} (montants non convertis)")
+    piece = PieceComptable(
+        empreinte=empreinte, bien=bien, fichier=fichier, format_electronique=fmt, preremplie=True,
+        libelle=objet[:200], fournisseur=donnees["fournisseur"], numero_facture=donnees["numero"],
+        siren_fournisseur=donnees["siren"], date=donnees["date"], montant=donnees["montant_ttc"],
+        montant_ht=donnees["montant_ht"], montant_tva=donnees["montant_tva"], notes="\n".join(notes))
+    for champ in ("ligne", "rubrique"):
+        if propositions.get(champ):
+            setattr(piece, champ, propositions[champ])
+    return piece
+
+
 class ImportFacturesForm(forms.Form):
     bien = forms.ModelChoiceField(Bien.objects.none(), label="bien concerné",
                                   help_text="Le bien pourra être changé ensuite pièce par pièce.")
-    fichiers = ChampFichiersMultiples(label="factures (PDF ou photos)", required=False,
-                               widget=EntreeFichiersMultiples(attrs={"accept": ".pdf,.jpg,.jpeg,.png,.heic"}))
+    fichiers = ChampFichiersMultiples(label="factures (PDF, photos ou factures électroniques)", required=False,
+                               help_text="Factures électroniques acceptées dans les trois formats : Factur-X (PDF), UBL et CII (XML). "
+                                         "Leurs données sont lues directement, sans ressaisie.",
+                               widget=EntreeFichiersMultiples(attrs={"accept": ".pdf,.jpg,.jpeg,.png,.heic,.xml"}))
 
     def __init__(self, *args, regime="", **kwargs):
         super().__init__(*args, **kwargs)
@@ -286,9 +322,9 @@ class PieceComptableAdmin(admin.ModelAdmin):
     list_display_links = ["date_affichee", "libelle"]
     filtres_en_liste = ("bien__proprietaire",)  # propriétaire en liste déroulante, comme le bien
     filtres_caches = ("compta",)  # choisie par le menu
-    search_fields = ["fournisseur", "libelle", "bien__nom", "notes"]
+    search_fields = ["fournisseur", "libelle", "bien__nom", "notes", "numero_facture", "siren_fournisseur"]
     fieldsets = [
-        (None, {"classes": ["identite-lot"], "fields": ["bien", ("date", "date_paiement"), ("fournisseur", "montant"), "libelle", "ligne",
+        (None, {"classes": ["identite-lot"], "fields": ["bien", ("date", "date_paiement"), ("fournisseur", "montant"), ("numero_facture", "siren_fournisseur"), ("montant_ht", "montant_tva"), "libelle", "ligne",
                                                         ("rubrique", "mois_concerne"), "fichier", "notes"],
                 "description": "Revenus fonciers : la facture alimente la ligne choisie de l'annexe 2072 (ou du récapitulatif 2044), "
                                "pour l'année de son paiement ; loyers, forfait de 20 € par local et intérêts d'emprunt sont calculés "
@@ -424,10 +460,12 @@ class PieceComptableAdmin(admin.ModelAdmin):
         if request.method == "POST" and form.is_valid() and not request.FILES.getlist("fichiers"):
             form.add_error("fichiers", "Choisissez au moins une facture.")
         if request.method == "POST" and form.is_valid():
+            from .. import factures_electroniques as fe
             from ..lecture_factures import analyser, texte_pdf
 
             bien = form.cleaned_data["bien"]
             crees, lues, refuses, doublons, vus, controles = 0, 0, [], [], set(), []
+            electroniques, illisibles, numeros_vus = 0, [], set()
             for f in request.FILES.getlist("fichiers"):
                 empreinte = PieceComptable.calculer_empreinte(f)
                 deja = PieceComptable.objects.filter(empreinte=empreinte).select_related("bien").first()
@@ -436,6 +474,31 @@ class PieceComptableAdmin(admin.ModelAdmin):
                     doublons.append(f.name + quand)
                     continue
                 vus.add(empreinte)
+                try:
+                    electronique = fe.lire(f, f.name)
+                except fe.FactureIllisible as e:
+                    illisibles.append(f"{f.name} : {e}")
+                    continue
+                if electronique:
+                    fmt, donnees = electronique
+                    cle = (donnees["siren"] or donnees["fournisseur"].lower(), donnees["numero"])
+                    deja = _facture_electronique_existante(donnees)
+                    if deja or (donnees["numero"] and cle in numeros_vus):
+                        doublons.append(f"{f.name} (facture n° {donnees['numero']} "
+                                        + (f"déjà importée pour {deja.bien.nom})" if deja else "en double dans cet envoi)"))
+                        continue
+                    numeros_vus.add(cle)
+                    piece = _piece_electronique(bien, f, empreinte, fmt, donnees,
+                                                analyser(fe.texte_pour_codifier(donnees), par_rubrique=bien.comptabilite in compta.PAR_RUBRIQUE))
+                    try:
+                        piece.full_clean()
+                    except ValidationError:
+                        refuses.append(f.name)
+                        continue
+                    piece.save()
+                    crees += 1
+                    electroniques += 1
+                    continue
                 texte = texte_pdf(f) if f.name.lower().endswith(".pdf") else ""
                 # facture de conciergerie d'un logement en courte durée : contrôlée et répartie en rubriques
                 lot_courte = next((l for l in bien.lots.all() if l.exploitation == "courte"), None) if bien.comptabilite in compta.PAR_RUBRIQUE else None
@@ -462,11 +525,18 @@ class PieceComptableAdmin(admin.ModelAdmin):
             codif = "rubrique" if bien.comptabilite in compta.PAR_RUBRIQUE else "ligne 2072"
             if crees - len(controles):
                 lu = (f" Pour {lues} d'entre elles, les champs ont été lus dans le PDF : vérifiez-les." if lues else "")
+                if electroniques:
+                    lu += (f" {electroniques} facture{'s' if electroniques > 1 else ''} électronique{'s' if electroniques > 1 else ''} "
+                           "(Factur-X, UBL ou CII) : numéro, fournisseur, date et montants lus dans le fichier, "
+                           f"il reste à vérifier {codif} proposée et bien.")
                 n = crees - len(controles)
                 messages.success(request, f"{n} facture{'s' if n > 1 else ''} importée{'s' if n > 1 else ''} : "
                                           f"complétez date, montant et {codif} dans le tableau, puis Enregistrer." + lu)
             if refuses:
-                messages.error(request, "Format non accepté (PDF, JPG, PNG ou HEIC) : " + ", ".join(refuses))
+                messages.error(request, "Format non accepté (PDF, JPG, PNG, HEIC ou XML) : " + ", ".join(refuses))
+            if illisibles:
+                messages.error(request, "Fichier XML non reconnu comme facture électronique (UBL ou CII), non importé : "
+                                        + " ; ".join(illisibles))
             if doublons:
                 messages.warning(request, f"{len(doublons)} facture{'s' if len(doublons) > 1 else ''} déjà présente{'s' if len(doublons) > 1 else ''}, "
                                           "non importée" + ("s" if len(doublons) > 1 else "") + " : " + " ; ".join(doublons))
@@ -491,6 +561,10 @@ class PieceComptableAdmin(admin.ModelAdmin):
 
     @admin.display(description="")
     def etat_lecture(self, obj):
+        if obj.format_electronique:
+            return format_html('<span class="pill ok" title="Facture électronique : données lues dans le fichier ({}). '
+                               'Vérifiez la codification proposée, puis Enregistrer ou action « Valider »">{}</span>',
+                               obj.get_format_electronique_display(), obj.get_format_electronique_display())
         if obj.preremplie:
             return format_html('<span class="pill bleu" title="Champs lus dans le PDF : vérifiez-les, puis Enregistrer ou action « Valider »">lu auto</span>')
         return ""
@@ -538,9 +612,10 @@ class PieceComptableAdmin(admin.ModelAdmin):
             obj = obj.piece_mere
         if not obj.fichier:
             return "–"
-        image = obj.fichier.name.lower().rsplit(".", 1)[-1] in ("jpg", "jpeg", "png")
+        extension = obj.fichier.name.lower().rsplit(".", 1)[-1]
+        image = extension in ("jpg", "jpeg", "png")
         return format_html('<a href="{}" target="_blank" class="apercu-piece" data-image="{}">{}</a>',
-                           obj.fichier.url, "1" if image else "", "Photo" if image else "PDF")
+                           obj.fichier.url, "1" if image else "", "Photo" if image else "XML" if extension == "xml" else "PDF")
 
     def get_queryset(self, request):
         return super().get_queryset(request).select_related("bien", "piece_mere")
