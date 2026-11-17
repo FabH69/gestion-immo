@@ -1,0 +1,24 @@
+{% extends "simulateurs/base.html" %}
+{% block style %}<style>
+  .liste { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 14px; }
+  .liste a.carte { display: block; text-decoration: none; color: inherit; margin: 0; transition: border-color .15s, transform .15s; }
+  .liste a.carte:hover { border-color: var(--primaire); transform: translateY(-2px); }
+  .liste .emoji { font-size: 1.8rem; }
+  .liste h2 { margin: 8px 0 4px; }
+  .liste p { margin: 0; color: var(--doux); font-size: .9rem; }
+  .liste .bientot { opacity: .6; }
+  .etiquette { display: inline-block; font-size: .72rem; font-weight: 600; background: var(--teinte); color: var(--fonce); border-radius: 999px; padding: 2px 8px; margin-top: 10px; }
+</style>{% endblock %}
+{% block contenu %}
+<h1>Simulateurs immobiliers gratuits</h1>
+<p class="chapeau">Préparez votre achat ou votre investissement locatif en quelques secondes, sans créer de compte.</p>
+<div class="liste">
+  {% for s in simulateurs %}
+    {% if s.disponible %}
+    <a class="carte" href="{% url s.nom_url %}"><span class="emoji">{{ s.emoji }}</span><h2>{{ s.titre }}</h2><p>{{ s.accroche }}</p><span class="etiquette">Calculer →</span></a>
+    {% else %}
+    <div class="carte bientot"><span class="emoji">{{ s.emoji }}</span><h2>{{ s.titre }}</h2><p>{{ s.accroche }}</p><span class="etiquette">Bientôt</span></div>
+    {% endif %}
+  {% endfor %}
+</div>
+{% endblock %}

@@ -70,6 +70,7 @@ urlpatterns = [
     path("mode-test/remettre-a-zero/", views.essai_reinitialiser, name="essai_reinitialiser"),
     path("mode-test/donnees-demo/", views.essai_demo, name="essai_demo"),
     path("balles/", include("commandes.urls")),
+    path("simulateurs/", include("simulateurs.urls")),
     path("", RedirectView.as_view(url="/admin/")),
 ]
 

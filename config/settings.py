@@ -43,6 +43,7 @@ INSTALLED_APPS = [
     "django.contrib.staticfiles",
     "patrimoine",
     "commandes",  # commandes groupées de balles de tennis (/balles/)
+    "simulateurs",  # simulateurs publics, sans compte (/simulateurs/)
 ]
 
 MIDDLEWARE = [
