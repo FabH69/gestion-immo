@@ -8,7 +8,7 @@ from django.utils import timezone
 from django.utils.html import format_html
 
 from .. import compta
-from ..models import PieceComptable, Bien, Pret
+from ..models import AnneeCloturee, PieceComptable, Bien, Pret
 from .communs import euros_liste
 
 
@@ -129,6 +129,27 @@ class PretAdmin(admin.ModelAdmin):
         return render(request, "admin/patrimoine/pret/tableau.html", {
             **self.admin_site.each_context(request), "pret": pret, "retour": retour, "nb_lignes": pret.lignes.count(),
             "title": f"Tableau d'amortissement de la banque – {pret}", "opts": self.model._meta})
+
+
+def lien_annee(piece):
+    """Liste des factures de l'année (de paiement) où se trouve la pièce, dans son entrée de comptabilité."""
+    regime = piece.bien.comptabilite if piece.bien_id else ""
+    return reverse("admin:patrimoine_piececomptable_changelist") + "?" + "&".join(
+        x for x in (f"compta={regime}" if regime else "", f"annee={piece.annee}" if piece.annee else "") if x)
+
+
+def message_deja_enregistree(deja, nom=""):
+    """« Cette facture est enregistrée en 2024 … » avec l'année où la retrouver et un lien direct (doublon à l'import)."""
+    details = [f"pour {deja.bien.nom}" if deja.bien_id else ""]
+    if deja.date:
+        details.append(f"facture du {deja.date:%d/%m/%Y}")
+    if deja.date_paiement:
+        details.append(f"payée le {deja.date_paiement:%d/%m/%Y}")
+    annee = f"en {deja.annee}" if deja.annee else "(année pas encore renseignée)"
+    fiche = reverse("admin:patrimoine_piececomptable_change", args=[deja.pk])
+    return format_html('{}Cette facture est enregistrée {} ({}) : <a href="{}">voir la facture</a>{}', f"« {nom} » : " if nom else "",
+                       annee, ", ".join(d for d in details if d), fiche,
+                       format_html(' · <a href="{}">voir les factures de {}</a>', lien_annee(deja), deja.annee) if deja.annee else "")
 
 
 class AnneeFiscaleFilter(admin.SimpleListFilter):
@@ -331,7 +352,7 @@ class PieceComptableForm(forms.ModelForm):
             empreinte = PieceComptable.calculer_empreinte(f)
             deja = PieceComptable.objects.filter(empreinte=empreinte).exclude(pk=self.instance.pk).first()
             if deja:
-                raise forms.ValidationError(f"Cette facture est déjà enregistrée : {deja}.")
+                raise forms.ValidationError(message_deja_enregistree(deja))
             self.instance.empreinte = empreinte
         return f
 
@@ -373,7 +394,13 @@ class PieceComptableAdmin(admin.ModelAdmin):
             liste = self._liste_codifier(request)
             return liste[:1] + ["scinder"] + liste[1:]  # près du PDF : les dernières colonnes sortent de l'écran
         codif = {"foncier": "ligne_courte", "lmnp": "rubrique_courte", "societe": "rubrique_courte"}.get(_regime(request), "codification")
-        return ["date_affichee", "bien", "fournisseur", "libelle", codif, "montant_affiche", "piece", "scinder"]
+        return ["date_affichee", "payee_le", "bien", "fournisseur", "libelle", codif, "montant_affiche", "piece", "scinder"]
+
+    def get_ordering(self, request):
+        # rangées par date de paiement (l'année fiscale), la date de la facture si le paiement n'est pas renseigné
+        from django.db.models.functions import Coalesce
+
+        return [Coalesce("date_paiement", "date").desc(nulls_first=True), "-pk"]
 
     def get_list_display_links(self, request, list_display):
         return None if self._codifier(request) else self.list_display_links
@@ -398,6 +425,7 @@ class PieceComptableAdmin(admin.ModelAdmin):
 
         return [path("import/", self.admin_site.admin_view(self.import_view), name="patrimoine_piececomptable_import"),
                 path("<int:pk>/scinder/", self.admin_site.admin_view(self.scinder_view), name="patrimoine_piececomptable_scinder"),
+                path("cloture/<int:annee>/", self.admin_site.admin_view(self.cloture_view), name="patrimoine_piececomptable_cloture"),
                 ] + super().get_urls()
 
     def scinder_view(self, request, pk):
@@ -414,6 +442,10 @@ class PieceComptableAdmin(admin.ModelAdmin):
         if not self.has_change_permission(request, mere):
             from django.core.exceptions import PermissionDenied
             raise PermissionDenied
+        if mere.est_verrouillee():
+            messages.error(request, f"L'année {mere.annee} est clôturée : cette facture ne peut plus être répartie. "
+                                    f"Déverrouillez l'année {mere.annee} dans la liste des factures si besoin.")
+            return redirect(lien_annee(mere))
         existantes = mere.facture_complete
         total = sum((p.montant or Decimal(0) for p in existantes), Decimal(0))
         regime = (mere.bien.comptabilite if mere.bien_id else "") or "foncier"
@@ -486,14 +518,13 @@ class PieceComptableAdmin(admin.ModelAdmin):
             from ..lecture_factures import analyser, texte_pdf
 
             bien = form.cleaned_data["bien"]
-            crees, lues, refuses, doublons, vus, controles = 0, 0, [], [], set(), []
+            crees, lues, refuses, doublons, vus, controles, nouvelles = 0, 0, [], [], set(), [], []
             electroniques, illisibles, numeros_vus = 0, [], set()
             for f in request.FILES.getlist("fichiers"):
                 empreinte = PieceComptable.calculer_empreinte(f)
                 deja = PieceComptable.objects.filter(empreinte=empreinte).select_related("bien").first()
                 if deja or empreinte in vus:
-                    quand = f" (déjà importée pour {deja.bien.nom}{f', facture du {deja.date:%d/%m/%Y}' if deja.date else ''})" if deja else " (en double dans cet envoi)"
-                    doublons.append(f.name + quand)
+                    doublons.append(message_deja_enregistree(deja, f.name) if deja else format_html("« {} » : en double dans cet envoi", f.name))
                     continue
                 vus.add(empreinte)
                 try:
@@ -543,6 +574,7 @@ class PieceComptableAdmin(admin.ModelAdmin):
                     refuses.append(f.name)
                     continue
                 piece.save()
+                nouvelles.append(piece.pk)
                 crees += 1
             codif = "rubrique" if bien.comptabilite in compta.PAR_RUBRIQUE else "ligne 2072"
             if crees - len(controles):
@@ -559,9 +591,23 @@ class PieceComptableAdmin(admin.ModelAdmin):
             if illisibles:
                 messages.error(request, "Fichier XML non reconnu comme facture électronique (UBL ou CII), non importé : "
                                         + " ; ".join(illisibles))
-            if doublons:
-                messages.warning(request, f"{len(doublons)} facture{'s' if len(doublons) > 1 else ''} déjà présente{'s' if len(doublons) > 1 else ''}, "
-                                          "non importée" + ("s" if len(doublons) > 1 else "") + " : " + " ; ".join(doublons))
+            for d in doublons:
+                messages.warning(request, format_html("Facture déjà présente, non importée. {}", d))
+            fermees = AnneeCloturee.annees()
+            if fermees:
+                bloquees = PieceComptable.objects.filter(pk__in=nouvelles).filter(
+                    Q(date_paiement__year__in=fermees) | Q(date_paiement__isnull=True, date__year__in=fermees))
+                for p in bloquees:
+                    messages.warning(request, f"« {p.libelle} » est datée du {p.date:%d/%m/%Y}, une année clôturée ({p.annee}) : "
+                                              "indiquez sa date de paiement si elle a été payée plus tard, sinon elle ne pourra pas "
+                                              f"être enregistrée tant que {p.annee} reste verrouillée.")
+            anciennes = PieceComptable.objects.filter(pk__in=nouvelles, date_paiement__isnull=True,
+                                                      date__year__lt=timezone.localdate().year).exclude(date__year__in=fermees)
+            if anciennes.exists() and bien.comptabilite == "foncier":
+                n = anciennes.count()
+                messages.info(request, f"{n} facture{'s' if n > 1 else ''} datée{'s' if n > 1 else ''} d'une année précédente. En revenus "
+                                       "fonciers, une dépense compte dans l'année où elle a été payée (pas l'année de la facture) : "
+                                       "si elle a été payée cette année, indiquez la date de paiement dans la colonne « payée le ».")
             if len(controles) == 1 and crees == 1:
                 return redirect("controle_conciergerie", pk=controles[0].pk)
             for p in controles:
@@ -602,7 +648,15 @@ class PieceComptableAdmin(admin.ModelAdmin):
 
     @admin.action(description="Valider les champs lus automatiquement (pièces sélectionnées)")
     def valider_preremplies(self, request, queryset):
-        n = queryset.filter(preremplie=True).update(preremplie=False)
+        fermees = AnneeCloturee.annees()
+        a_valider = queryset.filter(preremplie=True)
+        if fermees:
+            bloquees = a_valider.filter(Q(date_paiement__year__in=fermees) | Q(date_paiement__isnull=True, date__year__in=fermees))
+            if bloquees.exists():
+                messages.warning(request, f"{bloquees.count()} pièce(s) d'une année clôturée non validée(s) : indiquez leur date de "
+                                          "paiement si elles ont été payées plus tard, ou déverrouillez l'année.")
+                a_valider = a_valider.exclude(pk__in=bloquees)
+        n = a_valider.update(preremplie=False)
         non_lues = queryset.filter(preremplie=False).filter(Q(montant__isnull=True) | Q(date__isnull=True)).count()
         if n:
             messages.success(request, f"{n} pièce{'s' if n > 1 else ''} validée{'s' if n > 1 else ''}.")
@@ -625,13 +679,62 @@ class PieceComptableAdmin(admin.ModelAdmin):
             return format_html('<span class="pill orange a-saisir" title="La pièce n\'a pas pu être lue : saisissez montant, date et bien">À saisir à la main</span>')
         return ""
 
+    def has_change_permission(self, request, obj=None):
+        # facture comptée dans une année clôturée : la fiche s'ouvre en lecture seule
+        if obj is not None and obj.est_verrouillee():
+            return False
+        return super().has_change_permission(request, obj)
+
+    def has_delete_permission(self, request, obj=None):
+        if obj is not None and obj.est_verrouillee():
+            return False
+        return super().has_delete_permission(request, obj)
+
+    def delete_queryset(self, request, queryset):
+        fermees = AnneeCloturee.annees()
+        bloquees = [p.pk for p in queryset.select_related("bien") if p.est_verrouillee(fermees)] if fermees else []
+        if bloquees:
+            messages.warning(request, f"{len(bloquees)} facture(s) d'une année clôturée conservée(s) : déverrouillez l'année pour les supprimer.")
+        super().delete_queryset(request, queryset.exclude(pk__in=bloquees))
+
+    def cloture_view(self, request, annee):
+        """Interrupteur de clôture d'une année (glisser vers la droite : verrouiller ; vers la gauche : déverrouiller)."""
+        from django.http import HttpResponseNotAllowed
+
+        if request.method != "POST":
+            return HttpResponseNotAllowed(["POST"])
+        if not super().has_change_permission(request):
+            from django.core.exceptions import PermissionDenied
+            raise PermissionDenied
+        retour = request.POST.get("retour") or reverse("admin:patrimoine_piececomptable_changelist") + f"?annee={annee}"
+        if not retour.startswith("/"):
+            retour = reverse("admin:patrimoine_piececomptable_changelist")
+        if request.POST.get("verrouiller") == "1":
+            AnneeCloturee.objects.get_or_create(annee=annee)
+            reste = compta.a_codifier().filter(Q(date_paiement__year=annee) | Q(date_paiement__isnull=True, date__year=annee)).count()
+            messages.success(request, f"Année {annee} clôturée : plus aucune facture ne peut y être ajoutée, modifiée ni supprimée."
+                                      + (f" Attention : {reste} facture(s) de {annee} restent à codifier." if reste else ""))
+        else:
+            AnneeCloturee.objects.filter(annee=annee).delete()
+            messages.success(request, f"Année {annee} déverrouillée : ses factures peuvent de nouveau être modifiées.")
+        return redirect(retour)
+
     def save_model(self, request, obj, form, change):
         obj.preremplie = False  # enregistrée par l'utilisateur (fiche ou tableau) : les champs sont considérés vérifiés
         super().save_model(request, obj, form, change)
 
-    @admin.display(description="date", ordering="date")
+    @admin.display(description="facture du", ordering="date")
     def date_affichee(self, obj):
         return obj.date.strftime("%d/%m/%Y") if obj.date else format_html('<span class="pill orange">à codifier</span>')
+
+    @admin.display(description="payée le", ordering="date_paiement")
+    def payee_le(self, obj):
+        if obj.date_paiement:
+            return obj.date_paiement.strftime("%d/%m/%Y")
+        if obj.date:
+            return format_html('<span style="color:#888" title="Date de paiement non renseignée : la facture est rangée dans '
+                               "l'année de sa date ({})\">= date facture</span>", obj.date.year)
+        return "–"
 
     @admin.display(description="ligne 2072", ordering="ligne")
     def ligne_courte(self, obj):
@@ -657,6 +760,8 @@ class PieceComptableAdmin(admin.ModelAdmin):
     @admin.display(description="répartir")
     def scinder(self, obj):
         """Lien vers l'écran de scission (aussi depuis l'onglet « À codifier », où les lignes ne s'ouvrent pas)."""
+        if obj.est_verrouillee(getattr(self, "_fermees", None)):
+            return format_html('<span title="Année {} clôturée">🔒</span>', obj.annee)
         scindee = obj.piece_mere_id or obj.parts.exists()
         return format_html('<a href="{}" class="button" style="white-space:nowrap">{}</a>',
                            reverse("admin:patrimoine_piececomptable_scinder", args=[obj.pk]),
@@ -677,12 +782,17 @@ class PieceComptableAdmin(admin.ModelAdmin):
         return super().get_queryset(request).select_related("bien", "piece_mere")
 
     def changelist_view(self, request, extra_context=None):
+        self._fermees = AnneeCloturee.annees()  # une seule requête pour toutes les lignes
         regime = _regime(request)
         lien_import = reverse("admin:patrimoine_piececomptable_import") + (f"?compta={regime}" if regime else "")
         extra_context = {**(extra_context or {}), "lien_2072": reverse("annexe_2072"), "lien_import": lien_import,
                          "regime": regime, "libelle_regime": compta.libelle(regime) if regime else "",
                          "nb_a_codifier": compta.a_codifier(regime or None).count(),
                          "nb_a_saisir": compta.a_saisir(regime or None).count() if self._codifier(request) else 0}
+        annee = request.GET.get("annee", "")
+        if annee.isdigit():
+            extra_context.update({"annee_choisie": int(annee), "annee_cloturee": AnneeCloturee.est_cloturee(int(annee)),
+                                  "lien_cloture": reverse("admin:patrimoine_piececomptable_cloture", args=[int(annee)])})
         if regime:
             from ..views.compta import onglets
 
@@ -699,4 +809,7 @@ class PieceComptableAdmin(admin.ModelAdmin):
         extra_context = {**(extra_context or {}), "regimes_des_biens": biens, "regime": regime,
                          "libelle_regime": compta.libelle(regime) if regime else "",
                          "lien_factures": reverse("admin:patrimoine_piececomptable_changelist") + (f"?compta={regime}" if regime else "")}
+        piece = PieceComptable.objects.filter(pk=object_id).select_related("bien").first() if object_id and str(object_id).isdigit() else None
+        if piece and piece.est_verrouillee():
+            extra_context.update({"annee_verrouillee": piece.annee, "lien_annee": lien_annee(piece)})
         return super().changeform_view(request, object_id, form_url, extra_context)

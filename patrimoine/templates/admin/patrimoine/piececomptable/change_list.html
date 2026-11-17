@@ -3,7 +3,28 @@
 {% block sous_titre %}{% if onglets %}{% include "patrimoine/_onglets_compta.html" %}{% endif %}
 {% if nb_a_saisir %}<p class="bandeau-compta orange"><b>{{ nb_a_saisir }} pièce{{ nb_a_saisir|pluralize }} à compléter</b> :
 {{ nb_a_saisir|pluralize:"elle n'a,elles n'ont" }} pas pu être lue{{ nb_a_saisir|pluralize }} automatiquement (lignes « À saisir à la main »).
-Saisissez montant, date et bien dans le tableau, puis « Enregistrer ma saisie ».</p>{% endif %}{% endblock %}
+Saisissez montant, date et bien dans le tableau, puis « Enregistrer ma saisie ».</p>{% endif %}
+{% if annee_choisie %}
+<form method="post" action="{{ lien_cloture }}" class="cloture-annee{% if annee_cloturee %} fermee{% endif %}">{% csrf_token %}
+  <input type="hidden" name="retour" value="{{ request.get_full_path }}">
+  <input type="hidden" name="verrouiller" value="{% if annee_cloturee %}0{% else %}1{% endif %}">
+  <label class="interrupteur" title="{% if annee_cloturee %}Glisser vers la gauche pour déverrouiller{% else %}Glisser vers la droite pour clôturer{% endif %}">
+    <input type="checkbox" {% if annee_cloturee %}checked{% endif %} onchange="this.form.submit()">
+    <span class="glissiere"></span>
+  </label>
+  <span>{% if annee_cloturee %}🔒 <strong>Année {{ annee_choisie }} clôturée</strong> : ses factures ne peuvent plus être ajoutées, modifiées ni supprimées. Glissez l'interrupteur vers la gauche pour la déverrouiller.{% else %}Année {{ annee_choisie }} ouverte. Glissez l'interrupteur vers la droite pour la clôturer (plus aucun ajout ni modification).{% endif %}</span>
+</form>
+<style>
+.cloture-annee { display: flex; align-items: center; gap: 10px; margin: 8px 0 12px; padding: 8px 12px; border-radius: 8px; background: var(--darkened-bg, #f6f6f6); font-size: 13px; }
+.cloture-annee.fermee { background: #fdecea; }
+.interrupteur { position: relative; display: inline-block; width: 44px; height: 24px; flex: none; cursor: pointer; }
+.interrupteur input { opacity: 0; width: 0; height: 0; }
+.interrupteur .glissiere { position: absolute; inset: 0; background: #c4c4c4; border-radius: 24px; transition: .2s; }
+.interrupteur .glissiere::before { content: ""; position: absolute; width: 18px; height: 18px; left: 3px; top: 3px; background: #fff; border-radius: 50%; transition: .2s; }
+.interrupteur input:checked + .glissiere { background: #c0392b; }
+.interrupteur input:checked + .glissiere::before { transform: translateX(20px); }
+</style>
+{% endif %}{% endblock %}
 {% block object-tools-items %}
   {# un seul bouton principal : l'import accepte une ou plusieurs factures, par glisser-déposer ; « À codifier » est un filtre, l'annexe 2072 est dans le menu #}
   <li><a href="{{ lien_import }}" class="addlink">Ajouter des factures</a></li>

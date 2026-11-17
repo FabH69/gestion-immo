@@ -2,7 +2,8 @@
 {% block breadcrumbs %}
 <div class="breadcrumbs"><a href="{% url 'admin:index' %}">Accueil</a> › Comptabilité{% if libelle_regime %} › {{ libelle_regime }}{% endif %} › <a href="{{ lien_factures }}">Factures</a> › {% if add %}{{ title }}{% else %}{{ original|truncatewords:"18" }}{% endif %}</div>
 {% endblock %}
-{% block object-tools-items %}{% if original %}<li><a href="{% url 'admin:patrimoine_piececomptable_scinder' original.pk %}">{% if original.piece_mere_id or original.parts.exists %}Modifier la répartition{% else %}Scinder la facture{% endif %}</a></li>{% endif %}{{ block.super }}{% endblock %}
+{% block form_top %}{% if annee_verrouillee %}<p class="errornote" style="background:#fdecea">🔒 L'année {{ annee_verrouillee }} est clôturée : cette facture est en lecture seule. Pour la modifier, <a href="{{ lien_annee }}">déverrouillez l'année {{ annee_verrouillee }}</a> (interrupteur en haut de la liste).</p>{% endif %}{{ block.super }}{% endblock %}
+{% block object-tools-items %}{% if original and not annee_verrouillee %}<li><a href="{% url 'admin:patrimoine_piececomptable_scinder' original.pk %}">{% if original.piece_mere_id or original.parts.exists %}Modifier la répartition{% else %}Scinder la facture{% endif %}</a></li>{% endif %}{{ block.super }}{% endblock %}
 {% block admin_change_form_document_ready %}{{ block.super }}
 {{ regimes_des_biens|json_script:"regimes-des-biens" }}
 <script>

@@ -2909,6 +2909,79 @@ class ScissionFactureTests(TestCase):
         self.assertEqual(self.piece.parts.count(), 1)
 
 
+class FacturesAnneePaiementEtClotureTests(TestCase):
+    """Factures rangées par année de paiement, message de doublon avec l'année et le lien, années clôturées."""
+
+    def setUp(self):
+        from .models import PieceComptable
+
+        sci = Proprietaire.objects.create(nom="SCI V", type=Proprietaire.Type.SCI_IR)
+        self.bien = Bien.objects.create(proprietaire=sci, nom="Vaugneray", adresse="1 rue", code_postal="69670", ville="Vaugneray",
+                                        comptabilite="foncier")
+        # appel de fonds daté de décembre 2024, payé en janvier 2025
+        self.piece = PieceComptable.objects.create(bien=self.bien, date=date(2024, 12, 18), date_paiement=date(2025, 1, 10),
+                                                   fournisseur="Syndic", libelle="Appel de fonds T1", montant=Decimal("300"), ligne="13")
+        self.client.force_login(User.objects.create_superuser("admin", "a@example.com", "x"))
+
+    def test_rangee_dans_l_annee_du_paiement(self):
+        from .annexe2072 import colonne
+
+        self.assertEqual(self.piece.annee, 2025)
+        self.assertEqual(colonne(self.bien, 2025)["valeurs"].get("13"), Decimal("300"))
+        self.assertFalse(colonne(self.bien, 2024)["valeurs"].get("13"))
+        liste = self.client.get("/admin/patrimoine/piececomptable/?compta=foncier&annee=2025")
+        self.assertEqual(list(liste.context["cl"].result_list), [self.piece])
+        self.assertContains(liste, "column-payee_le")
+        self.assertContains(liste, "10/01/2025")
+
+    def test_doublon_indique_l_annee_et_le_lien(self):
+        import tempfile
+
+        from django.core.files.uploadedfile import SimpleUploadedFile
+        from django.test import override_settings
+
+        from .models import PieceComptable
+
+        with tempfile.TemporaryDirectory() as prive, override_settings(PRIVE_ROOT=prive):
+            self.piece.fichier = SimpleUploadedFile("appel.pdf", b"%PDF-appel")
+            self.piece.empreinte = ""
+            self.piece.save()
+            r = self.client.post("/admin/patrimoine/piececomptable/import/",
+                                 {"bien": self.bien.pk, "fichiers": [SimpleUploadedFile("copie.pdf", b"%PDF-appel")]}, follow=True)
+        self.assertEqual(PieceComptable.objects.count(), 1)
+        self.assertContains(r, "Cette facture est enregistrée en 2025")
+        self.assertContains(r, f'href="/admin/patrimoine/piececomptable/{self.piece.pk}/change/"')
+        self.assertContains(r, "?compta=foncier&amp;annee=2025")
+
+    def test_annee_cloturee_verrouille_les_factures(self):
+        from .models import AnneeCloturee, PieceComptable
+
+        liste = "/admin/patrimoine/piececomptable/?compta=foncier&annee=2025"
+        self.assertContains(self.client.get(liste), "Année 2025 ouverte")
+        self.client.post("/admin/patrimoine/piececomptable/cloture/2025/", {"verrouiller": "1", "retour": liste})
+        self.assertTrue(AnneeCloturee.est_cloturee(2025))
+        self.assertContains(self.client.get(liste), "Année 2025 clôturée")
+        # fiche en lecture seule, suppression et scission refusées
+        fiche = self.client.get(f"/admin/patrimoine/piececomptable/{self.piece.pk}/change/")
+        self.assertContains(fiche, "est clôturée")
+        self.client.post(f"/admin/patrimoine/piececomptable/{self.piece.pk}/change/", {"bien": self.bien.pk, "montant": "999"})
+        self.client.post(f"/admin/patrimoine/piececomptable/{self.piece.pk}/delete/", {"post": "yes"})
+        self.client.post("/admin/patrimoine/piececomptable/", {"action": "delete_selected", "post": "yes", "_selected_action": [self.piece.pk]})
+        self.piece.refresh_from_db()
+        self.assertEqual(self.piece.montant, Decimal("300"))
+        # aucune nouvelle facture comptée dans l'année clôturée ; possible si payée l'année suivante
+        p = PieceComptable(bien=self.bien, date=date(2025, 6, 1), montant=Decimal("50"), ligne="9")
+        with self.assertRaises(Exception):
+            p.full_clean()
+        p.date_paiement = date(2026, 1, 5)
+        p.full_clean()
+        # déverrouillage : la facture redevient modifiable
+        self.client.post("/admin/patrimoine/piececomptable/cloture/2025/", {"verrouiller": "0", "retour": liste})
+        self.assertFalse(AnneeCloturee.est_cloturee(2025))
+        self.piece.montant = Decimal("310")
+        self.piece.full_clean()
+
+
 class RetoursNovembreTests(TestCase):
     """Petites corrections demandées par Fabien (retours des 14 et 15 novembre)."""
 
