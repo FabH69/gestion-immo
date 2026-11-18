@@ -114,6 +114,16 @@ def commande_detail(request, pk):
 
 @login_required
 @require_POST
+def commande_supprimer(request, pk):
+    commande = get_object_or_404(Commande, pk=pk)
+    nom = commande.nom
+    commande.delete()
+    messages.success(request, f"Commande « {nom} » supprimée.")
+    return redirect("balles:accueil")
+
+
+@login_required
+@require_POST
 def commande_dupliquer(request, pk):
     copie = get_object_or_404(Commande, pk=pk).dupliquer()
     messages.success(request, f"Commande dupliquée : « {copie.nom} ». Pensez à la renommer et à ajuster les quantités.")
