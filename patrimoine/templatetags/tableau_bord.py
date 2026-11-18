@@ -126,6 +126,7 @@ ICONES = {
     "photo": '<rect x="3" y="5" width="18" height="15" rx="2"/><circle cx="12" cy="12.5" r="3.5"/><path d="M8 5l1.5-2h5L16 5"/>',
     "euro": '<path d="M17 6.5A7 7 0 1 0 17 17.5M4 10h9M4 14h9"/>',
     "nouveau": '<path d="M12 5v14M5 12h14"/>',
+    "import": '<path d="M12 3v12M7 10l5 5 5-5"/><path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/>',
 }
 
 
@@ -180,6 +181,7 @@ def _menu():
             ("modeles", "Modèles", a("modeledocument"), [a("modeledocument"), a("modeleannonce"), r("liste_champs")],
              [("Modèles location", a("modeledocument")), ("Annonces", a("modeleannonce")), ("Liste des champs", r("liste_champs"))]),
             ("liens", "Sites utiles", a("siteutile"), [a("siteutile")], []),
+            ("import", "Import Excel", r("import_excel"), [r("import_excel")], []),
             ("reglages", "Paramètres", r("sauvegardes"),
              [r("sauvegardes"), a("parametresmail"), a("tachepardefaut"), "/admin/auth/", "/admin/password_change/"],
              [("Sauvegardes", r("sauvegardes")), ("Mails (Gmail)", a("parametresmail")), ("Tâches entrée / sortie", a("tachepardefaut")),
@@ -274,7 +276,8 @@ def menu_lateral(context):
                       "candidatures": "relocation", "annonces": "relocation", "cles": "relocation", "lcd": "lcd",
                       "encaissements": "finances", "prets": "finances", "etats": "etats",
                       "foncier": "compta", "lmnp": "compta", "societe": "compta", "regimes": "compta",
-                      "rappels": "outils", "modeles": "outils", "liens": "outils", "balles": "balles", "controles": "outils"}
+                      "rappels": "outils", "modeles": "outils", "liens": "outils", "balles": "balles", "controles": "outils",
+                      "import": "biens"}
     groupes, actif_trouve = [], False
     for titre, liens in _menu():
         lignes = []

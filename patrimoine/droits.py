@@ -13,7 +13,7 @@ NIVEAUX = [(AUCUN, "Aucun accès"), (CONSULTATION, "Consultation"), (MODIFICATIO
 # (code, libellé, tables « app.modele », pages faites à la main (noms d'URL), pages qui modifient même en GET)
 MODULES = [
     ("biens", "Biens et lots", ["patrimoine.bien", "patrimoine.lot", "patrimoine.photolot", "patrimoine.proprietaire",
-                                "patrimoine.syndic"], [], []),
+                                "patrimoine.syndic"], ["import_excel", "modele_import_excel"], []),
     ("locataires", "Locataires", ["patrimoine.locataire", "patrimoine.documentlocataire"],
      ["admin:patrimoine_locataire_contacter"], []),
     ("baux", "Baux, états des lieux et garants", ["patrimoine.bail", "patrimoine.etatdeslieux", "patrimoine.elementedl",

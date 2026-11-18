@@ -1,0 +1,52 @@
+{% extends "admin/base_site.html" %}
+{% block breadcrumbs %}<div class="breadcrumbs"><a href="{% url 'admin:index' %}">Accueil</a> › Outils › Import Excel</div>{% endblock %}
+{% block extrastyle %}{{ block.super }}<style>
+.carte { background: var(--body-bg); border: 1px solid var(--hairline-color); border-radius: 12px; box-shadow: 0 1px 6px rgba(16,24,40,.06); padding: 16px 18px; margin-bottom: 18px; max-width: 960px; }
+.carte h2 { margin: 0 0 8px; font-size: 1.1rem; }
+.etape { display: inline-flex; align-items: center; justify-content: center; width: 24px; height: 24px; border-radius: 50%; background: var(--primary); color: #fff; font-weight: 700; font-size: .85rem; margin-right: 8px; }
+.aide { font-size: .88rem; color: var(--body-quiet-color); line-height: 1.55; }
+.actions { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-top: 10px; }
+.onglets-import { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 12px; margin-top: 10px; }
+.onglets-import div { border: 1px solid var(--hairline-color); border-radius: 10px; padding: 10px 12px; font-size: .85rem; }
+.onglets-import b { display: block; margin-bottom: 4px; }
+.oblig { display: inline-block; background: #fde7cf; color: #8a4b08; border-radius: 6px; padding: 1px 6px; margin: 2px 2px 0 0; }
+.facult { display: inline-block; background: var(--darkened-bg); color: var(--body-quiet-color); border-radius: 6px; padding: 1px 6px; margin: 2px 2px 0 0; }
+.carte.erreur { border-color: #f04438; }
+table.erreurs { width: 100%; border-collapse: collapse; font-size: .88rem; }
+table.erreurs td, table.erreurs th { padding: 7px 6px; border-bottom: 1px solid var(--hairline-color); text-align: left; vertical-align: top; }
+table.erreurs td.n { white-space: nowrap; font-variant-numeric: tabular-nums; }
+@media (max-width: 640px) { table.erreurs th:nth-child(3), table.erreurs td:nth-child(3) { display: none; } }
+</style>{% endblock %}
+{% block content %}
+{% if resultat and not resultat.ok %}
+<div class="carte erreur">
+  <h2>Rien n'a été enregistré : {{ resultat.erreurs|length }} point{{ resultat.erreurs|length|pluralize }} à corriger</h2>
+  <p class="aide">Corrigez ces lignes dans votre fichier{% if nom_fichier %} « {{ nom_fichier }} »{% endif %}, enregistrez-le, puis importez-le à nouveau. Le numéro de ligne est celui affiché à gauche dans Excel.</p>
+  <table class="erreurs">
+    <tr><th>Onglet</th><th>Ligne</th><th>Colonne</th><th>Problème</th></tr>
+    {% for e in resultat.erreurs %}<tr><td>{{ e.onglet|default:"—" }}</td><td class="n">{{ e.ligne|default:"—" }}</td><td>{{ e.colonne|default:"—" }}</td><td>{{ e.message|capfirst }}</td></tr>{% endfor %}
+  </table>
+</div>
+{% endif %}
+
+<div class="carte">
+  <h2><span class="etape">1</span>Télécharger le modèle Excel</h2>
+  <p class="aide">Un fichier vierge avec un onglet par type de données. Les colonnes <span class="oblig">en orange avec une *</span> sont obligatoires, les autres <span class="facult">en gris</span> sont facultatives. La ligne 2 de chaque onglet explique quoi écrire ; un onglet « Mode d'emploi » reprend tout.</p>
+  <div class="actions"><a class="button default" href="{% url 'modele_import_excel' %}">Télécharger le modèle (.xlsx)</a></div>
+  <div class="onglets-import">
+    {% for nom, explication, colonnes in onglets %}<div><b>{{ nom }}</b><span class="aide">{{ explication }}</span><br>
+      {% for c in colonnes %}{% if c.obligatoire %}<span class="oblig">{{ c.titre }} *</span>{% endif %}{% endfor %}
+      {% for c in colonnes %}{% if not c.obligatoire %}<span class="facult">{{ c.titre }}</span>{% endif %}{% endfor %}</div>{% endfor %}
+  </div>
+</div>
+
+<div class="carte">
+  <h2><span class="etape">2</span>Importer le fichier rempli</h2>
+  <p class="aide">Tout est vérifié avant d'enregistrer. S'il y a une seule erreur, <b>rien n'est enregistré</b> et la liste des lignes à corriger s'affiche.
+  {% if mode_test %}<br><b>Mode test :</b> l'import va dans la base de test, vos vraies données ne sont pas touchées.{% else %}<br>Astuce : pour un premier essai sans risque, passez en mode test avant d'importer.{% endif %}</p>
+  <form method="post" enctype="multipart/form-data" class="actions">{% csrf_token %}
+    <input type="file" name="fichier" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" required>
+    <button type="submit" class="button default">Vérifier et importer</button>
+  </form>
+</div>
+{% endblock %}
