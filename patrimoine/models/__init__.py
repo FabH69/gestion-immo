@@ -15,7 +15,7 @@ from .location import (  # noqa: F401
     RevisionLoyer,
     TYPES_GARANTIE,
 )
-from .loyers import Echeance, EncaissementHistorique, MouvementDepot, Paiement, Relance  # noqa: F401
+from .loyers import Echeance, EncaissementHistorique, ModePaiement, MouvementDepot, Paiement, Relance, Versement  # noqa: F401
 from .relocation import (  # noqa: F401
     Annonce,
     Candidature,

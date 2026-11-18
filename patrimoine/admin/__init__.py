@@ -51,6 +51,8 @@ from .loyers import (  # noqa: F401
     MouvementDepotAdmin,
     PaiementInline,
     RevisionLoyerAdmin,
+    VersementAdmin,
+    VirementForm,
 )
 from .relocation import (  # noqa: F401
     AnnonceAdmin,
