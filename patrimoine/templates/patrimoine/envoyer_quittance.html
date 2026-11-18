@@ -23,10 +23,10 @@
     </select>{% else %}<span class="legende">Aucun loyer enregistré pour ce bail.</span>{% endif %}
   </div>
   {% if echeance %}
-  {% if not est_quittance %}<p class="legende alerte-avis">Ce loyer n'est pas payé en entier : une quittance ne peut pas être délivrée, c'est un avis d'échéance qui sera préparé.</p>{% endif %}
+  {% if not est_quittance %}<p class="legende alerte-avis">Ce loyer n'est pas payé en entier : une quittance ne peut pas être délivrée, c'est {% if echeance.statut == "partiel" %}un reçu de paiement partiel{% else %}un avis d'échéance{% endif %} qui sera préparé.</p>{% endif %}
   <div class="rang">
     <a class="button" href="{% url 'preparer_mail_quittance' echeance.pk %}">Préparer le mail dans Outlook</a>
-    <a class="button annuler" target="_blank" href="{% url 'document_echeance' echeance.pk %}">Voir {% if est_quittance %}la quittance{% else %}l'avis d'échéance{% endif %} (PDF)</a>
+    <a class="button annuler" target="_blank" href="{% url 'document_echeance' echeance.pk %}">Voir {% if est_quittance %}la quittance{% elif echeance.statut == "partiel" %}le reçu{% else %}l'avis d'échéance{% endif %} (PDF)</a>
   </div>
   <p class="legende">{% if emails %}Destinataire : {{ emails|join:", " }}.{% else %}Aucune adresse e-mail pour ce locataire : vous pourrez la saisir dans Outlook.{% endif %}
     Le mail s'ouvre dans Outlook avec le texte d'accompagnement et le PDF en pièce jointe ; il ne part que quand vous cliquez sur Envoyer.</p>
