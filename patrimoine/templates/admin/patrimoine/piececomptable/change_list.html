@@ -1,0 +1,119 @@
+{% extends "admin/patrimoine/change_list.html" %}
+{% block breadcrumbs %}{% if regime %}{% include "patrimoine/_fil_compta.html" with page_fil="Factures" %}{% else %}{{ block.super }}{% endif %}{% endblock %}
+{% block sous_titre %}{% if onglets %}{% include "patrimoine/_onglets_compta.html" %}{% endif %}
+{% if nb_a_saisir %}<p class="bandeau-compta orange"><b>{{ nb_a_saisir }} pièce{{ nb_a_saisir|pluralize }} à compléter</b> :
+{{ nb_a_saisir|pluralize:"elle n'a,elles n'ont" }} pas pu être lue{{ nb_a_saisir|pluralize }} automatiquement (lignes « À saisir à la main »).
+Saisissez montant, date et bien dans le tableau, puis « Enregistrer ma saisie ».</p>{% endif %}
+{% if annee_choisie %}
+<form method="post" action="{{ lien_cloture }}" class="cloture-annee{% if annee_cloturee %} fermee{% endif %}">{% csrf_token %}
+  <input type="hidden" name="retour" value="{{ request.get_full_path }}">
+  <input type="hidden" name="verrouiller" value="{% if annee_cloturee %}0{% else %}1{% endif %}">
+  <label class="interrupteur" title="{% if annee_cloturee %}Glisser vers la gauche pour déverrouiller{% else %}Glisser vers la droite pour clôturer{% endif %}">
+    <input type="checkbox" {% if annee_cloturee %}checked{% endif %} onchange="this.form.submit()">
+    <span class="glissiere"></span>
+  </label>
+  <span>{% if annee_cloturee %}🔒 <strong>Année {{ annee_choisie }} clôturée</strong> : ses factures ne peuvent plus être ajoutées, modifiées ni supprimées. Glissez l'interrupteur vers la gauche pour la déverrouiller.{% else %}Année {{ annee_choisie }} ouverte. Glissez l'interrupteur vers la droite pour la clôturer (plus aucun ajout ni modification).{% endif %}</span>
+</form>
+<style>
+.cloture-annee { display: flex; align-items: center; gap: 10px; margin: 8px 0 12px; padding: 8px 12px; border-radius: 8px; background: var(--darkened-bg, #f6f6f6); font-size: 13px; }
+.cloture-annee.fermee { background: #fdecea; }
+.interrupteur { position: relative; display: inline-block; width: 44px; height: 24px; flex: none; cursor: pointer; }
+.interrupteur input { opacity: 0; width: 0; height: 0; }
+.interrupteur .glissiere { position: absolute; inset: 0; background: #c4c4c4; border-radius: 24px; transition: .2s; }
+.interrupteur .glissiere::before { content: ""; position: absolute; width: 18px; height: 18px; left: 3px; top: 3px; background: #fff; border-radius: 50%; transition: .2s; }
+.interrupteur input:checked + .glissiere { background: #c0392b; }
+.interrupteur input:checked + .glissiere::before { transform: translateX(20px); }
+</style>
+{% endif %}{% endblock %}
+{% block object-tools-items %}
+  {# un seul bouton principal : l'import accepte une ou plusieurs factures, par glisser-déposer ; « À codifier » est un filtre, l'annexe 2072 est dans le menu #}
+  <li><a href="{{ lien_import }}" class="addlink">Ajouter des factures</a></li>
+  {% if has_add_permission %}<li class="lien-discret"><a href="{% url 'admin:patrimoine_piececomptable_add' %}">Saisie sans fichier</a></li>{% endif %}
+{% endblock %}
+{% block footer %}{{ block.super }}
+{% load static %}
+<div id="apercu-piece" hidden></div>
+<style>
+#apercu-piece { position: fixed; z-index: 1000; width: min(700px, 55vw); height: 90vh; overflow-y: auto; box-sizing: border-box; background: #f3f4f6; border: 1px solid var(--border-color, #ccc);
+  border-radius: 10px; box-shadow: 0 8px 30px rgba(0,0,0,.25); padding: 8px; }
+#apercu-piece canvas, #apercu-piece img { display: block; width: 100%; height: auto; background: #fff; margin-bottom: 8px; box-shadow: 0 1px 3px rgba(0,0,0,.15); }
+#apercu-piece .attente { padding: 40px 0; text-align: center; color: #666; }
+</style>
+<script src="{% static 'patrimoine/pdfjs/pdf.min.js' %}"></script>
+<script>
+(function () {
+  // Aperçu de la facture au survol du lien PDF / Photo : les pages sont dessinées par pdf.js (fonctionne quel que soit
+  // le lecteur PDF du navigateur). Le clic ouvre toujours la pièce dans un nouvel onglet.
+  if (window.pdfjsLib) pdfjsLib.GlobalWorkerOptions.workerSrc = "{% static 'patrimoine/pdfjs/pdf.worker.min.js' %}";
+  var boite = document.getElementById("apercu-piece"), minuteur = null, courant = null, cache = {};
+  var LARGEUR = Math.min(700, window.innerWidth * 0.55), PAGES_MAX = 3;
+  function placer(lien) {
+    var r = lien.getBoundingClientRect(), h = window.innerHeight * 0.9;
+    var x = r.right + 12; if (x + LARGEUR > window.innerWidth - 8) x = Math.max(8, r.left - LARGEUR - 12);
+    var y = Math.min(Math.max(8, r.top - h / 3), window.innerHeight - h - 8);
+    boite.style.left = x + "px"; boite.style.top = Math.max(8, y) + "px";
+  }
+  function dessinerPdf(url, cible) {
+    if (!window.pdfjsLib) { cible.innerHTML = '<p class="attente">Aperçu indisponible : cliquez pour ouvrir.</p>'; return; }
+    pdfjsLib.getDocument({url: url, withCredentials: true}).promise.then(function (doc) {
+      cible.innerHTML = "";
+      var n = Math.min(doc.numPages, PAGES_MAX), suite = Promise.resolve();
+      for (var i = 1; i <= n; i++) (function (i) {
+        suite = suite.then(function () { return doc.getPage(i); }).then(function (page) {
+          var v1 = page.getViewport({scale: 1}), echelle = (LARGEUR - 16) / v1.width * (window.devicePixelRatio || 1);
+          var vue = page.getViewport({scale: echelle}), toile = document.createElement("canvas");
+          toile.width = vue.width; toile.height = vue.height; cible.appendChild(toile);
+          return page.render({canvasContext: toile.getContext("2d"), viewport: vue}).promise;
+        });
+      })(i);
+      if (doc.numPages > n) suite.then(function () { cible.insertAdjacentHTML("beforeend", '<p class="attente">… ' + (doc.numPages - n) + ' page(s) de plus : cliquez pour tout voir.</p>'); });
+    }).catch(function () { cible.innerHTML = '<p class="attente">Aperçu indisponible : cliquez pour ouvrir.</p>'; });
+  }
+  function montrer(lien) {
+    if (courant !== lien) {
+      if (!cache[lien.href]) {
+        var contenu = document.createElement("div");
+        if (lien.dataset.image) { contenu.innerHTML = '<img alt="">'; contenu.firstChild.src = lien.href; }
+        else { contenu.innerHTML = '<p class="attente">Chargement…</p>'; dessinerPdf(lien.href, contenu); }
+        cache[lien.href] = contenu;
+      }
+      boite.innerHTML = ""; boite.appendChild(cache[lien.href]); boite.scrollTop = 0; courant = lien;
+    }
+    boite.hidden = false; placer(lien);
+  }
+  // écoute au niveau de la page : marche aussi après le rechargement de la liste par la recherche pendant la frappe
+  function lienSous(e) { return e.target && e.target.closest ? e.target.closest("a.apercu-piece") : null; }
+  document.addEventListener("mouseover", function (e) {
+    var lien = lienSous(e);
+    if (!lien || lien.contains(e.relatedTarget)) return;
+    clearTimeout(minuteur); minuteur = setTimeout(function () { montrer(lien); }, 250);
+  });
+  document.addEventListener("mouseout", function (e) {
+    var lien = lienSous(e);
+    if (!lien || lien.contains(e.relatedTarget)) return;
+    clearTimeout(minuteur); minuteur = setTimeout(function () { boite.hidden = true; }, 250);
+  });
+  // Tableau « À codifier » : « Valider les champs lus automatiquement » grisé quand aucune pièce cochée n'a été lue
+  // automatiquement ; le bouton Enregistrer devient « Enregistrer ma saisie ».
+  function majBoutons() {
+    var form = document.getElementById("changelist-form");
+    if (!form) return;
+    var enregistrer = form.querySelector("input[name=_save]");
+    if (enregistrer) enregistrer.value = "Enregistrer ma saisie";
+    var valider = Array.prototype.find.call(form.querySelectorAll(".actions-boutons button"), function (b) { return /lus automatiquement/.test(b.textContent); });
+    if (!valider) return;
+    var coches = form.querySelectorAll("tr input.action-select:checked"), lues = 0;
+    coches.forEach(function (c) { if (c.closest("tr").querySelector(".lu-auto")) lues++; });
+    valider.disabled = coches.length > 0 && lues === 0;
+    valider.title = valider.disabled ? "Ces pièces n'ont pas été lues automatiquement : saisissez montant, date et bien, puis « Enregistrer ma saisie »." : "";
+  }
+  function plusTard() { setTimeout(majBoutons, 0); }
+  document.addEventListener("DOMContentLoaded", plusTard);
+  document.addEventListener("liste-rechargee", plusTard);
+  document.addEventListener("change", plusTard);
+  document.addEventListener("click", plusTard);
+  boite.addEventListener("mouseenter", function () { clearTimeout(minuteur); });
+  boite.addEventListener("mouseleave", function () { boite.hidden = true; });
+})();
+</script>
+{% endblock %}

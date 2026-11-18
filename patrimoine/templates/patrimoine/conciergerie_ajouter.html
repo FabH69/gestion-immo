@@ -1,0 +1,33 @@
+{% extends "admin/base_site.html" %}
+{% load tableau_bord %}
+{% block extrastyle %}{{ block.super }}<style>{% include "patrimoine/_style_etat.css" %}</style>{% endblock %}
+{% block content_title %}{% endblock %}
+{% block breadcrumbs %}{% include "patrimoine/_fil_compta.html" with page_fil="Contrôle conciergerie" %}{% endblock %}
+{% block content %}
+<div class="titre-liste titre-compta"><h1>Contrôle de la facture de conciergerie</h1></div>
+{% include "patrimoine/_onglets_compta.html" %}
+<div class="mise-compta">
+  <section class="module carte-compta">
+    <h2>Déposer la facture du mois</h2>
+    <p class="aide-compta">L'appli lit chaque séjour de la facture, le retrouve dans les réservations Airbnb, Booking et directes du logement, et recalcule l'honoraire, le ménage et les consommables. La facture est ensuite enregistrée en comptabilité, répartie en Commission, Ménage et Consommables dans le mois des séjours.</p>
+    {% if lots %}
+    <form method="post" enctype="multipart/form-data">{% csrf_token %}
+      <input type="hidden" name="compta" value="{{ regime }}">
+      {% if lots|length > 1 %}<p><label for="id_lot"><b>Logement</b></label><br><select name="lot" id="id_lot">{% for l in lots %}<option value="{{ l.pk }}">{{ l.bien.nom }} – {{ l.designation }}</option>{% endfor %}</select></p>
+      {% else %}<input type="hidden" name="lot" value="{{ lots.0.pk }}"><p>Logement : <b>{{ lots.0.bien.nom }} – {{ lots.0.designation }}</b></p>{% endif %}
+      <p><label for="id_fichier"><b>Facture (PDF)</b></label><br><input type="file" name="fichier" id="id_fichier" accept=".pdf" required></p>
+      <div class="submit-row"><input type="submit" class="default" value="Contrôler et enregistrer"></div>
+    </form>
+    <p class="aide-compta">Avant de contrôler, importez les réservations du mois (Courte durée › Gérer mon bien › Suivi mensuel) : un séjour absent des réservations est signalé comme anomalie. Le contrôle se refait à chaque ouverture, il suffit d'importer puis de rouvrir le rapport.</p>
+    {% else %}<p>Aucun logement en courte durée n'est rattaché à cette comptabilité.</p>{% endif %}
+  </section>
+  <section class="module carte-compta">
+    <h2>Factures déjà contrôlées</h2>
+    {% if historique %}
+    <table class="etat liste-conciergerie"><thead><tr><th class="libelle">Facture</th><th class="libelle">Logement</th><th>Séjours de</th><th>Honoraires</th></tr></thead><tbody>
+    {% for h in historique %}<tr><td class="libelle"><a href="{% url 'controle_conciergerie' h.piece.pk %}">{{ h.piece.libelle|truncatechars:60 }}</a></td><td class="libelle">{{ h.piece.bien.nom }}</td><td>{{ h.piece.mois_concerne|date:"F Y"|default:"–" }}</td><td>{{ h.piece.montant|euros:2 }}</td></tr>{% endfor %}
+    </tbody></table>
+    {% else %}<p class="aide-compta">Aucune facture de conciergerie enregistrée pour l'instant.</p>{% endif %}
+  </section>
+</div>
+{% endblock %}

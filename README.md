@@ -20,6 +20,7 @@ Puis ouvrir http://127.0.0.1:8000/.
 - Menu **Loyers** : boutons « Générer les loyers du mois » (un loyer par bail actif), puis saisie des paiements dans chaque loyer, ou action « Marquer comme payé intégralement » sur une sélection.
 - Filtre « Impayés en retard » pour voir les loyers non soldés après leur date d'échéance.
 - Colonne **Document** : quittance PDF si le loyer est payé en entier, sinon avis d'échéance.
+- Automatique : les loyers du mois sont créés dès la première utilisation de l'application à partir du 1er.
 - En ligne de commande : `python manage.py generer_echeances 2026-11`.
 
 ## États
@@ -51,6 +52,17 @@ Puis ouvrir http://127.0.0.1:8000/.
 - **Garants** : fiche complète (identité, revenus, caution solidaire ou simple, montant maximum, durée) rattachée au locataire et au bail ; acte de cautionnement PDF pré-rempli.
 - **Annonces** (fiche du lot → « Créer une annonce ») : titre et texte générés avec les mentions obligatoires (loyer CC, charges, dépôt, surface, DPE/GES, dépenses d'énergie), modifiables ; boutons de copie, photos du lot en zip numéroté, lien de dépôt Leboncoin. Les photos se chargent dans la fiche du lot.
 
+## Mode test
+
+- Bouton **Mode test** en bas du menu de gauche (administrateurs) : l'appli passe sur une **base de test séparée**
+  (`db-essai.sqlite3`), vierge comme au premier lancement. Couleurs orange et bandeau « MODE TEST » sur toutes les pages.
+- Dans le bandeau : **Remettre à zéro** (base de test de nouveau vierge), **Données de démo** (ajoute des données fictives),
+  **Revenir à mes données**. Le choix ne vaut que pour ce navigateur.
+- Garanties : en mode test, les données de l'appli ne sont lues et écrites que dans la base de test ; aucun mail ne part ;
+  les comptes et mots de passe (communs aux deux bases) ne se modifient pas. La vraie base `db.sqlite3` n'est jamais ouverte
+  par la remise à zéro. Les sauvegardes ne contiennent que la vraie base.
+- Limite : le lien de candidature ouvert depuis un autre téléphone arrive sur la vraie base (le mode test ne vaut que pour ton navigateur).
+
 ## Mise en ligne sur PythonAnywhere
 
 1. Onglet **Web** : *Add a new web app* › *Manual configuration* › *Python 3.12*.
@@ -60,3 +72,9 @@ Puis ouvrir http://127.0.0.1:8000/.
 Le script installe les bibliothèques, prépare la base, écrit la configuration du site (clé secrète
 dans `~/.gestion-immo-secret`, DEBUG désactivé), vérifie les PDF et crée le compte administrateur.
 Il peut être relancé après chaque mise à jour du code.
+
+## Simulateurs publics
+
+`/simulateurs/` : simulateurs gratuits, ouverts sans compte (vitrine) : frais de notaire et mensualités d'un prêt.
+Pour en ajouter un, voir `simulateurs/registre.py`. Les taux des droits de mutation se mettent à jour dans
+`simulateurs/calculs/notaire.py` (`TAUX_DEPARTEMENTAUX`, `MISE_A_JOUR`).

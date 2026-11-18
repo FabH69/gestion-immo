@@ -1,0 +1,30 @@
+{% extends "admin/base_site.html" %}
+{% block breadcrumbs %}<div class="breadcrumbs"><a href="{% url 'admin:index' %}">Accueil</a> › <a href="{% url 'admin:patrimoine_echeance_changelist' %}">Loyers</a> › Modifier</div>{% endblock %}
+{% block extrastyle %}{{ block.super }}<style>
+.carte { background: var(--body-bg); border: 1px solid var(--hairline-color); border-radius: 12px; box-shadow: 0 1px 6px rgba(16,24,40,.06); padding: 16px 18px; margin-bottom: 18px; max-width: 900px; }
+.aide { font-size: .85rem; color: var(--body-quiet-color); line-height: 1.55; }
+.champs-modif { display: flex; flex-wrap: wrap; gap: 16px; margin: 12px 0; }
+.champs-modif label { display: block; font-weight: 600; margin-bottom: 4px; }
+table.ech { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
+table.ech td, table.ech th { padding: 6px; border-bottom: 1px solid var(--hairline-color); text-align: left; }
+table.ech .m { text-align: right; }
+</style>{% endblock %}
+{% block content %}
+<form method="post">{% csrf_token %}
+<div class="carte">
+  <p class="aide">Remplissez seulement ce que vous voulez changer : une case laissée vide ne change rien. Le statut (payé, à payer…) est recalculé ensuite.</p>
+  {{ form.non_field_errors }}
+  <div class="champs-modif">{% for f in form %}<div>{{ f.label_tag }}{{ f }}{{ f.errors }}</div>{% endfor %}</div>
+  {% for e in echeances %}<input type="hidden" name="{{ action_checkbox_name }}" value="{{ e.pk }}">{% endfor %}
+  <input type="hidden" name="action" value="modifier">
+  <input type="hidden" name="appliquer" value="1">
+  <button type="submit" class="button default">Appliquer aux {{ echeances|length }} échéances</button>
+  <a class="button annuler" href="{% url 'admin:patrimoine_echeance_changelist' %}">Annuler</a>
+</div>
+<div class="carte">
+  <table class="ech"><tr><th>Mois</th><th>Lot</th><th>Locataires</th><th class="m">Loyer HC</th><th class="m">Charges</th><th>Exigible le</th></tr>
+  {% for e in echeances %}<tr><td>{{ e.periode|date:"m/Y" }}</td><td>{{ e.bail.lot }}</td><td>{% for l in e.bail.locataires.all %}{{ l }}{% if not forloop.last %}, {% endif %}{% endfor %}</td><td class="m">{{ e.loyer_hc }}</td><td class="m">{{ e.charges }}</td><td>{{ e.date_exigibilite|date:"d/m/Y" }}</td></tr>{% endfor %}
+  </table>
+</div>
+</form>
+{% endblock %}

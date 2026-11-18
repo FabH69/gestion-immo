@@ -1,0 +1,30 @@
+{% extends "admin/base_site.html" %}
+{% load tableau_bord %}
+{% block extrastyle %}{{ block.super }}<style>{% include "patrimoine/_style_etat.css" %}</style>{% endblock %}
+{% block content_title %}{% endblock %}
+{% block breadcrumbs %}{% url 'admin:patrimoine_piececomptable_changelist' as factures %}<div class="breadcrumbs"><a href="{% url 'admin:index' %}">Accueil</a> › Comptabilité › <a href="{{ factures }}?compta=foncier">Revenus fonciers</a> › Récapitulatif 2044</div>{% endblock %}
+{% block content %}
+<div class="titre-liste titre-compta"><h1>Récapitulatif 2044 – revenus {{ annee }}</h1>
+  <ul class="object-tools"><li><a href="{% url 'admin:patrimoine_piececomptable_import' %}?compta=foncier" class="addlink">Ajouter des factures</a></li></ul></div>
+{% include "patrimoine/_onglets_compta.html" with libelle_regime="Revenus fonciers" %}
+<div class="barre-compta">{% boutons_annees annees annee "civil" %}</div>
+<p class="aide-compta">Biens en nom propre déclarés en revenus fonciers, à reporter sur la déclaration 2044 des revenus {{ annee }}. Loyers, forfait de 20 € par local, intérêts et assurance des prêts sont calculés ; le reste vient des factures codées, dans l'année de leur paiement. Faites valider par votre comptable avant de déclarer.</p>
+{% if colonnes %}
+<section class="module etat-scroll tableau-compta">
+  <table class="etat">
+    <thead><tr><th class="libelle">Ligne</th><th class="libelle">Libellé</th>{% for c in colonnes %}<th>{{ c.bien.nom }}</th>{% endfor %}{% if colonnes|length > 1 %}<th>Total</th>{% endif %}</tr></thead>
+    <tbody>{% for l in lignes %}
+      <tr{% if l.genre == "total" %} class="st"{% endif %}><td class="libelle">{{ l.numero }}</td><td class="libelle">{{ l.libelle }}</td>{% for m in l.montants %}<td>{{ m|euros:0 }}</td>{% endfor %}{% if colonnes|length > 1 %}<td class="fort">{{ l.total|euros:0 }}</td>{% endif %}</tr>
+    {% endfor %}</tbody>
+  </table>
+</section>
+<section class="module carte-compta detail-2044">
+  <h2>Détail par bien</h2>
+  {% for c in colonnes %}<h3>{{ c.bien.nom }}</h3>
+    <table class="etat">{% for code, details in c.detail.items %}{% for libelle, montant, piece in details %}
+      <tr><td class="libelle">{% if piece %}<a href="{% url 'admin:patrimoine_piececomptable_change' piece.pk %}">{{ libelle }}</a>{% else %}{{ libelle }}{% endif %}</td><td>{{ montant|euros:2 }}</td></tr>
+    {% endfor %}{% empty %}<tr><td class="libelle">Aucune donnée pour {{ annee }}.</td></tr>{% endfor %}</table>
+  {% endfor %}
+</section>
+{% else %}<p>Aucun bien en nom propre n'est déclaré en revenus fonciers.</p>{% endif %}
+{% endblock %}

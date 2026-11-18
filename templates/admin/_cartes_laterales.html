@@ -1,0 +1,31 @@
+{% load tableau_bord %}
+{% if droits.loyers or droits.relocation == "modification" %}<div class="module carte actions-rapides">
+  <h2>Actions rapides</h2>
+  <div class="actions-rapides-liste">
+    {% if droits.loyers %}<a class="button" href="{% url 'admin:patrimoine_echeance_changelist' %}">Encaisser un loyer</a>
+    <a class="button" href="{% url 'envoyer_quittance' %}">Créer une quittance</a>
+    <a class="button" href="{% url 'relances_impayes' %}">Relancer un impayé</a>{% endif %}
+    {% if droits.relocation == "modification" %}<a class="button" href="{% url 'admin:patrimoine_annonce_add' %}">Créer une annonce</a>{% endif %}
+  </div>
+</div>{% endif %}
+{% note_rapide as note %}<div class="module carte bloc-notes">
+  <h2>Notes rapides<span class="lien-carte" id="etat-note">{% if note.texte %}enregistré{% endif %}</span></h2>
+  <textarea id="texte-note" rows="5" placeholder="Une idée, un numéro, un rappel… (enregistré automatiquement)">{{ note.texte|default:"" }}</textarea>
+</div>
+<script>
+(function () {
+  var zone = document.getElementById("texte-note"), etat = document.getElementById("etat-note"), minuteur;
+  var jeton = (document.cookie.match(/csrftoken=([^;]+)/) || [])[1] || "";
+  function enregistrer() {
+    var donnees = new FormData(); donnees.append("texte", zone.value);
+    fetch("{% url 'enregistrer_note' %}", {method: "POST", body: donnees, headers: {"X-CSRFToken": jeton}, credentials: "same-origin"})
+      .then(function (r) { return r.json(); })
+      .then(function (d) { etat.textContent = "enregistré à " + d.heure; zone.dataset.modifie = ""; })
+      .catch(function () { etat.textContent = "non enregistré"; });
+  }
+  zone.addEventListener("input", function () {
+    zone.dataset.modifie = "1"; etat.textContent = "…"; clearTimeout(minuteur); minuteur = setTimeout(enregistrer, 800);
+  });
+  zone.addEventListener("blur", function () { if (zone.dataset.modifie) { clearTimeout(minuteur); enregistrer(); } });
+})();
+</script>

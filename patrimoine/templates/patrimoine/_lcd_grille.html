@@ -1,0 +1,9 @@
+<div class="cal{% if mini %} mini{% endif %}" role="grid" aria-label="Calendrier {{ nom_mois }}">
+  {% for j in "LMMJVSD" %}<div class="jsem" role="columnheader">{{ j }}</div>{% endfor %}
+  {% for semaine in semaines %}{% for j in semaine %}<div class="jour{% if not j.dans_mois %} hors{% endif %}{% if j.aujourdhui %} auj{% endif %}{% if j.passe %} passe{% endif %}{% if forloop.first %} lundi{% endif %}" role="gridcell"{% if j.sejour %} title="{{ j.sejour.titre }} · {{ j.sejour.source }} · {{ j.sejour.debut|date:'d/m' }} → {{ j.sejour.fin|date:'d/m' }}"{% endif %}>
+    <span class="num">{{ j.date.day }}</span>
+    {% if j.gauche %}<span class="demi g {% if j.gauche.bloque %}p-bloque{% else %}p-{{ j.gauche.plateforme }}{% endif %}{% if j.gauche.fin == j.date %} fin{% endif %}"></span>{% endif %}
+    {% if j.sejour %}<span class="demi d {% if j.sejour.bloque %}p-bloque{% else %}p-{{ j.sejour.plateforme }}{% endif %}{% if j.sejour.debut == j.date %} debut{% endif %}"></span>{% if j.etiquette and not j.sejour.bloque %}<span class="etiq">{{ j.sejour.titre|truncatechars:16 }}</span>{% endif %}{% endif %}
+  </div>{% endfor %}{% endfor %}
+</div>
+<div class="legende"><span><i class="p-airbnb"></i>Airbnb</span><span><i class="p-booking"></i>Booking</span><span><i class="p-direct"></i>Direct</span><span><i class="p-autre"></i>Autre</span><span><i class="p-bloque"></i>Bloqué</span></div>

@@ -1,0 +1,56 @@
+{% extends "admin/base_site.html" %}
+{% load tableau_bord %}
+{% block extrastyle %}{{ block.super }}<style>{% include "patrimoine/_style_etat.css" %}</style>{% endblock %}
+{% block content_title %}{% endblock %}
+{% block breadcrumbs %}{% include "patrimoine/_fil_compta.html" with page_fil="Récapitulatif" %}{% endblock %}
+{% block content %}
+<div class="titre-liste titre-compta">
+  <h1>Comptabilité {{ libelle_regime }}</h1>
+  <ul class="object-tools">
+    <li><a href="{{ lien_import }}" class="addlink">Ajouter des factures</a></li>
+    <li class="lien-discret"><a href="?{{ request.GET.urlencode }}{% if request.GET %}&{% endif %}format=pdf" target="_blank">PDF</a></li>
+  </ul>
+</div>
+{% include "patrimoine/_onglets_compta.html" %}
+<div class="barre-compta">
+  <div class="groupe-filtre" role="group" aria-label="Bien">
+    <a class="chip{% if not bien %} actif{% endif %}" href="?annee={{ annee }}{% if par_mois %}&vue=mois{% endif %}">Tous les biens</a>
+    {% for b in biens %}<a class="chip{% if bien.pk == b.pk %} actif{% endif %}" href="?annee={{ annee }}&bien={{ b.pk }}{% if par_mois %}&vue=mois{% endif %}">{{ b.nom }}</a>{% endfor %}
+  </div>
+  {% boutons_annees annees annee "civil" %}
+  <a class="chip{% if par_mois %} actif{% endif %}" href="?annee={{ annee }}{% if bien %}&bien={{ bien.pk }}{% endif %}{% if not par_mois %}&vue=mois{% endif %}">Détail mensuel</a>
+  <span class="periode-compta">{{ periode }}</span>
+</div>
+{% for o in onglets %}{% if o.code == "codifier" and o.compte %}
+<p class="bandeau-compta orange">{{ o.compte }} facture{{ o.compte|pluralize }} à codifier : {{ o.compte|pluralize:"elle n'est,elles ne sont" }} pas encore dans le récapitulatif. <a href="{{ o.url }}">Codifier</a></p>
+{% endif %}{% endfor %}
+<div class="mise-compta{% if par_mois %} mensuel{% endif %}">
+  <section class="module etat-scroll tableau-compta">
+    <table class="etat">
+      <thead><tr><th class="libelle">Rubrique</th>{% for c in colonnes %}<th>{{ c.titre }}</th>{% endfor %}{% if colonnes|length > 1 %}<th>Total</th>{% endif %}</tr></thead>
+      <tbody>
+      {% for g in groupes %}
+        {% if g.titre %}<tr class="groupe-compta"><td colspan="{{ colonnes|length|add:2 }}">{{ g.titre }}</td></tr>{% endif %}
+        {% for l in g.lignes %}
+        <tr><td class="libelle">{{ l.libelle }}{% if l.note %}<small>{{ l.note }}</small>{% endif %}</td>
+          {% for c in l.cases %}<td class="{% if c.sources == 'E'|make_list %}estime{% endif %}">{% if c.montant %}{% if c.lien %}<a class="montant-lien" href="{{ c.lien }}">{% endif %}{% if c.sources == 'E'|make_list %}≈ {% endif %}{{ c.montant|euros:2 }}{% if c.lien %}</a>{% endif %}{% for s in c.sources %}<span class="source s-{{ s }}" title="{{ sources|get_item:s }}">{{ s }}</span>{% endfor %}{% else %}<span class="vide">–</span>{% endif %}</td>{% endfor %}
+          {% if colonnes|length > 1 %}<td class="fort">{% if l.total %}{{ l.total|euros:2 }}{% else %}–{% endif %}</td>{% endif %}
+        </tr>
+        {% endfor %}
+      {% empty %}
+        <tr><td class="vide" colspan="{{ colonnes|length|add:2 }}">Aucune donnée pour {{ annee }}.</td></tr>
+      {% endfor %}
+      </tbody>
+      {% if groupes %}<tfoot><tr class="total"><td class="libelle">Total des charges</td>{% for t in totaux %}<td>{{ t|euros:2 }}</td>{% endfor %}{% if colonnes|length > 1 %}<td>{{ total|euros:2 }}</td>{% endif %}</tr></tfoot>{% endif %}
+    </table>
+    <p class="legende-compta">{% for code, texte in sources.items %}<span class="source s-{{ code }}">{{ code }}</span> {{ texte }}{% if not forloop.last %} · {% endif %}{% endfor %}<br>
+      ≈ en gris : estimation, remplacée dès qu'une facture de la rubrique est codée pour l'année.</p>
+  </section>
+  <aside class="module note-compta">
+    <h2>D'où viennent les montants</h2>
+    <p>Ce que l'appli connaît déjà se remplit seul : commissions des plateformes, conciergerie, ménage et consommables depuis les <b>réservations</b> et les frais de gestion du logement, mensualités et assurance depuis l'<b>échéancier du prêt</b>.</p>
+    <p>Le reste vient des <b>factures</b> codées, dans le mois de la prestation s'il est indiqué, sinon celui du paiement. Une facture de conciergerie remplace, pour son mois, l'estimation tirée des réservations.</p>
+    <p>Un clic sur un montant ouvre ce qui le compose : factures, réservations, échéancier ou charges mensuelles.</p>
+  </aside>
+</div>
+{% endblock %}

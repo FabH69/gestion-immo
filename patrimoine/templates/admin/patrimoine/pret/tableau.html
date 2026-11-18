@@ -1,0 +1,25 @@
+{% extends "admin/base_site.html" %}
+{% block breadcrumbs %}<div class="breadcrumbs"><a href="{% url 'admin:index' %}">Accueil</a> › <a href="{% url 'admin:patrimoine_pret_changelist' %}">Prêts</a> › <a href="{{ retour }}">{{ pret }}</a> › Tableau de la banque</div>{% endblock %}
+{% block content %}
+<div class="module aligned" style="max-width:720px;padding:16px 18px">
+  <p>Déposez le tableau d'amortissement envoyé par la banque (PDF du Crédit Mutuel ou de la Caisse d'Épargne). Chaque échéance
+  est reprise telle quelle : différé, intérêts seuls, assurance qui change chaque année, arrondis. Le tableau remplace alors le calcul
+  dans toute l'appli (capital restant dû, intérêts de l'année, bilans).</p>
+  {% if nb_lignes %}<p class="help">Ce prêt a déjà un tableau de la banque ({{ nb_lignes }} échéances).</p>{% endif %}
+  <form method="post" enctype="multipart/form-data">{% csrf_token %}
+    <div class="form-row"><label for="id_fichier" class="required">Tableau (PDF)</label> <input type="file" name="fichier" id="id_fichier" accept=".pdf" required></div>
+    {% if nb_lignes %}
+    <div class="form-row">
+      <label><input type="radio" name="action" value="remplacer" checked> Remplacer tout le tableau</label><br>
+      <label><input type="radio" name="action" value="remplacer_debut"> Avenant : garder les échéances passées avant le nouveau tableau</label>
+    </div>
+    {% endif %}
+    <div class="submit-row"><input type="submit" class="default" value="Importer"><a class="button annuler" href="{{ retour }}">Annuler</a></div>
+  </form>
+  {% if nb_lignes %}
+  <form method="post" style="margin-top:14px">{% csrf_token %}<input type="hidden" name="action" value="calcul">
+    <button type="submit" class="button" onclick="return confirm('Retirer le tableau de la banque et revenir au calcul ?')">Revenir à l'échéancier calculé</button>
+  </form>
+  {% endif %}
+</div>
+{% endblock %}

@@ -1,0 +1,105 @@
+{% extends "admin/base_site.html" %}
+{% load static %}
+{% block extrastyle %}{{ block.super }}<link rel="stylesheet" href="{% static 'patrimoine/edl.css' %}">{% endblock %}
+{% block extrahead %}{{ block.super }}<script src="{% static 'patrimoine/edl.js' %}" defer></script>{% endblock %}
+{% block breadcrumbs %}<div class="breadcrumbs"><a href="{% url 'admin:index' %}">Accueil</a> › <a href="{% url 'admin:patrimoine_bail_change' bail.pk %}">{{ bail.lot }}</a> › État des lieux {{ edl.get_type_display|lower }}</div>{% endblock %}
+{% block content_title %}{% endblock %}
+{% block content %}
+<div class="edl">
+  <div class="envoi" role="status">Envoi des photos…</div>
+  <form id="form-edl" method="post" enctype="multipart/form-data" action="?etape={{ etape }}">{% csrf_token %}
+  <input type="hidden" name="action" value=""><input type="hidden" name="ancre" value=""><input type="hidden" name="aller" value="">
+  {% if etape != rang_signature %}<button type="submit" class="defaut" name="aller" value="{{ etape|add:1 }}" tabindex="-1" aria-hidden="true">Suivant</button>{% endif %}
+
+  <div class="edl-entete">
+    <div class="ligne">
+      <div><strong>{% if sortie %}Sortie{% else %}Entrée{% endif %}</strong> · {{ bail.lot }}<div class="etape">Étape {{ etape|add:1 }} sur {{ etapes|length }} · {{ faits }}/{{ total }} éléments renseignés</div></div>
+      <label class="visuellement-cache" for="saut-etape">Aller à l'étape</label>
+      <select id="saut-etape">{% for nom in etapes %}<option value="{{ forloop.counter0 }}"{% if forloop.counter0 == etape %} selected{% endif %}>{{ nom }}</option>{% endfor %}</select>
+    </div>
+    <div class="edl-barre"><span style="width:{{ pourcentage }}%"></span></div>
+  </div>
+
+  {% if etape == 0 %}
+    <h2 class="piece">Informations</h2>
+    <div class="grille2">
+      <div class="champ"><label for="date">Date de l'état des lieux</label><input type="date" id="date" name="date" value="{{ edl.date|date:'Y-m-d' }}"></div>
+      <div class="champ"><label for="signataire_bailleur">Pour le bailleur</label><input type="text" id="signataire_bailleur" name="signataire_bailleur" value="{{ edl.signataire_bailleur }}"></div>
+    </div>
+    <div class="champ"><label for="signataire_locataire">Locataire(s) présent(s)</label><input type="text" id="signataire_locataire" name="signataire_locataire" value="{{ edl.signataire_locataire }}"></div>
+    {% if sortie %}<div class="champ"><label for="nouvelle_adresse">Nouvelle adresse du locataire</label><textarea id="nouvelle_adresse" name="nouvelle_adresse" rows="2">{{ edl.nouvelle_adresse }}</textarea></div>{% endif %}
+    <h3>Pièces</h3>
+    <ul class="liste-pieces">
+      {% for nom, n, f in pieces %}<li><div>{{ nom }} <span>{{ f }}/{{ n }}</span></div><button type="submit" name="action" value="retirer_piece:{{ nom }}" data-confirm="Retirer la pièce « {{ nom }} » de cet état des lieux ?">Retirer</button></li>{% endfor %}
+    </ul>
+    <div class="ajout"><label class="visuellement-cache" for="nouvelle_piece">Nouvelle pièce</label><input type="text" id="nouvelle_piece" name="nouvelle_piece" placeholder="Ajouter une pièce (ex. Cave, Balcon)"><button type="submit" class="button" name="action" value="ajouter_piece">Ajouter</button></div>
+    <p class="note">Les photos sont horodatées par le serveur à leur réception, et chacune reçoit une empreinte qui permet de vérifier plus tard qu'elle n'a pas été modifiée.{% if sortie %} Chaque élément rappelle son état et ses photos d'entrée.{% endif %}</p>
+
+  {% elif etape == rang_compteurs %}
+    <h2 class="piece">Compteurs et clés</h2>
+    <div class="grille2">
+      <div class="champ"><label for="ce">Électricité{% if bail.pdl_electricite %} <span class="note">PDL {{ bail.pdl_electricite }}</span>{% endif %}</label><input type="text" inputmode="decimal" id="ce" name="compteur_electricite" value="{{ edl.compteur_electricite }}"></div>
+      <div class="champ"><label for="cg">Gaz{% if bail.pce_gaz %} <span class="note">PCE {{ bail.pce_gaz }}</span>{% endif %}</label><input type="text" inputmode="decimal" id="cg" name="compteur_gaz" value="{{ edl.compteur_gaz }}"></div>
+      <div class="champ"><label for="cef">Eau froide</label><input type="text" inputmode="decimal" id="cef" name="compteur_eau_froide" value="{{ edl.compteur_eau_froide }}"></div>
+      <div class="champ"><label for="cec">Eau chaude</label><input type="text" inputmode="decimal" id="cec" name="compteur_eau_chaude" value="{{ edl.compteur_eau_chaude }}"></div>
+    </div>
+    <div class="champ"><label for="cles">Clés, badges et télécommandes remis</label><input type="text" id="cles" name="nb_cles" value="{{ edl.nb_cles }}" placeholder="ex. 3 clés porte, 1 badge, 1 bip garage"></div>
+    <div class="champ"><label for="obs">Observations générales</label><textarea id="obs" name="observations" rows="4">{{ edl.observations }}</textarea></div>
+    <p class="note">Pensez à photographier les compteurs : ajoutez un élément « Compteurs » dans la pièce où ils se trouvent.</p>
+
+  {% elif etape == rang_signature %}
+    <h2 class="piece">Signatures</h2>
+    <div class="recap">
+      <div><strong>{{ faits }}/{{ total }}</strong><small>éléments renseignés</small></div>
+      <div><strong>{{ nb_photos }}</strong><small>photo{{ nb_photos|pluralize }}</small></div>
+      <div><strong>{{ etapes|length|add:"-3" }}</strong><small>pièce{{ etapes|length|add:"-3"|pluralize }}</small></div>
+    </div>
+    {% if manquants %}<p class="note">{{ manquants }} élément{{ manquants|pluralize }} sans état : ils apparaîtront vides dans le document.</p>{% endif %}
+    {% if sortie %}{% if differences %}<div class="differences"><strong>{{ differences|length }} élément{{ differences|length|pluralize }} dégradé{{ differences|length|pluralize }} depuis l'entrée</strong><ul>{% for e in differences %}<li>{{ e.piece }} – {{ e.nom }} : {{ e.get_etat_entree_display }} → {{ e.get_etat_display }}{% if e.commentaire %} ({{ e.commentaire }}){% endif %}</li>{% endfor %}</ul></div>{% else %}<p class="note">Aucun élément dégradé par rapport à l'entrée.</p>{% endif %}{% endif %}
+  {% else %}
+    <h2 class="piece">{{ piece }}</h2>
+    {% for e in elements %}
+    <div class="carte{% if e.degrade %} degrade{% endif %}" id="element-{{ e.pk }}">
+      <div class="titre"><span>{{ e.nom }}</span>{% if not e.photos.all %}<button type="submit" name="action" value="retirer:{{ e.pk }}" data-confirm="Retirer « {{ e.nom }} » ?">Retirer</button>{% endif %}</div>
+      {% if e.etat_entree or e.commentaire_entree or e.element_entree.photos.all %}<div class="entree">À l'entrée : <strong>{{ e.get_etat_entree_display|default:"non renseigné" }}</strong>{% if e.commentaire_entree %} · {{ e.commentaire_entree }}{% endif %}{% if e.degrade %} <span class="pill rouge">dégradé</span>{% endif %}
+        {% if e.element_entree.photos.all %}<div class="photos avant">{% for p in e.element_entree.photos.all %}<figure><a href="{% url 'fichier_prive' p.image.name %}" target="_blank"><img src="{% url 'fichier_prive' p.image.name %}" alt="Photo d'entrée" loading="lazy"></a><figcaption>entrée {{ p.recue_le|date:"d/m/Y" }}</figcaption></figure>{% endfor %}</div>{% endif %}</div>{% endif %}
+      <div class="etats" role="radiogroup" aria-label="État de « {{ e.nom }} »">{% for code, libelle in etats %}<label><input type="radio" name="etat-{{ e.pk }}" value="{{ code }}"{% if e.etat == code %} checked{% endif %}><span>{{ libelle }}</span></label>{% endfor %}</div>
+      {% if piece == inventaire %}<div class="quantite"><label for="q{{ e.pk }}">Quantité</label><input type="number" min="0" inputmode="numeric" id="q{{ e.pk }}" name="quantite-{{ e.pk }}" value="{{ e.quantite|default_if_none:'' }}"></div>{% endif %}
+      <label class="visuellement-cache" for="c{{ e.pk }}">Commentaire</label><textarea id="c{{ e.pk }}" name="commentaire-{{ e.pk }}" rows="1" placeholder="Commentaire (taches, trous, rayures…)">{{ e.commentaire }}</textarea>
+      <div class="photos">
+        {% for p in e.photos.all %}<figure><a href="{% url 'fichier_prive' p.image.name %}" target="_blank"><img src="{% url 'fichier_prive' p.image.name %}" alt="Photo {{ forloop.counter }} de {{ e.nom }}" loading="lazy"></a><figcaption>{{ p.recue_le|date:"d/m H:i:s" }}</figcaption><button type="submit" name="action" value="photo_supprimer:{{ p.pk }}" title="Supprimer la photo" aria-label="Supprimer la photo" data-confirm="Supprimer cette photo ?">×</button></figure>{% endfor %}
+        <label class="bouton-photo"><span class="icone" aria-hidden="true">📷</span>Photo<input type="file" name="photos-{{ e.pk }}" accept="image/*" capture="environment" multiple data-element="{{ e.pk }}"></label>
+      </div>
+    </div>
+    {% endfor %}
+    <div class="ajout" id="bas"><label class="visuellement-cache" for="nouvel_element">Nouvel élément</label><input type="text" id="nouvel_element" name="nouvel_element" placeholder="Ajouter un élément (ex. Placard, Hotte)"><button type="submit" class="button" name="action" value="ajouter">Ajouter</button></div>
+  {% endif %}
+
+  {% if etape != rang_signature %}
+  <div class="edl-nav">
+    {% if etape > 0 %}<button type="submit" class="button secondaire" name="aller" value="{{ etape|add:-1 }}">Précédent</button>{% endif %}
+    <button type="submit" class="button" name="aller" value="{{ etape|add:1 }}">{% if etape == rang_compteurs %}Vers les signatures{% else %}Suivant{% endif %}</button>
+  </div>
+  {% endif %}
+  </form>
+
+  {% if etape == rang_signature %}
+    {% if not edl.signature_bailleur %}
+    <form method="post" class="form-signature">{% csrf_token %}<input type="hidden" name="qui" value="bailleur"><input type="hidden" name="signature" value="">
+      <h3>1. Le bailleur signe{% if edl.signataire_bailleur %} : {{ edl.signataire_bailleur }}{% endif %}</h3>
+      <canvas class="signature" aria-label="Cadre de signature du bailleur"></canvas>
+      <div class="edl-nav"><button type="button" class="button secondaire effacer">Effacer</button><button type="submit" class="button">Signer pour le bailleur</button></div>
+    </form>
+    {% else %}
+    <p class="note">Bailleur signé le {{ edl.bailleur_signe_le|date:"d/m/Y à H:i:s" }}. <img class="signature-image" src="{{ edl.signature_bailleur }}" alt="Signature du bailleur"></p>
+    <form method="post" class="form-signature" data-confirm="Après la signature du locataire, l'état des lieux est horodaté et ne peut plus être modifié. Continuer ?">{% csrf_token %}<input type="hidden" name="qui" value="locataire"><input type="hidden" name="signature" value="">
+      <h3>2. Le locataire signe{% if edl.signataire_locataire %} : {{ edl.signataire_locataire }}{% endif %}</h3>
+      <p class="note">En signant, le locataire reconnaît l'exactitude de cet état des lieux{% if sortie %}, comparé à celui d'entrée{% endif %}. Il est ensuite horodaté et verrouillé, et le PDF peut lui être remis.</p>
+      <canvas class="signature" aria-label="Cadre de signature du locataire"></canvas>
+      <div class="edl-nav"><button type="button" class="button secondaire effacer">Effacer</button><button type="submit" class="button">Signer et verrouiller</button></div>
+    </form>
+    {% endif %}
+    <p><a href="?etape={{ rang_compteurs }}">← Revenir aux compteurs</a></p>
+  {% endif %}
+</div>
+{% endblock %}

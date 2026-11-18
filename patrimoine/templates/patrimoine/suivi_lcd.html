@@ -1,6 +1,6 @@
 {% extends "admin/base_site.html" %}
 {% load tableau_bord %}
-{% block breadcrumbs %}<div class="breadcrumbs"><a href="{% url 'admin:index' %}">Accueil</a> › Courte durée › Suivi</div>{% endblock %}
+{% block breadcrumbs %}<div class="breadcrumbs"><a href="{% url 'admin:index' %}">Accueil</a> › <a href="{% url 'lcd_accueil' %}">Gérer mon bien</a> › Suivi mensuel</div>{% endblock %}
 {% block extrastyle %}{{ block.super }}<style>
 .carte { background: var(--body-bg); border: 1px solid var(--hairline-color); border-radius: 12px; box-shadow: 0 1px 6px rgba(16,24,40,.06); padding: 16px 18px; margin-bottom: 18px; }
 .carte h2 { margin: 0 0 12px; font-size: 1.05rem; }
@@ -26,7 +26,7 @@ table.suivi td.total, table.suivi th.total { background: var(--darkened-bg); fon
 <div class="carte">
   <form method="get" class="barre">
     <div><label for="lot">Logement</label><select id="lot" name="lot" onchange="this.form.submit()">{% for l in lots %}<option value="{{ l.pk }}"{% if l == lot %} selected{% endif %}>{{ l }}</option>{% endfor %}</select></div>
-    <div><label for="annee">Année</label><select id="annee" name="annee" onchange="this.form.submit()">{% for a in annees %}<option{% if a == annee %} selected{% endif %}>{{ a }}</option>{% endfor %}</select></div>
+    <div><label>Année</label>{% boutons_annees annees annee %}<input type="hidden" name="annee" value="{{ annee }}"></div>
     {% if lot %}<div><label for="mois">Mois comparé à l'an dernier</label><select id="mois" name="mois" onchange="this.form.submit()">{% for m in mois %}<option value="{{ m.mois }}"{% if m.mois == mois_ref %} selected{% endif %}>{{ m.mois }}/{{ annee }}</option>{% endfor %}</select></div>{% endif %}
   </form>
 </div>

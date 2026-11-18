@@ -1,0 +1,2 @@
+{# Onglets d'une entrée du menu Comptabilité (récapitulatif, factures, à codifier, contrôle de conciergerie, bilan…) #}
+<nav class="onglets-page" aria-label="{{ libelle_regime }}">{% for o in onglets %}<a href="{{ o.url }}"{% if o.actif %} class="actif" aria-current="page"{% endif %}>{{ o.libelle }}{% if o.compte %}<span class="compte">{{ o.compte }}</span>{% endif %}</a>{% endfor %}</nav>

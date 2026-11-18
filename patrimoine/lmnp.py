@@ -56,7 +56,7 @@ def bilan_lot(lot, annee):
     if interets:
         charges.append(_ligne("Intérêts d'emprunt", interets, "Prêts"))
     if assurance:
-        charges.append(_ligne("Assurance emprunteur", assurance, "Prêts"))
+        charges.append(_ligne("Assurance et frais d'emprunt", assurance, "Prêts"))
 
     manuelles = list(ChargeLMNP.objects.filter(lot=lot, annee=annee))
     for c in manuelles:
@@ -70,7 +70,8 @@ def bilan_lot(lot, annee):
     resultat = total_recettes - total_charges
     # les amortissements ne peuvent pas créer de déficit : l'excédent se reporte sans limite de durée
     amort_deduit = min(amortissements, max(resultat, ZERO))
-    abattement = ABATTEMENT_MICRO["courte" if lot.exploitation == "courte" else "longue"]
+    # courte durée : 30 % si le meublé de tourisme n'est pas classé, 50 % s'il l'est (comme le meublé classique)
+    abattement = ABATTEMENT_MICRO["courte" if lot.exploitation == "courte" and not lot.tourisme_classe else "longue"]
     return {
         "lot": lot, "recettes": recettes, "charges": charges, "total_recettes": total_recettes, "total_charges": total_charges,
         "resultat": resultat, "amortissements": amortissements, "amort_deduit": amort_deduit, "amort_reporte": amortissements - amort_deduit,
@@ -79,8 +80,19 @@ def bilan_lot(lot, annee):
     }
 
 
-def bilan(annee):
-    lots = Lot.objects.filter(lmnp=True).select_related("bien__proprietaire").order_by("bien__nom", "designation")
+def lots_lmnp():
+    """Lots des biens au régime LMNP ou LMP, et lots cochés « exploité en LMNP »."""
+    from django.db.models import Q
+
+    return Lot.objects.filter(Q(lmnp=True) | Q(bien__regime_fiscal__in=("lmnp", "lmp"))).distinct() \
+        .select_related("bien__proprietaire").order_by("bien__nom", "designation")
+
+
+def bilan(annee, lot_id=None):
+    """Bilan de tous les biens en LMNP, ou d'un seul (lot_id)."""
+    lots = lots_lmnp()
+    if lot_id:
+        lots = lots.filter(pk=lot_id)
     blocs = [bilan_lot(l, annee) for l in lots]
     total = {k: sum((b[k] for b in blocs), ZERO) for k in ("total_recettes", "total_charges", "resultat", "amortissements", "amort_deduit", "amort_reporte", "resultat_fiscal", "micro_imposable")}
     return {"blocs": blocs, "total": total}

@@ -43,9 +43,11 @@ INSTALLED_APPS = [
     "django.contrib.staticfiles",
     "patrimoine",
     "commandes",  # commandes groupées de balles de tennis (/balles/)
+    "simulateurs",  # simulateurs publics, sans compte (/simulateurs/)
 ]
 
 MIDDLEWARE = [
+    "patrimoine.base_essai.BaseEssaiMiddleware",  # en premier : choisit la vraie base ou la base de test
     "django.middleware.security.SecurityMiddleware",
     "whitenoise.middleware.WhiteNoiseMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
@@ -53,8 +55,11 @@ MIDDLEWARE = [
     "django.middleware.csrf.CsrfViewMiddleware",
     "django.contrib.auth.middleware.AuthenticationMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
+    "patrimoine.base_essai.ComptesProtegesMiddleware",
+    "patrimoine.droits.DroitsMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
     "patrimoine.sauvegarde.SauvegardeAutomatiqueMiddleware",
+    "patrimoine.loyers_auto.LoyersAutomatiquesMiddleware",
 ]
 
 ROOT_URLCONF = "config.urls"
@@ -70,6 +75,8 @@ TEMPLATES = [
                 "django.template.context_processors.request",
                 "django.contrib.auth.context_processors.auth",
                 "django.contrib.messages.context_processors.messages",
+                "patrimoine.droits.contexte",
+                "patrimoine.base_essai.contexte",
             ],
         },
     },
@@ -85,8 +92,15 @@ DATABASES = {
     "default": {
         "ENGINE": "django.db.backends.sqlite3",
         "NAME": BASE_DIR / "db.sqlite3",
-    }
+    },
+    # Base de test (bouton « Mode test ») : fichier à part, la vraie base n'y est jamais mêlée (patrimoine/base_essai.py)
+    "essai": {
+        "ENGINE": "django.db.backends.sqlite3",
+        "NAME": BASE_DIR / "db-essai.sqlite3",
+        "TEST": {"NAME": BASE_DIR / "db-essai-pour-tests.sqlite3"},  # un vrai fichier : la remise à zéro le recrée
+    },
 }
+DATABASE_ROUTERS = ["patrimoine.base_essai.Routeur"]
 
 
 # Password validation
@@ -112,6 +126,7 @@ AUTH_PASSWORD_VALIDATORS = [
 # https://docs.djangoproject.com/en/5.1/topics/i18n/
 
 LANGUAGE_CODE = "fr-fr"
+FORMAT_MODULE_PATH = ["config.formats"]
 
 TIME_ZONE = "Europe/Paris"
 
@@ -138,9 +153,10 @@ MEDIA_URL = "media/"
 MEDIA_ROOT = BASE_DIR / "media"
 # pièces d'identité des garants : hors de media (non publié), servies seulement aux personnes connectées
 PRIVE_ROOT = BASE_DIR / "prive"
-# sauvegardes automatiques (les 7 dernières) : Réglages › Sauvegardes
+# sauvegardes automatiques (les 7 dernières) : Paramètres › Sauvegardes
 SAUVEGARDES_ROOT = BASE_DIR / "sauvegardes"
 SAUVEGARDE_AUTO = CHARGER_MODELES = "test" not in sys.argv  # pas de sauvegarde automatique pendant les tests
+LOYERS_AUTO = "test" not in sys.argv  # loyers du mois créés automatiquement (pas pendant les tests)
 
 if not DEBUG:
     SESSION_COOKIE_SECURE = CSRF_COOKIE_SECURE = True

@@ -21,8 +21,9 @@ COLONNES = {
     "brut": ["montant brut reservation", "montant brut", "revenus bruts", "gross earnings", "amount", "original amount", "prix"],
     "commission": ["commission", "frais de service", "service fee", "commission amount"],
     "frais": ["frais de service de paiement", "payments service fee", "payment charge", "frais de paiement rapide", "fast pay fee"],
-    "taxe": ["taxe de sejour", "tourism tax", "taxes de sejour", "occupancy taxes", "city tax"],
-    "versement": ["payout date", "date de versement", "date d'emission", "date"],
+    "taxe": ["taxe de sejour", "tourism tax", "taxes de sejour", "taxes reversees par airbnb", "occupancy taxes",
+             "occupancy taxes remitted by airbnb", "city tax"],
+    "versement": ["payout date", "date de versement", "date du versement", "date d'emission", "date"],
     "type": ["type", "type de transaction"],
     "nuits": ["nuits", "nights", "nb nuitees"],
 }
@@ -64,6 +65,21 @@ def _date(valeur, jour_en_premier=True):
             return datetime.strptime(texte, fmt).date()
         except ValueError:
             continue
+    return None
+
+
+def _ordre_des_dates(lignes, colonnes):
+    """Jour d'abord (31/12/2025) ou mois d'abord (12/31/2025, export Airbnb) ? Déduit des valeurs du fichier ;
+    None si aucune date ne permet de trancher."""
+    for ligne in lignes:
+        for c in colonnes:
+            m = re.fullmatch(r"\s*(\d{1,2})/(\d{1,2})/\d{4}.*", str(ligne.get(c) or ""))
+            if m:
+                premier, second = int(m.group(1)), int(m.group(2))
+                if premier > 12:
+                    return True
+                if second > 12:
+                    return False
     return None
 
 
@@ -115,7 +131,9 @@ def importer(lot, fichier, nom, plateforme=None):
     manquantes = [c for c in ("reference", "arrivee", "brut") if c not in col]
     if manquantes:
         raise ValueError(f"Colonnes introuvables : {', '.join(manquantes)}.")
-    jour_en_premier = any(_norme(h) in ("date de debut", "date d'arrivee", "numero de reference", "code de confirmation") for h in entetes)
+    jour_en_premier = _ordre_des_dates(lignes, [col[c] for c in ("arrivee", "depart", "versement") if c in col])
+    if jour_en_premier is None:
+        jour_en_premier = any(_norme(h) in ("date de debut", "date d'arrivee", "numero de reference") for h in entetes)
 
     creees = mises_a_jour = ignorees = 0
     for ligne in lignes:
@@ -140,6 +158,10 @@ def importer(lot, fichier, nom, plateforme=None):
             "date_versement": _date(get("versement"), jour_en_premier),
             "annulee": "cancel" in statut or "annul" in statut,
         }
+        if plateforme == PLATEFORMES.AIRBNB and valeurs["commission"] >= valeurs["taxe_sejour"]:
+            # Comme le tableau Excel de suivi : brut − commission − taxe de séjour = net versé.
+            # Airbnb ne versant que « brut − frais de service », la taxe est retirée des frais de service.
+            valeurs["commission"] -= valeurs["taxe_sejour"]
         _, cree = ReservationLCD.objects.update_or_create(plateforme=plateforme, reference=reference, defaults=valeurs)
         creees += cree
         mises_a_jour += not cree
@@ -194,9 +216,14 @@ def suivi_annuel(lot, annee):
         m["remplissage"] = Decimal(m["nuits"]) / m["jours"] * 100
         m["prix_nuit"] = m["brut"] / m["nuits"] if m["nuits"] else zero
         if parametres:
-            m["gestion"] = (m["net"] * parametres.commission_gestion / 100 + m["sejours"] * (parametres.menage_par_sejour + parametres.consommables_par_sejour))
+            # conciergerie : taux × (net − ménage) ou taux × net, plus ménage et consommables à chaque séjour
+            base = m["net"] - (m["sejours"] * parametres.menage_par_sejour if parametres.commission_hors_menage else zero)
+            m["conciergerie"] = base * parametres.commission_gestion / 100
+            m["menage"] = m["sejours"] * parametres.menage_par_sejour
+            m["consommables"] = m["sejours"] * parametres.consommables_par_sejour
         else:
-            m["gestion"] = zero
+            m["conciergerie"] = m["menage"] = m["consommables"] = zero
+        m["gestion"] = m["conciergerie"] + m["menage"] + m["consommables"]
         m["charges_detail"] = [(c.libelle, c.montant_mensuel) for c in charges if c.active_en(premier, dernier)]
         m["charges"] = sum((v for _, v in m["charges_detail"]), zero)
         m["pret"] = sum((l["mensualite"] + l["assurance"] for p_ in prets for l in p_.echeancier() if premier <= l["date"] <= dernier), zero)

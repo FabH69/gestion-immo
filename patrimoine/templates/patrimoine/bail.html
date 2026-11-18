@@ -20,12 +20,13 @@
 <table>
   <tr><td class="l">Adresse du logement</td><td>{{ bien.adresse }}, {{ bien.code_postal }} {{ bien.ville }}{% if lot.etage %}<br>{{ lot.etage }}{% endif %}</td></tr>
   <tr><td class="l">Désignation</td><td>{{ lot.get_type_display }} – {{ lot.designation }}</td></tr>
-  <tr><td class="l">Type d'habitat / régime juridique</td><td>{% if bien.lots.count > 1 %}Immeuble collectif{% else %}Individuel{% endif %}{% if lot.regime_juridique %} · {{ lot.get_regime_juridique_display }}{% endif %}</td></tr>
+  <tr><td class="l">Type d'habitat / régime juridique</td><td>{% if bien.type_habitat %}{{ bien.get_type_habitat_display }}{% elif bien.lots.count > 1 %}Immeuble collectif{% else %}Immeuble individuel{% endif %}{% if bien.regime_juridique %} · {{ bien.get_regime_juridique_display }}{% endif %}</td></tr>
   <tr><td class="l">Période de construction</td><td>{{ lot.annee_construction|default:'<span class="a-remplir">à compléter</span>' }}</td></tr>
   <tr><td class="l">Surface habitable</td><td>{% if lot.surface %}{{ lot.surface|floatformat:"-2" }} m²{% else %}<span class="a-remplir">à compléter</span>{% endif %}</td></tr>
   <tr><td class="l">Nombre de pièces principales</td><td>{{ lot.nb_pieces|default:'<span class="a-remplir">à compléter</span>' }}</td></tr>
   <tr><td class="l">Équipements</td><td>{{ lot.equipements|linebreaksbr|default:'–' }}</td></tr>
-  <tr><td class="l">Chauffage / eau chaude</td><td>{{ lot.chauffage|default:'–' }} / {{ lot.eau_chaude|default:'–' }}</td></tr>
+  <tr><td class="l">Chauffage / eau chaude</td><td>{{ lot.get_mode_chauffage_display|default:'' }} {{ lot.chauffage }} / {{ lot.get_mode_eau_chaude_display|default:'' }} {{ lot.eau_chaude }}</td></tr>
+  {% if bien.equipements_communs %}<tr><td class="l">Équipements à usage commun</td><td>{{ bien.equipements_communs|join:", " }}</td></tr>{% endif %}
   <tr><td class="l">Annexes privatives</td><td>{{ lot.annexes|linebreaksbr|default:'Aucune' }}</td></tr>
   <tr><td class="l">Classe énergétique (DPE)</td><td>{{ lot.classe_dpe|default:'<span class="a-remplir">à compléter</span>' }}</td></tr>
   <tr><td class="l">Destination des locaux</td><td>{{ bail.get_destination_display }}</td></tr>
@@ -42,7 +43,7 @@
   <tr><td class="l">Loyer mensuel hors charges</td><td><strong>{{ bail.loyer_hc|floatformat:2 }} €</strong></td></tr>
   <tr><td class="l">Charges récupérables</td><td>{{ bail.charges|floatformat:2 }} € par mois – {{ bail.get_mode_charges_display|lower }}</td></tr>
   <tr><td class="l">Total mensuel</td><td><strong>{{ bail.loyer_cc|floatformat:2 }} €</strong></td></tr>
-  <tr><td class="l">Zone tendue / encadrement</td><td>{% if lot.zone_tendue %}Le logement est situé en zone tendue : le loyer est soumis aux règles d'évolution des loyers à la relocation. Loyer de référence et loyer du précédent locataire : <span class="a-remplir">à compléter si applicable</span>{% else %}Logement hors zone tendue{% endif %}</td></tr>
+  <tr><td class="l">Zone tendue / encadrement</td><td>{% if bien.zone_tendue or bien.encadrement_loyers %}Soumis au décret d'évolution des loyers à la relocation : {{ bien.zone_tendue|yesno:"oui,non" }}. Soumis au loyer de référence majoré : {{ bien.encadrement_loyers|yesno:"oui,non" }}.{% if bail.loyer_reference %} Loyer de référence : {{ bail.loyer_reference|floatformat:2 }} €/m² ; loyer de référence majoré : {{ bail.loyer_reference_majore|floatformat:2 }} €/m².{% endif %}{% if bail.complement_loyer %} Complément de loyer : {{ bail.complement_loyer|floatformat:2 }} € ({{ bail.complement_loyer_motif }}).{% endif %}{% if bail.loyer_precedent %} Dernier loyer du précédent locataire : {{ bail.loyer_precedent|floatformat:2 }} €{% if bail.date_loyer_precedent %}, versé le {{ bail.date_loyer_precedent|date:"d/m/Y" }}{% endif %}{% if bail.date_revision_precedente %}, révisé le {{ bail.date_revision_precedente|date:"d/m/Y" }}{% endif %}.{% endif %}{% else %}Logement hors zone tendue{% endif %}</td></tr>
   <tr><td class="l">Révision annuelle</td><td>Le loyer est révisé chaque année à la date anniversaire du contrat selon la variation de l'indice de référence des loyers (IRL) publié par l'INSEE.{% if bail.indice_reference %} Indice de référence : {{ bail.indice_reference }}.{% endif %}</td></tr>
   <tr><td class="l">Modalités de paiement</td><td>Paiement mensuel {% if bail.paiement_a_echoir %}à échoir (d'avance){% else %}à terme échu{% endif %}, le {{ bail.jour_echeance }} de chaque mois{% if proprietaire.iban %}, par virement sur le compte IBAN {{ proprietaire.iban }}{% endif %}.</td></tr>
 </table>
@@ -60,7 +61,7 @@
 <p>Le bail sera résilié de plein droit, après commandement de payer demeuré infructueux pendant six semaines, à défaut de paiement du loyer ou des charges aux termes convenus, de versement du dépôt de garantie, ou de souscription d'une assurance des risques locatifs, ainsi qu'en cas de troubles de voisinage constatés par une décision de justice.</p>
 
 <h2>VII. Annexes</h2>
-<p>Sont annexés au présent contrat : la notice d'information ; le dossier de diagnostic technique (DPE, état des risques, et selon le logement : constat de risque d'exposition au plomb, état de l'installation électrique et de gaz, amiante) ; l'état des lieux d'entrée{% if bail.type == "meuble" or bail.type == "etudiant" or bail.type == "mobilite" %} et l'inventaire du mobilier{% endif %} ; {% if lot.regime_juridique == "copropriete" %}les extraits du règlement de copropriété ; {% endif %}le cas échéant, l'acte de cautionnement.</p>
+<p>Sont annexés au présent contrat : la notice d'information ; le dossier de diagnostic technique (DPE, état des risques, et selon le logement : constat de risque d'exposition au plomb, état de l'installation électrique et de gaz, amiante) ; l'état des lieux d'entrée{% if bail.type == "meuble" or bail.type == "etudiant" or bail.type == "mobilite" %} et l'inventaire du mobilier{% endif %} ; {% if bien.regime_juridique == "copropriete" %}les extraits du règlement de copropriété ; {% endif %}le cas échéant, l'acte de cautionnement.</p>
 
 <h2>VIII. Autres conditions particulières</h2>
 <p>{{ bail.notes|linebreaksbr|default:"Néant." }}</p>

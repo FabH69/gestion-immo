@@ -1,0 +1,18 @@
+{% extends "admin/base_site.html" %}
+{% block breadcrumbs %}<div class="breadcrumbs"><a href="{% url 'admin:index' %}">Accueil</a> › Comptabilité{% if libelle_regime %} › {{ libelle_regime }}{% endif %} › <a href="{{ lien_factures }}">Factures</a> › Ajouter</div>{% endblock %}
+{% block content %}
+<div class="module aligned" style="max-width:720px;padding:16px 18px">
+  <p>Sélectionnez ou glissez plusieurs factures d'un coup. Chacune devient une pièce <b>à codifier</b> :
+  vous complétez ensuite date, fournisseur, montant et {% if par_rubrique %}rubrique{% elif regime == "foncier" %}ligne 2072{% else %}ligne 2072 ou rubrique selon le bien{% endif %} directement dans le tableau, puis un seul clic sur <b>Enregistrer</b>.</p>
+  {% if regime != "foncier" %}<p class="help">Une facture de conciergerie d'un logement en courte durée est reconnue toute seule : elle est contrôlée avec les réservations du mois, répartie en Commission, Ménage et Consommables, et le rapport de contrôle s'affiche.</p>{% endif %}
+  <form method="post" enctype="multipart/form-data">{% csrf_token %}
+    <input type="hidden" name="compta" value="{{ regime }}">
+    {% if form.non_field_errors %}{{ form.non_field_errors }}{% endif %}
+    {% for champ in form %}
+    <div class="form-row">{{ champ.errors }}<label for="{{ champ.id_for_label }}" class="required">{{ champ.label|capfirst }}</label> {{ champ }}
+      {% if champ.help_text %}<div class="help">{{ champ.help_text }}</div>{% endif %}</div>
+    {% endfor %}
+    <div class="submit-row"><input type="submit" class="default" value="Importer"><a class="button annuler" href="{{ lien_factures }}">Annuler</a></div>
+  </form>
+</div>
+{% endblock %}

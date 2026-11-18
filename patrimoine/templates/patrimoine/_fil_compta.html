@@ -1,0 +1,1 @@
+<div class="breadcrumbs"><a href="{% url 'admin:index' %}">Accueil</a> › Comptabilité › {% if lien_regime %}<a href="{{ lien_regime }}">{{ libelle_regime }}</a>{% else %}{{ libelle_regime }}{% endif %}{% if page_fil %} › {{ page_fil }}{% endif %}</div>

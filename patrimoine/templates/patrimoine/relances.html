@@ -1,0 +1,58 @@
+{% extends "admin/base_site.html" %}
+{% load tableau_bord %}
+{% block extrastyle %}{{ block.super }}<style>
+.relance-carte { padding: 18px; max-width: 900px; margin-bottom: 18px; }
+.relance-carte table { width: 100%; }
+.relance-carte td.m, .relance-carte th.m { text-align: right; white-space: nowrap; }
+.niveaux { display: flex; gap: 8px; flex-wrap: wrap; margin: 12px 0; }
+.niveaux label { display: inline-flex; gap: 6px; align-items: center; padding: 6px 14px; border: 1px solid var(--border-color); border-radius: 999px; cursor: pointer; }
+.niveaux label:has(input:checked) { background: var(--primary); color: #fff; border-color: var(--primary); }
+.niveaux input { margin: 0; }
+.legende { color: var(--body-quiet-color); font-size: 13px; }
+.boutons { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 8px; }
+</style>{% endblock %}
+{% block breadcrumbs %}<div class="breadcrumbs"><a href="{% url 'admin:index' %}">Accueil</a> › <a href="{% url 'admin:patrimoine_echeance_changelist' %}">Loyers</a> › <a href="{% url 'relances_impayes' %}">Relances d'impayés</a>{% if detail %} › {{ detail.bail.lot }}{% endif %}</div>{% endblock %}
+{% block content %}
+{% if detail %}
+<div class="module relance-carte">
+  <h2 style="margin-top:0">{{ detail.bail.lot.bien.nom }} – {{ detail.bail.lot.designation }} : {% for l in detail.bail.locataires.all %}{{ l }}{% if not forloop.last %}, {% endif %}{% endfor %}</h2>
+  <table>
+    <thead><tr><th>Loyer</th><th>Échu le</th><th class="m">Reste dû</th></tr></thead>
+    <tbody>{% for e, reste in detail.lignes %}<tr><td>{{ e.periode|date:"F Y"|capfirst }}</td><td>{{ e.date_exigibilite|date:"d/m/Y" }}</td><td class="m">{{ reste|euros }}</td></tr>{% endfor %}
+    <tr><td><b>Total</b></td><td></td><td class="m"><b>{{ detail.total|euros }}</b></td></tr></tbody>
+  </table>
+  {% if peut_modifier %}
+  <form method="get" id="form-relance">
+    <input type="hidden" name="bail" value="{{ detail.bail.pk }}">
+    <div class="niveaux">{% for valeur, libelle in niveaux %}<label><input type="radio" name="niveau" value="{{ valeur }}"{% if valeur == niveau %} checked{% endif %} onchange="this.form.submit()"> {{ libelle }}</label>{% endfor %}</div>
+  </form>
+  <p class="legende">{% if niveau == "garant" %}{% if detail.bail.garants.exists %}Destinataire : {% for g in detail.bail.garants.all %}{{ g }}{% if g.email %} ({{ g.email }}){% endif %}{% if not forloop.last %}, {% endif %}{% endfor %}.{% else %}Aucune caution enregistrée sur ce bail.{% endif %}
+  {% else %}Destinataire : {% for l in detail.bail.locataires.all %}{{ l }}{% if l.email %} ({{ l.email }}){% endif %}{% if not forloop.last %}, {% endif %}{% endfor %}.{% endif %}
+  {% if niveau == "mise_en_demeure" %} La mise en demeure s'envoie en lettre recommandée avec accusé de réception : imprimez le PDF (le mail peut l'accompagner).{% endif %}</p>
+  <div class="boutons">
+    <a class="button" href="{% url 'preparer_mail_relance' detail.bail.pk %}?niveau={{ niveau }}">Préparer le mail dans Outlook</a>
+    <a class="button annuler" target="_blank" href="{% url 'lettre_relance' detail.bail.pk %}?niveau={{ niveau }}">Lettre PDF</a>
+  </div>
+  <p class="legende">Chaque mail ou lettre préparé est noté dans l'historique ci-dessous ; la relance suivante est proposée d'après lui.</p>
+  {% endif %}
+</div>
+<div class="module relance-carte">
+  <h2 style="margin-top:0">Historique des relances</h2>
+  {% if historique %}<table><thead><tr><th>Date</th><th>Relance</th><th>Par</th><th>Loyers</th><th class="m">Montant</th></tr></thead><tbody>
+  {% for r in historique %}<tr><td>{{ r.date|date:"d/m/Y" }}</td><td>{{ r.get_niveau_display }}</td><td>{{ r.get_mode_display }}</td><td>{{ r.detail }}</td><td class="m">{{ r.montant|euros }}</td></tr>{% endfor %}
+  </tbody></table>{% else %}<p class="legende">Aucune relance pour ce bail.</p>{% endif %}
+</div>
+{% else %}
+<div class="module relance-carte">
+  {% if baux %}<table><thead><tr><th>Logement et locataire</th><th>Loyers impayés</th><th class="m">Total dû</th><th>Dernière relance</th><th>À faire</th></tr></thead><tbody>
+  {% for b in baux %}<tr>
+    <td><a href="?bail={{ b.bail.pk }}">{{ b.bail.lot.bien.nom }} – {{ b.bail.lot.designation }}</a><br><small>{% for l in b.bail.locataires.all %}{{ l }}{% if not forloop.last %}, {% endif %}{% endfor %}</small></td>
+    <td>{% for e, r in b.lignes %}{{ e.periode|date:"M Y" }}{% if not forloop.last %}, {% endif %}{% endfor %}</td>
+    <td class="m">{{ b.total|euros }}</td>
+    <td>{% if b.derniere %}{{ b.derniere.get_niveau_display }} le {{ b.derniere.date|date:"d/m" }}{% else %}–{% endif %}</td>
+    <td><a class="button" href="?bail={{ b.bail.pk }}">{{ b.suggere_libelle }}</a></td>
+  </tr>{% endfor %}</tbody></table>
+  {% else %}<p>Aucun loyer impayé en retard : rien à relancer.</p>{% endif %}
+</div>
+{% endif %}
+{% endblock %}

@@ -1,0 +1,50 @@
+{% extends "admin/base_site.html" %}
+{% load tableau_bord %}
+{% block breadcrumbs %}<div class="breadcrumbs"><a href="{% url 'admin:index' %}">Accueil</a> › Contrôles</div>{% endblock %}
+{% block content_title %}<h1>Contrôles</h1><p class="sous-titre-page">Les informations manquantes ou à vérifier, à compléter quand vous avez un moment.</p>{% endblock %}
+{% block content %}
+<div class="page-controles">
+  <div class="kpis-controles">
+    <a class="kpi-controle rouge" href="#bloquant"><span>Bloquent un document</span><b>{{ nb_bloquant }}<em> contrôle{{ nb_bloquant|pluralize }}</em></b><small>bail, annonce ou révision incomplets</small></a>
+    <a class="kpi-controle orange" href="#completer"><span>À compléter</span><b>{{ nb_completer }}<em> contrôle{{ nb_completer|pluralize }}</em></b><small>utile, sans urgence</small></a>
+    <a class="kpi-controle vert" href="#bons"><span>Tout est bon</span><b>{{ nb_bons }}<em> contrôle{{ nb_bons|pluralize }}</em></b><small>{% for b in bons|slice:":3" %}{{ b.sujet }}{% if not forloop.last %}, {% endif %}{% endfor %}{% if bons|length > 3 %}…{% endif %}</small></a>
+  </div>
+
+  {% for n in niveaux %}{% if n.cartes %}
+  <h2 class="titre-niveau {{ n.code }}" id="{{ n.code }}">{{ n.titre }}</h2>
+  {% for r in n.cartes %}
+  <details class="carte-controle {{ n.code }}" id="{{ r.code }}"{% if r.code == premiere %} open{% endif %}>
+    <summary>
+      <span class="icone-controle">{% icone r.icone 18 %}</span>
+      <span class="corps-controle">
+        <span class="titre-controle">{{ r.titre }} <span class="nombre">{{ r.nombre }}</span></span>
+        <span class="explication">{{ r.explication }}</span>
+        <span class="puces">{% for l in r.lignes|slice:":6" %}<span class="puce">{{ l.libelle }}</span>{% endfor %}{% if r.nombre > 6 %}<span class="autres">+ {{ r.nombre|add:"-6" }} autre{{ r.nombre|add:"-6"|pluralize }}</span>{% endif %}</span>
+      </span>
+      <span class="chevron" aria-hidden="true"></span>
+    </summary>
+    <ul class="lignes-controle">
+      {% for l in r.lignes %}
+      <li><span>{{ l.libelle }}</span>
+        <span class="actions-ligne">
+          <form method="post" action="{% url 'controle_ignorer' %}">{% csrf_token %}<input type="hidden" name="code" value="{{ r.code }}"><input type="hidden" name="cle" value="{{ l.cle }}"><input type="hidden" name="libelle" value="{{ l.libelle }}"><button type="submit" class="lien-discret" title="Cas voulu : ne plus signaler cette ligne">Ne pas contrôler</button></form>
+          <a href="{{ l.url }}">Compléter</a>
+        </span>
+      </li>
+      {% endfor %}
+    </ul>
+  </details>
+  {% endfor %}
+  {% endif %}{% endfor %}
+
+  {% if bons %}
+  <h2 class="titre-niveau bons" id="bons">Tout est bon</h2>
+  <div class="carte-controle bons"><ul class="liste-bons">{% for b in bons %}<li title="Aucun manque : {{ b.titre|lower }}">✓ {{ b.sujet|capfirst }}{% if b.ignores %} <small>({{ b.ignores }} écartée{{ b.ignores|pluralize }})</small>{% endif %}</li>{% endfor %}</ul></div>
+  {% endif %}
+
+  <p class="note-controles">Les actions datées (loyers, révisions, assurances, paiements) restent dans « À faire » de l'accueil. Ici, seulement
+  des informations manquantes. Les parkings et caves ne sont pas concernés par la surface, le DPE ni l'IRL. « Ne pas contrôler » écarte
+  une ligne pour un cas voulu{% if nb_ecartes %} ({{ nb_ecartes }} ligne{{ nb_ecartes|pluralize }} écartée{{ nb_ecartes|pluralize }} :
+  <form method="post" action="{% url 'controle_ignorer' %}" style="display:inline">{% csrf_token %}<input type="hidden" name="action" value="retablir"><button type="submit" class="lien-discret">tout rétablir</button></form>){% endif %}.</p>
+</div>
+{% endblock %}
