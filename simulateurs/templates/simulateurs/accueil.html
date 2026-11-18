@@ -7,6 +7,16 @@
   .liste h2 { margin: 8px 0 4px; }
   .liste p { margin: 0; color: var(--doux); font-size: .9rem; }
   .liste .bientot { opacity: .6; }
+  .vedette { grid-column: 1 / -1; display: grid !important; grid-template-columns: auto minmax(0, 1fr) auto; gap: 18px; align-items: center;
+             background: linear-gradient(135deg, var(--fonce), var(--primaire)) !important; color: #fff !important; border: 0 !important; padding: 26px !important; }
+  .vedette h2 { font-size: 1.35rem; margin: 0 0 6px; color: #fff; }
+  .vedette p { color: rgba(255,255,255,.88) !important; font-size: .98rem !important; }
+  .vedette .emoji { font-size: 2.6rem; }
+  .vedette .points { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+  .vedette .points span { background: rgba(255,255,255,.14); border-radius: 999px; padding: 3px 10px; font-size: .8rem; }
+  .vedette .go { background: var(--accent); color: var(--fonce); border-radius: 999px; padding: 12px 20px; font-weight: 700; white-space: nowrap; }
+  .nouveau { display: inline-block; background: var(--accent); color: var(--fonce); border-radius: 999px; padding: 1px 8px; font-size: .7rem; font-weight: 700; vertical-align: middle; margin-left: 6px; }
+  @media (max-width: 640px) { .vedette { grid-template-columns: 1fr; } .vedette .go { justify-self: start; } }
   .etiquette { display: inline-block; font-size: .72rem; font-weight: 600; background: var(--teinte); color: var(--fonce); border-radius: 999px; padding: 2px 8px; margin-top: 10px; }
 </style>{% endblock %}
 {% block contenu %}
@@ -14,7 +24,12 @@
 <p class="chapeau">Préparez votre achat ou votre investissement locatif en quelques secondes, sans créer de compte.</p>
 <div class="liste">
   {% for s in simulateurs %}
-    {% if s.disponible %}
+    {% if s.disponible and s.vedette %}
+    <a class="carte vedette" href="{% url s.nom_url %}"><span class="emoji">{{ s.emoji }}</span>
+      <div><h2>{{ s.titre }} <span class="nouveau">Nouveau</span></h2><p>{{ s.accroche }}</p>
+        <div class="points"><span>1 à 20 lots</span><span>Frais de notaire 2026</span><span>Nu, LMNP, SCI IR ou IS</span><span>Prix cible pour votre cash-flow</span><span>Prix du marché autour de l'adresse</span></div></div>
+      <span class="go">Lancer une simulation →</span></a>
+    {% elif s.disponible %}
     <a class="carte" href="{% url s.nom_url %}"><span class="emoji">{{ s.emoji }}</span><h2>{{ s.titre }}</h2><p>{{ s.accroche }}</p><span class="etiquette">Calculer →</span></a>
     {% else %}
     <div class="carte bientot"><span class="emoji">{{ s.emoji }}</span><h2>{{ s.titre }}</h2><p>{{ s.accroche }}</p><span class="etiquette">Bientôt</span></div>

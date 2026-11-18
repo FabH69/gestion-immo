@@ -73,6 +73,24 @@ Le script installe les bibliothèques, prépare la base, écrit la configuration
 dans `~/.gestion-immo-secret`, DEBUG désactivé), vérifie les PDF et crée le compte administrateur.
 Il peut être relancé après chaque mise à jour du code.
 
+## Module investisseur (simulateur d'investissement locatif)
+
+`/simulateurs/rentabilite/` (menu **Finances › Investissement**, et grande carte en tête des simulateurs publics) :
+reprend le fichier Excel « Simulateur invest ».
+
+- **Démarrage** : nom, adresse, nombre de lots (1 à 20) et pour chacun type, surface, étage, meublé ou nu, loué ou vacant.
+- **Paramètres** : loyers actuels et cibles, travaux, meubles, prix affiché et proposé, frais (agence, ingénierie,
+  notaire 2026 par département, bancaires, garantie), prêt, charges annuelles, foyer fiscal, associés de SCI.
+  Un résumé se recalcule à chaque saisie.
+- **Résultats** : coût total, rentabilités, cash-flow avant et après impôt, comparatif de 6 régimes (nu micro et réel,
+  LMNP micro et réel, SCI à l'IR et à l'IS), détail par lot, plan de financement, charges, amortissements, prêt.
+- **Prix à négocier** : un curseur fixe le cash-flow voulu ; la courbe donne le prix d'achat cible et la négociation.
+- **Prix du marché** : ventes DVF (data.gouv.fr) autour de l'adresse, prix médian au m² et ventes comparables.
+  Le serveur doit pouvoir joindre `data.geopf.fr` (ou `api-adresse.data.gouv.fr`) et `files.data.gouv.fr`.
+- Sans compte : on calcule sans enregistrer. Connecté : **Enregistrer**, liste « Mes simulations », **Dupliquer**,
+  et **Créer le bien et ses lots** quand le projet est acheté. Droits : module « Simulations d'investissement ».
+- Barème de l'impôt à mettre à jour chaque année dans `simulateurs/calculs/investissement.py` (`BAREME_IR`, `PLAFOND_QF`).
+
 ## Simulateurs publics
 
 `/simulateurs/` : simulateurs gratuits, ouverts sans compte (vitrine) : frais de notaire et mensualités d'un prêt.

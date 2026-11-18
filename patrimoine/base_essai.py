@@ -1,7 +1,7 @@
 """Base de test : une deuxième base SQLite (db-essai.sqlite3), séparée de la vraie, pour essayer l'appli sans risque.
 
 Le bouton « Mode test » (barre du haut) pose un cookie `base=essai` dans ce navigateur. Tant qu'il est là :
-- les données de l'appli (patrimoine, balles), l'historique de l'administration et les types de contenu
+- les données de l'appli (patrimoine, balles, simulations d'investissement), l'historique de l'administration et les types de contenu
   sont lus et écrits UNIQUEMENT dans la base de test (routeur ci-dessous) ;
 - les comptes et les connexions restent ceux de la vraie base (on garde le même identifiant et mot de passe),
   mais leur modification est bloquée en mode test ;
@@ -21,7 +21,7 @@ from django.conf import settings
 ESSAI = "essai"
 COOKIE = "base"
 # applis dont les données suivent la base choisie ; les autres (comptes, sessions) restent dans la vraie base
-APPLIS_SUIVIES = {"patrimoine", "commandes", "admin", "contenttypes"}
+APPLIS_SUIVIES = {"patrimoine", "commandes", "simulateurs", "admin", "contenttypes"}
 
 _base = contextvars.ContextVar("base_active", default="default")
 journal = logging.getLogger(__name__)

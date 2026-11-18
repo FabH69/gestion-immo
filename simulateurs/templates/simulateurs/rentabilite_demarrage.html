@@ -1,0 +1,92 @@
+{% extends "simulateurs/base.html" %}
+{% block titre %}Simulateur d'investissement locatif{% endblock %}
+{% block description %}Simulez un investissement locatif de 1 à 20 lots : rentabilité, cash-flow, fiscalité (nu, LMNP, SCI) et prix à négocier.{% endblock %}
+{% block style %}<style>
+  .compteur { display: inline-flex; align-items: center; border: 1px solid var(--bord); border-radius: 999px; overflow: hidden; background: #fff; }
+  .compteur button { border-radius: 0; padding: 8px 18px; background: var(--teinte); color: var(--fonce); font-size: 1.1rem; }
+  .compteur input { width: 56px; border: 0; text-align: center; font: inherit; font-weight: 700; font-size: 1.15rem; }
+  .lots { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 12px; margin-top: 16px; }
+  .lot { border: 1px solid var(--bord); border-radius: 12px; padding: 14px; background: #fff; }
+  .lot .tete { display: flex; justify-content: space-between; font-weight: 700; margin-bottom: 8px; }
+  .segment { display: flex; border: 1px solid var(--bord); border-radius: 9px; overflow: hidden; margin-top: 8px; }
+  .segment label { flex: 1; text-align: center; padding: 7px 4px; font-size: .86rem; cursor: pointer; color: var(--doux); margin: 0 !important; display: block !important; }
+  .segment input { position: absolute; opacity: 0; pointer-events: none; }
+  .segment input:checked + span { color: var(--fonce); font-weight: 600; }
+  .segment label:has(input:checked) { background: var(--teinte); }
+  .segment label:has(input:focus-visible) { outline: 2px solid var(--primaire); outline-offset: -2px; }
+  .ligne-titre { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
+  .ligne-titre h2 { margin: 0 !important; }
+  .actions { display: flex; gap: 10px; justify-content: flex-end; flex-wrap: wrap; }
+</style>{% endblock %}
+{% block contenu %}
+<h1>Simuler un investissement locatif</h1>
+<p class="chapeau">Décrivez le projet et ses lots : vous réglerez ensuite les loyers, le prix, le prêt, les charges et la fiscalité, et les résultats se calculent en direct.
+  <a href="?exemple=1">Voir un exemple rempli</a>{% if user.is_authenticated %} · <a href="{% url 'simulateurs:mes_simulations' %}">Mes simulations</a>{% endif %}</p>
+<form method="post" id="demarrage">{% csrf_token %}
+  <div class="carte">
+    <h2>Le projet</h2>
+    <div class="paire">
+      <div class="champ"><label for="nom">Nom de la simulation</label><input type="text" id="nom" name="nom" placeholder="Immeuble rue Victor Hugo" maxlength="200"></div>
+      <div class="champ"><label for="lien_annonce">Lien de l'annonce (facultatif)</label><input type="text" id="lien_annonce" name="lien_annonce" placeholder="https://…"></div>
+    </div>
+    <div class="champ"><label for="adresse">Adresse du bien</label><input type="text" id="adresse" name="adresse" placeholder="12 Grande Rue, 69600 Oullins" maxlength="255" autocomplete="off">
+      <div class="aide">Le code postal donne le département (frais de notaire) ; l'adresse sert aussi aux prix du marché autour du bien.</div></div>
+  </div>
+  <div class="carte">
+    <div class="ligne-titre">
+      <h2>Nombre de lots</h2>
+      <div class="compteur"><button type="button" id="moins" aria-label="Retirer un lot">−</button><input type="number" id="nb_lots" name="nb_lots" value="1" min="1" max="{{ max_lots }}" aria-label="Nombre de lots"><button type="button" id="plus" aria-label="Ajouter un lot">+</button></div>
+      <span class="aide">De 1 à {{ max_lots }}. Vous pourrez en ajouter ou en retirer ensuite.</span>
+    </div>
+    <div class="lots" id="lots">
+      {% for i in cartes %}
+      <div class="lot" data-lot="{{ i }}"{% if not forloop.first %} hidden{% endif %}>
+        <div class="tete"><span>Lot {{ forloop.counter|stringformat:"03d" }}</span></div>
+        <div class="champ"><label for="lot-{{ i }}-type">Type</label><select id="lot-{{ i }}-type" name="lot-{{ i }}-type">{% for c, l in types_lot %}<option value="{{ c }}"{% if c == "t2" %} selected{% endif %}>{{ l }}</option>{% endfor %}</select></div>
+        <div class="paire">
+          <div class="champ"><label for="lot-{{ i }}-surface">Surface (m²)</label><input type="text" inputmode="decimal" id="lot-{{ i }}-surface" name="lot-{{ i }}-surface" placeholder="40"></div>
+          <div class="champ"><label for="lot-{{ i }}-etage">Étage</label><select id="lot-{{ i }}-etage" name="lot-{{ i }}-etage">{% for e in etages %}<option>{{ e }}</option>{% endfor %}</select></div>
+        </div>
+        <div class="segment" role="radiogroup" aria-label="Lot {{ forloop.counter }} : meublé ou nu">
+          <label><input type="radio" name="lot-{{ i }}-meuble" value="1" checked><span>Meublé</span></label>
+          <label><input type="radio" name="lot-{{ i }}-meuble" value="0"><span>Nu</span></label>
+        </div>
+        <div class="segment" role="radiogroup" aria-label="Lot {{ forloop.counter }} : loué ou vacant">
+          <label><input type="radio" name="lot-{{ i }}-loue" value="1"><span>Loué</span></label>
+          <label><input type="radio" name="lot-{{ i }}-loue" value="0" checked><span>Vacant</span></label>
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+  <div class="actions"><button type="submit">Continuer : loyers, prix et financement →</button></div>
+</form>
+<script>
+(function () {
+  const champ = document.getElementById("nb_lots"), max = {{ max_lots }};
+  const cartes = Array.from(document.querySelectorAll("[data-lot]"));
+  function maj(n) {
+    n = Math.max(1, Math.min(max, parseInt(n, 10) || 1));
+    champ.value = n;
+    cartes.forEach((c, i) => { c.hidden = i >= n; });
+  }
+  document.getElementById("plus").onclick = () => {
+    const n = (parseInt(champ.value, 10) || 1) + 1;
+    // un nouveau lot reprend le type et la location du précédent
+    const prec = cartes[n - 2], nouv = cartes[n - 1];
+    if (prec && nouv) {
+      nouv.querySelector("select[name$=-type]").value = prec.querySelector("select[name$=-type]").value;
+      nouv.querySelector("select[name$=-etage]").value = prec.querySelector("select[name$=-etage]").value;
+      ["meuble", "loue"].forEach((k) => {
+        const v = prec.querySelector(`input[name$=-${k}]:checked`).value;
+        nouv.querySelector(`input[name$=-${k}][value="${v}"]`).checked = true;
+      });
+    }
+    maj(n);
+  };
+  document.getElementById("moins").onclick = () => maj((parseInt(champ.value, 10) || 1) - 1);
+  champ.addEventListener("input", () => maj(champ.value));
+  maj(champ.value);
+})();
+</script>
+{% endblock %}

@@ -48,6 +48,11 @@ MODULES = [
                                                          "patrimoine.siteutile", "patrimoine.controleignore"],
      ["liste_champs", "rappel_fait", "ne_plus_rappeler", "controles", "controle_ignorer", "a_faire"],
      ["rappel_fait", "ne_plus_rappeler", "controle_ignorer"]),
+    ("investissement", "Simulations d'investissement", ["simulateurs.simulationinvestissement"],
+     ["simulateurs:mes_simulations", "simulateurs:simulation", "simulateurs:simulation_enregistrer",
+      "simulateurs:simulation_dupliquer", "simulateurs:simulation_supprimer", "simulateurs:simulation_creer_bien"],
+     ["simulateurs:simulation_enregistrer", "simulateurs:simulation_dupliquer", "simulateurs:simulation_supprimer",
+      "simulateurs:simulation_creer_bien"]),
     ("balles", "Balles", ["commandes.joueur", "commandes.article", "commandes.commande", "commandes.ligne"], [], []),
 ]
 LIBELLES = {code: libelle for code, libelle, *_ in MODULES}

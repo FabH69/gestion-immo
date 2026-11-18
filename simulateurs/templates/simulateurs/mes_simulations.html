@@ -1,0 +1,43 @@
+{% extends "simulateurs/base.html" %}{% load invest %}
+{% block titre %}Mes simulations d'investissement{% endblock %}
+{% block style %}<style>
+  .entete { display: flex; justify-content: space-between; align-items: flex-end; gap: 12px; flex-wrap: wrap; margin-bottom: 16px; }
+  .pos { color: #1e7a4a; } .neg { color: var(--erreur); }
+  td .detail { display: block; color: var(--doux); font-size: .78rem; }
+  .vide { text-align: center; padding: 36px 20px; }
+  .actions-ligne { display: flex; gap: 6px; justify-content: flex-end; flex-wrap: wrap; }
+  .actions-ligne button, .actions-ligne a { padding: 6px 12px; font-size: .82rem; }
+  details.supprimer summary { list-style: none; cursor: pointer; color: var(--erreur); font-size: .82rem; padding: 6px 4px; }
+  details.supprimer summary::-webkit-details-marker { display: none; }
+  details.supprimer[open] { display: flex; gap: 6px; align-items: center; }
+  .danger { background: var(--erreur); }
+</style>{% endblock %}
+{% block contenu %}
+<div class="entete">
+  <div><h1>Mes simulations d'investissement</h1><p class="chapeau" style="margin:0">Vos projets étudiés : rouvrez-les, dupliquez-les pour comparer, ou transformez un projet acheté en bien et lots.</p></div>
+  <a class="bouton" href="{% url 'simulateurs:rentabilite' %}">+ Nouvelle simulation</a>
+</div>
+{% if simulations %}
+<div class="carte"><div class="defile"><table>
+  <thead><tr><th>Simulation</th><th class="m">Lots</th><th class="m">Prix</th><th class="m">Coût total</th><th class="m">Renta brute</th><th class="m">Cash-flow avant impôt</th><th class="m">Après impôt</th><th class="m">Modifiée le</th><th></th></tr></thead>
+  <tbody>{% for s, r in simulations %}
+    <tr>
+      <td><a href="{{ s.get_absolute_url }}"><strong>{{ s.nom }}</strong></a>{% if s.adresse %}<span class="detail">{{ s.adresse }}</span>{% endif %}{% if s.bien %}<span class="detail">Bien créé : <a href="{% url 'admin:patrimoine_bien_change' s.bien.pk %}">{{ s.bien }}</a></span>{% endif %}</td>
+      {% if r %}
+      <td class="m">{{ r.p.lots|length }}</td><td class="m">{{ r.prix|euros }}</td><td class="m">{{ r.cout_total|euros }}</td><td class="m">{{ r.renta_brute|pct:2 }}</td>
+      <td class="m {{ r.cash_flow_avant_impot|signe_classe }}">{{ r.cash_flow_avant_impot|euros_signe }}</td>
+      <td class="m {{ r.retenu.cash_flow|signe_classe }}">{{ r.retenu.cash_flow|euros_signe }}<span class="detail">{{ r.retenu.nom }}</span></td>
+      {% else %}<td colspan="6" class="aide">Calcul impossible : ouvrez la simulation pour la corriger.</td>{% endif %}
+      <td class="m">{{ s.modifie_le|date:"d/m/Y" }}</td>
+      <td>{% if peut_enregistrer %}<div class="actions-ligne">
+        <form method="post" action="{% url 'simulateurs:simulation_dupliquer' s.pk %}">{% csrf_token %}<button type="submit" class="bouton secondaire">Dupliquer</button></form>
+        <details class="supprimer"><summary>Supprimer</summary><form method="post" action="{% url 'simulateurs:simulation_supprimer' s.pk %}">{% csrf_token %}<button type="submit" class="danger">Confirmer la suppression</button></form></details>
+      </div>{% endif %}</td>
+    </tr>
+  {% endfor %}</tbody>
+</table></div></div>
+{% else %}
+<div class="carte vide"><h2>Aucune simulation pour l'instant</h2><p class="aide">Lancez une simulation, puis « Enregistrer » pour la retrouver ici.</p>
+  <a class="bouton" href="{% url 'simulateurs:rentabilite' %}">Lancer une simulation</a> <a class="bouton secondaire" href="{% url 'simulateurs:rentabilite' %}?exemple=1">Voir un exemple</a></div>
+{% endif %}
+{% endblock %}

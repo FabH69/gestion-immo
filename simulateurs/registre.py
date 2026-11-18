@@ -17,6 +17,7 @@ class Simulateur:
     accroche: str
     emoji: str
     vue: str | None = None  # nom de la fonction dans simulateurs/views.py
+    vedette: bool = False   # mis en avant (grande carte en tête de la page d'accueil)
 
     @property
     def disponible(self):
@@ -28,11 +29,13 @@ class Simulateur:
 
 
 SIMULATEURS = [
+    Simulateur("rentabilite", "Investissement locatif",
+               "Immeuble ou appartement : rentabilité, cash-flow, 6 régimes fiscaux et prix à négocier.", "📈", "rentabilite",
+               vedette=True),
     Simulateur("frais-de-notaire", "Frais de notaire",
                "Ancien ou neuf, avec les droits de mutation 2026 de votre département.", "🏛️", "frais_notaire"),
     Simulateur("pret-immobilier", "Mensualités d'un prêt",
                "Mensualité, assurance, coût total, TAEG et tableau d'amortissement.", "🏦", "pret"),
-    Simulateur("rentabilite", "Rentabilité locative", "Rendement brut, net et cash-flow d'un investissement.", "📈"),
     Simulateur("capacite-emprunt", "Capacité d'emprunt", "Combien pouvez-vous emprunter avec vos revenus ?", "💶"),
     Simulateur("plus-value", "Plus-value à la revente", "Impôt et prélèvements sociaux selon la durée de détention.", "🏷️"),
 ]

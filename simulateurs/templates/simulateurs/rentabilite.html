@@ -1,0 +1,398 @@
+{% extends "simulateurs/base.html" %}{% load invest %}
+{% block titre %}{{ p.nom|default:"Simulation" }} · investissement locatif{% endblock %}
+{% block description %}Simulateur d'investissement locatif : rentabilité, cash-flow, fiscalité (nu, LMNP, SCI) et prix à négocier.{% endblock %}
+{% block style %}<style>
+  [hidden] { display: none !important; }
+  main { max-width: 1240px; }
+  .ecran-titre { display: flex; justify-content: space-between; align-items: flex-end; gap: 12px; flex-wrap: wrap; margin-bottom: 14px; }
+  .fil { font-size: .82rem; color: var(--doux); }
+  .fil a { color: var(--doux); }
+  .barre { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; justify-content: space-between; margin-bottom: 16px; position: sticky; top: 0; z-index: 4; background: var(--fond); padding: 8px 0; }
+  .onglets-ecran, .segment { display: inline-flex; border: 1px solid var(--bord); border-radius: 999px; overflow: hidden; background: #fff; }
+  .onglets-ecran button, .segment label { border-radius: 0; background: #fff; color: var(--doux); padding: 9px 18px; font-weight: 500; font-size: .92rem; cursor: pointer; margin: 0; }
+  .onglets-ecran button.actif { background: var(--teinte); color: var(--fonce); font-weight: 600; }
+  .segment input { position: absolute; opacity: 0; pointer-events: none; }
+  .segment label:has(input:checked) { background: var(--teinte); color: var(--fonce); font-weight: 600; }
+  .segment label:has(input:focus-visible), .onglets-ecran button:focus-visible { outline: 2px solid var(--primaire); outline-offset: -2px; }
+  .mise-en-page { display: grid; grid-template-columns: minmax(0, 1fr) 310px; gap: 18px; align-items: start; }
+  .mise-en-page > * { min-width: 0; }
+  .resume { position: sticky; top: 64px; }
+  .resume-liste { display: grid; grid-template-columns: 1fr auto; gap: 6px 10px; margin: 0; font-size: .88rem; }
+  .resume-liste dt { color: var(--doux); } .resume-liste dd { margin: 0; text-align: right; font-weight: 600; font-variant-numeric: tabular-nums; }
+  .pos { color: #1e7a4a; } .neg { color: var(--erreur); }
+  details.bloc { background: var(--carte); border: 1px solid var(--bord); border-radius: 14px; padding: 2px 20px; margin-bottom: 14px; }
+  details.bloc[open] { padding-bottom: 16px; }
+  details.bloc > summary { cursor: pointer; list-style: none; display: flex; gap: 10px; align-items: baseline; padding: 14px 0; font-weight: 600; color: var(--texte); margin: 0; }
+  details.bloc > summary::-webkit-details-marker { display: none; }
+  details.bloc > summary::after { content: "▾"; margin-left: auto; color: var(--doux); }
+  details.bloc:not([open]) > summary::after { content: "▸"; }
+  summary .sous { font-weight: 400; color: var(--doux); font-size: .85rem; }
+  .grille-champs { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 0 14px; }
+  .champ input[readonly] { background: var(--teinte); }
+  table.saisie td { padding: 4px 3px; }
+  table.saisie input[type=text], table.saisie select { padding: 7px 8px; border: 1px solid var(--bord); border-radius: 8px; font: inherit; font-size: .88rem; width: 100%; min-width: 70px; background: #fff; }
+  table.saisie input:disabled { background: var(--fond); color: var(--doux); }
+  table.saisie td.coche { text-align: center; min-width: 54px; }
+  table.saisie th { white-space: nowrap; }
+  table.saisie select { min-width: 92px; }
+  table.saisie input[type=checkbox] { accent-color: var(--primaire); width: 17px; height: 17px; }
+  .retirer { background: none; color: var(--doux); padding: 4px 8px; font-size: 1.1rem; }
+  .retirer:hover { background: var(--teinte); color: var(--erreur); }
+  .petit { padding: 8px 14px; font-size: .88rem; }
+  td .detail { display: block; color: var(--doux); font-size: .78rem; }
+  tr.retenu td { background: var(--teinte); }
+  .pastille { display: inline-block; padding: 2px 9px; border-radius: 999px; font-size: .74rem; font-weight: 600; background: #e8f5ee; color: #1e7a4a; white-space: nowrap; }
+  .pastille.non { background: #fff4e5; color: #9a5b00; }
+  .pile-res { display: grid; gap: 16px; }
+  .pile-res .carte, .pile-res .tuiles { margin: 0; }
+  .deux-colonnes-egales { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 16px; align-items: start; }
+  .deux-colonnes-egales > * { min-width: 0; }
+  tr.annee-secondaire { display: none; }
+  .toutes-annees tr.annee-secondaire { display: table-row; }
+  .carte-nego .reglage { display: flex; gap: 14px; align-items: center; flex-wrap: wrap; margin: 6px 0 4px; }
+  .carte-nego select { width: auto; max-width: 100%; padding: 8px 10px; border: 1px solid var(--bord); border-radius: 10px; font: inherit; background: #fff; }
+  .carte-nego input[type=range] { flex: 1; min-width: 200px; accent-color: var(--primaire); }
+  .courbe { width: 100%; min-width: 520px; height: auto; display: block; }
+  .courbe text { font-family: inherit; }
+  .carte-dvf { border-style: dashed; }
+  .histo { display: flex; align-items: flex-end; gap: 3px; height: 80px; margin: 10px 0 4px; }
+  .histo span { flex: 1; background: var(--primaire); opacity: .7; border-radius: 3px 3px 0 0; min-height: 3px; }
+  .histo span.moi { background: var(--accent); opacity: 1; }
+  .actions { display: flex; gap: 10px; flex-wrap: wrap; justify-content: flex-end; margin-top: 18px; }
+  .chargement { opacity: .55; transition: opacity .2s; }
+  @media (max-width: 960px) { .mise-en-page { grid-template-columns: minmax(0, 1fr); } .resume { position: static; order: -1; } }
+  @media print { .barre, .actions, #ecran-parametres { display: none !important; } #ecran-resultats { display: block !important; } }
+</style>{% endblock %}
+{% block contenu %}
+<div class="ecran-titre">
+  <div>
+    <div class="fil"><a href="{% url 'simulateurs:rentabilite' %}">Investissement locatif</a>{% if user.is_authenticated %} › <a href="{% url 'simulateurs:mes_simulations' %}">Mes simulations</a>{% endif %}</div>
+    <h1>{{ p.nom|default:"Nouvelle simulation" }}</h1>
+    {% if p.adresse %}<div class="fil">{{ p.adresse }}{% if p.lien_annonce %} · <a href="{{ p.lien_annonce }}" target="_blank" rel="noopener">voir l'annonce</a>{% endif %}</div>{% endif %}
+  </div>
+  {% if simulation and simulation.bien %}<a class="bouton secondaire petit" href="{% url 'admin:patrimoine_bien_change' simulation.bien.pk %}">Voir le bien créé</a>{% endif %}
+</div>
+
+<form method="post" action="{% url 'simulateurs:rentabilite_calcul' %}" id="form-invest" novalidate>{% csrf_token %}
+  {% if simulation %}<input type="hidden" name="simulation" value="{{ simulation.pk }}">{% endif %}
+  <input type="hidden" name="nb_lots" id="nb_lots" value="{{ p.lots|length }}">
+
+  <div class="barre">
+    <div class="onglets-ecran" role="tablist">
+      <button type="button" role="tab" data-onglet="parametres" class="actif">① Paramètres</button>
+      <button type="button" role="tab" data-onglet="resultats">② Résultats</button>
+    </div>
+    <div class="segment" role="radiogroup" aria-label="Loyers utilisés pour le calcul">
+      <label><input type="radio" name="scenario" value="actuel"{% if p.scenario == "actuel" %} checked{% endif %}>Loyers actuels</label>
+      <label><input type="radio" name="scenario" value="cible"{% if p.scenario != "actuel" %} checked{% endif %}>Loyers cibles</label>
+    </div>
+  </div>
+
+  <div class="mise-en-page">
+    <div id="ecran-parametres">
+      <details class="bloc" open><summary>Le projet</summary>
+        <div class="grille-champs">
+          <div class="champ"><label for="nom">Nom de la simulation</label><input type="text" id="nom" name="nom" value="{{ p.nom }}" maxlength="200"></div>
+          <div class="champ" style="grid-column: span 2"><label for="adresse">Adresse du bien</label><input type="text" id="adresse" name="adresse" value="{{ p.adresse }}" maxlength="255" autocomplete="off"></div>
+          <div class="champ"><label for="lien_annonce">Lien de l'annonce</label><input type="text" id="lien_annonce" name="lien_annonce" value="{{ p.lien_annonce }}"></div>
+        </div>
+      </details>
+
+      <details class="bloc" open><summary>Les lots <span class="sous">loyers par mois, travaux et meubles</span></summary>
+        <div class="defile"><table class="saisie" id="table-lots">
+          <thead><tr><th>Lot</th><th>Type</th><th>Surface m²</th><th>Étage</th><th>Meublé</th><th>Loué</th><th>Loyer actuel HC</th><th>Loyer cible HC</th><th>Charges récup.</th><th>Travaux</th><th>Meubles</th><th>Fin de bail</th><th></th></tr></thead>
+          <tbody>{% for l in p.lots %}
+            <tr data-ligne>
+              <td class="num">{{ forloop.counter|stringformat:"03d" }}</td>
+              <td><select name="lot-{{ forloop.counter0 }}-type" aria-label="Type">{% for c, t in types_lot %}<option value="{{ c }}"{% if c == l.type %} selected{% endif %}>{{ t }}</option>{% endfor %}</select></td>
+              <td><input type="text" inputmode="decimal" name="lot-{{ forloop.counter0 }}-surface" value="{{ l.surface|saisie }}" aria-label="Surface"></td>
+              <td><select name="lot-{{ forloop.counter0 }}-etage" aria-label="Étage">{% for e in etages %}<option{% if e == l.etage %} selected{% endif %}>{{ e }}</option>{% endfor %}</select></td>
+              <td class="coche"><input type="checkbox" name="lot-{{ forloop.counter0 }}-meuble" value="1"{% if l.meuble %} checked{% endif %} aria-label="Meublé"></td>
+              <td class="coche"><input type="checkbox" name="lot-{{ forloop.counter0 }}-loue" value="1"{% if l.loue %} checked{% endif %} aria-label="Loué" data-loue></td>
+              <td><input type="text" inputmode="decimal" name="lot-{{ forloop.counter0 }}-loyer_actuel" value="{{ l.loyer_actuel|saisie }}" aria-label="Loyer actuel" data-si-loue></td>
+              <td><input type="text" inputmode="decimal" name="lot-{{ forloop.counter0 }}-loyer_cible" value="{{ l.loyer_cible|saisie }}" aria-label="Loyer cible"></td>
+              <td><input type="text" inputmode="decimal" name="lot-{{ forloop.counter0 }}-charges" value="{{ l.charges|saisie }}" aria-label="Charges récupérables"></td>
+              <td><input type="text" inputmode="decimal" name="lot-{{ forloop.counter0 }}-travaux" value="{{ l.travaux|saisie }}" aria-label="Travaux"></td>
+              <td><input type="text" inputmode="decimal" name="lot-{{ forloop.counter0 }}-meubles" value="{{ l.meubles|saisie }}" aria-label="Meubles"></td>
+              <td><input type="text" name="lot-{{ forloop.counter0 }}-fin_bail" value="{{ l.fin_bail }}" placeholder="jj/mm/aaaa" aria-label="Fin de bail" data-si-loue></td>
+              <td><button type="button" class="retirer" data-retirer title="Retirer ce lot" aria-label="Retirer ce lot">×</button></td>
+            </tr>{% endfor %}
+          </tbody>
+        </table></div>
+        <button type="button" class="bouton secondaire petit" id="ajouter-lot" style="margin-top:10px">+ Ajouter un lot</button>
+        <p class="aide">Loyer cible : le loyer visé après l'achat (et les travaux). Le choix « Loyers actuels / cibles » en haut de page dit lequel sert au calcul.</p>
+      </details>
+
+      {% for code, titre, sous, champs in blocs %}
+      <details class="bloc"{% if code != "avance" and code != "charges" %} open{% endif %}><summary>{{ titre }}{% if sous %} <span class="sous">{{ sous }}</span>{% endif %}</summary>
+        <div class="grille-champs">
+          {% for c in champs %}
+          <div class="champ"><label for="{{ c.nom }}">{{ c.libelle }}</label>
+            {% if c.genre == "choix" %}<select id="{{ c.nom }}" name="{{ c.nom }}">{% for v, t in c.choix %}<option value="{{ v }}"{% if v == c.valeur %} selected{% endif %}>{{ t }}</option>{% endfor %}</select>
+            {% else %}<input type="text" inputmode="decimal" id="{{ c.nom }}" name="{{ c.nom }}" value="{{ c.valeur|saisie }}" autocomplete="off">{% endif %}
+            {% if c.aide %}<div class="aide">{{ c.aide }}</div>{% endif %}</div>
+          {% endfor %}
+          {% if code == "financement" %}<div class="champ"><label for="apport-total">Apport total</label><input type="text" id="apport-total" value="{{ r.apport|euros }}" readonly></div>{% endif %}
+          {% if code == "fiscalite" %}<div class="champ"><label for="regime">Régime retenu pour le résumé</label><select id="regime" name="regime">{% for v, t in regimes_possibles %}<option value="{{ v }}"{% if v == p.regime %} selected{% endif %}>{{ t }}</option>{% endfor %}</select></div>{% endif %}
+        </div>
+        {% if code == "fiscalite" %}
+          <h3>SCI à l'IR : les associés</h3>
+          <p class="aide">Laissez le revenu de l'associé 1 vide : c'est votre foyer, décrit ci-dessus.</p>
+          <div class="defile"><table class="saisie">
+            <thead><tr><th>Associé</th><th>Parts (%)</th><th>Revenu imposable</th><th>Situation</th><th>Enfants</th></tr></thead>
+            <tbody>{% for a in associes %}<tr>
+              <td>Associé {{ forloop.counter }}</td>
+              <td><input type="text" inputmode="decimal" name="assoc-{{ forloop.counter0 }}-parts" value="{% if a.parts %}{{ a.parts|saisie }}{% endif %}" aria-label="Parts"></td>
+              <td><input type="text" inputmode="decimal" name="assoc-{{ forloop.counter0 }}-revenu" value="{% if forloop.first and associe1_foyer %}{% elif a.parts %}{{ a.revenu_imposable|saisie }}{% endif %}" placeholder="{% if forloop.first %}votre foyer{% endif %}" aria-label="Revenu imposable"></td>
+              <td><select name="assoc-{{ forloop.counter0 }}-situation" aria-label="Situation">{% for v, t in situations %}<option value="{{ v }}"{% if v == a.situation %} selected{% endif %}>{{ t }}</option>{% endfor %}</select></td>
+              <td><input type="text" inputmode="numeric" name="assoc-{{ forloop.counter0 }}-enfants" value="{% if a.parts %}{{ a.enfants }}{% endif %}" aria-label="Enfants"></td>
+            </tr>{% endfor %}</tbody>
+          </table></div>
+        {% endif %}
+        {% if code == "avance" %}<p class="aide">Bâti amorti par composants (part du prix hors terrain) : gros œuvre 40 % sur 50 ans, façade 20 % sur 20 ans, installations techniques 20 % sur 20 ans, agencements 20 % sur 5 ans.</p>{% endif %}
+      </details>
+      {% endfor %}
+    </div>
+
+    <aside class="carte resume" aria-live="polite">
+      {% include "simulateurs/_rentabilite_resume.html" %}
+      <button type="button" class="bouton petit" data-onglet="resultats" style="margin-top:14px; width:100%">Voir tous les résultats</button>
+    </aside>
+  </div>
+
+  <section id="ecran-resultats" class="pile-res">
+    <div class="carte carte-nego">
+      <h2>Prix à négocier pour le cash-flow voulu</h2>
+      <p class="aide" style="margin-top:-8px">Réglez le cash-flow mensuel que vous voulez : la courbe donne le prix d'achat qui l'atteint, et la négociation à obtenir. Frais de notaire, bancaires et garantie suivent le prix ; tout le reste est gardé.</p>
+      <div class="reglage">
+        <label for="cf-voulu"><strong>Cash-flow voulu : <span id="cf-voulu-valeur">0 €</span> par mois</strong></label>
+        <input type="range" id="cf-voulu" min="-500" max="1000" step="10" value="0">
+        <select id="cf-mode" aria-label="Cash-flow avant ou après impôt"><option value="avant">avant impôt</option></select>
+      </div>
+      <div class="tuiles" id="nego-tuiles">{% if prix_zero %}<div class="tuile"><div class="l">Prix d'achat pour un cash-flow nul</div><div class="v">{{ prix_zero|euros }}</div></div>{% endif %}</div>
+      <div class="defile"><svg class="courbe" id="courbe" viewBox="0 0 700 260" role="img" aria-label="Cash-flow mensuel selon le prix d'achat"></svg></div>
+      <p class="note">Cash-flow mensuel selon le prix d'achat, de 50 % à 110 % du prix affiché. Point vert : votre prix proposé. Trait jaune : le cash-flow voulu.</p>
+    </div>
+
+    {% include "simulateurs/_rentabilite_detail.html" %}
+
+    <div class="carte carte-dvf" id="dvf">
+      <h2>Prix du marché autour de l'adresse</h2>
+      <p class="aide" style="margin-top:-8px">Ventes réelles des 3 dernières années (DVF, données publiques de l'État), autour de l'adresse saisie.</p>
+      <div id="dvf-contenu"><p class="aide">{% if p.adresse %}Recherche des ventes…{% else %}Saisissez l'adresse du bien pour voir les ventes autour.{% endif %}</p></div>
+      <button type="button" class="bouton secondaire petit" id="dvf-actualiser">Actualiser</button>
+    </div>
+  </section>
+  {{ courbe|json_script:"courbe-donnees" }}
+
+  <div class="actions">
+    <noscript><button type="submit">Calculer</button></noscript>
+    {% if peut_enregistrer %}
+      {% if simulation %}<button type="submit" class="bouton secondaire" formaction="{% url 'simulateurs:simulation_dupliquer' simulation.pk %}">Dupliquer pour comparer</button>{% endif %}
+      {% if simulation and not simulation.bien %}<a class="bouton secondaire" href="{% url 'simulateurs:simulation_creer_bien' simulation.pk %}">Créer le bien et ses lots</a>{% endif %}
+      <button type="submit" formaction="{% url 'simulateurs:simulation_enregistrer' %}">{% if simulation %}Enregistrer les modifications{% else %}Enregistrer la simulation{% endif %}</button>
+    {% elif not user.is_authenticated %}
+      <a class="bouton secondaire" href="{% url 'admin:login' %}?next={{ request.path }}">Se connecter pour enregistrer</a>
+    {% endif %}
+  </div>
+</form>
+
+<script>
+(function () {
+  const form = document.getElementById("form-invest");
+  const urlCalcul = form.action, urlDvf = "{% url 'simulateurs:rentabilite_dvf' %}";
+  const $ = (id) => document.getElementById(id);
+  const fmt = (v) => Math.round(v).toLocaleString("fr-FR") + " €";
+  const signe = (v) => (Math.round(v) > 0 ? "+" : "") + fmt(v);
+
+  /* ---------- onglets ---------- */
+  const ecrans = { parametres: $("ecran-parametres").closest(".mise-en-page"), resultats: $("ecran-resultats") };
+  function onglet(nom, defiler) {
+    Object.entries(ecrans).forEach(([k, el]) => { el.hidden = k !== nom; });
+    document.querySelectorAll(".onglets-ecran [data-onglet]").forEach((b) => b.classList.toggle("actif", b.dataset.onglet === nom));
+    if (nom === "resultats") dessiner();
+    if (defiler) window.scrollTo({ top: 0 });
+    try { history.replaceState(null, "", "#" + nom); } catch (e) {}
+  }
+  document.addEventListener("click", (e) => {
+    const b = e.target.closest("[data-onglet]");
+    if (b) onglet(b.dataset.onglet, true);
+    const t = e.target.closest("[data-toutes-annees]");
+    if (t) { t.closest(".carte").classList.toggle("toutes-annees"); t.textContent = t.closest(".carte").classList.contains("toutes-annees") ? "Voir moins d'années" : "Voir toutes les années"; }
+  });
+
+  /* ---------- lots : ajouter, retirer, loué / vacant ---------- */
+  const corps = document.querySelector("#table-lots tbody"), max = {{ max_lots }};
+  function renumeroter() {
+    const lignes = Array.from(corps.querySelectorAll("tr[data-ligne]"));
+    lignes.forEach((tr, i) => {
+      tr.querySelector(".num").textContent = String(i + 1).padStart(3, "0");
+      tr.querySelectorAll("[name^=lot-]").forEach((el) => { el.name = el.name.replace(/^lot-\d+-/, `lot-${i}-`); });
+      const loue = tr.querySelector("[data-loue]").checked;
+      tr.querySelectorAll("[data-si-loue]").forEach((el) => { el.disabled = !loue; });
+    });
+    $("nb_lots").value = lignes.length;
+    $("ajouter-lot").hidden = lignes.length >= max;
+  }
+  $("ajouter-lot").addEventListener("click", () => {
+    const lignes = corps.querySelectorAll("tr[data-ligne]");
+    const copie = lignes[lignes.length - 1].cloneNode(true);
+    copie.querySelectorAll("select").forEach((s, k) => { s.selectedIndex = lignes[lignes.length - 1].querySelectorAll("select")[k].selectedIndex; });
+    copie.querySelectorAll("input[name$=-travaux], input[name$=-meubles], input[name$=-loyer_actuel], input[name$=-fin_bail]").forEach((i) => { i.value = ""; });
+    corps.appendChild(copie);
+    renumeroter(); recalculer();
+  });
+  corps.addEventListener("click", (e) => {
+    const b = e.target.closest("[data-retirer]");
+    if (!b || corps.querySelectorAll("tr[data-ligne]").length <= 1) return;
+    b.closest("tr").remove();
+    renumeroter(); recalculer();
+  });
+  corps.addEventListener("change", (e) => { if (e.target.matches("[data-loue]")) renumeroter(); });
+  renumeroter();
+
+  /* ---------- recalcul en direct ---------- */
+  let minuterie = null, enCours = null;
+  function recalculer() {
+    clearTimeout(minuterie);
+    minuterie = setTimeout(async () => {
+      if (enCours) enCours.abort();
+      enCours = new AbortController();
+      document.getElementById("bloc-resume").classList.add("chargement");
+      try {
+        const rep = await fetch(urlCalcul, { method: "POST", body: new FormData(form), headers: { "X-Fragment": "1" }, signal: enCours.signal });
+        if (!rep.ok) throw new Error(rep.status);
+        const doc = new DOMParser().parseFromString(await rep.text(), "text/html");
+        ["bloc-resume", "bloc-resultats"].forEach((id) => {
+          const neuf = doc.getElementById(id), ancien = document.getElementById(id);
+          if (neuf && ancien) {
+            const toutes = ancien.querySelector(".toutes-annees");
+            ancien.replaceWith(neuf);
+            if (toutes) neuf.querySelector("[data-toutes-annees]")?.click();
+          }
+        });
+        const json = doc.getElementById("courbe-donnees");
+        if (json) $("courbe-donnees").textContent = json.textContent;
+        const apport = document.querySelector("#bloc-resume [data-apport]");
+        if (apport) $("apport-total").value = apport.dataset.apport;
+        dessiner(); comparerDvf();
+      } catch (err) {
+        if (err.name !== "AbortError") document.getElementById("bloc-resume").classList.remove("chargement");
+      }
+    }, 350);
+  }
+  form.addEventListener("input", (e) => { if (!e.target.closest(".carte-nego")) recalculer(); });
+  form.addEventListener("change", (e) => {
+    if (e.target.closest(".carte-nego")) return;
+    recalculer();
+    if (e.target.id === "adresse") chargerDvf();
+  });
+  form.addEventListener("keydown", (e) => { if (e.key === "Enter" && e.target.tagName === "INPUT") e.preventDefault(); });
+
+  /* ---------- courbe et prix cible ---------- */
+  function donnees() { try { return JSON.parse($("courbe-donnees").textContent); } catch (e) { return null; } }
+  function majModes(d) {
+    const sel = $("cf-mode"), actuel = sel.value;
+    const options = [["avant", "avant impôt"]].concat(Object.keys(d.series).filter((k) => k !== "avant" && d.series[k].some((v) => v !== null)).map((k) => [k, "après impôt · " + d.noms[k]]));
+    sel.innerHTML = options.map(([v, t]) => `<option value="${v}"${v === actuel ? " selected" : ""}>${t}</option>`).join("");
+  }
+  function prixPour(xs, ys, cible) {
+    // le cash-flow baisse quand le prix monte : on cherche le segment qui encadre la cible
+    for (let k = 0; k < xs.length - 1; k++) {
+      const a = ys[k], b = ys[k + 1];
+      if (a === null || b === null) continue;
+      if ((a >= cible && b <= cible) || (a <= cible && b >= cible)) {
+        const t = a === b ? 0 : (a - cible) / (a - b);
+        return xs[k] + t * (xs[k + 1] - xs[k]);
+      }
+    }
+    return null;
+  }
+  function dessiner() {
+    const d = donnees(), svg = $("courbe");
+    if (!d) { svg.innerHTML = ""; return; }
+    majModes(d);
+    const cible = parseFloat($("cf-voulu").value), mode = $("cf-mode").value;
+    $("cf-voulu-valeur").textContent = signe(cible);
+    const xs = d.prix, ys = d.series[mode] || d.series.avant;
+    const brut = prixPour(xs, ys, cible), prix = brut === null ? null : Math.floor(brut / 100) * 100, surface = parseFloat(document.getElementById("bloc-resume").dataset.prixM2) ? d.prix_actuel / parseFloat(document.getElementById("bloc-resume").dataset.prixM2) : 0;
+    const tuile = (l, v, s) => `<div class="tuile"><div class="l">${l}</div><div class="v">${v}</div><div class="s">${s}</div></div>`;
+    $("nego-tuiles").innerHTML = prix === null
+      ? tuile("Prix cible", "Hors d'atteinte", `Aucun prix entre ${fmt(xs[0])} et ${fmt(xs[xs.length - 1])} ne donne ce cash-flow : jouez sur l'apport, la durée ou les loyers.`)
+      : [tuile("Prix d'achat cible", fmt(Math.floor(prix / 100) * 100), `pour ${signe(cible)} par mois ${mode === "avant" ? "avant impôt" : "après impôt"}`),
+         tuile("Négociation à obtenir", (d.affiche ? ((prix / d.affiche - 1) * 100).toLocaleString("fr-FR", { maximumFractionDigits: 1 }) : "0") + " %", `${fmt(d.affiche - prix)} sous le prix affiché`),
+         tuile("Écart avec votre offre", signe(prix - d.prix_actuel), `offre actuelle ${fmt(d.prix_actuel)}`),
+         surface ? tuile("Prix cible au m²", fmt(prix / surface), "prix seul, hors travaux") : ""].join("");
+    // dessin
+    const W = 700, H = 260, g = 62, dr = 16, h = 16, b = 34;
+    const vals = ys.filter((v) => v !== null).concat([cible]);
+    let yMin = Math.min(...vals), yMax = Math.max(...vals);
+    const pas = Math.max(50, Math.ceil((yMax - yMin) / 5 / 50) * 50);
+    yMin = Math.floor(yMin / pas) * pas; yMax = Math.ceil(yMax / pas) * pas; if (yMax === yMin) yMax += pas;
+    const X = (p) => g + (p - xs[0]) / (xs[xs.length - 1] - xs[0]) * (W - g - dr), Y = (v) => h + (yMax - v) / (yMax - yMin) * (H - h - b);
+    let s = "";
+    for (let v = yMin; v <= yMax + 0.1; v += pas) s += `<line x1="${g}" x2="${W - dr}" y1="${Y(v)}" y2="${Y(v)}" stroke="${v === 0 ? "#9aa5ae" : "#e3e8ec"}"/><text x="${g - 8}" y="${Y(v) + 4}" text-anchor="end" font-size="11" fill="#6b7785">${v.toLocaleString("fr-FR")} €</text>`;
+    for (let k = 0; k <= 6; k++) { const p = xs[0] + (xs[xs.length - 1] - xs[0]) * k / 6; s += `<text x="${X(p)}" y="${H - 12}" text-anchor="middle" font-size="11" fill="#6b7785">${Math.round(p / 1000)} k€</text>`; }
+    const pts = xs.map((x, k) => [x, ys[k]]).filter((q) => q[1] !== null);
+    const chemin = pts.map((q, k) => (k ? "L" : "M") + X(q[0]).toFixed(1) + "," + Y(q[1]).toFixed(1)).join("");
+    s += `<path d="${chemin} L${X(pts[pts.length - 1][0])},${Y(yMin)} L${X(pts[0][0])},${Y(yMin)}Z" fill="#2f6f73" opacity=".08"/>`;
+    s += `<path d="${chemin}" fill="none" stroke="#2f6f73" stroke-width="2.5"/>`;
+    s += `<line x1="${g}" x2="${W - dr}" y1="${Y(cible)}" y2="${Y(cible)}" stroke="#f2c14e" stroke-width="2" stroke-dasharray="6 5"/>`;
+    if (d.prix_actuel >= xs[0] && d.prix_actuel <= xs[xs.length - 1]) {
+      const yA = interpoler(xs, ys, d.prix_actuel);
+      if (yA !== null) s += `<circle cx="${X(d.prix_actuel)}" cy="${Y(yA)}" r="5" fill="#1e7a4a" stroke="#fff" stroke-width="2"/>`;
+    }
+    if (prix !== null) s += `<line x1="${X(prix)}" x2="${X(prix)}" y1="${Y(cible)}" y2="${H - b}" stroke="#f2c14e" stroke-width="1.5" stroke-dasharray="3 4"/><circle cx="${X(prix)}" cy="${Y(cible)}" r="6" fill="#f2c14e" stroke="#fff" stroke-width="2"/><text x="${Math.min(W - 70, Math.max(g + 60, X(prix)))}" y="${Math.max(12, Y(cible) - 12)}" text-anchor="middle" font-size="12" font-weight="700" fill="#1f2933">cible ${fmt(Math.floor(prix / 100) * 100)}</text>`;
+    svg.innerHTML = s;
+  }
+  function interpoler(xs, ys, x) {
+    for (let k = 0; k < xs.length - 1; k++) if (x >= xs[k] && x <= xs[k + 1] && ys[k] !== null && ys[k + 1] !== null) return ys[k] + (ys[k + 1] - ys[k]) * (x - xs[k]) / (xs[k + 1] - xs[k]);
+    return null;
+  }
+  $("cf-voulu").addEventListener("input", dessiner);
+  $("cf-mode").addEventListener("change", dessiner);
+
+  /* ---------- prix du marché (DVF) ---------- */
+  let dvf = null;
+  const echap = (t) => String(t).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+  async function chargerDvf() {
+    const adresse = $("adresse").value.trim(), zone = $("dvf-contenu");
+    dvf = null;
+    if (!adresse) { zone.innerHTML = '<p class="aide">Saisissez l\'adresse du bien pour voir les ventes autour.</p>'; return; }
+    zone.innerHTML = '<p class="aide">Recherche des ventes autour de l\'adresse…</p>';
+    const type = document.getElementById("bloc-resume").dataset.typeDvf || "appartement";
+    try {
+      const rep = await fetch(`${urlDvf}?adresse=${encodeURIComponent(adresse)}&type=${type}`);
+      const d = await rep.json();
+      if (d.erreur) { zone.innerHTML = `<p class="aide">${echap(d.erreur)}</p>`; return; }
+      dvf = d; comparerDvf();
+    } catch (e) {
+      zone.innerHTML = '<p class="aide">Les ventes n\'ont pas pu être chargées. Réessayez avec « Actualiser ».</p>';
+    }
+  }
+  function comparerDvf() {
+    const d = dvf, zone = $("dvf-contenu");
+    if (!d) return;
+    const libType = d.type === "Maison" ? "maisons" : "appartements", rayon = d.rayon >= 1000 ? d.rayon / 1000 + " km" : d.rayon + " m";
+    if (!d.nombre) { zone.innerHTML = `<p class="aide">Aucune vente de ${libType} trouvée à moins de ${rayon} de ${echap(d.lieu.label)} sur les 3 dernières années.</p>`; return; }
+    const moi = parseFloat(document.getElementById("bloc-resume").dataset.prixM2) || 0, ecart = moi ? moi / d.mediane - 1 : null;
+    const h = d.histogramme, maxi = Math.max(...h.effectifs);
+    const barres = h.effectifs.map((n, k) => { const bas = h.debut + k * h.pas; return `<span class="${moi >= bas && moi < bas + h.pas ? "moi" : ""}" style="height:${Math.max(4, n / maxi * 100)}%" title="${bas.toLocaleString("fr-FR")} à ${(bas + h.pas).toLocaleString("fr-FR")} €/m² : ${n} vente(s)"></span>`; }).join("");
+    const lignes = d.ventes.map((v) => `<tr><td>${v.date.split("-").reverse().join("/")}</td><td>${v.type}${v.pieces ? " " + v.pieces + " p." : ""}<span class="detail">${echap(v.adresse)}</span></td><td class="m">${v.surface} m²</td><td class="m">${fmt(v.prix)}</td><td class="m">${fmt(v.prix_m2)}</td><td class="m">${v.distance} m</td></tr>`).join("");
+    zone.innerHTML = `<div class="deux-colonnes-egales"><div>
+        <div class="tuiles">
+          <div class="tuile"><div class="l">Prix médian au m² (${libType}, ${rayon})</div><div class="v">${fmt(d.mediane)}</div><div class="s">${d.nombre} ventes · la moitié entre ${fmt(d.q1)} et ${fmt(d.q3)}</div></div>
+          ${moi ? `<div class="tuile"><div class="l">Votre prix d'achat au m²</div><div class="v">${fmt(moi)}</div><div class="s"><span class="${ecart <= 0 ? "pos" : "neg"}">${ecart > 0 ? "+" : ""}${Math.round(ecart * 100)} %</span> par rapport au marché (prix seul)</div></div>` : ""}
+        </div>
+        <div class="histo" aria-hidden="true">${barres}</div>
+        <p class="note">Répartition des ventes par prix au m²${moi ? " ; en jaune, votre projet" : ""}. Adresse trouvée : ${echap(d.lieu.label)}. Ventes publiées avec environ 6 mois de retard ; seules les ventes de la commune sont lues.</p>
+      </div><div class="defile"><table><thead><tr><th>Date</th><th>Bien</th><th class="m">Surface</th><th class="m">Prix</th><th class="m">€/m²</th><th class="m">Distance</th></tr></thead><tbody>${lignes}</tbody></table></div></div>`;
+  }
+  $("dvf-actualiser").addEventListener("click", chargerDvf);
+
+  onglet(location.hash === "#resultats" ? "resultats" : "parametres", false);
+  dessiner();
+  if ($("adresse").value.trim()) chargerDvf();
+})();
+</script>
+{% endblock %}

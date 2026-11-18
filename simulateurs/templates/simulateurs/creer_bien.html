@@ -1,0 +1,21 @@
+{% extends "simulateurs/base.html" %}{% load invest %}
+{% block titre %}Créer le bien · {{ simulation.nom }}{% endblock %}
+{% block contenu %}
+<div class="fil" style="font-size:.82rem;color:var(--doux)"><a href="{% url 'simulateurs:mes_simulations' %}">Mes simulations</a> › <a href="{{ simulation.get_absolute_url }}">{{ simulation.nom }}</a></div>
+<h1>Créer le bien et ses lots</h1>
+<p class="chapeau">Le projet est acheté ? L'appli crée le bien et ses {{ p.lots|length }} lot{{ p.lots|length|pluralize }} dans votre gestion locative, avec le type, la surface, l'étage et le mode (meublé ou nu). Vous compléterez ensuite les fiches (DPE, équipements…).</p>
+<form method="post" class="carte" style="max-width:720px">{% csrf_token %}
+  <div class="champ"><label for="proprietaire">Propriétaire</label>
+    <select id="proprietaire" name="proprietaire" required><option value="">Choisir…</option>{% for pr in proprietaires %}<option value="{{ pr.pk }}">{{ pr }}</option>{% endfor %}</select>
+    {% if not proprietaires %}<div class="erreur">Aucun propriétaire : créez-le d'abord dans <a href="{% url 'admin:patrimoine_proprietaire_add' %}">Biens et lots › Propriétaires</a>.</div>{% endif %}</div>
+  <div class="champ"><label for="nom">Nom du bien</label><input type="text" id="nom" name="nom" value="{{ simulation.nom }}" maxlength="200"></div>
+  <div class="champ"><label for="adresse">Adresse</label><input type="text" id="adresse" name="adresse" value="{{ rue }}" maxlength="255"></div>
+  <div class="paire">
+    <div class="champ"><label for="code_postal">Code postal</label><input type="text" id="code_postal" name="code_postal" value="{{ cp }}" maxlength="10"></div>
+    <div class="champ"><label for="ville">Ville</label><input type="text" id="ville" name="ville" value="{{ ville }}" maxlength="100"></div>
+  </div>
+  <table style="margin:6px 0 16px"><thead><tr><th>Lot</th><th>Type</th><th class="m">Surface</th><th>Étage</th><th>Mode</th></tr></thead>
+    <tbody>{% for l in p.lots %}<tr><td>Lot {{ forloop.counter|stringformat:"03d" }}</td><td>{{ l.nom_type }}</td><td class="m">{{ l.surface|saisie }} m²</td><td>{{ l.etage }}</td><td>{% if l.meuble %}Meublé{% else %}Nu{% endif %}</td></tr>{% endfor %}</tbody></table>
+  <button type="submit">Créer le bien et les lots</button> <a class="bouton secondaire" href="{{ simulation.get_absolute_url }}">Annuler</a>
+</form>
+{% endblock %}

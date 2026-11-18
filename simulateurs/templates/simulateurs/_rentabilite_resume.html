@@ -1,0 +1,19 @@
+{% load invest %}<div id="bloc-resume" data-prix-m2="{{ r.prix_m2|default_if_none:0|stringformat:".0f" }}" data-type-dvf="{% if p.lots.0.type == "maison" %}maison{% else %}appartement{% endif %}">
+  {% with g=r.retenu %}
+  <div class="aide">Cash-flow mensuel après impôt</div>
+  <div class="gros {{ g.cash_flow|signe_classe }}">{{ g.cash_flow|euros_signe }}</div>
+  <div class="aide" style="margin-bottom:12px">{{ g.nom }}{% if g == r.meilleur %} · le meilleur{% endif %}</div>
+  {% endwith %}
+  <dl class="resume-liste">
+    <dt>Coût total du projet</dt><dd>{{ r.cout_total|euros }}</dd>
+    <dt>Frais de notaire</dt><dd>{{ r.frais_notaire|euros }}</dd>
+    <dt>Apport</dt><dd data-apport="{{ r.apport|euros }}">{{ r.apport|euros }}</dd>
+    <dt>Emprunt</dt><dd>{{ r.emprunt|euros }}</dd>
+    <dt>Mensualité (assurance comprise)</dt><dd>{{ r.mensualite|add:r.assurance_mois|euros }}</dd>
+    <dt>Loyers par mois</dt><dd>{{ r.loyers_mois|euros }}</dd>
+    <dt>Rentabilité brute</dt><dd>{{ r.renta_brute|pct:2 }}</dd>
+    <dt>Rentabilité nette de charges</dt><dd>{{ r.renta_nette|pct:2 }}</dd>
+    <dt>Cash-flow avant impôt</dt><dd class="{{ r.cash_flow_avant_impot|signe_classe }}">{{ r.cash_flow_avant_impot|euros_signe }}</dd>
+  </dl>
+  {% if r.negociation is not None %}<p class="aide" style="margin-top:10px">Négociation : {{ r.negociation|pct:1 }} sur le prix affiché · {{ r.prix_m2|euros }}/m²</p>{% endif %}
+</div>
