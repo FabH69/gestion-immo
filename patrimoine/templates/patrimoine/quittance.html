@@ -20,7 +20,7 @@
 </style>
 </head>
 <body>
-  <h1>{% if est_quittance %}QUITTANCE DE LOYER{% else %}AVIS D'ÉCHÉANCE{% endif %}</h1>
+  <h1>{% if est_quittance %}QUITTANCE DE LOYER{% elif est_recu %}REÇU DE PAIEMENT PARTIEL{% else %}AVIS D'ÉCHÉANCE{% endif %}</h1>
   <div class="periode">Période du {{ e.periode|date:"d/m/Y" }} au {{ e.fin_periode|date:"d/m/Y" }}</div>
 
   <div class="parties">
@@ -53,6 +53,21 @@
     pour la période du {{ e.periode|date:"d/m/Y" }} au {{ e.fin_periode|date:"d/m/Y" }},
     {% if date_paiement %}réglée le {{ date_paiement|date:"d/m/Y" }}, {% endif %}et lui en donne quittance,
     sous réserve de tous mes droits.
+  </p>
+  {% elif est_recu %}
+  <p class="texte">
+    Je soussigné(e), {{ proprietaire.nom }}, bailleur du logement désigné ci-dessus, déclare avoir reçu
+    de {% for l in locataires %}{{ l }}{% if not forloop.last %} et {% endif %}{% endfor %}
+    la somme de <strong>{{ e.montant_paye|floatformat:2 }} €</strong> en paiement partiel du loyer et des charges
+    pour la période du {{ e.periode|date:"d/m/Y" }} au {{ e.fin_periode|date:"d/m/Y" }} :
+  </p>
+  <table>
+    {% for p in paiements %}<tr><td>{{ p.get_mode_display }} reçu le {{ p.date|date:"d/m/Y" }}</td><td class="m">{{ p.montant|floatformat:2 }} €</td></tr>{% endfor %}
+    <tr class="total"><td>Reste à régler</td><td class="m">{{ e.reste_du|floatformat:2 }} €</td></tr>
+  </table>
+  <p class="texte">
+    Ce reçu ne vaut pas quittance : la quittance sera délivrée lorsque le loyer de cette période aura été payé en entier.
+    {% if proprietaire.iban %}<br>IBAN : {{ proprietaire.iban }}{% endif %}
   </p>
   {% else %}
   <p class="texte">

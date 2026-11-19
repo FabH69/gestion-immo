@@ -96,7 +96,7 @@ def _bonjour_locataires(locataires):
 
 
 def texte_quittance(echeance, locataires, mois, est_quittance=True):
-    """Texte d'accompagnement de la quittance (ou de l'avis d'échéance si le loyer n'est pas soldé)."""
+    """Texte d'accompagnement de la quittance (ou du reçu de paiement partiel, ou de l'avis d'échéance si rien n'est payé)."""
     lot = echeance.bail.lot
     ville = lot.bien.ville or ""
     logement = (f"le logement d'{ville}" if ville[:1].lower() in "aeiouyéèêâh" else f"le logement de {ville}") if ville \
@@ -105,6 +105,10 @@ def texte_quittance(echeance, locataires, mois, est_quittance=True):
     if est_quittance:
         corps = (f"Veuillez trouver ci-joint la quittance de loyer du mois {de_mois} pour {logement}."
                  "\n\nJe vous remercie pour votre règlement.")
+    elif echeance.montant_paye > 0:
+        corps = (f"Veuillez trouver ci-joint le reçu de votre paiement partiel du loyer du mois {de_mois} pour {logement} "
+                 f"({f'{echeance.montant_paye:.2f}'.replace('.', ',')} € reçus). "
+                 f"Il reste {f'{echeance.reste_du:.2f}'.replace('.', ',')} € à régler.")
     else:
         corps = (f"Veuillez trouver ci-joint l'avis d'échéance du mois {de_mois} pour {logement}, "
                  f"d'un montant de {f'{echeance.total:.2f}'.replace('.', ',')} €.")

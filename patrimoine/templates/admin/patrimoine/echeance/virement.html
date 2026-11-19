@@ -1,0 +1,81 @@
+{% extends "admin/base_site.html" %}
+{% block breadcrumbs %}<div class="breadcrumbs"><a href="{% url 'admin:index' %}">Accueil</a> › <a href="{% url 'admin:patrimoine_echeance_changelist' %}">Loyers</a> › Encaisser un virement</div>{% endblock %}
+{% block extrastyle %}{{ block.super }}<style>
+.carte { background: var(--body-bg); border: 1px solid var(--hairline-color); border-radius: 12px; box-shadow: 0 1px 6px rgba(16,24,40,.06); padding: 16px 18px; margin-bottom: 18px; max-width: 900px; }
+.aide { font-size: .85rem; color: var(--body-quiet-color); line-height: 1.55; }
+.champs-modif { display: flex; flex-wrap: wrap; gap: 16px; margin: 12px 0; }
+.champs-modif label { display: block; font-weight: 600; margin-bottom: 4px; }
+.champs-modif select { max-width: 100%; }
+table.ech { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
+table.ech td, table.ech th { padding: 6px; border-bottom: 1px solid var(--hairline-color); text-align: left; }
+table.ech .m { text-align: right; }
+table.ech input { width: 7em; text-align: right; }
+table.ech tr.total td { font-weight: 700; border-top: 2px solid var(--body-fg); border-bottom: none; }
+.erreurs { color: #b42318; }
+.resume-virement { font-size: 1rem; margin: 10px 0; }
+</style>{% endblock %}
+{% block content %}
+<form method="post">{% csrf_token %}
+<div class="carte">
+  <p class="aide">Un virement peut régler plusieurs mois d'un coup, ou une partie seulement d'un loyer. L'appli le répartit
+    sur les loyers non soldés, du plus ancien au plus récent ; vous pouvez corriger la répartition avant de valider.
+    Ce qui dépasse reste en <b>avance</b> et sera utilisé automatiquement sur les loyers suivants.</p>
+  {{ form.non_field_errors }}
+  <div class="champs-modif">{% for f in form %}<div>{{ f.label_tag }}{{ f }}{{ f.errors }}</div>{% endfor %}</div>
+  {% if not repartir %}
+  <input type="hidden" name="etape" value="repartir">
+  <button type="submit" class="button default">Voir la répartition</button>
+  <a class="button annuler" href="{% url 'admin:patrimoine_echeance_changelist' %}">Annuler</a>
+  {% else %}
+  <button type="submit" name="etape" value="repartir" class="button">Recalculer la répartition</button>
+  {% endif %}
+</div>
+{% if repartir %}
+<div class="carte">
+  {% if erreurs %}<ul class="erreurs">{% for e in erreurs %}<li>{{ e }}</li>{% endfor %}</ul>{% endif %}
+  {% if lignes %}
+  <table class="ech" id="repartition">
+    <tr><th>Mois</th><th class="m">Dû</th><th class="m">Déjà payé</th><th class="m">Reste dû</th><th class="m">Part de ce virement</th><th>Après</th></tr>
+    {% for l in lignes %}<tr>
+      <td>{{ l.echeance.periode|date:"m/Y" }}</td>
+      <td class="m">{{ l.echeance.total|floatformat:2 }} €</td>
+      <td class="m">{{ l.echeance.montant_paye|floatformat:2 }} €</td>
+      <td class="m">{{ l.echeance.reste_du|floatformat:2 }} €</td>
+      <td class="m"><input type="text" inputmode="decimal" name="part-{{ l.echeance.pk }}" value="{{ l.part|floatformat:2 }}" data-reste="{{ l.echeance.reste_du|stringformat:'s' }}"></td>
+      <td class="apres"></td>
+    </tr>{% endfor %}
+    <tr class="total"><td colspan="4">Total réparti</td><td class="m" id="total-reparti">{{ total|floatformat:2 }} €</td><td></td></tr>
+  </table>
+  {% else %}
+  <p>Aucun loyer à régler pour ce bail : tout le montant sera gardé en avance pour les prochains loyers.</p>
+  {% endif %}
+  <p class="resume-virement">Avance gardée pour les prochains loyers : <b id="avance">{{ avance|floatformat:2 }} €</b></p>
+  {% if avance_existante %}<p class="aide">Ce locataire a déjà {{ avance_existante|floatformat:2 }} € d'avance d'un virement précédent.</p>{% endif %}
+  <button type="submit" name="etape" value="valider" class="button default">Valider l'encaissement</button>
+  <a class="button annuler" href="{% url 'admin:patrimoine_echeance_changelist' %}">Annuler</a>
+</div>
+<script>
+(function () {
+  var champMontant = document.getElementById('id_montant');
+  function nombre(t) { var n = parseFloat(String(t || '').replace(/\s/g, '').replace(',', '.')); return isNaN(n) ? 0 : n; }
+  function euros(n) { return n.toFixed(2).replace('.', ',') + ' €'; }
+  function maj() {
+    var total = 0;
+    document.querySelectorAll('#repartition input').forEach(function (i) {
+      var part = nombre(i.value), reste = nombre(i.dataset.reste);
+      total += part;
+      var apres = i.closest('tr').querySelector('.apres');
+      apres.textContent = part >= reste ? '✓ payé' : (part > 0 ? 'partiel, reste ' + euros(reste - part) : 'non réglé');
+    });
+    var t = document.getElementById('total-reparti'); if (t) t.textContent = euros(total);
+    var a = nombre(champMontant.value) - total;
+    document.getElementById('avance').textContent = a < 0 ? 'trop réparti de ' + euros(-a) : euros(a);
+  }
+  document.querySelectorAll('#repartition input').forEach(function (i) { i.addEventListener('input', maj); });
+  champMontant.addEventListener('input', maj);
+  maj();
+})();
+</script>
+{% endif %}
+</form>
+{% endblock %}

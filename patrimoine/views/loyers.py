@@ -17,9 +17,12 @@ from .communs import _contexte_bail, _pdf
 
 
 def pdf_echeance(echeance):
-    """(contenu PDF, nom du fichier, est_quittance) : quittance si l'échéance est soldée, sinon avis d'échéance."""
+    """(contenu PDF, nom du fichier, est_quittance) : quittance si l'échéance est soldée, reçu si elle est payée en partie,
+    sinon avis d'échéance."""
     est_quittance = echeance.statut == Echeance.Statut.PAYE
-    dernier_paiement = echeance.paiements.order_by("-date").first()
+    code, libelle = echeance.document
+    paiements = list(echeance.paiements.order_by("date", "pk"))
+    dernier_paiement = paiements[-1] if paiements else None
     html = render_to_string(
         "patrimoine/quittance.html",
         {
@@ -30,12 +33,14 @@ def pdf_echeance(echeance):
             "proprietaire": echeance.bail.lot.bien.proprietaire,
             "locataires": echeance.bail.locataires.all(),
             "est_quittance": est_quittance,
+            "est_recu": code == "recu-partiel",
+            "titre": libelle,
+            "paiements": paiements,
             "date_paiement": dernier_paiement.date if dernier_paiement else None,
             "aujourdhui": timezone.localdate(),
         },
     )
-    titre = "quittance" if est_quittance else "avis-echeance"
-    nom = f"{titre}-{echeance.periode:%Y-%m}-{echeance.bail.lot.designation}.pdf".replace(" ", "-")
+    nom = f"{code}-{echeance.periode:%Y-%m}-{echeance.bail.lot.designation}.pdf".replace(" ", "-")
     return HTML(string=html).write_pdf(), nom, est_quittance
 
 
@@ -92,14 +97,15 @@ def preparer_mail_quittance(request, pk):
     locataires = list(e.bail.locataires.all())
     mois = f"{MOIS_FR[e.periode.month - 1]} {e.periode.year}"
     brouillon = Brouillon(policy=SMTP)
-    brouillon["Subject"] = f"{'Quittance de loyer' if est_quittance else 'Avis d’échéance'} – {mois}"
+    code, libelle = e.document
+    brouillon["Subject"] = f"{'Quittance de loyer' if est_quittance else libelle.replace(chr(39), '’')} – {mois}"
     destinataires = [l.email for l in locataires if l.email]
     if destinataires:
         brouillon["To"] = ", ".join(destinataires)
     brouillon["X-Unsent"] = "1"
     brouillon.set_content(mails.texte_quittance(e, locataires, mois, est_quittance))
     brouillon.add_alternative(mails.html_quittance(e, locataires, mois, est_quittance), subtype="html")
-    joint = f"{'quittance' if est_quittance else 'avis-echeance'}-{e.periode:%Y-%m}-{slugify(e.bail.lot.bien.ville or 'loyer')}.pdf"
+    joint = f"{code}-{e.periode:%Y-%m}-{slugify(e.bail.lot.bien.ville or 'loyer')}.pdf"
     brouillon.add_attachment(contenu, maintype="application", subtype="pdf", filename=joint)
     reponse = HttpResponse(brouillon.as_bytes(), content_type="message/rfc822")
     reponse["Content-Disposition"] = f'attachment; filename="{nom[:-4]}.eml"'

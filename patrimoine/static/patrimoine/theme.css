@@ -842,3 +842,13 @@ dialog.fenetre-confirmation .message { margin: 0 0 16px; line-height: 1.45; }
 dialog.fenetre-confirmation .boutons { display: flex; justify-content: flex-end; gap: 8px; }
 dialog.fenetre-confirmation button { font: 600 .9rem var(--font-family-primary); padding: 8px 18px; border-radius: 999px; cursor: pointer; border: 1px solid var(--border-color); background: var(--body-bg); color: var(--body-fg); }
 dialog.fenetre-confirmation button.confirmer { background: #c62828; border-color: #c62828; color: #fff; }
+/* Erreurs de saisie : le message s'affiche sous le champ concerné, sans décaler la grille.
+   Django le place au-dessus du champ, en retrait de 160px (largeur des libellés à gauche) :
+   quand les libellés sont au-dessus des champs, il était écrasé dans une colonne étroite. */
+.form-multiline > div { display: flex; flex-direction: column; }
+.form-multiline > div > .help { order: 2; }
+.aligned .form-row.errors { display: flex; flex-direction: column; }
+.form-multiline > div > ul.errorlist, .aligned .form-row.errors > ul.errorlist { order: 1; margin-top: 4px; margin-bottom: 0; background: none; }
+fieldset:is(.fiche-compacte, .releves-compteurs, .cases-a-cocher) ul.errorlist { margin-left: 0 !important; padding-left: 0 !important; }
+ul.errorlist li { font-size: .78rem; margin-bottom: 0; }
+.errors input:not([type=checkbox]):not([type=radio]), .errors select, .errors textarea { border-color: var(--error-fg, #ba2121) !important; }

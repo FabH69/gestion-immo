@@ -127,6 +127,7 @@ ICONES = {
     "euro": '<path d="M17 6.5A7 7 0 1 0 17 17.5M4 10h9M4 14h9"/>',
     "nouveau": '<path d="M12 5v14M5 12h14"/>',
     "invest": '<path d="M3 17l6-6 4 4 8-8"/><path d="M15 7h6v6"/>',
+    "import": '<path d="M12 3v12M7 10l5 5 5-5"/><path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/>',
 }
 
 
@@ -154,8 +155,8 @@ def _menu():
              [("Propriétaires", a("proprietaire")), ("Lots", a("lot")), ("Syndics", a("syndic"))]),
             ("locataires", "Locataires", a("locataire"), [a("locataire")], []),
             ("baux", "Baux", a("bail"), [a("bail")], [("États des lieux", a("etatdeslieux")), ("Garants", a("garant"))]),
-            ("loyers", "Loyers", a("echeance"), [a("echeance"), r("relances_impayes"), a("revisionloyer"), a("mouvementdepot")],
-             [("Relances d'impayés", r("relances_impayes")), ("Révisions de loyer", a("revisionloyer")),
+            ("loyers", "Loyers", a("echeance"), [a("echeance"), a("versement"), r("relances_impayes"), a("revisionloyer"), a("mouvementdepot")],
+             [("Virements reçus", a("versement")), ("Relances d'impayés", r("relances_impayes")), ("Révisions de loyer", a("revisionloyer")),
               ("Dépôts de garantie", a("mouvementdepot"))]),
         ]),
         ("Relocation", [
@@ -184,6 +185,7 @@ def _menu():
             ("modeles", "Modèles", a("modeledocument"), [a("modeledocument"), a("modeleannonce"), r("liste_champs")],
              [("Modèles location", a("modeledocument")), ("Annonces", a("modeleannonce")), ("Liste des champs", r("liste_champs"))]),
             ("liens", "Sites utiles", a("siteutile"), [a("siteutile")], []),
+            ("import", "Import Excel", r("import_excel"), [r("import_excel")], []),
             ("reglages", "Paramètres", r("sauvegardes"),
              [r("sauvegardes"), a("parametresmail"), a("tachepardefaut"), "/admin/auth/", "/admin/password_change/"],
              [("Sauvegardes", r("sauvegardes")), ("Mails (Gmail)", a("parametresmail")), ("Tâches entrée / sortie", a("tachepardefaut")),
@@ -279,7 +281,8 @@ def menu_lateral(context):
                       "encaissements": "finances", "prets": "finances", "etats": "etats",
                       "foncier": "compta", "lmnp": "compta", "societe": "compta", "regimes": "compta",
                       "rappels": "outils", "modeles": "outils", "liens": "outils", "balles": "balles", "controles": "outils",
-                      "invest": "investissement"}
+                      "invest": "investissement",
+                      "import": "biens"}
     groupes, actif_trouve = [], False
     for titre, liens in _menu():
         lignes = []
