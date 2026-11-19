@@ -49,8 +49,10 @@ class RappelAdmin(admin.ModelAdmin):
 
 @admin.register(ParametresMail)
 class ParametresMailAdmin(admin.ModelAdmin):
-    fields = ["adresse", "mot_de_passe", "nom_expediteur", "alerte_nouveau_dossier", "accuse_au_candidat", "alerte_rappels",
-              "tache_quotidienne", "test"]
+    # L'adresse d'envoi et son mot de passe d'application sont côte à côte (classe « mail-envoi » dans theme.css).
+    fieldsets = [(None, {"classes": ["mail-envoi"], "fields": [
+        ("adresse", "mot_de_passe"), "nom_expediteur", "alerte_nouveau_dossier", "accuse_au_candidat", "alerte_rappels",
+        "tache_quotidienne", "test"]})]
     readonly_fields = ["tache_quotidienne", "test"]
 
     @admin.display(description="tâche quotidienne")
@@ -64,6 +66,11 @@ class ParametresMailAdmin(admin.ModelAdmin):
     def get_form(self, request, obj=None, **kwargs):
         form = super().get_form(request, obj, **kwargs)
         form.base_fields["mot_de_passe"].widget = forms.PasswordInput(render_value=True)
+        # Libellés courts : chaque case tient sur une seule ligne, même sur téléphone.
+        for champ, libelle in (("alerte_nouveau_dossier", "Alerte à chaque candidature reçue"),
+                               ("accuse_au_candidat", "Accusé de réception au candidat"),
+                               ("alerte_rappels", "Rappels importants (★) par mail")):
+            form.base_fields[champ].label = libelle
         return form
 
     def changelist_view(self, request, extra_context=None):

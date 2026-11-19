@@ -852,3 +852,13 @@ dialog.fenetre-confirmation button.confirmer { background: #c62828; border-color
 fieldset:is(.fiche-compacte, .releves-compteurs, .cases-a-cocher) ul.errorlist { margin-left: 0 !important; padding-left: 0 !important; }
 ul.errorlist li { font-size: .78rem; margin-bottom: 0; }
 .errors input:not([type=checkbox]):not([type=radio]), .errors select, .errors textarea { border-color: var(--error-fg, #ba2121) !important; }
+
+/* Paramètres › Mails : adresse Gmail d'envoi et mot de passe d'application côte à côte */
+fieldset.mail-envoi .form-multiline { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 24px; width: 100%; align-items: start; }
+fieldset.mail-envoi .form-multiline > div { margin: 0; min-width: 0; }
+fieldset.mail-envoi .form-multiline .fieldBox { display: flex; flex-direction: column; align-items: stretch; margin: 0; }
+fieldset.mail-envoi .form-multiline label { width: auto; float: none; padding: 0 0 4px; }
+fieldset.mail-envoi .form-multiline input { width: 100%; max-width: 340px; box-sizing: border-box; }
+fieldset.mail-envoi .form-multiline .help { margin: 4px 0 0; padding: 0; }
+fieldset.mail-envoi .checkbox-row label.vCheckboxLabel { white-space: nowrap; }
+@media (max-width: 767px) { fieldset.mail-envoi .form-multiline { grid-template-columns: 1fr; gap: 12px; } }
