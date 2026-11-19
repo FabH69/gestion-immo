@@ -1206,6 +1206,10 @@ class JustificatifsEtMailsTests(TestCase):
             self.client.post("/reglages/mails/test/")
             self.assertEqual(mail.outbox[-1].subject, "Test – Gestion immobilière")
             self.assertEqual(self.client.get("/admin/patrimoine/parametresmail/").status_code, 302)
+            # Mot de passe sur la même ligne que l'adresse d'envoi, cases à cocher à libellé court
+            page = self.client.get(f"/admin/patrimoine/parametresmail/{ParametresMail.objects.get().pk}/change/").content.decode()
+            self.assertIn("field-adresse field-mot_de_passe", page)
+            self.assertIn("Alerte à chaque candidature reçue", page)
 
 
 class EcheanceApresRevisionTests(TestCase):
