@@ -65,7 +65,7 @@ from django.views.decorators.http import require_POST  # noqa: E402
 from . import dvf  # noqa: E402
 from .calculs import investissement as inv  # noqa: E402
 from .forms import BLOCS_INVEST, CHOIX_INVEST, departement_de, lire_lots, lire_parametres  # noqa: E402
-from .models import SimulationInvestissement  # noqa: E402
+from .models import DevisTravaux, SimulationInvestissement  # noqa: E402
 
 SLUG_INVEST = "rentabilite"
 
@@ -125,6 +125,13 @@ def _contexte_invest(request, p, simulation=None):
         "courbe": inv.courbe(p), "prix_zero": inv.prix_cible(p, 0, "avant"),
         "peut_enregistrer": request.user.is_authenticated and _peut_enregistrer(request.user),
         "mise_a_jour": inv.MISE_A_JOUR, "max_lots": inv.MAX_LOTS,
+        "travaux_config": {"postes_lot": inv.chiffrage_par_defaut(False, 0)["lignes"], "postes_communs": inv.chiffrage_par_defaut(True, 0)["lignes"],
+                           "prix_niveaux": {nom: list(prix) for nom, _, _, prix, _ in inv.POSTES_LOT + inv.POSTES_COMMUNS},
+                           "niveaux": inv.NIVEAUX_RENOVATION, "modes": inv.MODES_TRAVAUX, "imprevus": inv.IMPREVUS_PAR_DEFAUT,
+                           "url_devis": reverse("simulateurs:simulation_devis", args=[simulation.pk]) if simulation else None,
+                           "peut_joindre": bool(simulation) and request.user.is_authenticated and _peut_enregistrer(request.user)},
+        "travaux_communs_json": json.dumps(p.travaux_communs) if p.travaux_communs else "",
+        "lots_detail_json": [json.dumps(l.travaux_detail) if l.travaux_detail else "" for l in p.lots],
     }
 
 
@@ -185,6 +192,9 @@ def simulation_enregistrer(request):
     s = get_object_or_404(SimulationInvestissement, pk=pk) if pk else SimulationInvestissement()
     s.nom, s.adresse, s.donnees = p.nom or "Simulation sans nom", p.adresse, p.en_dict()
     s.save()
+    # devis joints qui ne sont plus utilisés par aucune ligne : retirés (le fichier aussi)
+    utilises = _pieces(p)
+    _retirer_devis(s.devis.exclude(pk__in=utilises))
     messages.success(request, f"Simulation « {s.nom} » enregistrée.")
     return redirect(s)
 
@@ -195,8 +205,55 @@ def simulation_dupliquer(request, pk):
     s = get_object_or_404(SimulationInvestissement, pk=pk)
     copie = SimulationInvestissement.objects.create(nom=f"{s.nom} (copie)"[:200], adresse=s.adresse,
                                                     donnees={**s.donnees, "nom": f"{s.nom} (copie)"[:200]})
+    # les devis joints sont recopiés (même fichier) pour que chaque simulation garde les siens
+    correspondance = {}
+    for d in s.devis.all():
+        correspondance[d.pk] = DevisTravaux.objects.create(simulation=copie, fichier=d.fichier.name, nom=d.nom).pk
+    if correspondance:
+        donnees = json.loads(json.dumps(copie.donnees))
+        for detail in [l.get("travaux_detail") for l in donnees.get("lots", [])] + [donnees.get("travaux_communs")]:
+            for ligne in (detail or {}).get("lignes", []):
+                if ligne.get("piece") in correspondance:
+                    ligne["piece"] = correspondance[ligne["piece"]]
+        copie.donnees = donnees
+        copie.save(update_fields=["donnees"])
     messages.success(request, "Copie créée : changez un paramètre pour comparer les deux versions.")
     return redirect(copie)
+
+
+def _retirer_devis(devis):
+    """Supprime des devis joints ; le fichier part aussi s'il n'est plus partagé avec une copie de la simulation."""
+    for d in list(devis):
+        nom = d.fichier.name
+        d.delete()
+        if nom and not DevisTravaux.objects.filter(fichier=nom).exists():
+            d.fichier.storage.delete(nom)
+
+
+def _pieces(p):
+    """Identifiants des devis joints aux lignes du chiffrage."""
+    details = [l.travaux_detail for l in p.lots] + [p.travaux_communs]
+    return {ligne["piece"] for d in details if d for ligne in d.get("lignes", []) if isinstance(ligne.get("piece"), int)}
+
+
+EXTENSIONS_DEVIS = (".pdf", ".jpg", ".jpeg", ".png", ".heic")
+TAILLE_MAX_DEVIS = 15 * 1024 * 1024
+
+
+@connecte
+@require_POST
+def simulation_devis(request, pk):
+    """Joint un devis (PDF ou photo) à une ligne du chiffrage : renvoie son identifiant et son lien."""
+    s = get_object_or_404(SimulationInvestissement, pk=pk)
+    f = request.FILES.get("fichier")
+    if not f:
+        return JsonResponse({"erreur": "Choisissez un fichier."}, status=400)
+    if not f.name.lower().endswith(EXTENSIONS_DEVIS):
+        return JsonResponse({"erreur": "Format accepté : PDF, JPG, PNG ou HEIC."}, status=400)
+    if f.size > TAILLE_MAX_DEVIS:
+        return JsonResponse({"erreur": "Fichier trop lourd (15 Mo au plus)."}, status=400)
+    d = DevisTravaux.objects.create(simulation=s, fichier=f, nom=f.name[:200])
+    return JsonResponse({"id": d.pk, "nom": d.nom, "url": d.url})
 
 
 @connecte
@@ -204,6 +261,7 @@ def simulation_dupliquer(request, pk):
 def simulation_supprimer(request, pk):
     s = get_object_or_404(SimulationInvestissement, pk=pk)
     nom = s.nom
+    _retirer_devis(s.devis.all())
     s.delete()
     messages.success(request, f"Simulation « {nom} » supprimée.")
     return redirect("simulateurs:mes_simulations")

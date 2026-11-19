@@ -193,6 +193,12 @@ from .forms import departement_de, lire_parametres, nombre  # noqa: E402
 from .models import SimulationInvestissement  # noqa: E402
 
 
+def sans_travaux(p):
+    for l in p.lots:
+        l.travaux = 0
+    return p
+
+
 class InvestissementCalculTests(SimpleTestCase):
     def test_exemple_retrouve_les_chiffres_de_l_excel(self):
         # Excel « Simulateur invest-Oullins » : emprunt 284 741 €, mensualité 1 755,63 €, intérêts an 1 11 781,72 €,
@@ -212,7 +218,7 @@ class InvestissementCalculTests(SimpleTestCase):
         self.assertNotEqual(r.meilleur.id, "nu-micro")
 
     def test_lmnp_reel_les_amortissements_effacent_le_benefice(self):
-        r = inv.simuler(inv.exemple())
+        r = inv.simuler(sans_travaux(inv.exemple()))
         lmnp = next(g for g in r.regimes if g.id == "lmnp-reel")
         self.assertEqual(lmnp.base, 0)
         self.assertEqual(lmnp.impot, 0)
@@ -220,10 +226,19 @@ class InvestissementCalculTests(SimpleTestCase):
         self.assertEqual(r.meilleur.id, "lmnp-reel")
 
     def test_nu_reel_impot_marginal_a_30_pourcent(self):
-        r = inv.simuler(inv.exemple())
+        r = inv.simuler(sans_travaux(inv.exemple()))
         nu = next(g for g in r.regimes if g.id == "nu-reel")
         # base ≈ 9 847 € à la TMI de 30 % + 17,2 % de prélèvements sociaux
         self.assertAlmostEqual(nu.impot, nu.base * 0.472, delta=5)
+
+    def test_travaux_deduits_en_location_nue(self):
+        # Oullins : 83 000 € de travaux déduits l'année 1 → déficit foncier imputé (10 700 €) et le reste reporté
+        r = inv.simuler(inv.exemple())
+        nu = next(g for g in r.regimes if g.id == "nu-reel")
+        self.assertEqual(nu.base, -10700)
+        self.assertLess(nu.impot, 0)  # économie d'impôt
+        self.assertGreater(nu.report, 60000)
+        self.assertIn("Travaux déduits", nu.detail)
 
     def test_deficit_foncier_plafonne_a_10700(self):
         base, report = inv._foncier_reel(L=5000, C=30000, I=4000)
@@ -262,7 +277,7 @@ class InvestissementCalculTests(SimpleTestCase):
         self.assertTrue(r.lots_mixtes)
 
     def test_sci_is_et_associes(self):
-        p = inv.exemple()
+        p = sans_travaux(inv.exemple())
         p.associes = [inv.Associe(50, 72000, "couple", 2), inv.Associe(50, 15000, "seul", 0)]
         r = inv.simuler(p)
         sci_ir = next(g for g in r.regimes if g.id == "sci-ir")
@@ -282,6 +297,45 @@ class InvestissementCalculTests(SimpleTestCase):
         self.assertEqual(inv.simuler(p).loyers_mois, 0)  # lots vacants
         p.lots[0].loue, p.lots[0].loyer_actuel = True, 500
         self.assertEqual(inv.simuler(p).loyers_mois, 500)
+
+    def test_chiffrage_quatre_modes_et_imprevus(self):
+        detail = {"imprevus": 10, "lignes": [
+            {"poste": "Électricité", "mode": "m2", "prix": 90},                       # 90 × 24 m² = 2 160
+            {"poste": "Fenêtres", "mode": "unite", "prix": 900, "quantite": 2},       # 1 800
+            {"poste": "Cuisine", "mode": "forfait", "prix": 5000},                    # 5 000
+            {"poste": "Salle de bain", "mode": "devis", "devis": 7400, "prix": 6000},  # 7 400 sur devis
+            {"poste": "Véranda", "mode": "forfait", "prix": 1000, "agrandissement": True},
+        ]}
+        t = inv.total_chiffrage(detail, 24)
+        self.assertEqual(t.estime, 2160 + 1800 + 5000 + 1000)
+        self.assertEqual(t.devis, 7400)
+        self.assertAlmostEqual(t.imprevus, 996)  # 10 % des postes estimés seulement
+        self.assertAlmostEqual(t.total, 9960 + 7400 + 996)
+        self.assertEqual(t.agrandissement, 1000)
+        self.assertEqual(t.par_poste["Salle de bain"], (0, 7400))
+
+    def test_chiffrage_remplace_le_montant_du_lot_et_parties_communes(self):
+        p = inv.exemple()
+        p.lots[0].travaux_detail = {"imprevus": 0, "lignes": [{"poste": "Peinture", "mode": "m2", "prix": 30}]}
+        p.travaux_communs = {"imprevus": 0, "lignes": [{"poste": "Toiture", "mode": "m2", "prix": 150, "quantite": 80},
+                                                       {"poste": "Extension", "mode": "devis", "devis": 6800,
+                                                        "agrandissement": True}]}
+        r = inv.simuler(p)
+        communs = 12000 + 6800
+        self.assertEqual(r.travaux_communs, communs)
+        self.assertEqual(r.travaux, 30 * 24 + 27000 + 29000 + communs)
+        self.assertEqual(r.travaux_deductibles, r.travaux - 6800)
+        # parties communes réparties au prorata de la surface
+        self.assertAlmostEqual(r.lignes_lots[0].travaux, 720 + communs * 24 / 68)
+        self.assertAlmostEqual(sum(l.travaux for l in r.lignes_lots), r.travaux)
+        self.assertEqual(r.recap_travaux["Toiture"], (12000, 0))
+        self.assertEqual(r.recap_travaux["Saisi sans détail"], (56000, 0))
+        self.assertAlmostEqual(r.travaux_sur_devis, 6800)
+
+    def test_chiffrage_par_defaut_selon_le_niveau(self):
+        leger, lourd = inv.chiffrage_par_defaut(niveau=0), inv.chiffrage_par_defaut(niveau=2)
+        self.assertLess(inv.total_chiffrage(leger, 30).total, inv.total_chiffrage(lourd, 30).total)
+        self.assertEqual(inv.chiffrage_par_defaut(communs=True)["lignes"][0]["poste"], "Toiture")
 
     def test_aller_retour_json(self):
         p = inv.exemple()
@@ -488,3 +542,109 @@ class InvestissementPagesTests(TestCase):
         with mock.patch.object(dvf, "prix_du_marche", side_effect=dvf.DvfIndisponible("Adresse introuvable")):
             r = self.client.get(reverse("simulateurs:rentabilite_dvf"), {"adresse": "nulle part"})
         self.assertEqual(r.json(), {"erreur": "Adresse introuvable"})
+
+
+class ChiffrageTravauxPagesTests(TestCase):
+    """Devis joints au chiffrage des travaux : envoi, droits, purge, copie."""
+
+    def setUp(self):
+        import tempfile
+
+        self.dossier = tempfile.mkdtemp()
+        self.reglage = self.settings(PRIVE_ROOT=self.dossier)
+        self.reglage.enable()
+        self.admin = User.objects.create_superuser("admin", "a@x.fr", "pw")
+        self.s = SimulationInvestissement.objects.create(
+            nom="Projet", donnees=lire_parametres(InvestissementPagesTests.DONNEES).en_dict())
+
+    def tearDown(self):
+        import shutil
+
+        self.reglage.disable()
+        shutil.rmtree(self.dossier, ignore_errors=True)
+
+    def envoyer(self, nom="devis.pdf", contenu=b"%PDF-1.4 test"):
+        from django.core.files.uploadedfile import SimpleUploadedFile
+
+        return self.client.post(reverse("simulateurs:simulation_devis", args=[self.s.pk]),
+                                {"fichier": SimpleUploadedFile(nom, contenu)})
+
+    def donnees_avec_piece(self, piece):
+        import json
+
+        ligne = {"poste": "Électricité", "mode": "devis", "devis": 7200, "entreprise": "Elec Pro",
+                 "piece": piece.pk, "piece_nom": piece.nom, "piece_url": piece.url}
+        return {**InvestissementPagesTests.DONNEES, "simulation": self.s.pk,
+                "lot-0-travaux_detail": json.dumps({"imprevus": 10, "lignes": [ligne]})}
+
+    def test_envoi_du_devis_et_validation(self):
+        from simulateurs.models import DevisTravaux
+
+        self.assertEqual(self.envoyer().status_code, 302)  # anonyme : connexion demandée
+        self.client.force_login(self.admin)
+        r = self.envoyer()
+        self.assertEqual(r.status_code, 200)
+        d = DevisTravaux.objects.get(pk=r.json()["id"])
+        self.assertTrue(r.json()["url"].startswith("/prive/devis-travaux/"))
+        self.assertTrue(d.fichier.storage.exists(d.fichier.name))
+        self.assertEqual(self.envoyer("virus.exe").status_code, 400)
+        self.assertEqual(self.client.post(reverse("simulateurs:simulation_devis", args=[self.s.pk])).status_code, 400)
+        self.assertEqual(DevisTravaux.objects.count(), 1)
+
+    def test_droit_consultation_ne_peut_pas_joindre(self):
+        from patrimoine import droits
+
+        u = User.objects.create_user("lecteur", password="pw", is_staff=True)
+        droits.appliquer(u, {"investissement": droits.CONSULTATION})
+        self.client.force_login(u)
+        self.assertEqual(self.envoyer().status_code, 403)
+
+    def test_resultats_et_purge_a_l_enregistrement(self):
+        from simulateurs.models import DevisTravaux
+
+        self.client.force_login(self.admin)
+        gardee = DevisTravaux.objects.get(pk=self.envoyer().json()["id"])
+        orpheline = DevisTravaux.objects.get(pk=self.envoyer("autre.pdf").json()["id"])
+        self.client.post(reverse("simulateurs:simulation_enregistrer"), self.donnees_avec_piece(gardee))
+        self.assertEqual(list(self.s.devis.values_list("pk", flat=True)), [gardee.pk])
+        self.assertFalse(orpheline.fichier.storage.exists(orpheline.fichier.name))
+        r = self.client.get(self.s.get_absolute_url())
+        self.assertContains(r, "Travaux par corps de métier")
+        self.assertContains(r, "Elec Pro")
+        self.assertContains(r, gardee.url)
+        # le fichier est servi aux personnes autorisées
+        self.assertEqual(self.client.get(gardee.url).status_code, 200)
+
+    def test_copie_garde_ses_devis(self):
+        from simulateurs.models import DevisTravaux
+
+        self.client.force_login(self.admin)
+        d = DevisTravaux.objects.get(pk=self.envoyer().json()["id"])
+        self.client.post(reverse("simulateurs:simulation_enregistrer"), self.donnees_avec_piece(d))
+        self.client.post(reverse("simulateurs:simulation_dupliquer", args=[self.s.pk]))
+        copie = SimulationInvestissement.objects.exclude(pk=self.s.pk).get()
+        d2 = copie.devis.get()
+        self.assertEqual(copie.donnees["lots"][0]["travaux_detail"]["lignes"][0]["piece"], d2.pk)
+        # supprimer l'original ne retire pas le fichier partagé avec la copie
+        self.client.post(reverse("simulateurs:simulation_supprimer", args=[self.s.pk]))
+        self.assertTrue(d2.fichier.storage.exists(d2.fichier.name))
+        self.client.post(reverse("simulateurs:simulation_supprimer", args=[copie.pk]))
+        self.assertFalse(d2.fichier.storage.exists(d2.fichier.name))
+
+
+class LectureChiffrageTests(SimpleTestCase):
+    def test_json_nettoye(self):
+        import json
+
+        from simulateurs.forms import lire_chiffrage
+
+        self.assertIsNone(lire_chiffrage(""))
+        self.assertIsNone(lire_chiffrage("pas du json"))
+        self.assertIsNone(lire_chiffrage(json.dumps({"lignes": "x"})))
+        c = lire_chiffrage(json.dumps({"imprevus": 250, "lignes": [
+            {"poste": "Sols", "mode": "pirate", "prix": -5, "piece": "3", "piece_url": "https://ailleurs.fr/x.pdf"},
+        ] + [{"poste": "P", "mode": "forfait", "prix": 1}] * 50}))
+        self.assertEqual(c["imprevus"], 100)
+        self.assertEqual(len(c["lignes"]), 40)
+        l = c["lignes"][0]
+        self.assertEqual((l["mode"], l["prix"], l["piece"], l["piece_url"]), ("forfait", 0, None, ""))

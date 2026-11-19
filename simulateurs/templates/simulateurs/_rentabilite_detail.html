@@ -33,12 +33,34 @@
       <tbody>{% for l in r.lignes_lots %}
         <tr><td>{{ l.numero|stringformat:"03d" }}</td><td>{{ l.lot.nom_type }} {% if l.lot.meuble %}meublé{% else %}nu{% endif %}{% if l.lot.loue %} · loué{% endif %}</td>
           <td class="m">{{ l.lot.surface|saisie }} m²</td><td class="m">{{ l.loyer|euros }}</td><td class="m">{{ l.loyer_m2|euros:1 }}</td>
-          <td class="m">{{ l.part_prix|euros }}</td><td class="m">{{ l.lot.travaux|euros }}</td><td class="m">{{ l.lot.meubles|euros }}</td>
+          <td class="m">{{ l.part_prix|euros }}</td><td class="m">{{ l.travaux|euros }}</td><td class="m">{{ l.lot.meubles|euros }}</td>
           <td class="m">{{ l.prix_revient|euros }}</td><td class="m">{{ l.prix_revient_m2|euros }}</td><td class="m">{{ l.renta_brute|pct }}</td></tr>
       {% endfor %}</tbody>
     </table></div>
-    <p class="note">Prix d'achat réparti au prorata de la surface. Prix de revient = part du prix + travaux + meubles (hors frais).</p>
+    <p class="note">Prix d'achat réparti au prorata de la surface. Prix de revient = part du prix + travaux + meubles (hors frais).{% if r.travaux_communs %} Les travaux des parties communes ({{ r.travaux_communs|euros }}) sont répartis au prorata de la surface.{% endif %}</p>
   </div>
+
+  {% if r.recap_travaux %}
+  <div class="carte">
+    <h2>Travaux par corps de métier</h2>
+    <div class="defile"><table>
+      <thead><tr><th>Poste</th><th class="m">Estimé</th><th class="m">Sur devis</th><th class="m">Total</th><th class="m">Part</th></tr></thead>
+      <tbody>{% for poste, e, d, t, part in r.recap_lignes %}
+        <tr><td>{{ poste }}</td><td class="m">{% if e %}{{ e|euros }}{% else %}–{% endif %}</td><td class="m">{% if d %}{{ d|euros }}{% else %}–{% endif %}</td>
+          <td class="m">{{ t|euros }}</td><td class="m">{{ part|pct }}</td></tr>
+      {% endfor %}
+        <tr class="total"><td>Total travaux</td><td class="m">{{ r.travaux_estimes|euros }}</td><td class="m">{{ r.travaux_sur_devis|euros }}</td><td class="m">{{ r.travaux|euros }}</td><td class="m">{{ r.part_travaux_devis|pct:0 }} sur devis</td></tr>
+      </tbody>
+    </table></div>
+    {% if r.lignes_devis %}
+    <h3>Devis retenus</h3>
+    <ul class="liste-devis">{% for d in r.lignes_devis %}
+      <li>{{ d.lieu }} · {{ d.poste }}{% if d.entreprise %} · {{ d.entreprise }}{% endif %} : <strong>{{ d.montant|euros }}</strong>{% if d.piece_url %} · <a href="{{ d.piece_url }}" target="_blank" rel="noopener">{{ d.piece_nom|default:"voir le devis" }}</a>{% endif %}</li>
+    {% endfor %}</ul>
+    {% endif %}
+    <p class="note">Les imprévus s'appliquent aux postes estimés seulement.{% if r.travaux_deductibles and r.travaux_deductibles != r.travaux %} Hors agrandissement, {{ r.travaux_deductibles|euros }} sont déductibles en location nue.{% endif %}</p>
+  </div>
+  {% endif %}
 
   <div class="deux-colonnes-egales">
     <div class="carte">

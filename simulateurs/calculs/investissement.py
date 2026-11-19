@@ -50,6 +50,100 @@ COMPOSANTS = [
 ]
 
 
+# Chiffrage des travaux : (poste, mode, unité, coût selon le niveau [rafraîchissement, rénovation, lourde], quantité)
+# Valeurs de départ indicatives (TTC), à ajuster ; mode : m2 (coût × surface du lot), unite, forfait, devis.
+NIVEAUX_RENOVATION = ["Rafraîchissement", "Rénovation", "Rénovation lourde"]
+MODES_TRAVAUX = [("m2", "au m²"), ("unite", "à l'unité"), ("forfait", "forfait"), ("devis", "devis")]
+POSTES_LOT = [
+    ("Électricité", "m2", "€/m²", (20, 90, 130), None),
+    ("Plomberie", "m2", "€/m²", (0, 40, 70), None),
+    ("Placo, cloisons, isolation", "m2", "€/m²", (0, 45, 90), None),
+    ("Peinture", "m2", "€/m²", (25, 35, 40), None),
+    ("Sols", "m2", "€/m²", (20, 50, 70), None),
+    ("Menuiseries (fenêtres)", "unite", "€/fenêtre", (0, 900, 900), 2),
+    ("Chauffage, eau chaude", "forfait", "€", (0, 2500, 4500), None),
+    ("Cuisine", "forfait", "€", (1500, 5000, 8000), None),
+    ("Salle de bain", "forfait", "€", (1500, 6000, 9000), None),
+]
+POSTES_COMMUNS = [
+    ("Toiture", "m2", "€/m² de toit", (0, 150, 250), 80),
+    ("Façade", "m2", "€/m² de façade", (0, 80, 120), 120),
+    ("Cage d'escalier, parties communes", "forfait", "€", (1500, 6000, 12000), None),
+    ("Réseaux (eau, électricité)", "forfait", "€", (0, 4000, 8000), None),
+]
+IMPREVUS_PAR_DEFAUT = 10
+
+
+def chiffrage_par_defaut(communs=False, niveau=1):
+    """Lignes de départ d'un chiffrage (un lot, ou les parties communes)."""
+    postes = POSTES_COMMUNS if communs else POSTES_LOT
+    return {"imprevus": IMPREVUS_PAR_DEFAUT, "lignes": [
+        {"poste": nom, "mode": mode, "unite": unite, "prix": prix[niveau], "quantite": qte, "devis": 0, "entreprise": "",
+         "agrandissement": False, "piece": None} for nom, mode, unite, prix, qte in postes]}
+
+
+@dataclass
+class TotalTravaux:
+    devis: float = 0
+    estime: float = 0
+    imprevus: float = 0
+    agrandissement: float = 0     # part non déductible en location nue (agrandissement, construction)
+    par_poste: dict = field(default_factory=dict)  # poste → (estimé, sur devis)
+
+    @property
+    def total(self):
+        return self.devis + self.estime + self.imprevus
+
+    @property
+    def part_devis(self):
+        return self.devis / self.total if self.total else 0
+
+
+def _f(v):
+    try:
+        return max(0.0, float(v or 0))
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def montant_ligne(ligne, surface):
+    mode = ligne.get("mode")
+    if mode == "devis":
+        return _f(ligne.get("devis"))
+    if mode == "m2":
+        qte = ligne.get("quantite")
+        return _f(ligne.get("prix")) * (_f(qte) if qte not in (None, "") else _f(surface))
+    if mode == "unite":
+        return _f(ligne.get("prix")) * _f(ligne.get("quantite"))
+    return _f(ligne.get("prix"))
+
+
+def total_chiffrage(detail, surface=0):
+    """Total d'un chiffrage : postes sur devis, postes estimés, imprévus (sur les postes estimés seulement)."""
+    t = TotalTravaux()
+    if not detail:
+        return t
+    for ligne in detail.get("lignes") or []:
+        m = montant_ligne(ligne, surface)
+        if not m:
+            continue
+        poste = (ligne.get("poste") or "Autre").strip()[:80] or "Autre"
+        est, dev = t.par_poste.get(poste, (0.0, 0.0))
+        if ligne.get("mode") == "devis":
+            t.devis += m
+            dev += m
+        else:
+            t.estime += m
+            est += m
+        t.par_poste[poste] = (est, dev)
+        if ligne.get("agrandissement"):
+            t.agrandissement += m
+    t.imprevus = t.estime * _f(detail.get("imprevus")) / 100
+    if t.imprevus:
+        t.par_poste["Imprévus"] = (t.imprevus, 0.0)
+    return t
+
+
 # ---------------------------------------------------------------------------------------------------------------------
 # Saisie
 # ---------------------------------------------------------------------------------------------------------------------
@@ -64,14 +158,23 @@ class Lot:
     loyer_actuel: float = 0       # hors charges, par mois (si le lot est loué)
     loyer_cible: float = 0        # hors charges, par mois (loyer visé après achat / travaux)
     charges: float = 0            # charges récupérables, par mois
-    travaux: float = 0
+    travaux: float = 0            # montant saisi directement (sans chiffrage détaillé)
     meubles: float = 0
     fin_bail: str = ""
     note: str = ""
+    travaux_detail: dict | None = None  # chiffrage par corps de métier (remplace `travaux`)
 
     @property
     def nom_type(self):
         return NOMS_TYPES.get(self.type, self.type)
+
+    @property
+    def chiffrage(self):
+        return total_chiffrage(self.travaux_detail, self.surface) if self.travaux_detail else None
+
+    @property
+    def montant_travaux(self):
+        return self.chiffrage.total if self.travaux_detail else (self.travaux or 0)
 
 
 @dataclass
@@ -91,6 +194,8 @@ class Parametres:
     lots: list = field(default_factory=list)
     scenario: str = "cible"       # "cible" (loyers visés) ou "actuel" (loyers en place)
     vacance: float = 0            # % de vacance locative
+    travaux_communs: dict | None = None  # chiffrage des parties communes et de la toiture
+    niveau_renovation: int = 1
     # achat
     prix_affiche: float = 0
     prix: float = 0
@@ -243,6 +348,7 @@ class LigneLot:
     loyer: float
     part_prix: float
     prix_revient: float
+    travaux: float = 0            # travaux du lot + sa part des parties communes
 
     @property
     def loyer_m2(self):
@@ -282,6 +388,25 @@ class Resultat:
     cash_flow_avant_impot: float  # par mois
     regimes: list
     lignes_lots: list
+    travaux_communs: float = 0
+    travaux_deductibles: float = 0   # en location nue, l'année des travaux
+    recap_travaux: dict = field(default_factory=dict)  # corps de métier → (estimé, sur devis)
+    travaux_sur_devis: float = 0
+    lignes_devis: list = field(default_factory=list)  # postes chiffrés sur devis, avec le lien de la pièce jointe
+
+    @property
+    def recap_lignes(self):
+        """[(poste, estimé, sur devis, total, part du total)] pour l'affichage."""
+        return [(poste, e, d, e + d, (e + d) / self.travaux if self.travaux else 0)
+                for poste, (e, d) in self.recap_travaux.items()]
+
+    @property
+    def travaux_estimes(self):
+        return self.travaux - self.travaux_sur_devis
+
+    @property
+    def part_travaux_devis(self):
+        return self.travaux_sur_devis / self.travaux if self.travaux else 0
 
     @property
     def prix(self):
@@ -352,7 +477,12 @@ def simuler(p, prix=None):
     surface = sum(l.surface or 0 for l in lots)
     loyers_mois = sum(loyer_lot(l, p.scenario) for l in lots)
     L = loyers_mois * 12 * (1 - (p.vacance or 0) / 100)
-    travaux = sum(l.travaux or 0 for l in lots)
+    communs = total_chiffrage(p.travaux_communs) if p.travaux_communs else None
+    travaux_communs = communs.total if communs else 0.0
+    travaux = sum(l.montant_travaux for l in lots) + travaux_communs
+    # travaux déductibles en location nue (année des travaux) : tout sauf l'agrandissement
+    agrandissement = sum(l.chiffrage.agrandissement for l in lots if l.travaux_detail) + (communs.agrandissement if communs else 0)
+    travaux_deductibles = max(0.0, travaux - agrandissement)
     meubles = sum(l.meubles or 0 for l in lots)
     f_not = frais_notaire(p.prix, p.departement)
     f_banc = p.prix * (p.frais_bancaires_pct or 0) / 100
@@ -406,18 +536,43 @@ def simuler(p, prix=None):
         amort[f"Meubles (sur {p.duree_meubles} ans)"] = meubles / max(1, p.duree_meubles)
     A = sum(amort.values())
 
-    regimes = _regimes(p, L, C, I, A, cf_avant, total, lots)
+    regimes = _regimes(p, L, C, I, A, cf_avant, total, lots, travaux_deductibles)
 
     lignes = []
     for i, l in enumerate(lots, 1):
-        part = p.prix * (l.surface or 0) / surface if surface else 0
-        lignes.append(LigneLot(i, l, loyer_lot(l, p.scenario), part, part + (l.travaux or 0) + (l.meubles or 0)))
+        prorata = (l.surface or 0) / surface if surface else 0
+        part = p.prix * prorata
+        lignes.append(LigneLot(i, l, loyer_lot(l, p.scenario), part,
+                               part + l.montant_travaux + travaux_communs * prorata + (l.meubles or 0),
+                               l.montant_travaux + travaux_communs * prorata))
+
+    # récapitulatif des travaux par corps de métier
+    recap = {}
+    for chiffrage in [l.chiffrage for l in lots if l.travaux_detail] + ([communs] if communs else []):
+        for poste, (est, dev) in chiffrage.par_poste.items():
+            e, d = recap.get(poste, (0.0, 0.0))
+            recap[poste] = (e + est, d + dev)
+    sans_detail = sum(l.travaux or 0 for l in lots if not l.travaux_detail)
+    if sans_detail and recap:
+        e, d = recap.get("Saisi sans détail", (0.0, 0.0))
+        recap["Saisi sans détail"] = (e + sans_detail, d)
+    devis_total = sum(d for _, d in recap.values())
+    lignes_devis = []
+    sources = [(f"Lot {i + 1:03d}", l.travaux_detail) for i, l in enumerate(lots)] + [("Parties communes", p.travaux_communs)]
+    for lieu, detail in sources:
+        for ligne in (detail or {}).get("lignes") or []:
+            if ligne.get("mode") == "devis" and _f(ligne.get("devis")):
+                lignes_devis.append({"lieu": lieu, "poste": ligne.get("poste") or "Autre",
+                                     "entreprise": ligne.get("entreprise") or "", "montant": _f(ligne.get("devis")),
+                                     "piece_url": ligne.get("piece_url") or "", "piece_nom": ligne.get("piece_nom") or ""})
 
     return Resultat(p=p, surface=surface, loyers_mois=loyers_mois, loyers_an=L, travaux=travaux, meubles=meubles,
                     frais_notaire=f_not, frais_bancaires=f_banc, garantie=garantie, cout_total=total, apport=apport,
                     emprunt=emprunt, mensualite=mens, assurance_mois=ass_mois, annees=annees, interets_an1=I,
                     charges=charges, charges_total=C, amortissements=amort, amortissements_total=A,
-                    cash_flow_avant_impot=cf_avant, regimes=regimes, lignes_lots=lignes)
+                    cash_flow_avant_impot=cf_avant, regimes=regimes, lignes_lots=lignes, travaux_communs=travaux_communs,
+                    travaux_deductibles=travaux_deductibles, recap_travaux=recap, travaux_sur_devis=devis_total,
+                    lignes_devis=lignes_devis)
 
 
 def _foncier_reel(L, C, I):
@@ -441,7 +596,8 @@ def _bic_reel(L, C, I, A):
     return avant - deduits, deduits, A - deduits
 
 
-def _regimes(p, L, C, I, A, cf_avant, total, lots):
+def _regimes(p, L, C, I, A, cf_avant, total, lots, T=0.0):
+    """T : travaux déductibles en location nue (comptés l'année des travaux, année 1 de la simulation)."""
     R, sit, enf, ps = p.revenu_imposable or 0, p.situation, p.enfants or 0, p.taux_ps
     sup = lambda base, base_ps=None: impot_en_plus(R, sit, enf, base, base if base_ps is None else base_ps, ps)
     liste = []
@@ -451,8 +607,9 @@ def _regimes(p, L, C, I, A, cf_avant, total, lots):
     r.impot = sup(r.base)
     liste.append(r)
 
-    base_nu, report_nu = _foncier_reel(L, C, I)
-    r = Regime("nu-reel", "Location nue · réel", base=base_nu, report=report_nu)
+    base_nu, report_nu = _foncier_reel(L, C + T, I)
+    note_travaux = f"Travaux déduits l'année 1 : {T:,.0f} €".replace(",", "\u202f") if T else ""
+    r = Regime("nu-reel", "Location nue · réel", base=base_nu, report=report_nu, detail=note_travaux)
     r.impot = sup(base_nu)
     liste.append(r)
 
@@ -468,7 +625,7 @@ def _regimes(p, L, C, I, A, cf_avant, total, lots):
 
     # SCI à l'IR : résultat foncier réparti entre associés selon leurs parts
     associes = [a for a in p.associes if (a.parts or 0) > 0] or [Associe(100, R, sit, enf)]
-    impot_sci, details = 0.0, []
+    impot_sci, details = 0.0, [note_travaux] if note_travaux else []
     for a in associes:
         part = (a.parts or 0) / 100
         base_a = max(base_nu * part, -PLAFOND_DEFICIT_FONCIER)
@@ -495,7 +652,9 @@ def _regimes(p, L, C, I, A, cf_avant, total, lots):
         loy = sum(loyer_lot(l, p.scenario) for l in lots) or 1
         s_m = sum(loyer_lot(l, p.scenario) for l in lots if l.meuble) / loy
         s_n = 1 - s_m
-        b_n, rep_n = _foncier_reel(L * s_n, C * s_n, I * s_n)
+        surf = sum(l.surface or 0 for l in lots) or 1
+        t_nu = T * sum(l.surface or 0 for l in lots if not l.meuble) / surf
+        b_n, rep_n = _foncier_reel(L * s_n, C * s_n + t_nu, I * s_n)
         b_m, ded_m, rep_m = _bic_reel(L * s_m, C * s_m, I * s_m, A * s_m)
         r = Regime("mixte", "Votre répartition : nus au réel + meublés en LMNP réel", base=b_n + b_m, amortissements=ded_m,
                    report=rep_n + rep_m, detail=f"{s_n:.0%} des loyers en location nue, {s_m:.0%} en meublé".replace("%", " %"))

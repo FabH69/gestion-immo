@@ -162,6 +162,39 @@ def departement_de(adresse):
     return cp[:2]
 
 
+MODES_VALIDES = {m for m, _ in inv.MODES_TRAVAUX}
+
+
+def lire_chiffrage(texte):
+    """Chiffrage détaillé envoyé par la page (JSON) → dict propre, ou None (pas de détail / illisible)."""
+    import json
+
+    if not texte:
+        return None
+    try:
+        brut = json.loads(texte)
+    except (TypeError, ValueError):
+        return None
+    if not isinstance(brut, dict) or not isinstance(brut.get("lignes"), list):
+        return None
+    lignes = []
+    for l in brut["lignes"][:40]:
+        if not isinstance(l, dict):
+            continue
+        mode = l.get("mode") if l.get("mode") in MODES_VALIDES else "forfait"
+        qte = l.get("quantite")
+        piece = l.get("piece")
+        lignes.append({
+            "poste": str(l.get("poste") or "Autre")[:80], "mode": mode, "unite": str(l.get("unite") or "")[:20],
+            "prix": max(0.0, nombre(l.get("prix"))), "quantite": None if qte in (None, "") else max(0.0, nombre(qte)),
+            "devis": max(0.0, nombre(l.get("devis"))), "entreprise": str(l.get("entreprise") or "")[:120],
+            "agrandissement": bool(l.get("agrandissement")),
+            "piece": piece if isinstance(piece, int) else None, "piece_nom": str(l.get("piece_nom") or "")[:120],
+            "piece_url": url if (url := str(l.get("piece_url") or "")).startswith("/prive/devis-travaux/") else "",
+        })
+    return {"imprevus": min(100.0, max(0.0, nombre(brut.get("imprevus"), inv.IMPREVUS_PAR_DEFAUT))), "lignes": lignes}
+
+
 def lire_lots(data):
     n = entier(data.get("nb_lots"), 1, 1, inv.MAX_LOTS)
     lots = []
@@ -172,7 +205,8 @@ def lire_lots(data):
             type=type_ if type_ in inv.NOMS_TYPES else "t2", surface=nombre(g("surface")), etage=g("etage", "RDC")[:20],
             meuble=g("meuble", "") in ("1", "on", "true"), loue=g("loue", "") in ("1", "on", "true"),
             loyer_actuel=nombre(g("loyer_actuel")), loyer_cible=nombre(g("loyer_cible")), charges=nombre(g("charges")),
-            travaux=nombre(g("travaux")), meubles=nombre(g("meubles")), fin_bail=g("fin_bail")[:10], note=g("note")[:200]))
+            travaux=nombre(g("travaux")), meubles=nombre(g("meubles")), fin_bail=g("fin_bail")[:10], note=g("note")[:200],
+            travaux_detail=lire_chiffrage(g("travaux_detail"))))
     return lots
 
 
@@ -194,6 +228,8 @@ def lire_parametres(data):
     if not data.get("departement"):
         p.departement = departement_de(p.adresse) or defaut.departement
     p.scenario = "actuel" if data.get("scenario") == "actuel" else "cible"
+    p.travaux_communs = lire_chiffrage(data.get("travaux_communs"))
+    p.niveau_renovation = entier(data.get("niveau_renovation"), 1, 0, 2)
     p.regime = (data.get("regime") or "")[:20]
     p.associes = []
     for i in range(inv.MAX_ASSOCIES):

@@ -36,6 +36,25 @@
   table.saisie th { white-space: nowrap; }
   table.saisie select { min-width: 92px; }
   table.saisie input[type=checkbox] { accent-color: var(--primaire); width: 17px; height: 17px; }
+  .cellule-travaux { min-width: 96px; }
+  .cellule-travaux .lien-detail { display: block; margin-top: 2px; }
+  .cellule-travaux input[data-travaux] { min-width: 80px; }
+  .cellule-travaux input[readonly] { background: var(--teinte); }
+  .lien-detail, .lien-retirer { background: none; color: var(--primaire); padding: 2px 4px; font-size: .8rem; font-weight: 600; text-decoration: underline; border-radius: 4px; }
+  .lien-retirer { color: var(--doux); }
+  .travaux-entete { display: flex; gap: 18px; flex-wrap: wrap; align-items: flex-start; }
+  .travaux-entete .champ { min-width: 220px; }
+  .travaux-pied { display: flex; gap: 14px; align-items: center; flex-wrap: wrap; margin: 10px 0; }
+  .champ-imprevus { font-size: .88rem; display: flex; align-items: center; gap: 6px; }
+  .champ-imprevus input { width: 64px; padding: 6px 8px; border: 1px solid var(--bord); border-radius: 8px; font: inherit; }
+  .encart-travaux { background: var(--teinte); border-radius: 10px; padding: 12px 14px; margin: 8px 0; }
+  .encart-travaux p { margin: 0 0 8px; }
+  #t-table td { vertical-align: top; }
+  #t-table .unite { color: var(--doux); font-size: .74rem; }
+  #t-table input[type=file] { font-size: .76rem; max-width: 170px; }
+  #t-table .piece a { font-size: .8rem; }
+  .jauge { height: 8px; background: var(--teinte); border-radius: 99px; overflow: hidden; margin: 2px 0 8px; }
+  .jauge span { display: block; height: 100%; background: #1e7a4a; width: 0; }
   .retirer { background: none; color: var(--doux); padding: 4px 8px; font-size: 1.1rem; }
   .retirer:hover { background: var(--teinte); color: var(--erreur); }
   .petit { padding: 8px 14px; font-size: .88rem; }
@@ -62,6 +81,7 @@
   .chargement { opacity: .55; transition: opacity .2s; }
   @media (max-width: 960px) { .mise-en-page { grid-template-columns: minmax(0, 1fr); } .resume { position: static; order: -1; } }
   @media print { .barre, .actions, #ecran-parametres { display: none !important; } #ecran-resultats { display: block !important; } }
+  .liste-devis { margin: 6px 0 0; padding-left: 18px; font-size: .92rem; }
 </style>{% endblock %}
 {% block contenu %}
 <div class="ecran-titre">
@@ -112,7 +132,9 @@
               <td><input type="text" inputmode="decimal" name="lot-{{ forloop.counter0 }}-loyer_actuel" value="{{ l.loyer_actuel|saisie }}" aria-label="Loyer actuel" data-si-loue></td>
               <td><input type="text" inputmode="decimal" name="lot-{{ forloop.counter0 }}-loyer_cible" value="{{ l.loyer_cible|saisie }}" aria-label="Loyer cible"></td>
               <td><input type="text" inputmode="decimal" name="lot-{{ forloop.counter0 }}-charges" value="{{ l.charges|saisie }}" aria-label="Charges récupérables"></td>
-              <td><input type="text" inputmode="decimal" name="lot-{{ forloop.counter0 }}-travaux" value="{{ l.travaux|saisie }}" aria-label="Travaux"></td>
+              <td class="cellule-travaux"><input type="text" inputmode="decimal" name="lot-{{ forloop.counter0 }}-travaux" value="{% if l.travaux_detail %}{{ l.montant_travaux|floatformat:0 }}{% else %}{{ l.travaux|saisie }}{% endif %}" aria-label="Travaux" data-travaux{% if l.travaux_detail %} readonly title="Chiffré en détail"{% endif %}>
+                <input type="hidden" name="lot-{{ forloop.counter0 }}-travaux_detail" value="{{ lots_detail_json|index:forloop.counter0 }}" data-detail>
+                <button type="button" class="lien-detail" data-detailler>{% if l.travaux_detail %}Détail{% else %}Détailler{% endif %}</button></td>
               <td><input type="text" inputmode="decimal" name="lot-{{ forloop.counter0 }}-meubles" value="{{ l.meubles|saisie }}" aria-label="Meubles"></td>
               <td><input type="text" name="lot-{{ forloop.counter0 }}-fin_bail" value="{{ l.fin_bail }}" placeholder="jj/mm/aaaa" aria-label="Fin de bail" data-si-loue></td>
               <td><button type="button" class="retirer" data-retirer title="Retirer ce lot" aria-label="Retirer ce lot">×</button></td>
@@ -121,6 +143,29 @@
         </table></div>
         <button type="button" class="bouton secondaire petit" id="ajouter-lot" style="margin-top:10px">+ Ajouter un lot</button>
         <p class="aide">Loyer cible : le loyer visé après l'achat (et les travaux). Le choix « Loyers actuels / cibles » en haut de page dit lequel sert au calcul.</p>
+      </details>
+
+      <details class="bloc" id="bloc-travaux"{% if p.travaux_communs or r.recap_travaux %} open{% endif %}><summary>Chiffrage des travaux <span class="sous">par corps de métier, au m², à l'unité, au forfait ou sur devis</span></summary>
+        <input type="hidden" name="travaux_communs" id="travaux_communs" value="{{ travaux_communs_json }}">
+        <input type="hidden" name="niveau_renovation" id="niveau_renovation" value="{{ p.niveau_renovation }}">
+        <div class="travaux-entete">
+          <div class="champ"><label for="t-cible">Chiffrer</label><select id="t-cible"></select></div>
+          <div class="champ"><span class="titre">Niveau de rénovation</span>
+            <div class="segment" id="t-niveaux" role="radiogroup" aria-label="Niveau de rénovation">{% for n in travaux_config.niveaux %}<label><input type="radio" name="t-niveau" value="{{ forloop.counter0 }}"{% if forloop.counter0 == p.niveau_renovation %} checked{% endif %}>{{ n }}</label>{% endfor %}</div>
+            <div class="aide">Pré-remplit les coûts moyens des postes estimés.</div></div>
+        </div>
+        <div id="t-vide" class="encart-travaux" hidden><p>Ce lot a un montant global de travaux. Chiffrez-le poste par poste pour plus de précision.</p><button type="button" class="bouton petit" id="t-commencer">Chiffrer en détail</button></div>
+        <div id="t-panneau" hidden>
+          <div class="defile"><table class="saisie" id="t-table"></table></div>
+          <div class="travaux-pied">
+            <button type="button" class="bouton secondaire petit" id="t-ajouter">+ Ajouter un poste</button>
+            <label class="champ-imprevus">Imprévus <input type="text" inputmode="decimal" id="t-imprevus" aria-label="Imprévus en %"> % des postes estimés</label>
+            <button type="button" class="lien-retirer" id="t-abandonner">Revenir à un montant global</button>
+          </div>
+          <div class="tuiles" id="t-totaux"></div>
+          <div class="jauge" aria-hidden="true"><span id="t-jauge"></span></div>
+          <p class="aide">Les coûts moyens sont des valeurs de départ indicatives : ajustez-les. Cochez « Agrandissement » pour les travaux qui créent de la surface : en location nue, ils ne se déduisent pas des loyers.{% if not travaux_config.peut_joindre %} Enregistrez la simulation pour joindre les devis (PDF ou photo).{% endif %}</p>
+        </div>
       </details>
 
       {% for code, titre, sous, champs in blocs %}
@@ -184,6 +229,7 @@
     </div>
   </section>
   {{ courbe|json_script:"courbe-donnees" }}
+  {{ travaux_config|json_script:"travaux-config" }}
 
   <div class="actions">
     <noscript><button type="submit">Calculer</button></noscript>
@@ -233,12 +279,15 @@
     });
     $("nb_lots").value = lignes.length;
     $("ajouter-lot").hidden = lignes.length >= max;
+    if (window.chiffrageCibles) window.chiffrageCibles();
   }
   $("ajouter-lot").addEventListener("click", () => {
     const lignes = corps.querySelectorAll("tr[data-ligne]");
     const copie = lignes[lignes.length - 1].cloneNode(true);
     copie.querySelectorAll("select").forEach((s, k) => { s.selectedIndex = lignes[lignes.length - 1].querySelectorAll("select")[k].selectedIndex; });
-    copie.querySelectorAll("input[name$=-travaux], input[name$=-meubles], input[name$=-loyer_actuel], input[name$=-fin_bail]").forEach((i) => { i.value = ""; });
+    copie.querySelectorAll("input[name$=-travaux], input[name$=-meubles], input[name$=-loyer_actuel], input[name$=-fin_bail], [data-detail]").forEach((i) => { i.value = ""; });
+    const tr = copie.querySelector("[data-travaux]"); tr.readOnly = false; tr.removeAttribute("title");
+    copie.querySelector("[data-detailler]").textContent = "Détailler";
     corps.appendChild(copie);
     renumeroter(); recalculer();
   });
@@ -250,6 +299,154 @@
   });
   corps.addEventListener("change", (e) => { if (e.target.matches("[data-loue]")) renumeroter(); });
   renumeroter();
+
+  /* ---------- chiffrage des travaux ---------- */
+  const CFG = JSON.parse($("travaux-config").textContent);
+  const csrf = form.querySelector("[name=csrfmiddlewaretoken]").value;
+  const lignesLots = () => Array.from(corps.querySelectorAll("tr[data-ligne]"));
+  const nb = (v) => { const x = parseFloat(String(v ?? "").replace(/\s/g, "").replace(",", ".")); return isFinite(x) && x > 0 ? x : 0; };
+  const champDetail = (c) => c === "pc" ? $("travaux_communs") : lignesLots()[+c]?.querySelector("[data-detail]");
+  const surfaceDe = (c) => c === "pc" ? 0 : nb(lignesLots()[+c]?.querySelector("[name$=-surface]").value);
+  function lire(c) { const ch = champDetail(c); try { return ch && ch.value ? JSON.parse(ch.value) : null; } catch (e) { return null; } }
+  function montantLigne(l, surf) {
+    if (l.mode === "devis") return nb(l.devis);
+    if (l.mode === "m2") return nb(l.prix) * (l.quantite !== null && l.quantite !== undefined && l.quantite !== "" ? nb(l.quantite) : surf);
+    if (l.mode === "unite") return nb(l.prix) * nb(l.quantite);
+    return nb(l.prix);
+  }
+  function totaux(d, surf) {
+    let devis = 0, estime = 0;
+    (d?.lignes || []).forEach((l) => { const m = montantLigne(l, surf); if (l.mode === "devis") devis += m; else estime += m; });
+    const imprevus = estime * nb(d?.imprevus) / 100;
+    return { devis, estime, imprevus, total: devis + estime + imprevus };
+  }
+  function ecrire(c, d) {
+    const ch = champDetail(c); if (!ch) return;
+    ch.value = d ? JSON.stringify(d) : "";
+    if (c !== "pc") {
+      const tr = lignesLots()[+c], champ = tr.querySelector("[data-travaux]");
+      champ.readOnly = !!d;
+      if (d) { champ.value = Math.round(totaux(d, surfaceDe(c)).total); champ.title = "Chiffré en détail"; } else champ.removeAttribute("title");
+      tr.querySelector("[data-detailler]").textContent = d ? "Détail" : "Détailler";
+    }
+  }
+  function nouveauDetail(c) {
+    const niveau = +$("niveau_renovation").value || 0;
+    const base = JSON.parse(JSON.stringify(c === "pc" ? CFG.postes_communs : CFG.postes_lot));
+    base.forEach((l) => { const p = CFG.prix_niveaux[l.poste]; if (p) l.prix = p[niveau]; });
+    return { imprevus: CFG.imprevus, lignes: base };
+  }
+  window.chiffrageCibles = function () {
+    const sel = $("t-cible"), actuel = sel.value;
+    sel.innerHTML = lignesLots().map((tr, i) => {
+      const type = tr.querySelector("[name$=-type]"), surf = surfaceDe(String(i));
+      return `<option value="${i}">Lot ${String(i + 1).padStart(3, "0")} · ${type.options[type.selectedIndex].text}${surf ? " · " + surf + " m²" : ""}${lire(String(i)) ? " · détaillé" : ""}</option>`;
+    }).join("") + `<option value="pc">Parties communes et toiture${lire("pc") ? " · détaillé" : ""}</option>`;
+    if ([...sel.options].some((o) => o.value === actuel)) sel.value = actuel;
+  };
+  function rendreChiffrage() {
+    const c = $("t-cible").value, d = lire(c);
+    $("t-vide").hidden = !!d; $("t-panneau").hidden = !d;
+    $("t-vide").querySelector("p").textContent = c === "pc"
+      ? "Toiture, façade, cage d'escalier, réseaux : chiffrez les travaux de l'immeuble. Ils sont répartis entre les lots selon leur surface."
+      : "Ce lot a un montant global de travaux. Chiffrez-le poste par poste pour plus de précision.";
+    if (!d) return;
+    const surf = surfaceDe(c), modes = CFG.modes;
+    $("t-imprevus").value = d.imprevus;
+    $("t-table").innerHTML = `<thead><tr><th>Poste</th><th>Mode</th><th>Coût moyen</th><th>Quantité</th><th>Devis : montant, entreprise et date</th><th>Agrandis-<br>sement</th><th class="m">Total</th><th></th></tr></thead><tbody>` +
+      d.lignes.map((l, i) => {
+        const devis = l.mode === "devis";
+        const qte = l.mode === "m2" ? (c === "pc" ? `<input type="text" inputmode="decimal" data-k="quantite" value="${l.quantite ?? ""}" aria-label="Surface"><div class="unite">m²</div>` : `${surf || 0} m²`)
+          : l.mode === "unite" ? `<input type="text" inputmode="decimal" data-k="quantite" value="${l.quantite ?? 1}" aria-label="Quantité">` : "–";
+        const piece = l.piece ? `<div class="piece"><a href="${l.piece_url}" target="_blank" rel="noopener">${echap(l.piece_nom || "devis")}</a> <button type="button" class="lien-retirer" data-retirer-piece>retirer</button></div>`
+          : (CFG.peut_joindre && devis ? `<input type="file" data-fichier accept=".pdf,.jpg,.jpeg,.png,.heic" aria-label="Joindre le devis">` : "");
+        return `<tr data-i="${i}">
+          <td><input type="text" data-k="poste" value="${echap(l.poste)}" aria-label="Poste" style="min-width:150px"></td>
+          <td><select data-k="mode" aria-label="Mode">${modes.map(([v, t]) => `<option value="${v}"${v === l.mode ? " selected" : ""}>${t}</option>`).join("")}</select></td>
+          <td>${devis ? "–" : `<input type="text" inputmode="decimal" data-k="prix" value="${l.prix}" aria-label="Coût"><div class="unite">${echap(l.mode === "m2" ? (l.unite && l.unite.startsWith("€/m²") ? l.unite : "€/m²") : l.mode === "unite" ? (l.unite && !l.unite.startsWith("€/m²") && l.unite !== "€" ? l.unite : "€/unité") : "€")}</div>`}</td>
+          <td>${qte}</td>
+          <td>${devis ? `<input type="text" inputmode="decimal" data-k="devis" value="${l.devis || ""}" placeholder="montant" aria-label="Montant du devis"><input type="text" data-k="entreprise" value="${echap(l.entreprise || "")}" placeholder="entreprise, date" aria-label="Entreprise" style="margin-top:4px">${piece}` : ""}</td>
+          <td class="coche"><input type="checkbox" data-k="agrandissement"${l.agrandissement ? " checked" : ""} aria-label="Agrandissement"></td>
+          <td class="m" data-total>${fmt(montantLigne(l, surf))}</td>
+          <td><button type="button" class="retirer" data-retirer-ligne aria-label="Retirer ce poste">×</button></td></tr>`;
+      }).join("") + "</tbody>";
+    majTotaux();
+  }
+  function majTotaux() {
+    const c = $("t-cible").value, d = lire(c); if (!d) return;
+    const surf = surfaceDe(c), t = totaux(d, surf);
+    $("t-table").querySelectorAll("tr[data-i]").forEach((tr) => { tr.querySelector("[data-total]").textContent = fmt(montantLigne(d.lignes[+tr.dataset.i], surf)); });
+    const tuile = (l, v, s) => `<div class="tuile"><div class="l">${l}</div><div class="v">${v}</div><div class="s">${s}</div></div>`;
+    $("t-totaux").innerHTML = tuile(c === "pc" ? "Total parties communes" : "Total du lot", fmt(t.total), c === "pc" ? "réparti au prorata des surfaces" : (surf ? fmt(t.total / surf) + " par m²" : ""))
+      + tuile("Sur devis", fmt(t.devis), t.total ? Math.round(t.devis / t.total * 100) + " % du chiffrage" : "")
+      + tuile("Estimé", fmt(t.estime), "coûts moyens") + tuile("Imprévus", fmt(t.imprevus), nb(d.imprevus) + " % des postes estimés");
+    $("t-jauge").style.width = (t.total ? t.devis / t.total * 100 : 0) + "%";
+  }
+  function modifier(fn, rerendre) {
+    const c = $("t-cible").value, d = lire(c); if (!d) return;
+    fn(d); ecrire(c, d);
+    if (rerendre) { window.chiffrageCibles(); rendreChiffrage(); } else majTotaux();
+  }
+  $("t-cible").addEventListener("change", rendreChiffrage);
+  $("t-commencer").addEventListener("click", () => { const c = $("t-cible").value; ecrire(c, nouveauDetail(c)); window.chiffrageCibles(); rendreChiffrage(); recalculer(); });
+  $("t-abandonner").addEventListener("click", () => { const c = $("t-cible").value; ecrire(c, null); window.chiffrageCibles(); rendreChiffrage(); recalculer(); });
+  $("t-ajouter").addEventListener("click", () => modifier((d) => d.lignes.push({ poste: "Autre poste", mode: "forfait", unite: "€", prix: 0, quantite: null, devis: 0, entreprise: "", agrandissement: false, piece: null }), true));
+  $("t-imprevus").addEventListener("input", (e) => modifier((d) => { d.imprevus = nb(e.target.value); }));
+  $("t-table").addEventListener("input", (e) => {
+    const k = e.target.dataset.k, tr = e.target.closest("tr[data-i]");
+    if (!k || !tr || k === "mode" || k === "agrandissement") return;
+    modifier((d) => { const l = d.lignes[+tr.dataset.i]; l[k] = ["poste", "entreprise"].includes(k) ? e.target.value : e.target.value.trim(); });
+  });
+  $("t-table").addEventListener("change", async (e) => {
+    const tr = e.target.closest("tr[data-i]"); if (!tr) return;
+    const i = +tr.dataset.i, k = e.target.dataset.k;
+    if (k === "mode") modifier((d) => { d.lignes[i].mode = e.target.value; }, true);
+    if (k === "agrandissement") modifier((d) => { d.lignes[i].agrandissement = e.target.checked; });
+    if (e.target.matches("[data-fichier]") && e.target.files[0]) {
+      const fd = new FormData(); fd.append("fichier", e.target.files[0]); fd.append("csrfmiddlewaretoken", csrf);
+      e.target.disabled = true;
+      try {
+        const rep = await fetch(CFG.url_devis, { method: "POST", body: fd }), j = await rep.json();
+        if (j.erreur) { alerteChiffrage(j.erreur); e.target.disabled = false; e.target.value = ""; return; }
+        modifier((d) => Object.assign(d.lignes[i], { piece: j.id, piece_nom: j.nom, piece_url: j.url }), true);
+        alerteChiffrage("Devis joint. Pensez à enregistrer la simulation.");
+      } catch (err) { alerteChiffrage("Le devis n'a pas pu être envoyé."); e.target.disabled = false; }
+    }
+  });
+  $("t-table").addEventListener("click", (e) => {
+    const tr = e.target.closest("tr[data-i]"); if (!tr) return;
+    if (e.target.closest("[data-retirer-ligne]")) { modifier((d) => d.lignes.splice(+tr.dataset.i, 1), true); recalculer(); }
+    if (e.target.closest("[data-retirer-piece]")) { modifier((d) => Object.assign(d.lignes[+tr.dataset.i], { piece: null, piece_nom: "", piece_url: "" }), true); recalculer(); }
+  });
+  function alerteChiffrage(texte) {
+    let el = $("t-message");
+    if (!el) { el = document.createElement("p"); el.id = "t-message"; el.className = "aide"; el.setAttribute("role", "status"); $("t-panneau").prepend(el); }
+    el.textContent = texte;
+  }
+  $("t-niveaux").addEventListener("change", (e) => {
+    const niveau = +e.target.value; $("niveau_renovation").value = niveau;
+    ["pc"].concat(lignesLots().map((_, i) => String(i))).forEach((c) => {
+      const d = lire(c); if (!d) return;
+      d.lignes.forEach((l) => { const p = CFG.prix_niveaux[l.poste]; if (p && l.mode !== "devis") l.prix = p[niveau]; });
+      ecrire(c, d);
+    });
+    rendreChiffrage();
+  });
+  corps.addEventListener("click", (e) => {
+    const b = e.target.closest("[data-detailler]"); if (!b) return;
+    window.chiffrageCibles();
+    $("t-cible").value = String(lignesLots().indexOf(b.closest("tr")));
+    $("bloc-travaux").open = true; rendreChiffrage();
+    $("bloc-travaux").scrollIntoView({ behavior: "smooth", block: "start" });
+  });
+  corps.addEventListener("input", (e) => {
+    if (e.target.matches("[name$=-surface]")) {
+      const c = String(lignesLots().indexOf(e.target.closest("tr"))), d = lire(c);
+      if (d) ecrire(c, d);
+      if ($("t-cible").value === c) majTotaux();
+    }
+  });
+  window.chiffrageCibles(); rendreChiffrage();
 
   /* ---------- recalcul en direct ---------- */
   let minuterie = null, enCours = null;
@@ -354,7 +551,7 @@
 
   /* ---------- prix du marché (DVF) ---------- */
   let dvf = null;
-  const echap = (t) => String(t).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+  function echap(t) { return String(t).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c])); }
   async function chargerDvf() {
     const adresse = $("adresse").value.trim(), zone = $("dvf-contenu");
     dvf = null;

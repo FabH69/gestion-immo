@@ -60,3 +60,11 @@ def div_ou_zero(a, b):
         return float(a) / float(b) if float(b) else 0
     except (TypeError, ValueError):
         return 0
+
+
+@register.filter
+def index(liste, i):
+    try:
+        return liste[int(i)]
+    except (IndexError, TypeError, ValueError):
+        return ""
