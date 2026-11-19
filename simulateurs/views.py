@@ -108,6 +108,7 @@ def _blocs(p):
 def _regimes_possibles():
     return [("", "Le meilleur pour ce projet"), ("mixte", "Votre répartition (lots nus et meublés)"),
             ("nu-micro", "Location nue · micro-foncier"), ("nu-reel", "Location nue · réel"),
+            ("jeanbrun", "Location nue · dispositif Jeanbrun"),
             ("lmnp-micro", "Meublé (LMNP) · micro-BIC"), ("lmnp-reel", "Meublé (LMNP) · réel"),
             ("sci-ir", "SCI à l'IR (location nue)"), ("sci-is", "SCI à l'IS")]
 

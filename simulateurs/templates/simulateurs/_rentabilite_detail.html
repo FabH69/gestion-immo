@@ -20,11 +20,23 @@
           <td class="m">{% if g.eligible %}{{ g.impot|euros }}{% else %}–{% endif %}</td>
           <td class="m">{% if g.eligible %}<span class="{{ g.cash_flow|signe_classe }}">{{ g.cash_flow|euros_signe }}</span>{% else %}–{% endif %}</td>
           <td class="m">{% if g.eligible %}{{ g.renta_nette_nette|pct:2 }}{% else %}–{% endif %}</td>
-          <td>{% if not g.eligible %}<span class="pastille non">{{ g.motif }}</span>{% elif g == r.meilleur %}<span class="pastille">Le meilleur</span>{% endif %}</td></tr>
+          <td>{% if not g.eligible %}<span class="pastille non">{{ g.motif }}</span>{% elif g.conditions_ko %}<span class="pastille alerte">Condition non remplie</span>{% elif g == r.meilleur %}<span class="pastille">Le meilleur</span>{% endif %}</td></tr>
       {% endfor %}</tbody>
     </table></div>
     <p class="note">Impôt sur le revenu au {{ mise_a_jour }}, avec le quotient familial (sans décote), plus {{ p.taux_ps|saisie }} % de prélèvements sociaux sur le revenu imposé. Un déficit foncier hors intérêts baisse l'impôt jusqu'à 10 700 €. En meublé au réel, les amortissements effacent le bénéfice sans créer de déficit : le reste est reporté. SCI à l'IS : 15 % jusqu'à 42 500 € puis 25 %, et flat tax de {{ p.taux_pfu|saisie }} % sur les dividendes.</p>
   </div>
+
+  {% with j=r.jeanbrun %}{% if j %}
+  <details class="carte jeanbrun" id="jeanbrun"{% if r.retenu == j or p.regime == "jeanbrun" %} open{% endif %}>
+    <summary><h2>Dispositif Jeanbrun : les conditions à remplir</h2>
+      {% if j.conditions_ko %}<span class="pastille non">{{ j.conditions_ko|length }} condition{{ j.conditions_ko|length|pluralize }} non remplie{{ j.conditions_ko|length|pluralize }}</span>{% else %}<span class="pastille">Conditions vérifiables remplies</span>{% endif %}</summary>
+    {% if j.conditions_ko %}<div class="alerte-jeanbrun" role="alert"><strong>Le projet ne semble pas remplir les conditions du dispositif.</strong> {% if j.eligible %}Le comparatif le calcule quand même, avec les loyers ramenés au plafond : c'est ce que vous toucheriez en respectant le dispositif.{% else %}Il n'est pas retenu dans le comparatif tant que ces points ne sont pas réglés.{% endif %}</div>{% endif %}
+    <ul class="conditions">{% for etat, texte in j.conditions %}
+      <li class="cond-{{ etat }}"><span class="marque" aria-hidden="true">{% if etat == "ok" %}✓{% elif etat == "ko" %}✕{% else %}?{% endif %}</span><span><span class="sr">{% if etat == "ok" %}Remplie : {% elif etat == "ko" %}Non remplie : {% else %}À vérifier : {% endif %}</span>{{ texte }}</span></li>
+    {% endfor %}</ul>
+    <p class="note">Amortissement de 80 % du prix{% if p.jeanbrun_etat != "neuf" %} plus les travaux{% endif %}, chaque année, au taux du niveau de loyer choisi (neuf : 3,5 / 4,5 / 5,5 % ; ancien : 3 / 3,5 / 4 %), dans la limite de 8 000, 10 000 ou 12 000 € par an pour tout le foyer. Deux points attendent la doctrine de l'administration : l'imputation du déficit sur le revenu global (le calcul la retient, jusqu'à 10 700 €) et la réintégration des amortissements dans la plus-value à la revente.</p>
+  </details>
+  {% endif %}{% endwith %}
 
   <div class="carte">
     <h2>Détail par lot</h2>

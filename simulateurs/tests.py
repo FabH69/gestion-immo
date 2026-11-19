@@ -648,3 +648,73 @@ class LectureChiffrageTests(SimpleTestCase):
         self.assertEqual(len(c["lignes"]), 40)
         l = c["lignes"][0]
         self.assertEqual((l["mode"], l["prix"], l["piece"], l["piece_url"]), ("forfait", 0, None, ""))
+
+
+class JeanbrunTests(SimpleTestCase):
+    """Dispositif Jeanbrun : amortissement plafonné, conditions et alertes."""
+
+    def projet_nu(self, **kw):
+        from simulateurs.calculs import investissement as inv
+
+        p = inv.exemple()
+        for l in p.lots:
+            l.meuble = False
+        for k, v in kw.items():
+            setattr(p, k, v)
+        return p
+
+    def regime(self, p):
+        from simulateurs.calculs import investissement as inv
+
+        return inv.simuler(p).jeanbrun
+
+    def test_amortissement_ancien_et_plafond(self):
+        # ancien intermédiaire : 3 % de (80 % de 190 000 + 83 000 de travaux) = 7 050 €, sous le plafond de 8 000 €
+        j = self.regime(self.projet_nu())
+        self.assertTrue(j.eligible)
+        self.assertAlmostEqual(j.amortissements, 7050)
+        # très social : 4 % de 235 000 = 9 400 €, plafond 12 000 € moins 5 000 € déjà pris ailleurs → 7 000 €
+        j = self.regime(self.projet_nu(jeanbrun_niveau="tres_social", jeanbrun_autres=5000))
+        self.assertAlmostEqual(j.amortissements, 7000)
+        # neuf intermédiaire : 3,5 % de 80 % du prix, travaux exclus
+        j = self.regime(self.projet_nu(jeanbrun_etat="neuf"))
+        self.assertAlmostEqual(j.amortissements, 190000 * 0.8 * 0.035)
+
+    def test_conditions_bloquantes(self):
+        from simulateurs.calculs import investissement as inv
+
+        j = inv.simuler(inv.exemple()).jeanbrun  # lots meublés
+        self.assertFalse(j.eligible)
+        self.assertIn("meublés", j.motif)
+        p = self.projet_nu()
+        for l in p.lots:
+            l.travaux = 10000
+        j = self.regime(p)
+        self.assertFalse(j.eligible)
+        self.assertIn("30 %", j.motif)
+        p = self.projet_nu()
+        p.lots[0].type = "maison"
+        self.assertFalse(self.regime(p).eligible)
+
+    def test_loyer_au_dessus_du_plafond(self):
+        # zone A : 14,50 €/m² ; lot 001 de 24 m² → 348 € au plus pour 730 € visés
+        j = self.regime(self.projet_nu(jeanbrun_zone="A"))
+        self.assertTrue(j.eligible)
+        self.assertEqual(len(j.conditions_ko), 1)
+        self.assertIn("lot 001", j.conditions_ko[0])
+        self.assertAlmostEqual(j.manque_loyer, (730 - 348) * 12 + (730 - 319) * 12 * 2)
+        sans = self.regime(self.projet_nu())
+        self.assertLess(j.cash_flow, sans.cash_flow)
+        # plafond saisi pour la commune, assez haut : plus d'alerte
+        j = self.regime(self.projet_nu(jeanbrun_zone="A", jeanbrun_plafond=34))
+        self.assertEqual(j.conditions_ko, [])
+        self.assertEqual(j.manque_loyer, 0)
+
+    def test_page_affiche_conditions_et_alerte(self):
+        from django.test import Client
+
+        donnees = {**InvestissementPagesTests.DONNEES, "lot-0-meuble": "0", "jeanbrun_zone": "B1", "regime": "jeanbrun"}
+        r = Client().post(reverse("simulateurs:rentabilite_calcul"), donnees, HTTP_X_FRAGMENT="1")
+        self.assertContains(r, "Dispositif Jeanbrun : les conditions à remplir")
+        self.assertContains(r, "Le projet ne semble pas remplir les conditions")
+        self.assertContains(r, "Travaux d&#x27;au moins 30 %")

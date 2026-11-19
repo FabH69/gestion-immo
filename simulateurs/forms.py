@@ -132,6 +132,13 @@ BLOCS_INVEST = [
         ("enfants", "Enfants à charge", "", "entier"),
         ("distribution_pct", "SCI à l'IS : bénéfice distribué (%)", "Le reste reste dans la société", "pct"),
     ]),
+    ("jeanbrun", "Dispositif Jeanbrun", "location nue à loyer plafonné", [
+        ("jeanbrun_etat", "Logement", "Ancien : travaux d'au moins 30 % du prix", "choix"),
+        ("jeanbrun_niveau", "Niveau de loyer", "Plus il est bas, plus l'amortissement est fort", "choix"),
+        ("jeanbrun_zone", "Zone du logement", "A bis, A, B1, B2 ou C", "choix"),
+        ("jeanbrun_plafond", "Plafond de loyer de la commune (€/m²)", "0 : valeur indicative de la zone A ou B1", "montant"),
+        ("jeanbrun_autres", "Déjà amorti par d'autres logements Jeanbrun (€ / an)", "Le plafond annuel est commun au foyer", "montant"),
+    ]),
     ("avance", "Réglages avancés", "amortissements et taux", [
         ("part_terrain", "Part du terrain, non amortissable (%)", "", "pct"),
         ("duree_travaux", "Amortissement des travaux (ans)", "", "entier"),
@@ -144,6 +151,9 @@ BLOCS_INVEST = [
 CHOIX_INVEST = {
     "departement": [(c, f"{c} – {n}") for c, n in inv.notaire.DEPARTEMENTS],
     "situation": inv.SITUATIONS,
+    "jeanbrun_etat": [("ancien", "Ancien avec travaux"), ("neuf", "Neuf ou VEFA")],
+    "jeanbrun_niveau": inv.JEANBRUN_NIVEAUX,
+    "jeanbrun_zone": inv.JEANBRUN_ZONES,
 }
 
 

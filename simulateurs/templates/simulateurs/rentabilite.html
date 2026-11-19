@@ -62,6 +62,21 @@
   tr.retenu td { background: var(--teinte); }
   .pastille { display: inline-block; padding: 2px 9px; border-radius: 999px; font-size: .74rem; font-weight: 600; background: #e8f5ee; color: #1e7a4a; white-space: nowrap; }
   .pastille.non { background: #fff4e5; color: #9a5b00; }
+  .pastille.alerte { background: #fdecea; color: #a8321f; }
+  details.jeanbrun > summary { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; cursor: pointer; list-style: none; }
+  details.jeanbrun > summary::-webkit-details-marker { display: none; }
+  details.jeanbrun > summary h2 { margin: 0 !important; }
+  details.jeanbrun > summary::after { content: "▾"; margin-left: auto; color: var(--doux); }
+  details.jeanbrun[open] > summary::after { content: "▴"; }
+  .alerte-jeanbrun { margin-top: 14px; padding: 12px 14px; border-radius: 10px; background: #fdecea; color: #7a2416; border: 1px solid #f3c2b8; }
+  .conditions { list-style: none; padding: 0; margin: 14px 0 0; display: grid; gap: 8px; }
+  .conditions li { display: flex; gap: 10px; align-items: baseline; }
+  .conditions .marque { flex: none; width: 22px; height: 22px; border-radius: 50%; display: inline-grid; place-items: center; font-size: .8rem; font-weight: 700; }
+  .conditions .cond-ok .marque { background: #e8f5ee; color: #1e7a4a; }
+  .conditions .cond-ko .marque { background: #fdecea; color: #a8321f; }
+  .conditions .cond-verifier .marque { background: var(--teinte); color: var(--doux); }
+  .conditions .cond-ko { color: #7a2416; }
+  .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
   .pile-res { display: grid; gap: 16px; }
   .pile-res .carte, .pile-res .tuiles { margin: 0; }
   .deux-colonnes-egales { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 16px; align-items: start; }

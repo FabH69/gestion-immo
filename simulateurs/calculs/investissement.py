@@ -31,6 +31,19 @@ ABATTEMENT_MICRO_BIC = 50
 IS_SEUIL_TAUX_REDUIT = 42500
 IS_TAUX_REDUIT, IS_TAUX_NORMAL = 15, 25
 
+# Dispositif Jeanbrun (statut du bailleur privé, art. 31 CGI modifié par la loi de finances 2026, achats du 21/02/2026
+# au 31/12/2028) : amortissement de 80 % du prix (+ travaux dans l'ancien), location nue à loyer plafonné pendant 9 ans.
+JEANBRUN_NIVEAUX = [("intermediaire", "Intermédiaire"), ("social", "Social"), ("tres_social", "Très social")]
+JEANBRUN_TAUX = {"intermediaire": (3.5, 3.0), "social": (4.5, 3.5), "tres_social": (5.5, 4.0)}  # (neuf, ancien) en %
+JEANBRUN_PLAFOND = {"intermediaire": 8000, "social": 10000, "tres_social": 12000}  # par an et par foyer, tous logements
+JEANBRUN_PART_AMORTISSABLE = 80   # % du prix hors frais : le reste est réputé être le terrain
+JEANBRUN_TRAVAUX_MIN = 30         # ancien : travaux d'au moins 30 % du prix
+JEANBRUN_ZONES = [("", "Non renseignée"), ("Abis", "A bis"), ("A", "A"), ("B1", "B1"), ("B2C", "B2 ou C")]
+# loyer intermédiaire indicatif (€/m², Les clés de la banque, 2026) ; social ≈ −15 %, très social ≈ −30 %
+JEANBRUN_LOYER_INDICATIF = {"A": 14.50, "B1": 11.70}
+JEANBRUN_DECOTE_NIVEAU = {"intermediaire": 1.0, "social": 0.85, "tres_social": 0.70}
+JEANBRUN_TYPES_LOGEMENT = {"studio", "t1", "t2", "t3", "t4", "t5"}
+
 TYPES_LOT = [
     ("studio", "Studio"), ("t1", "T1"), ("t2", "T2"), ("t3", "T3"), ("t4", "T4"), ("t5", "T5 et +"),
     ("maison", "Maison"), ("local", "Local commercial"), ("parking", "Parking / box"), ("cave", "Cave"),
@@ -235,6 +248,12 @@ class Parametres:
     duree_frais: int = 10
     taux_ps: float = 17.2
     taux_pfu: float = 30
+    # dispositif Jeanbrun
+    jeanbrun_etat: str = "ancien"          # "ancien" (rénové) ou "neuf"
+    jeanbrun_niveau: str = "intermediaire"
+    jeanbrun_zone: str = ""
+    jeanbrun_plafond: float = 0            # plafond de loyer de la commune (€/m²) ; 0 : valeur indicative de la zone
+    jeanbrun_autres: float = 0             # amortissement Jeanbrun déjà utilisé par d'autres logements du foyer (€/an)
 
     # --- stockage (JSON) ---
     def en_dict(self):
@@ -339,6 +358,12 @@ class Regime:
     impot: float = 0               # impôt dû en plus, par an
     cash_flow: float = 0           # par mois, après impôt
     renta_nette_nette: float = 0
+    manque_loyer: float = 0        # loyers perdus par an (loyers ramenés à un plafond)
+    conditions: list = field(default_factory=list)  # [(état, texte)] : "ok", "ko" ou "verifier"
+
+    @property
+    def conditions_ko(self):
+        return [t for e, t in self.conditions if e == "ko"]
 
 
 @dataclass
@@ -453,6 +478,10 @@ class Resultat:
         return next((r for r in self.eligibles if r.id == self.p.regime), None) or self.meilleur
 
     @property
+    def jeanbrun(self):
+        return next((g for g in self.regimes if g.id == "jeanbrun"), None)
+
+    @property
     def lots_mixtes(self):
         return len({l.meuble for l in self.p.lots}) > 1
 
@@ -536,7 +565,7 @@ def simuler(p, prix=None):
         amort[f"Meubles (sur {p.duree_meubles} ans)"] = meubles / max(1, p.duree_meubles)
     A = sum(amort.values())
 
-    regimes = _regimes(p, L, C, I, A, cf_avant, total, lots, travaux_deductibles)
+    regimes = _regimes(p, L, C, I, A, cf_avant, total, lots, travaux_deductibles, travaux)
 
     lignes = []
     for i, l in enumerate(lots, 1):
@@ -596,7 +625,100 @@ def _bic_reel(L, C, I, A):
     return avant - deduits, deduits, A - deduits
 
 
-def _regimes(p, L, C, I, A, cf_avant, total, lots, T=0.0):
+def plafond_loyer_jeanbrun(p):
+    """Plafond de loyer hors charges (€/m²) retenu pour le dispositif Jeanbrun, ou None s'il est inconnu."""
+    if p.jeanbrun_plafond:
+        return p.jeanbrun_plafond
+    base = JEANBRUN_LOYER_INDICATIF.get(p.jeanbrun_zone)
+    return round(base * JEANBRUN_DECOTE_NIVEAU.get(p.jeanbrun_niveau, 1), 2) if base else None
+
+
+def _jeanbrun(p, L, C, I, lots, travaux):
+    """Régime Jeanbrun : conditions vérifiables sur la simulation, puis calcul avec les loyers ramenés au plafond."""
+    niveau = p.jeanbrun_niveau if p.jeanbrun_niveau in JEANBRUN_TAUX else "intermediaire"
+    neuf = p.jeanbrun_etat == "neuf"
+    conditions, bloquant = [], ""
+    euros = lambda v: f"{v:,.0f} €".replace(",", "\u202f")
+
+    meubles = [i for i, l in enumerate(lots) if l.meuble]
+    if meubles:
+        bloquant = bloquant or "Lots meublés : location nue seulement"
+        conditions.append(("ko", f"Location nue : {len(meubles)} lot(s) en meublé. Le dispositif ne vise que la location nue, "
+                                 "sans cumul avec le LMNP."))
+    else:
+        conditions.append(("ok", "Location nue de tous les lots."))
+    maisons = [l for l in lots if l.type == "maison"]
+    autres = [l for l in lots if l.type not in JEANBRUN_TYPES_LOGEMENT | {"maison", "parking", "cave"}]
+    if maisons:
+        bloquant = bloquant or "Maison : appartements seulement"
+        conditions.append(("ko", "Appartement en immeuble collectif : les maisons individuelles sont exclues."))
+    elif autres:
+        bloquant = bloquant or "Local commercial : logements seulement"
+        conditions.append(("ko", "Logements seulement : un local commercial n'ouvre pas droit au dispositif."))
+    else:
+        conditions.append(("ok", "Appartements en immeuble collectif."))
+    if neuf:
+        conditions.append(("verifier", "Logement acquis neuf ou en VEFA."))
+    else:
+        mini = p.prix * JEANBRUN_TRAVAUX_MIN / 100
+        if travaux < mini:
+            bloquant = bloquant or f"Travaux sous {JEANBRUN_TRAVAUX_MIN} % du prix"
+            conditions.append(("ko", f"Travaux d'au moins {JEANBRUN_TRAVAUX_MIN} % du prix ({euros(mini)}) : "
+                                     f"{euros(travaux)} prévus. Il manque {euros(mini - travaux)}."))
+        else:
+            conditions.append(("ok", f"Travaux d'au moins {JEANBRUN_TRAVAUX_MIN} % du prix : {euros(travaux)} prévus "
+                                     f"pour {euros(mini)} demandés (réhabilitation lourde, à faire attester)."))
+
+    # loyers : chaque logement sous le plafond (loyer hors charges, € par m² de surface)
+    plafond = plafond_loyer_jeanbrun(p)
+    manque_mois = 0.0
+    if plafond:
+        trop = []
+        for i, l in enumerate(lots):
+            if l.type not in JEANBRUN_TYPES_LOGEMENT:
+                continue
+            loyer = (l.loyer_cible if p.scenario == "cible" else (l.loyer_actuel if l.loue else 0)) or 0
+            maxi = plafond * (l.surface or 0)
+            if loyer > maxi + 0.5:
+                trop.append(f"lot {i + 1:03d} : {euros(loyer)} pour {euros(maxi)} au plus")
+                manque_mois += loyer - maxi
+        pl = f"{plafond:.2f}".rstrip("0").rstrip(".").replace(".", ",")
+        source = "saisi" if p.jeanbrun_plafond else "indicatif de la zone, à vérifier pour la commune"
+        if trop:
+            conditions.append(("ko", f"Loyer sous le plafond de {pl} €/m² ({source}) : " + " ; ".join(trop)
+                               + ". Le calcul retient les loyers ramenés au plafond."))
+        else:
+            conditions.append(("ok", f"Loyers sous le plafond de {pl} €/m² ({source})."))
+    else:
+        conditions.append(("verifier", "Loyer sous le plafond de la commune : choisissez la zone ou saisissez le plafond."))
+    manque = manque_mois * 12 * (1 - (p.vacance or 0) / 100)
+
+    conditions += [
+        ("verifier", "Achat entre le 21 février 2026 et le 31 décembre 2028."),
+        ("verifier", "Bail signé dans les 12 mois suivant l'achat ou la fin des travaux, en résidence principale du locataire."),
+        ("verifier", "Location pendant 9 ans au moins : une sortie anticipée réintègre tous les amortissements déduits."),
+        ("verifier", "Locataire sous les plafonds de ressources, ni membre du foyer ni parent ou allié jusqu'au 2e degré."),
+        ("verifier", "Détention en direct ou en SCI à l'IR (pas de SCI à l'IS), sans cumul avec Denormandie, Malraux ou "
+                     "Loc'Avantages."),
+    ]
+
+    taux = JEANBRUN_TAUX[niveau][0 if neuf else 1]
+    base_amort = p.prix * JEANBRUN_PART_AMORTISSABLE / 100 + (0 if neuf else travaux)
+    plafond_an = max(0.0, JEANBRUN_PLAFOND[niveau] - (p.jeanbrun_autres or 0))
+    amort = min(base_amort * taux / 100, plafond_an)
+    detail = [f"{taux:g} % de {euros(base_amort)}".replace(".", ","), f"plafond {euros(JEANBRUN_PLAFOND[niveau])} par foyer"]
+    if p.jeanbrun_autres:
+        detail.append(f"dont {euros(p.jeanbrun_autres)} déjà pris par vos autres logements")
+    if manque:
+        detail.append(f"loyers ramenés au plafond : {euros(manque)} de moins par an")
+    # travaux amortis : ils ne se déduisent pas une seconde fois en charges
+    base, report = _foncier_reel(L - manque, C + amort, I)
+    r = Regime("jeanbrun", "Location nue · dispositif Jeanbrun", eligible=not bloquant, motif=bloquant, base=base,
+               amortissements=amort, report=report, detail=" · ".join(detail), manque_loyer=manque, conditions=conditions)
+    return r
+
+
+def _regimes(p, L, C, I, A, cf_avant, total, lots, T=0.0, travaux=0.0):
     """T : travaux déductibles en location nue (comptés l'année des travaux, année 1 de la simulation)."""
     R, sit, enf, ps = p.revenu_imposable or 0, p.situation, p.enfants or 0, p.taux_ps
     sup = lambda base, base_ps=None: impot_en_plus(R, sit, enf, base, base if base_ps is None else base_ps, ps)
@@ -661,9 +783,13 @@ def _regimes(p, L, C, I, A, cf_avant, total, lots, T=0.0):
         r.impot = sup(b_n + b_m, max(0.0, b_n) + b_m)
         liste.insert(0, r)
 
+    r = _jeanbrun(p, L, C, I, lots, travaux)
+    r.impot = sup(r.base)
+    liste.insert(liste.index(next(g for g in liste if g.id == "nu-reel")) + 1, r)
+
     for r in liste:
-        r.cash_flow = cf_avant - r.impot / 12
-        r.renta_nette_nette = (L - C - I - r.impot) / total if total else 0
+        r.cash_flow = cf_avant - (r.impot + r.manque_loyer) / 12
+        r.renta_nette_nette = (L - r.manque_loyer - C - I - r.impot) / total if total else 0
     return liste
 
 
