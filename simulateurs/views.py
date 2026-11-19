@@ -65,7 +65,7 @@ from django.views.decorators.http import require_POST  # noqa: E402
 from . import dvf  # noqa: E402
 from .calculs import investissement as inv  # noqa: E402
 from .forms import BLOCS_INVEST, CHOIX_INVEST, departement_de, lire_lots, lire_parametres  # noqa: E402
-from .models import DevisTravaux, SimulationInvestissement  # noqa: E402
+from .models import DevisTravaux, PhotoDossier, SimulationInvestissement  # noqa: E402
 
 SLUG_INVEST = "rentabilite"
 
@@ -205,7 +205,8 @@ def simulation_enregistrer(request):
 def simulation_dupliquer(request, pk):
     s = get_object_or_404(SimulationInvestissement, pk=pk)
     copie = SimulationInvestissement.objects.create(nom=f"{s.nom} (copie)"[:200], adresse=s.adresse,
-                                                    donnees={**s.donnees, "nom": f"{s.nom} (copie)"[:200]})
+                                                    donnees={**s.donnees, "nom": f"{s.nom} (copie)"[:200]},
+                                                    dossier={**(s.dossier or {}), "couverture": None})  # photos non recopiées
     # les devis joints sont recopiés (même fichier) pour que chaque simulation garde les siens
     correspondance = {}
     for d in s.devis.all():
@@ -257,12 +258,93 @@ def simulation_devis(request, pk):
     return JsonResponse({"id": d.pk, "nom": d.nom, "url": d.url})
 
 
+# ---------------------------------------------------------------------------------------------------------------------
+# Dossier de financement (« dossier banque »)
+# ---------------------------------------------------------------------------------------------------------------------
+
+EXTENSIONS_PHOTO = (".jpg", ".jpeg", ".png", ".webp")
+TAILLE_MAX_PHOTO = 12 * 1024 * 1024
+MAX_PHOTOS = 12
+
+
+def _contexte_dossier(s):
+    """Contexte des pages du dossier, avec la carte et les prix du marché quand les services publics répondent."""
+    from . import dossier
+
+    p = s.parametres
+    lieu = marche = None
+    erreur_marche = ""
+    if p.adresse:
+        type_local = "Maison" if any(l.type == "maison" for l in p.lots) else "Appartement"
+        try:
+            lieu = dvf.geocoder(p.adresse)
+            marche = dvf.prix_du_marche(p.adresse, type_local)
+        except dvf.DvfIndisponible as e:
+            erreur_marche = str(e)
+    return {**dossier.contexte(s, marche, lieu, s.photos.all()), "erreur_marche": erreur_marche}
+
+
+@connecte
+def simulation_dossier(request, pk):
+    """Préparer le dossier banque : réglages, photos, DPE ; aperçu des pages à droite."""
+    from . import dossier
+
+    s = get_object_or_404(SimulationInvestissement, pk=pk)
+    if request.method == "POST":
+        s.dossier = dossier.lire_reglages(request.POST, len(s.parametres.lots))
+        s.save(update_fields=["dossier", "modifie_le"])
+        messages.success(request, "Dossier banque enregistré.")
+        return redirect("simulateurs:simulation_dossier", pk=s.pk)
+    return _page(request, "simulateurs/dossier.html", SLUG_INVEST, peut_enregistrer=_peut_enregistrer(request.user),
+                 **_contexte_dossier(s))
+
+
+@connecte
+def simulation_dossier_imprimer(request, pk):
+    """Le dossier seul, en pages A4, à imprimer ou à enregistrer en PDF depuis le navigateur."""
+    s = get_object_or_404(SimulationInvestissement, pk=pk)
+    return render(request, "simulateurs/dossier_imprimer.html", _contexte_dossier(s))
+
+
+@connecte
+@require_POST
+def simulation_dossier_photo(request, pk):
+    """Ajouter, légender ou retirer une photo du dossier banque."""
+    s = get_object_or_404(SimulationInvestissement, pk=pk)
+    action = request.POST.get("action")
+    if action == "ajouter":
+        fichiers = request.FILES.getlist("photos")
+        refusees = 0
+        for f in fichiers:
+            if s.photos.count() >= MAX_PHOTOS or not f.name.lower().endswith(EXTENSIONS_PHOTO) or f.size > TAILLE_MAX_PHOTO:
+                refusees += 1
+                continue
+            PhotoDossier.objects.create(simulation=s, fichier=f, ordre=s.photos.count(),
+                                        legende=f.name.rsplit(".", 1)[0][:120])
+        if refusees:
+            messages.warning(request, f"{refusees} photo(s) refusée(s) : JPG, PNG ou WebP de 12 Mo au plus, {MAX_PHOTOS} photos au plus.")
+        elif fichiers:
+            messages.success(request, f"{len(fichiers)} photo(s) ajoutée(s).")
+    elif action in ("legende", "supprimer"):
+        ph = get_object_or_404(PhotoDossier, pk=request.POST.get("photo"), simulation=s)
+        if action == "legende":
+            ph.legende = (request.POST.get("legende") or "").strip()[:120]
+            ph.save(update_fields=["legende"])
+        else:
+            nom = ph.fichier.name
+            ph.delete()
+            ph.fichier.storage.delete(nom)
+    return redirect(reverse("simulateurs:simulation_dossier", args=[s.pk]) + "#photos")
+
+
 @connecte
 @require_POST
 def simulation_supprimer(request, pk):
     s = get_object_or_404(SimulationInvestissement, pk=pk)
     nom = s.nom
     _retirer_devis(s.devis.all())
+    for ph in list(s.photos.all()):
+        ph.fichier.storage.delete(ph.fichier.name)
     s.delete()
     messages.success(request, f"Simulation « {nom} » supprimée.")
     return redirect("simulateurs:mes_simulations")

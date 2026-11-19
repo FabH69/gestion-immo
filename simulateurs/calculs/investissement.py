@@ -85,6 +85,8 @@ POSTES_COMMUNS = [
     ("Réseaux (eau, électricité)", "forfait", "€", (0, 4000, 8000), None),
 ]
 IMPREVUS_PAR_DEFAUT = 10
+# postes cochés « rénovation énergétique » par défaut (repris dans la page DPE du dossier banque)
+POSTES_ENERGIE = {"Placo, cloisons, isolation", "Menuiseries (fenêtres)", "Chauffage, eau chaude", "Toiture"}
 
 
 def chiffrage_par_defaut(communs=False, niveau=1):
@@ -92,7 +94,7 @@ def chiffrage_par_defaut(communs=False, niveau=1):
     postes = POSTES_COMMUNS if communs else POSTES_LOT
     return {"imprevus": IMPREVUS_PAR_DEFAUT, "lignes": [
         {"poste": nom, "mode": mode, "unite": unite, "prix": prix[niveau], "quantite": qte, "devis": 0, "entreprise": "",
-         "agrandissement": False, "piece": None} for nom, mode, unite, prix, qte in postes]}
+         "agrandissement": False, "energie": nom in POSTES_ENERGIE, "piece": None} for nom, mode, unite, prix, qte in postes]}
 
 
 @dataclass

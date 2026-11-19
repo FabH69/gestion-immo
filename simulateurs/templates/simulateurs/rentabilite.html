@@ -179,7 +179,7 @@
           </div>
           <div class="tuiles" id="t-totaux"></div>
           <div class="jauge" aria-hidden="true"><span id="t-jauge"></span></div>
-          <p class="aide">Les coûts moyens sont des valeurs de départ indicatives : ajustez-les. Cochez « Agrandissement » pour les travaux qui créent de la surface : en location nue, ils ne se déduisent pas des loyers.{% if not travaux_config.peut_joindre %} Enregistrez la simulation pour joindre les devis (PDF ou photo).{% endif %}</p>
+          <p class="aide">Les coûts moyens sont des valeurs de départ indicatives : ajustez-les. Cochez « Agrandissement » pour les travaux qui créent de la surface : en location nue, ils ne se déduisent pas des loyers. Cochez « Réno. énergie » pour l'isolation, les fenêtres, le chauffage ou la ventilation : ces postes sont repris dans la page DPE du dossier banque.{% if not travaux_config.peut_joindre %} Enregistrez la simulation pour joindre les devis (PDF ou photo).{% endif %}</p>
         </div>
       </details>
 
@@ -250,6 +250,7 @@
     <noscript><button type="submit">Calculer</button></noscript>
     {% if peut_enregistrer %}
       {% if simulation %}<button type="submit" class="bouton secondaire" formaction="{% url 'simulateurs:simulation_dupliquer' simulation.pk %}">Dupliquer pour comparer</button>{% endif %}
+      {% if simulation %}<a class="bouton secondaire" href="{% url 'simulateurs:simulation_dossier' simulation.pk %}">Dossier banque</a>{% endif %}
       {% if simulation and not simulation.bien %}<a class="bouton secondaire" href="{% url 'simulateurs:simulation_creer_bien' simulation.pk %}">Créer le bien et ses lots</a>{% endif %}
       <button type="submit" formaction="{% url 'simulateurs:simulation_enregistrer' %}">{% if simulation %}Enregistrer les modifications{% else %}Enregistrer la simulation{% endif %}</button>
     {% elif not user.is_authenticated %}
@@ -368,7 +369,7 @@
     if (!d) return;
     const surf = surfaceDe(c), modes = CFG.modes;
     $("t-imprevus").value = d.imprevus;
-    $("t-table").innerHTML = `<thead><tr><th>Poste</th><th>Mode</th><th>Coût moyen</th><th>Quantité</th><th>Devis : montant, entreprise et date</th><th>Agrandis-<br>sement</th><th class="m">Total</th><th></th></tr></thead><tbody>` +
+    $("t-table").innerHTML = `<thead><tr><th>Poste</th><th>Mode</th><th>Coût moyen</th><th>Quantité</th><th>Devis : montant, entreprise et date</th><th>Agrandis-<br>sement</th><th title="Rénovation énergétique : montré dans la page DPE du dossier banque">Réno.<br>énergie</th><th class="m">Total</th><th></th></tr></thead><tbody>` +
       d.lignes.map((l, i) => {
         const devis = l.mode === "devis";
         const qte = l.mode === "m2" ? (c === "pc" ? `<input type="text" inputmode="decimal" data-k="quantite" value="${l.quantite ?? ""}" aria-label="Surface"><div class="unite">m²</div>` : `${surf || 0} m²`)
@@ -382,6 +383,7 @@
           <td>${qte}</td>
           <td>${devis ? `<input type="text" inputmode="decimal" data-k="devis" value="${l.devis || ""}" placeholder="montant" aria-label="Montant du devis"><input type="text" data-k="entreprise" value="${echap(l.entreprise || "")}" placeholder="entreprise, date" aria-label="Entreprise" style="margin-top:4px">${piece}` : ""}</td>
           <td class="coche"><input type="checkbox" data-k="agrandissement"${l.agrandissement ? " checked" : ""} aria-label="Agrandissement"></td>
+          <td class="coche"><input type="checkbox" data-k="energie"${l.energie ? " checked" : ""} aria-label="Rénovation énergétique"></td>
           <td class="m" data-total>${fmt(montantLigne(l, surf))}</td>
           <td><button type="button" class="retirer" data-retirer-ligne aria-label="Retirer ce poste">×</button></td></tr>`;
       }).join("") + "</tbody>";
@@ -405,18 +407,18 @@
   $("t-cible").addEventListener("change", rendreChiffrage);
   $("t-commencer").addEventListener("click", () => { const c = $("t-cible").value; ecrire(c, nouveauDetail(c)); window.chiffrageCibles(); rendreChiffrage(); recalculer(); });
   $("t-abandonner").addEventListener("click", () => { const c = $("t-cible").value; ecrire(c, null); window.chiffrageCibles(); rendreChiffrage(); recalculer(); });
-  $("t-ajouter").addEventListener("click", () => modifier((d) => d.lignes.push({ poste: "Autre poste", mode: "forfait", unite: "€", prix: 0, quantite: null, devis: 0, entreprise: "", agrandissement: false, piece: null }), true));
+  $("t-ajouter").addEventListener("click", () => modifier((d) => d.lignes.push({ poste: "Autre poste", mode: "forfait", unite: "€", prix: 0, quantite: null, devis: 0, entreprise: "", agrandissement: false, energie: false, piece: null }), true));
   $("t-imprevus").addEventListener("input", (e) => modifier((d) => { d.imprevus = nb(e.target.value); }));
   $("t-table").addEventListener("input", (e) => {
     const k = e.target.dataset.k, tr = e.target.closest("tr[data-i]");
-    if (!k || !tr || k === "mode" || k === "agrandissement") return;
+    if (!k || !tr || k === "mode" || k === "agrandissement" || k === "energie") return;
     modifier((d) => { const l = d.lignes[+tr.dataset.i]; l[k] = ["poste", "entreprise"].includes(k) ? e.target.value : e.target.value.trim(); });
   });
   $("t-table").addEventListener("change", async (e) => {
     const tr = e.target.closest("tr[data-i]"); if (!tr) return;
     const i = +tr.dataset.i, k = e.target.dataset.k;
     if (k === "mode") modifier((d) => { d.lignes[i].mode = e.target.value; }, true);
-    if (k === "agrandissement") modifier((d) => { d.lignes[i].agrandissement = e.target.checked; });
+    if (k === "agrandissement" || k === "energie") modifier((d) => { d.lignes[i][k] = e.target.checked; });
     if (e.target.matches("[data-fichier]") && e.target.files[0]) {
       const fd = new FormData(); fd.append("fichier", e.target.files[0]); fd.append("csrfmiddlewaretoken", csrf);
       e.target.disabled = true;

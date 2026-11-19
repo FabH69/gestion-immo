@@ -68,3 +68,12 @@ def index(liste, i):
         return liste[int(i)]
     except (IndexError, TypeError, ValueError):
         return ""
+
+
+@register.filter
+def cle(dico, nom):
+    """Valeur d'un dictionnaire par sa clé, dans un gabarit : {{ couleurs|cle:"F" }}."""
+    try:
+        return dico.get(nom, "")
+    except AttributeError:
+        return ""

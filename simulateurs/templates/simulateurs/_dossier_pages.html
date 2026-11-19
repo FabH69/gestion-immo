@@ -1,0 +1,303 @@
+{% load invest %}<div class="dossier" id="dossier">
+  {# ---------- couverture ---------- #}
+  <article class="feuille couv">
+    <div class="photo"{% if couverture %} style="background-image: url('{{ couverture.url }}')"{% endif %}>
+      <div class="leg"><small>Demande de financement · {{ aujourdhui|date:"F Y" }}</small>
+        <h1>{{ p.nom|default:"Projet d'investissement locatif" }}{% if p.adresse %}<br>{{ p.adresse }}{% endif %}</h1></div>
+    </div>
+    <div class="corps">
+      <div class="chiffres">
+        <div class="cle"><b>{{ r.emprunt|euros }}</b><span>Prêt demandé, {{ p.duree }} ans</span></div>
+        <div><b>{{ r.cout_total|euros }}</b><span>Coût total du projet</span></div>
+        <div><b>{{ r.apport|euros }}</b><span>Apport personnel</span></div>
+        <div><b>{{ r.loyers_mois|euros }}</b><span>Loyers par mois</span></div>
+        <div><b>{{ r.renta_brute|pct:2 }}</b><span>Rentabilité brute</span></div>
+        <div class="cle {% if r.cash_flow_avant_impot >= 0 %}pos{% else %}neg{% endif %}"><b>{{ r.cash_flow_avant_impot|euros_signe }}</b><span>Cash-flow mensuel avant impôt</span></div>
+      </div>
+      <div class="qui"><span>{% if reg.presente_par %}Présenté par <strong>{{ reg.presente_par }}</strong>{% endif %}</span><span>{{ reg.contact }}</span></div>
+    </div>
+  </article>
+
+  {# ---------- porteur ---------- #}
+  {% if sections.porteur %}
+  <article class="feuille" id="page-porteur">
+    <div class="entete"><h2>Le porteur du projet</h2><span class="num">{{ num.porteur }}</span></div>
+    {% if reg.mot %}<p class="texte">{{ reg.mot }}</p>{% endif %}
+    <div class="deux">
+      <div>
+        <h3>Situation du foyer</h3>
+        <table><tbody>
+          <tr><td>Revenus nets du foyer</td><td class="m">{% if reg.revenus_mois %}{{ reg.revenus_mois|euros }} / mois{% else %}à compléter{% endif %}</td></tr>
+          <tr><td>Loyers déjà perçus</td><td class="m">{{ loyers_existants|euros }} / mois</td></tr>
+          <tr><td>Crédits en cours</td><td class="m">{{ credits|euros }} / mois</td></tr>
+          {% if reg.epargne is not None %}<tr><td>Épargne disponible après apport</td><td class="m">{{ reg.epargne|euros }}</td></tr>{% endif %}
+        </tbody></table>
+      </div>
+      {% if patrimoine and patrimoine.lignes %}
+      <div>
+        <h3>Patrimoine immobilier</h3>
+        <div class="defile"><table class="petit-tab"><thead><tr><th>Bien</th><th class="m">Lots</th><th class="m">Loyers / mois</th><th class="m">Reste dû</th></tr></thead><tbody>
+          {% for b in patrimoine.lignes %}<tr><td>{{ b.nom }}{% if b.ville %}, {{ b.ville }}{% endif %}</td><td class="m">{% if b.lots %}{{ b.lots }}{% else %}–{% endif %}</td><td class="m">{{ b.loyers|euros }}</td><td class="m">{{ b.crd|euros }}</td></tr>{% endfor %}
+          <tr class="total"><td>Total</td><td></td><td class="m">{{ patrimoine.loyers|euros }}</td><td class="m">{{ patrimoine.crd|euros }}</td></tr>
+        </tbody></table></div>
+      </div>
+      {% endif %}
+    </div>
+    {% if dette %}
+    <div class="jauge-d{% if not dette.ok %} trop{% endif %}">
+      <h3>Taux d'endettement après le projet : {{ dette.part|pct }}</h3>
+      <div class="barre-d"><span class="rempli" style="width:{{ jauge|stringformat:'.1f' }}%"></span><span class="seuil" style="left:{{ seuil_jauge|stringformat:'.1f' }}%" title="plafond {{ dette.seuil }} %"></span></div>
+      <div class="lig"><span>({{ credits|euros }} + {{ mensualite_totale|euros }}) ÷ ({{ reg.revenus_mois|euros }} de revenus + 70 % des loyers)</span><span>plafond HCSF {{ dette.seuil }} %</span></div>
+      <p class="note-d">Reste à vivre après les mensualités : {{ dette.reste_a_vivre|euros }} par mois.</p>
+    </div>
+    {% endif %}
+    <div class="pied"><span>Dossier de financement · {{ p.nom }}</span><span>{{ num.porteur }} / {{ nb_pages }}</span></div>
+  </article>
+  {% endif %}
+
+  {# ---------- bien ---------- #}
+  {% if sections.bien %}
+  <article class="feuille" id="page-bien">
+    <div class="entete"><h2>Le bien et son emplacement</h2><span class="num">{{ num.bien }}</span></div>
+    {% if autres_photos or couverture %}
+    <div class="galerie">{% for ph in photos|slice:":7" %}<figure><img src="{{ ph.url }}" alt="{{ ph.legende }}" loading="eager">{% if ph.legende %}<figcaption>{{ ph.legende }}</figcaption>{% endif %}</figure>{% endfor %}</div>
+    {% endif %}
+    {% if reg.description %}<p class="texte">{{ reg.description }}</p>{% endif %}
+    <div class="deux">
+      <div class="carte-geo" id="carte-dossier" data-lat="{{ lieu.lat|default_if_none:''|stringformat:'s' }}" data-lon="{{ lieu.lon|default_if_none:''|stringformat:'s' }}" data-adresse="{{ p.adresse }}">
+        <div class="vide">{% if p.adresse %}Chargement du plan IGN…{% else %}Ajoutez l'adresse du bien dans la simulation pour afficher le plan.{% endif %}</div>
+      </div>
+      <div>
+        <h3>Atouts du quartier</h3>
+        {% if atouts %}<ul class="atouts">{% for a in atouts %}<li>{{ a }}</li>{% endfor %}</ul>{% else %}<p class="note-d">À compléter : transports, commerces, écoles, employeurs proches.</p>{% endif %}
+      </div>
+    </div>
+    <div class="defile"><table>
+      <thead><tr><th>Lot</th><th>Type</th><th class="m">Surface</th><th>Étage</th><th>Location</th><th class="m">Loyer HC {% if p.scenario == "cible" %}visé{% else %}actuel{% endif %}</th></tr></thead>
+      <tbody>{% for l in r.lignes_lots %}
+        <tr><td>{{ l.numero|stringformat:"03d" }}</td><td>{{ l.lot.nom_type }}</td><td class="m">{{ l.lot.surface|saisie }} m²</td><td>{{ l.lot.etage }}</td><td>{% if l.lot.meuble %}meublé{% else %}nue{% endif %}{% if l.lot.loue %}, loué{% endif %}</td><td class="m">{{ l.loyer|euros }}</td></tr>
+      {% endfor %}
+        <tr class="total"><td colspan="2">{{ p.lots|length }} lot{{ p.lots|length|pluralize }}</td><td class="m">{{ r.surface|saisie }} m²</td><td></td><td></td><td class="m">{{ r.loyers_mois|euros }}</td></tr>
+      </tbody>
+    </table></div>
+    <div class="pied"><span>Dossier de financement · {{ p.nom }}</span><span>{{ num.bien }} / {{ nb_pages }}</span></div>
+  </article>
+  {% endif %}
+
+  {# ---------- marché ---------- #}
+  {% if sections.marche %}
+  <article class="feuille" id="page-marche">
+    <div class="entete"><h2>Marché et loyers</h2><span class="num">{{ num.marche }}</span></div>
+    {% if regle %}
+    <div>
+      <h3>Prix d'achat comparé aux {{ marche.nombre }} ventes DVF à moins de {% if marche.rayon >= 1000 %}{{ marche.rayon|div_ou_zero:1000|floatformat:0 }} km{% else %}{{ marche.rayon }} m{% endif %}</h3>
+      <div class="regle" aria-label="Position du prix d'achat dans la fourchette des ventes">
+        <div class="axe"></div>
+        <div class="rep" style="left:{{ regle.q1|stringformat:'s' }}%">{{ marche.q1|euros }}<i></i></div>
+        <div class="rep" style="left:{{ regle.mediane|stringformat:'s' }}%">{{ marche.mediane|euros }} · médiane<i></i></div>
+        <div class="rep" style="left:{{ regle.q3|stringformat:'s' }}%">{{ marche.q3|euros }}<i></i></div>
+        <div class="rep nous" style="left:{{ regle.nous|stringformat:'s' }}%"><i></i>{{ prix_m2|euros }} · notre achat</div>
+      </div>
+      <p class="texte" style="margin-top:14px">Prix d'achat de {{ prix_m2|euros }}/m², {% if regle.ecart < 0 %}{{ regle.ecart|pct:0|cut:"-" }} sous{% else %}{{ regle.ecart|pct:0 }} au-dessus de{% endif %} la médiane des ventes du secteur depuis {{ marche.depuis|slice:":4" }}. Après travaux et meubles, le coût de revient est de {{ r.cout_m2|euros }}/m².</p>
+    </div>
+    {% if marche.ventes %}
+    <div class="defile"><table class="petit-tab">
+      <thead><tr><th>Date</th><th>Adresse</th><th class="m">Surface</th><th class="m">Prix</th><th class="m">€/m²</th><th class="m">Distance</th></tr></thead>
+      <tbody>{% for v in marche.ventes|slice:":6" %}<tr><td>{{ v.date }}</td><td>{{ v.adresse }}</td><td class="m">{{ v.surface }} m²</td><td class="m">{{ v.prix|euros }}</td><td class="m">{{ v.prix_m2|euros }}</td><td class="m">{{ v.distance }} m</td></tr>{% endfor %}</tbody>
+    </table></div>
+    {% endif %}
+    {% else %}
+    <div class="encadre">{% if erreur_marche %}Prix du marché indisponible : {{ erreur_marche }}{% else %}Pas assez de ventes comparables autour du bien.{% endif %} Prix d'achat : {{ prix_m2|euros }}/m², coût de revient {{ r.cout_m2|euros }}/m².</div>
+    {% endif %}
+    <div class="deux">
+      <div>
+        <h3>Loyers visés</h3>
+        <table><tbody>
+          <tr><td>Loyer moyen hors charges</td><td class="m">{{ loyer_m2|euros:1 }}/m²</td></tr>
+          <tr><td>Loyers par an</td><td class="m">{{ r.loyers_an|euros }}</td></tr>
+          <tr><td>Vacance prévue</td><td class="m">{% if p.vacance %}{{ p.vacance|saisie }} % de l'année{% else %}aucune{% endif %}</td></tr>
+        </tbody></table>
+      </div>
+      <div>
+        <h3>Rentabilité</h3>
+        <table><tbody>
+          <tr><td>Rentabilité brute</td><td class="m">{{ r.renta_brute|pct:2 }}</td></tr>
+          <tr><td>Rentabilité nette de charges</td><td class="m">{{ r.renta_nette|pct:2 }}</td></tr>
+          {% if regime %}<tr><td>Nette d'impôt ({{ regime.nom }})</td><td class="m">{{ regime.renta_nette_nette|pct:2 }}</td></tr>{% endif %}
+        </tbody></table>
+      </div>
+    </div>
+    <div class="pied"><span>Source des ventes : DVF, data.gouv.fr</span><span>{{ num.marche }} / {{ nb_pages }}</span></div>
+  </article>
+  {% endif %}
+
+  {# ---------- montage ---------- #}
+  {% if sections.montage %}
+  <article class="feuille" id="page-montage">
+    <div class="entete"><h2>Montage financier</h2><span class="num">{{ num.montage }}</span></div>
+    <div class="deux">
+      <div class="defile"><table>
+        <thead><tr><th>Emplois</th><th class="m">Montant</th></tr></thead>
+        <tbody>
+          <tr><td>Prix d'achat{% if p.prix_affiche and p.prix_affiche != p.prix %} (affiché {{ p.prix_affiche|euros }}){% endif %}</td><td class="m">{{ p.prix|euros }}</td></tr>
+          {% if p.frais_agence %}<tr><td>Frais d'agence</td><td class="m">{{ p.frais_agence|euros }}</td></tr>{% endif %}
+          <tr><td>Frais de notaire ({{ p.departement }})</td><td class="m">{{ r.frais_notaire|euros }}</td></tr>
+          {% if p.frais_ingenierie %}<tr><td>Frais d'ingénierie</td><td class="m">{{ p.frais_ingenierie|euros }}</td></tr>{% endif %}
+          {% if r.travaux %}<tr><td>Travaux</td><td class="m">{{ r.travaux|euros }}</td></tr>{% endif %}
+          {% if r.meubles %}<tr><td>Meubles</td><td class="m">{{ r.meubles|euros }}</td></tr>{% endif %}
+          <tr><td>Frais bancaires et garantie</td><td class="m">{{ frais_banque_garantie|euros }}</td></tr>
+          <tr class="total"><td>Coût total</td><td class="m">{{ r.cout_total|euros }}</td></tr>
+        </tbody>
+      </table></div>
+      <div class="defile"><table>
+        <thead><tr><th>Ressources</th><th class="m">Montant</th></tr></thead>
+        <tbody>
+          <tr><td>Apport personnel</td><td class="m">{{ r.apport|euros }}</td></tr>
+          <tr><td>Prêt amortissable</td><td class="m">{{ r.emprunt|euros }}</td></tr>
+          <tr><td colspan="2" class="note-d">{{ p.duree }} ans à {{ p.taux|saisie }} %, assurance {{ r.assurance_mois|euros }} par mois</td></tr>
+          <tr><td>Mensualité hors assurance</td><td class="m">{{ r.mensualite|euros }}</td></tr>
+          <tr><td>Mensualité assurance comprise</td><td class="m">{{ mensualite_totale|euros }}</td></tr>
+          <tr class="total"><td>Total</td><td class="m">{{ r.cout_total|euros }}</td></tr>
+        </tbody>
+      </table></div>
+    </div>
+    <div class="encadre">L'apport représente {{ r.apport|div_ou_zero:r.cout_total|pct }} du projet. Coût du crédit sur {{ p.duree }} ans (intérêts et assurance) : {{ r.cout_credit|euros }}.</div>
+    <div class="pied"><span>Dossier de financement · {{ p.nom }}</span><span>{{ num.montage }} / {{ nb_pages }}</span></div>
+  </article>
+  {% endif %}
+
+  {# ---------- prévisionnel ---------- #}
+  {% if sections.prev %}
+  <article class="feuille" id="page-prev">
+    <div class="entete"><h2>Prévisionnel sur 10 ans</h2><span class="num">{{ num.prev }}</span></div>
+    {% with g=graphique %}{% if g %}
+    <div class="graph"><svg viewBox="0 0 {{ g.largeur }} {{ g.hauteur }}" role="img" aria-label="Loyers, sorties et cash-flow sur 10 ans">
+      {% for t in g.graduations %}<line x1="{{ g.gauche }}" x2="{{ g.droite }}" y1="{{ t.y|stringformat:'s' }}" y2="{{ t.y|stringformat:'s' }}" stroke="#d4e0df" stroke-width="{% if t.zero %}1.4{% else %}.7{% endif %}"/><text x="{{ g.gauche|add:'-6' }}" y="{{ t.y|stringformat:'s' }}" dy="3.5" font-size="10" fill="#5b706f" text-anchor="end">{{ t.texte }}</text>{% endfor %}
+      {% for b in g.barres %}<rect x="{{ b.x1|stringformat:'s' }}" y="{{ b.y1|stringformat:'s' }}" width="{{ b.largeur|stringformat:'s' }}" height="{{ b.h1|stringformat:'s' }}" fill="#2f6b6b" rx="2"/><rect x="{{ b.x2|stringformat:'s' }}" y="{{ b.y2|stringformat:'s' }}" width="{{ b.largeur|stringformat:'s' }}" height="{{ b.h2|stringformat:'s' }}" fill="#c9d8d6" rx="2"/><text x="{{ b.cx|stringformat:'s' }}" y="{{ g.bas_texte }}" font-size="10" fill="#5b706f" text-anchor="middle">An {{ b.annee }}</text>{% endfor %}
+      <polyline points="{{ g.points }}" fill="none" stroke="#b07a2a" stroke-width="2.4"/>
+      {% for b in g.barres %}<circle cx="{{ b.cx|stringformat:'s' }}" cy="{{ b.cy|stringformat:'s' }}" r="{% if forloop.last %}4.5{% else %}3{% endif %}" fill="#b07a2a"/>{% endfor %}
+      <text x="{{ g.dernier.cx|stringformat:'s' }}" y="{{ g.dernier.cy|stringformat:'s' }}" dy="-9" font-size="10.5" fill="#b07a2a" text-anchor="middle" font-weight="700">{{ g.dernier_cf|euros_signe }}</text>
+    </svg></div>
+    {% endif %}{% endwith %}
+    <div class="legende"><span><i style="background:#2f6b6b"></i>Loyers encaissés</span><span><i style="background:#c9d8d6"></i>Échéances du prêt et charges</span><span><i style="background:#b07a2a"></i>Cash-flow avant impôt</span></div>
+    <div class="defile"><table class="petit-tab">
+      <thead><tr><th>Année</th>{% for l in previsionnel %}<th class="m">{{ l.annee }}</th>{% endfor %}</tr></thead>
+      <tbody>
+        <tr><td>Loyers</td>{% for l in previsionnel %}<td class="m">{{ l.loyers|euros }}</td>{% endfor %}</tr>
+        <tr><td>Charges</td>{% for l in previsionnel %}<td class="m">{{ l.charges|euros }}</td>{% endfor %}</tr>
+        <tr><td>Prêt</td>{% for l in previsionnel %}<td class="m">{{ l.pret|euros }}</td>{% endfor %}</tr>
+        <tr class="total"><td>Cash-flow</td>{% for l in previsionnel %}<td class="m">{{ l.cash_flow|euros_signe }}</td>{% endfor %}</tr>
+        <tr><td>Reste dû</td>{% for l in previsionnel %}<td class="m">{{ l.restant|euros }}</td>{% endfor %}</tr>
+      </tbody>
+    </table></div>
+    <p class="note-d">Loyers indexés de {{ reg.indexation_loyers|saisie }} % par an, charges de {{ reg.indexation_charges|saisie }} %, avant impôt.{% if regime %} Régime fiscal retenu : {{ regime.nom }}, impôt en plus la première année : {{ regime.impot|euros }}.{% endif %}</p>
+    <div class="pied"><span>Dossier de financement · {{ p.nom }}</span><span>{{ num.prev }} / {{ nb_pages }}</span></div>
+  </article>
+  {% endif %}
+
+  {# ---------- travaux ---------- #}
+  {% if sections.travaux %}
+  <article class="feuille" id="page-travaux">
+    <div class="entete"><h2>Travaux et devis</h2><span class="num">{{ num.travaux }}</span></div>
+    {% if r.recap_travaux %}
+    <div class="defile"><table>
+      <thead><tr><th>Poste</th><th class="m">Estimé</th><th class="m">Sur devis</th><th class="m">Total</th></tr></thead>
+      <tbody>{% for poste, e, d, t, part in r.recap_lignes %}<tr><td>{{ poste }}</td><td class="m">{% if e %}{{ e|euros }}{% else %}–{% endif %}</td><td class="m">{% if d %}{{ d|euros }}{% else %}–{% endif %}</td><td class="m">{{ t|euros }}</td></tr>{% endfor %}
+        <tr class="total"><td>Total</td><td class="m">{{ r.travaux_estimes|euros }}</td><td class="m">{{ r.travaux_sur_devis|euros }}</td><td class="m">{{ r.travaux|euros }}</td></tr>
+      </tbody>
+    </table></div>
+    <p class="texte">{{ r.part_travaux_devis|pct:0 }} des travaux sont couverts par des devis{% if r.lignes_devis %}, joints en annexe{% endif %}. Les autres postes sont chiffrés aux coûts moyens d'une rénovation, avec des imprévus.</p>
+    {% if r.lignes_devis %}<ul class="atouts">{% for d in r.lignes_devis %}<li>{{ d.lieu }} · {{ d.poste }}{% if d.entreprise %} · {{ d.entreprise }}{% endif %} : <strong>{{ d.montant|euros }}</strong>{% if d.piece_url %} · <a href="{{ d.piece_url }}">devis joint</a>{% endif %}</li>{% endfor %}</ul>{% endif %}
+    {% elif r.travaux %}
+    <table><tbody>{% for l in r.lignes_lots %}{% if l.travaux %}<tr><td>Lot {{ l.numero|stringformat:"03d" }}</td><td class="m">{{ l.travaux|euros }}</td></tr>{% endif %}{% endfor %}<tr class="total"><td>Total</td><td class="m">{{ r.travaux|euros }}</td></tr></tbody></table>
+    <p class="note-d">Le détail par corps de métier apparaît quand les travaux sont chiffrés poste par poste dans la simulation.</p>
+    {% else %}<p class="note-d">Pas de travaux prévus.</p>{% endif %}
+    <div class="pied"><span>Dossier de financement · {{ p.nom }}</span><span>{{ num.travaux }} / {{ nb_pages }}</span></div>
+  </article>
+  {% endif %}
+
+  {# ---------- DPE ---------- #}
+  {% if montre_dpe %}
+  <article class="feuille" id="page-dpe">
+    <div class="entete"><h2>Performance énergétique</h2><span class="num">{{ num.dpe }}</span></div>
+    {% if dpe.actuel or dpe.vise %}
+    <div class="saut">
+      {% if dpe.actuel %}<div class="lettre" style="background:{{ couleurs_dpe|cle:dpe.actuel }}">{{ dpe.actuel }}</div>{% endif %}
+      {% if dpe.actuel and dpe.vise %}<span class="fl" aria-hidden="true">→</span>{% endif %}
+      {% if dpe.vise %}<div class="lettre" style="background:{{ couleurs_dpe|cle:dpe.vise }}">{{ dpe.vise }}</div>{% endif %}
+      <div><strong>{% if dpe.actuel and dpe.vise %}De {{ dpe.actuel }} à {{ dpe.vise }} après travaux{% elif dpe.actuel %}Classe actuelle {{ dpe.actuel }}{% else %}Classe visée {{ dpe.vise }}{% endif %}</strong>
+        {% if dpe.actuel_kwh or dpe.vise_kwh %}<small>Consommation : {{ dpe.actuel_kwh|default_if_none:"?" }} → {{ dpe.vise_kwh|default_if_none:"?" }} kWh/m²/an{% if gain_dpe %}, soit −{{ gain_dpe|pct:0 }}{% endif %}</small>{% endif %}
+        {% if dpe.actuel_ges or dpe.vise_ges %}<small>Émissions : {{ dpe.actuel_ges|default_if_none:"?" }} → {{ dpe.vise_ges|default_if_none:"?" }} kg CO₂/m²/an</small>{% endif %}</div>
+    </div>
+    {% endif %}
+    <div class="deux">
+      <div class="echelle" aria-label="Étiquette énergie">
+        {% for e in echelle_dpe %}<div><b style="background:{{ e.couleur }};width:{{ e.largeur }}%">{{ e.classe }}</b>{{ e.seuil }}{% if e.classe == dpe.vise %} <span class="marque-d apres">◀ après{% if dpe.vise_kwh %} : {{ dpe.vise_kwh }}{% endif %}</span>{% endif %}{% if e.classe == dpe.actuel %} <span class="marque-d avant">◀ actuel{% if dpe.actuel_kwh %} : {{ dpe.actuel_kwh }}{% endif %}</span>{% endif %}</div>{% endfor %}
+        <div>kWh d'énergie primaire / m² / an</div>
+      </div>
+      <div>
+        {% if a_un_dpe %}
+        <h3>Classe par lot</h3>
+        <table class="petit-tab"><thead><tr><th>Lot</th><th>Actuel</th><th>Après travaux</th></tr></thead><tbody>
+          {% for x in lots_dpe %}<tr><td>{{ x.numero|stringformat:"03d" }} · {{ x.lot.nom_type }}, {{ x.lot.surface|saisie }} m²</td>
+            <td>{% if x.actuel %}<span class="lettre petite" style="background:{{ couleurs_dpe|cle:x.actuel }}">{{ x.actuel }}</span>{% elif dpe.actuel %}<span class="lettre petite" style="background:{{ couleurs_dpe|cle:dpe.actuel }}">{{ dpe.actuel }}</span>{% else %}–{% endif %}</td>
+            <td>{% if x.vise %}<span class="lettre petite" style="background:{{ couleurs_dpe|cle:x.vise }}">{{ x.vise }}</span>{% elif dpe.vise %}<span class="lettre petite" style="background:{{ couleurs_dpe|cle:dpe.vise }}">{{ dpe.vise }}</span>{% else %}–{% endif %}</td></tr>{% endfor %}
+        </tbody></table>
+        {% endif %}
+        {% if loi_climat %}<div class="encadre" style="margin-top:12px">Sans travaux : {{ loi_climat }}{% if dpe.vise and dpe.vise in "ABCD" %} Après travaux, le bien reste louable au-delà de 2034.{% endif %}</div>{% endif %}
+      </div>
+    </div>
+    {% if energie %}
+    <div>
+      <h3>Travaux de rénovation énergétique</h3>
+      <div class="defile"><table>
+        <thead><tr><th>Travaux</th><th>Lot</th><th class="m">Montant</th><th>Justificatif</th></tr></thead>
+        <tbody>{% for l in energie %}<tr><td>{{ l.poste }}</td><td>{{ l.lieu }}</td><td class="m">{{ l.montant|euros }}</td>
+          <td>{% if l.devis %}{% if l.piece_url %}<a href="{{ l.piece_url }}">devis{% if l.entreprise %} {{ l.entreprise }}{% endif %}</a>{% else %}devis{% if l.entreprise %} {{ l.entreprise }}{% endif %}{% endif %}{% else %}chiffrage estimé{% endif %}</td></tr>{% endfor %}
+          <tr class="total"><td>Total énergétique</td><td>{{ total_energie|div_ou_zero:r.travaux|pct:0 }} des travaux</td><td class="m">{{ total_energie|euros }}</td><td></td></tr>
+        </tbody>
+      </table></div>
+    </div>
+    {% endif %}
+    <p class="note-d">La classe visée est celle de l'audit ou du diagnostiqueur, à joindre en annexe.</p>
+    <div class="pied"><span>Dossier de financement · {{ p.nom }}</span><span>{{ num.dpe }} / {{ nb_pages }}</span></div>
+  </article>
+  {% endif %}
+
+  {# ---------- pièces ---------- #}
+  {% if sections.pieces %}
+  <article class="feuille" id="page-pieces">
+    <div class="entete"><h2>Pièces jointes</h2><span class="num">{{ num.pieces }}</span></div>
+    <div class="pieces">
+      {% for nom in pieces_auto %}<div><span class="pf-ok">✓</span>{{ nom }}</div>{% endfor %}
+      {% for code, nom, fournie in pieces %}<div><span class="{% if fournie %}pf-ok{% else %}pf-ko{% endif %}">{% if fournie %}✓{% else %}○{% endif %}</span>{{ nom }}</div>{% endfor %}
+    </div>
+    <p class="note-d">✓ pièce fournie avec ce dossier · ○ pièce à fournir.</p>
+    <div class="pied"><span>Dossier de financement · {{ p.nom }}</span><span>{{ num.pieces }} / {{ nb_pages }}</span></div>
+  </article>
+  {% endif %}
+</div>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+(function () {
+  const el = document.getElementById("carte-dossier");
+  if (!el || !window.L) return;
+  const vide = el.querySelector(".vide");
+  function dessiner(lat, lon) {
+    vide.remove();
+    const div = document.createElement("div"); el.appendChild(div);
+    const carte = L.map(div, { zoomControl: false, attributionControl: true, scrollWheelZoom: false }).setView([lat, lon], 16);
+    L.tileLayer("https://data.geopf.fr/wmts?SERVICE=WMTS&REQUEST=GetTile&VERSION=1.0.0&LAYER=GEOGRAPHICALGRIDSYSTEMS.PLANIGNV2&STYLE=normal&TILEMATRIXSET=PM&FORMAT=image/png&TILEMATRIX={z}&TILEROW={y}&TILECOL={x}",
+      { maxZoom: 18, attribution: "Plan IGN" }).addTo(carte);
+    L.circle([lat, lon], { radius: 500, color: "#2f6b6b", weight: 1.5, dashArray: "4 5", fill: false }).addTo(carte);
+    L.circleMarker([lat, lon], { radius: 9, color: "#fff", weight: 3, fillColor: "#b5562c", fillOpacity: 1 }).addTo(carte);
+  }
+  const lat = parseFloat(el.dataset.lat), lon = parseFloat(el.dataset.lon);
+  if (isFinite(lat) && isFinite(lon)) return dessiner(lat, lon);
+  if (!el.dataset.adresse) return;
+  // le serveur n'a pas pu géolocaliser : on demande directement à la Géoplateforme depuis le navigateur
+  fetch("https://data.geopf.fr/geocodage/search?limit=1&q=" + encodeURIComponent(el.dataset.adresse))
+    .then((r) => r.json()).then((d) => { const f = d.features && d.features[0]; if (f) dessiner(f.geometry.coordinates[1], f.geometry.coordinates[0]); else vide.textContent = "Adresse introuvable sur le plan IGN."; })
+    .catch(() => { vide.textContent = "Plan IGN indisponible pour le moment."; });
+})();
+</script>

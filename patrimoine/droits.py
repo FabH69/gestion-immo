@@ -51,15 +51,16 @@ MODULES = [
     ("investissement", "Simulations d'investissement", ["simulateurs.simulationinvestissement"],
      ["simulateurs:mes_simulations", "simulateurs:simulation", "simulateurs:simulation_enregistrer",
       "simulateurs:simulation_dupliquer", "simulateurs:simulation_supprimer", "simulateurs:simulation_creer_bien",
-      "simulateurs:simulation_devis"],
-     ["simulateurs:simulation_enregistrer", "simulateurs:simulation_devis", "simulateurs:simulation_dupliquer", "simulateurs:simulation_supprimer",
+      "simulateurs:simulation_devis", "simulateurs:simulation_dossier", "simulateurs:simulation_dossier_imprimer",
+      "simulateurs:simulation_dossier_photo"],
+     ["simulateurs:simulation_enregistrer", "simulateurs:simulation_dossier_photo", "simulateurs:simulation_devis", "simulateurs:simulation_dupliquer", "simulateurs:simulation_supprimer",
       "simulateurs:simulation_creer_bien"]),
     ("balles", "Balles", ["commandes.joueur", "commandes.article", "commandes.commande", "commandes.ligne"], [], []),
 ]
 LIBELLES = {code: libelle for code, libelle, *_ in MODULES}
 RESERVE_ADMIN = {"sauvegardes", "telecharger_sauvegarde", "tester_mail", "essai_entrer", "essai_reinitialiser", "essai_demo"}  # Paramètres : administrateurs seulement
 # pièces privées : le dossier dit à quel module elles appartiennent
-DOSSIERS_PRIVES = {"factures/": ["compta"], "devis-travaux/": ["investissement"], "modeles-word/": ["outils"], "modeles-annonces/": ["outils"],
+DOSSIERS_PRIVES = {"factures/": ["compta"], "devis-travaux/": ["investissement"], "photos-dossier/": ["investissement"], "modeles-word/": ["outils"], "modeles-annonces/": ["outils"],
                    "pieces-identite/": ["locataires", "baux", "relocation"], "etats-des-lieux/": ["baux"]}
 
 
