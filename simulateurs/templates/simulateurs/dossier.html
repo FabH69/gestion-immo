@@ -1,0 +1,129 @@
+{% extends "simulateurs/base.html" %}{% load invest %}
+{% block titre %}Dossier banque · {{ p.nom }}{% endblock %}
+{% block style %}{% include "simulateurs/_dossier_style.html" %}<style>
+  [hidden] { display: none !important; }
+  main { max-width: 1300px; }
+  .fil { font-size: .82rem; color: var(--doux); } .fil a { color: var(--doux); }
+  .prepa { display: grid; grid-template-columns: 340px minmax(0, 1fr); gap: 24px; align-items: start; }
+  @media (max-width: 980px) { .prepa { grid-template-columns: minmax(0, 1fr); } }
+  .panneau { display: grid; gap: 14px; position: sticky; top: 12px; max-height: calc(100vh - 24px); overflow-y: auto; padding-right: 4px; }
+  @media (max-width: 980px) { .panneau { position: static; max-height: none; overflow: visible; } }
+  .panneau .carte { margin: 0; padding: 16px; }
+  .panneau > *, #form-dossier > *, .paire2 > *, .trio > * { min-width: 0; }
+  .panneau input[type=text], .panneau select { width: 100%; min-width: 0; }
+  .panneau h2 { font-size: .98rem !important; margin-bottom: 10px !important; }
+  .cases { display: grid; gap: 6px; }
+  .cases label { display: flex; gap: 8px; align-items: center; font-size: .9rem; cursor: pointer; font-weight: 400 !important; margin: 0 !important; }
+  .cases input { accent-color: var(--primaire); width: 16px; height: 16px; flex: none; }
+  .panneau .champ { margin-bottom: 10px; }
+  .panneau textarea { width: 100%; padding: 9px 11px; border: 1px solid var(--bord); border-radius: 10px; font: inherit; font-size: .9rem; resize: vertical; }
+  .paire2 { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .trio { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 6px; }
+  .aide { font-size: .78rem; color: var(--doux); }
+  .photos-liste { display: grid; gap: 8px; }
+  .photo-l { display: grid; grid-template-columns: 56px minmax(0, 1fr) auto; gap: 8px; align-items: center; }
+  .photo-l img { width: 56px; height: 42px; object-fit: cover; border-radius: 6px; }
+  .photo-l input[type=text] { padding: 6px 8px; font-size: .84rem; border: 1px solid var(--bord); border-radius: 8px; width: 100%; font: inherit; }
+  .photo-l .actions-p { display: flex; gap: 2px; }
+  .mini { background: none; color: var(--primaire); padding: 4px 6px; font-size: .8rem; font-weight: 600; border-radius: 6px; }
+  .mini.retirer { color: var(--doux); }
+  .actions-d { display: flex; gap: 8px; flex-wrap: wrap; }
+  .bouton.secondaire { background: var(--teinte); color: var(--fonce); }
+  .lots-dpe { display: grid; gap: 4px; font-size: .84rem; }
+  .lots-dpe div { display: grid; grid-template-columns: 1fr 64px 64px; gap: 6px; align-items: center; }
+  .lots-dpe select, .trio select { padding: 6px; border: 1px solid var(--bord); border-radius: 8px; font: inherit; font-size: .84rem; background: #fff; width: 100%; }
+</style>{% endblock %}
+{% block contenu %}
+<div class="fil"><a href="{% url 'simulateurs:mes_simulations' %}">Mes simulations</a> › <a href="{{ s.get_absolute_url }}">{{ s.nom }}</a> › Dossier banque</div>
+<h1>Dossier banque</h1>
+<p class="chapeau">Le dossier reprend les chiffres de la simulation. Complétez ce que l'appli ne sait pas, puis ouvrez-le pour l'imprimer ou l'enregistrer en PDF.</p>
+
+<div class="prepa">
+  <aside class="panneau" aria-label="Préparer le dossier">
+    <form method="post" id="form-dossier" class="carte" style="display:grid;gap:14px">{% csrf_token %}
+      <div>
+        <h2>Pages du dossier</h2>
+        <div class="cases">{% for code, nom in liste_sections %}
+          <label><input type="checkbox" name="section-{{ code }}" id="section-{{ code }}"{% if sections|cle:code %} checked{% endif %}> {{ nom }}</label>{% endfor %}
+        </div>
+        <p class="aide">La page DPE n'apparaît que si une classe est saisie ou si un poste du chiffrage est coché « Réno. énergie ».</p>
+      </div>
+      <div>
+        <h2>Le porteur du projet</h2>
+        <div class="champ"><label for="presente_par">Présenté par</label><input type="text" id="presente_par" name="presente_par" value="{{ reg.presente_par }}" maxlength="120"></div>
+        <div class="champ"><label for="contact">Coordonnées</label><input type="text" id="contact" name="contact" value="{{ reg.contact }}" maxlength="200" placeholder="téléphone, e-mail"></div>
+        <div class="champ"><label for="mot">Mot de présentation</label><textarea id="mot" name="mot" rows="3" maxlength="1500" placeholder="Votre parcours d'investisseur, votre métier, pourquoi ce projet.">{{ reg.mot }}</textarea></div>
+        <div class="paire2">
+          <div class="champ"><label for="revenus_mois">Revenus nets / mois</label><input type="text" inputmode="decimal" id="revenus_mois" name="revenus_mois" value="{{ reg.revenus_mois|default_if_none:''|saisie }}"></div>
+          <div class="champ"><label for="epargne">Épargne restante</label><input type="text" inputmode="decimal" id="epargne" name="epargne" value="{{ reg.epargne|default_if_none:''|saisie }}"></div>
+          <div class="champ"><label for="credits_mois">Crédits en cours / mois</label><input type="text" inputmode="decimal" id="credits_mois" name="credits_mois" value="{{ reg.credits_mois|default_if_none:''|saisie }}" placeholder="{% if patrimoine %}{{ patrimoine.mensualites|floatformat:0 }}{% endif %}"></div>
+          <div class="champ"><label for="loyers_existants_mois">Loyers perçus / mois</label><input type="text" inputmode="decimal" id="loyers_existants_mois" name="loyers_existants_mois" value="{{ reg.loyers_existants_mois|default_if_none:''|saisie }}" placeholder="{% if patrimoine %}{{ patrimoine.loyers|floatformat:0 }}{% endif %}"></div>
+        </div>
+        <div class="cases"><label><input type="checkbox" name="inclure_patrimoine" id="inclure_patrimoine"{% if reg.inclure_patrimoine %} checked{% endif %}> Montrer le patrimoine géré dans l'appli</label></div>
+        <p class="aide">Crédits et loyers vides : repris des prêts et des baux de l'appli.</p>
+      </div>
+      <div>
+        <h2>Le bien</h2>
+        <div class="champ"><label for="description">Description</label><textarea id="description" name="description" rows="3" maxlength="1500" placeholder="État de l'immeuble, copropriété, points forts.">{{ reg.description }}</textarea></div>
+        <div class="champ"><label for="atouts">Atouts du quartier, un par ligne</label><textarea id="atouts" name="atouts" rows="4" maxlength="1500" placeholder="Métro B Gare d'Oullins : 6 min à pied&#10;Commerces de la Grande Rue">{{ reg.atouts }}</textarea></div>
+        {% if photos %}<div class="champ"><label for="couverture">Photo de couverture</label><select id="couverture" name="couverture">{% for ph in photos %}<option value="{{ ph.pk }}"{% if ph == couverture %} selected{% endif %}>{{ ph.legende|default:"Photo" }}</option>{% endfor %}</select></div>{% endif %}
+      </div>
+      <div>
+        <h2>Performance énergétique</h2>
+        <div class="trio" style="font-size:.8rem;color:var(--doux)"><span></span><span>Actuel</span><span>Visé</span></div>
+        <div class="trio"><span style="font-size:.84rem">Classe</span>
+          <select name="dpe_actuel" aria-label="Classe actuelle"><option value="">–</option>{% for c in classes_dpe %}<option{% if c == dpe.actuel %} selected{% endif %}>{{ c }}</option>{% endfor %}</select>
+          <select name="dpe_vise" aria-label="Classe visée"><option value="">–</option>{% for c in classes_dpe %}<option{% if c == dpe.vise %} selected{% endif %}>{{ c }}</option>{% endfor %}</select></div>
+        <div class="trio" style="margin-top:6px"><span style="font-size:.84rem">kWh/m²/an</span>
+          <input type="text" inputmode="numeric" name="dpe_actuel_kwh" value="{{ dpe.actuel_kwh|default_if_none:'' }}" aria-label="Consommation actuelle">
+          <input type="text" inputmode="numeric" name="dpe_vise_kwh" value="{{ dpe.vise_kwh|default_if_none:'' }}" aria-label="Consommation visée"></div>
+        <div class="trio" style="margin-top:6px"><span style="font-size:.84rem">kg CO₂/m²/an</span>
+          <input type="text" inputmode="numeric" name="dpe_actuel_ges" value="{{ dpe.actuel_ges|default_if_none:'' }}" aria-label="Émissions actuelles">
+          <input type="text" inputmode="numeric" name="dpe_vise_ges" value="{{ dpe.vise_ges|default_if_none:'' }}" aria-label="Émissions visées"></div>
+        {% if lots_dpe|length > 1 %}
+        <p class="aide" style="margin:10px 0 4px">Par lot, si les classes diffèrent :</p>
+        <div class="lots-dpe">{% for x in lots_dpe %}<div><span>Lot {{ x.numero|stringformat:"03d" }}</span>
+          <select name="dpe-lot-{{ forloop.counter0 }}-actuel" aria-label="Lot {{ x.numero }} : classe actuelle"><option value="">–</option>{% for c in classes_dpe %}<option{% if c == x.actuel %} selected{% endif %}>{{ c }}</option>{% endfor %}</select>
+          <select name="dpe-lot-{{ forloop.counter0 }}-vise" aria-label="Lot {{ x.numero }} : classe visée"><option value="">–</option>{% for c in classes_dpe %}<option{% if c == x.vise %} selected{% endif %}>{{ c }}</option>{% endfor %}</select></div>{% endfor %}</div>
+        {% endif %}
+        <p class="aide">Travaux énergétiques : cochez « Réno. énergie » sur les postes du chiffrage des travaux. {{ energie|length }} poste{{ energie|length|pluralize }} coché{{ energie|length|pluralize }}.</p>
+      </div>
+      <div>
+        <h2>Prévisionnel</h2>
+        <div class="paire2">
+          <div class="champ"><label for="indexation_loyers">Hausse des loyers (% / an)</label><input type="text" inputmode="decimal" id="indexation_loyers" name="indexation_loyers" value="{{ reg.indexation_loyers|saisie }}"></div>
+          <div class="champ"><label for="indexation_charges">Hausse des charges (% / an)</label><input type="text" inputmode="decimal" id="indexation_charges" name="indexation_charges" value="{{ reg.indexation_charges|saisie }}"></div>
+        </div>
+      </div>
+      <div>
+        <h2>Pièces fournies</h2>
+        <div class="cases">{% for code, nom, fournie in pieces %}<label><input type="checkbox" name="piece-{{ code }}" id="piece-{{ code }}"{% if fournie %} checked{% endif %}> {{ nom }}</label>{% endfor %}</div>
+        <p class="aide">Les devis joints au chiffrage des travaux sont ajoutés tout seuls.</p>
+      </div>
+      <div class="actions-d">
+        {% if peut_enregistrer %}<button type="submit">Enregistrer</button>{% endif %}
+        <a class="bouton secondaire" href="{% url 'simulateurs:simulation_dossier_imprimer' s.pk %}" target="_blank" rel="noopener">Ouvrir le dossier à imprimer</a>
+      </div>
+    </form>
+
+    <div class="carte" id="photos">
+      <h2>Photos du bien</h2>
+      {% if photos %}<div class="photos-liste">{% for ph in photos %}
+        <form method="post" action="{% url 'simulateurs:simulation_dossier_photo' s.pk %}" class="photo-l">{% csrf_token %}
+          <img src="{{ ph.url }}" alt=""><input type="hidden" name="photo" value="{{ ph.pk }}">
+          <input type="text" name="legende" value="{{ ph.legende }}" maxlength="120" aria-label="Légende">
+          {% if peut_enregistrer %}<span class="actions-p"><button class="mini" name="action" value="legende" type="submit">OK</button><button class="mini retirer" name="action" value="supprimer" type="submit" aria-label="Retirer la photo">×</button></span>{% endif %}
+        </form>{% endfor %}</div>{% else %}<p class="aide">Façade, pièces, vue : la première sert de couverture.</p>{% endif %}
+      {% if peut_enregistrer %}
+      <form method="post" action="{% url 'simulateurs:simulation_dossier_photo' s.pk %}" enctype="multipart/form-data" style="margin-top:10px">{% csrf_token %}
+        <input type="hidden" name="action" value="ajouter">
+        <input type="file" name="photos" id="photos-fichiers" accept=".jpg,.jpeg,.png,.webp" multiple aria-label="Ajouter des photos" onchange="this.form.submit()">
+        <p class="aide">JPG, PNG ou WebP, 12 Mo et 12 photos au plus.</p>
+      </form>
+      {% endif %}
+    </div>
+  </aside>
+
+  <section aria-label="Aperçu du dossier">{% include "simulateurs/_dossier_pages.html" %}</section>
+</div>
+{% endblock %}

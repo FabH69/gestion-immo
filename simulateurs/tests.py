@@ -718,3 +718,141 @@ class JeanbrunTests(SimpleTestCase):
         self.assertContains(r, "Dispositif Jeanbrun : les conditions à remplir")
         self.assertContains(r, "Le projet ne semble pas remplir les conditions")
         self.assertContains(r, "Travaux d&#x27;au moins 30 %")
+
+
+class DossierBanqueTests(TestCase):
+    """Dossier de financement : calculs, réglages, photos, page imprimable, droits."""
+
+    def setUp(self):
+        import tempfile
+
+        from simulateurs.calculs import investissement as inv
+
+        self.dossier_tmp = tempfile.mkdtemp()
+        self.reglage = self.settings(PRIVE_ROOT=self.dossier_tmp)
+        self.reglage.enable()
+        self.admin = User.objects.create_superuser("admin", "a@x.fr", "pw")
+        p = inv.exemple()
+        p.lots[0].travaux_detail = inv.chiffrage_par_defaut(False, 1)
+        self.s = SimulationInvestissement.objects.create(nom="Oullins", adresse=p.adresse, donnees=p.en_dict())
+        self.sans_reseau = mock.patch.object(dvf, "_lire", side_effect=OSError("réseau"))
+        self.sans_reseau.start()
+        from django.core.cache import cache
+
+        cache.clear()
+
+    def tearDown(self):
+        import shutil
+
+        self.sans_reseau.stop()
+        self.reglage.disable()
+        shutil.rmtree(self.dossier_tmp, ignore_errors=True)
+
+    def test_endettement_et_previsionnel(self):
+        from simulateurs import dossier
+        from simulateurs.calculs import investissement as inv
+
+        d = dossier.endettement(4800, 1400, 0, 1815, 2190)
+        self.assertAlmostEqual(d["taux"], 3215 / (4800 + 0.7 * 2190) * 100)
+        self.assertFalse(d["ok"])
+        self.assertTrue(dossier.endettement(9000, 0, 0, 1815, 2190)["ok"])
+        r = inv.simuler(inv.exemple())
+        prev = dossier.previsionnel(r, 0, 0)
+        self.assertEqual(len(prev), 10)
+        self.assertAlmostEqual(prev[0]["cash_flow"], r.cash_flow_avant_impot * 12, places=0)
+        self.assertGreater(dossier.previsionnel(r, 1.5, 2)[9]["loyers"], prev[9]["loyers"])
+        self.assertIsNotNone(dossier.graphique(prev))
+
+    def test_travaux_energetiques_et_page_dpe(self):
+        from simulateurs import dossier
+
+        lignes = dossier.lignes_energie(self.s.parametres)
+        self.assertEqual({l["poste"] for l in lignes}, {"Placo, cloisons, isolation", "Menuiseries (fenêtres)", "Chauffage, eau chaude"})
+        ctx = dossier.contexte(self.s)
+        self.assertTrue(ctx["montre_dpe"])
+        self.assertEqual(ctx["nb_pages"], 8)
+        # sans poste énergie ni classe : pas de page DPE, les pages se renumérotent
+        p = self.s.parametres
+        p.lots[0].travaux_detail = None
+        self.s.donnees = p.en_dict()
+        self.s.dossier = {"sections": {"marche": False}}
+        ctx = dossier.contexte(self.s)
+        self.assertFalse(ctx["montre_dpe"])
+        self.assertEqual(ctx["nb_pages"], 6)
+        self.assertEqual(ctx["num"]["montage"], 3)
+
+    def test_patrimoine_de_l_appli(self):
+        from datetime import date as d
+
+        from patrimoine.models import Bail, Bien, Lot, Pret, Proprietaire
+        from simulateurs import dossier
+
+        pr = Proprietaire.objects.create(nom="SCI", type=Proprietaire.Type.SCI_IR)
+        bien = Bien.objects.create(proprietaire=pr, nom="Lyon 7", adresse="1 rue X", code_postal="69007", ville="Lyon")
+        lot = Lot.objects.create(bien=bien, designation="Apt 1")
+        Bail.objects.create(lot=lot, type="nu", date_debut=d(2024, 1, 1), loyer_hc=700)
+        Pret.objects.create(proprietaire=pr, bien=bien, banque="CE", montant=100000, taux=2, duree_mois=240,
+                            date_premiere_echeance=d(2024, 2, 1))
+        patri = dossier.patrimoine(aujourdhui=d(2026, 11, 19))
+        self.assertEqual(patri["loyers"], 700)
+        self.assertEqual(patri["lignes"][0]["lots"], 1)
+        self.assertTrue(80000 < patri["crd"] < 100000)
+        self.assertTrue(500 < patri["mensualites"] < 520)
+
+    def test_preparer_enregistrer_et_imprimer(self):
+        url = reverse("simulateurs:simulation_dossier", args=[self.s.pk])
+        self.assertEqual(self.client.get(url).status_code, 302)  # anonyme
+        self.client.force_login(self.admin)
+        r = self.client.get(url)
+        self.assertContains(r, "Dossier banque")
+        self.assertContains(r, "Prix du marché indisponible")
+        self.client.post(url, {"section-porteur": "on", "section-montage": "on", "section-dpe": "on", "presente_par": "Fabien",
+                               "revenus_mois": "4 800", "dpe_actuel": "F", "dpe_vise": "c", "dpe_actuel_kwh": "390",
+                               "dpe_vise_kwh": "165", "piece-compromis": "on", "inclure_patrimoine": "on"})
+        self.s.refresh_from_db()
+        self.assertEqual(self.s.dossier["revenus_mois"], 4800)
+        self.assertEqual((self.s.dossier["dpe"]["actuel"], self.s.dossier["dpe"]["vise"]), ("F", "C"))
+        self.assertFalse(self.s.dossier["sections"]["bien"])
+        r = self.client.get(reverse("simulateurs:simulation_dossier_imprimer", args=[self.s.pk]))
+        self.assertContains(r, "Taux d'endettement après le projet")
+        self.assertContains(r, "De F à C après travaux")
+        self.assertContains(r, "ne pourront plus être loués à partir du 1er janvier 2028")
+        self.assertNotContains(r, 'id="page-bien"')
+        self.assertContains(r, "Imprimer ou enregistrer en PDF")
+
+    def test_photos(self):
+        from django.core.files.uploadedfile import SimpleUploadedFile
+
+        from simulateurs.models import PhotoDossier
+
+        self.client.force_login(self.admin)
+        url = reverse("simulateurs:simulation_dossier_photo", args=[self.s.pk])
+        self.client.post(url, {"action": "ajouter", "photos": [SimpleUploadedFile("facade.jpg", b"\xff\xd8jpeg"),
+                                                               SimpleUploadedFile("virus.exe", b"x")]})
+        ph = PhotoDossier.objects.get()
+        self.assertEqual(ph.legende, "facade")
+        self.assertTrue(ph.url.startswith("/prive/photos-dossier/"))
+        self.assertEqual(self.client.get(ph.url).status_code, 200)
+        self.client.post(url, {"action": "legende", "photo": ph.pk, "legende": "Façade sur rue"})
+        ph.refresh_from_db()
+        self.assertEqual(ph.legende, "Façade sur rue")
+        r = self.client.get(reverse("simulateurs:simulation_dossier_imprimer", args=[self.s.pk]))
+        self.assertContains(r, ph.url)
+        nom = ph.fichier.name
+        self.client.post(url, {"action": "supprimer", "photo": ph.pk})
+        self.assertFalse(PhotoDossier.objects.exists())
+        self.assertFalse(ph.fichier.storage.exists(nom))
+
+    def test_droit_consultation(self):
+        from patrimoine import droits
+
+        u = User.objects.create_user("lecteur", password="pw", is_staff=True)
+        droits.appliquer(u, {"investissement": droits.CONSULTATION})
+        self.client.force_login(u)
+        url = reverse("simulateurs:simulation_dossier", args=[self.s.pk])
+        r = self.client.get(url)
+        self.assertEqual(r.status_code, 200)
+        self.assertNotContains(r, ">Enregistrer</button>")
+        self.assertEqual(self.client.post(url, {"presente_par": "X"}).status_code, 403)
+        self.assertEqual(self.client.post(reverse("simulateurs:simulation_dossier_photo", args=[self.s.pk]),
+                                          {"action": "ajouter"}).status_code, 403)

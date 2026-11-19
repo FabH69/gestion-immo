@@ -1,0 +1,106 @@
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Manrope:wght@600;700;800&display=swap">
+<style>
+  .dossier { --d-encre: #18302f; --d-doux: #5b706f; --d-bord: #d4e0df; --d-prim: #2f6b6b; --d-teinte: #e3efee; --d-or: #b07a2a; --d-bon: #2d7a4b; --d-alerte: #b5562c;
+    --d-titre: "Manrope", Inter, "Segoe UI", system-ui, sans-serif; display: grid; gap: 22px; min-width: 0; color: var(--d-encre); }
+  .dossier h1, .dossier h2, .dossier h3 { font-family: var(--d-titre); text-wrap: balance; margin: 0; }
+  .dossier p { margin: 0; }
+  .dossier .m { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .feuille { background: #fff; border-radius: 4px; box-shadow: 0 1px 2px rgba(0,0,0,.06), 0 8px 24px rgba(24,48,47,.08); padding: 40px 44px 26px;
+    display: grid; grid-template-columns: minmax(0, 1fr); gap: 18px; position: relative; min-width: 0; }
+  @media (max-width: 640px) { .feuille { padding: 24px 18px 20px; } }
+  .entete { display: flex; justify-content: space-between; gap: 12px; align-items: baseline; border-bottom: 2px solid var(--d-encre); padding-bottom: 8px; flex-wrap: wrap; }
+  .entete h2 { font-size: 1.3rem; }
+  .entete .num { font-family: var(--d-titre); color: var(--d-doux); font-size: .85rem; font-weight: 700; }
+  .pied { display: flex; justify-content: space-between; font-size: .72rem; color: var(--d-doux); border-top: 1px solid var(--d-bord); padding-top: 8px; flex-wrap: wrap; gap: 6px; margin-top: auto; }
+  .couv { padding: 0; overflow: hidden; gap: 0; }
+  .couv .photo { aspect-ratio: 16 / 7; background: linear-gradient(135deg, #8aa9a4, #c9b79a 50%, #7d8f8a); background-size: cover; background-position: center;
+    position: relative; display: flex; align-items: flex-end; padding: 26px 40px; color: #fff; }
+  .couv .photo::before { content: ""; position: absolute; inset: 0; background: linear-gradient(180deg, transparent 40%, rgba(10,24,23,.8)); }
+  .couv .photo .leg { position: relative; display: grid; gap: 4px; }
+  .couv small { font-size: .74rem; letter-spacing: .1em; text-transform: uppercase; opacity: .9; }
+  .couv h1 { font-size: clamp(1.4rem, 3vw, 2.1rem); line-height: 1.15; color: #fff; }
+  .couv .corps { padding: 24px 40px 28px; display: grid; gap: 18px; }
+  @media (max-width: 640px) { .couv .photo { padding: 18px; } .couv .corps { padding: 18px; } }
+  .chiffres { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); border: 1px solid var(--d-bord); border-radius: 10px; overflow: hidden; }
+  @media (max-width: 520px) { .chiffres { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+  .chiffres div { padding: 13px 15px; border-right: 1px solid var(--d-bord); border-bottom: 1px solid var(--d-bord); margin: 0 -1px -1px 0; }
+  .chiffres b { display: block; font-family: var(--d-titre); font-size: 1.3rem; font-variant-numeric: tabular-nums; }
+  .chiffres span { font-size: .78rem; color: var(--d-doux); }
+  .chiffres .cle b { color: var(--d-prim); }
+  .chiffres .pos b { color: var(--d-bon); } .chiffres .neg b { color: var(--d-alerte); }
+  .qui { display: flex; justify-content: space-between; gap: 16px; flex-wrap: wrap; font-size: .88rem; color: var(--d-doux); }
+  .qui strong { color: var(--d-encre); }
+  .deux { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 22px; }
+  .deux > * { min-width: 0; }
+  @media (max-width: 760px) { .deux { grid-template-columns: minmax(0, 1fr); } }
+  .dossier table { width: 100%; border-collapse: collapse; font-size: .88rem; }
+  .dossier th { text-align: left; font-size: .72rem; text-transform: uppercase; letter-spacing: .06em; color: var(--d-doux); font-weight: 600; padding: 6px 8px; border-bottom: 1px solid var(--d-bord); }
+  .dossier td { padding: 7px 8px; border-bottom: 1px solid var(--d-bord); vertical-align: top; }
+  .dossier tr.total td { font-weight: 700; border-top: 2px solid var(--d-encre); border-bottom: 0; }
+  .dossier .defile { overflow-x: auto; }
+  .dossier h3 { font-size: .98rem; margin-bottom: 8px; }
+  .texte { max-width: 72ch; white-space: pre-line; }
+  .note-d { font-size: .78rem; color: var(--d-doux); }
+  .jauge-d { display: grid; gap: 6px; }
+  .jauge-d .barre-d { height: 12px; border-radius: 6px; background: var(--d-teinte); position: relative; }
+  .jauge-d .rempli { position: absolute; inset: 0 auto 0 0; border-radius: 6px; background: var(--d-prim); }
+  .jauge-d.trop .rempli { background: var(--d-alerte); }
+  .jauge-d .seuil { position: absolute; top: -5px; bottom: -5px; width: 2px; background: var(--d-alerte); }
+  .jauge-d .lig { display: flex; justify-content: space-between; gap: 10px; font-size: .8rem; color: var(--d-doux); flex-wrap: wrap; }
+  .encadre { background: var(--d-teinte); border-radius: 10px; padding: 13px 15px; font-size: .88rem; }
+  .encadre.alerte { background: #fdecea; color: #7a2416; }
+  .carte-geo { border: 1px solid var(--d-bord); border-radius: 10px; overflow: hidden; min-height: 240px; background: var(--d-teinte); position: relative; }
+  .carte-geo .vide { position: absolute; inset: 0; display: grid; place-items: center; color: var(--d-doux); font-size: .85rem; padding: 16px; text-align: center; }
+  .carte-geo .leaflet-container { height: 260px; width: 100%; }
+  .atouts { display: grid; gap: 7px; font-size: .88rem; padding: 0; margin: 0; list-style: none; }
+  .atouts li { border-bottom: 1px dotted var(--d-bord); padding-bottom: 6px; }
+  .galerie { display: grid; grid-template-columns: 2fr 1fr 1fr; grid-auto-rows: 120px; gap: 8px; }
+  .galerie figure { margin: 0; border-radius: 6px; overflow: hidden; position: relative; background: var(--d-teinte); }
+  .galerie figure:first-child { grid-row: span 2; }
+  .galerie figure:only-child { grid-column: 1 / -1; }
+  @media (max-width: 560px) { .galerie { grid-template-columns: 1fr 1fr; grid-auto-rows: 100px; } .galerie figure:first-child { grid-column: 1 / -1; } }
+  .galerie img { width: 100%; height: 100%; object-fit: cover; display: block; }
+  .galerie figcaption { position: absolute; left: 8px; bottom: 6px; font-size: .72rem; color: #fff; background: rgba(10,24,23,.6); padding: 1px 7px; border-radius: 4px; }
+  .regle { position: relative; height: 58px; margin: 6px 8% 0; }
+  .regle .axe { position: absolute; left: 0; right: 0; top: 24px; height: 10px; border-radius: 5px; background: linear-gradient(90deg, var(--d-teinte), var(--d-bord)); }
+  .regle .rep { position: absolute; top: 0; transform: translateX(-50%); text-align: center; font-size: .72rem; color: var(--d-doux); white-space: nowrap; }
+  .regle .rep i { display: block; width: 2px; height: 14px; margin: 4px auto 0; background: var(--d-doux); }
+  .regle .rep.nous { color: var(--d-prim); font-weight: 700; top: 34px; }
+  .regle .rep.nous i { background: var(--d-prim); width: 4px; height: 18px; margin: -22px auto 4px; }
+  .graph svg { width: 100%; height: auto; display: block; }
+  .legende { display: flex; gap: 14px; font-size: .78rem; color: var(--d-doux); flex-wrap: wrap; }
+  .legende i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 5px; vertical-align: -1px; }
+  .petit-tab td, .petit-tab th { padding: 5px 6px; font-size: .8rem; }
+  .pieces { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 8px; }
+  .pieces div { border: 1px solid var(--d-bord); border-radius: 8px; padding: 9px 12px; font-size: .86rem; display: flex; gap: 8px; align-items: baseline; }
+  .pieces .pf-ok { color: var(--d-bon); font-weight: 700; } .pieces .pf-ko { color: var(--d-doux); }
+  .saut { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+  .lettre { width: 62px; height: 62px; border-radius: 10px; display: grid; place-items: center; font-family: var(--d-titre); font-weight: 800; font-size: 2rem; color: #1b1b1b; }
+  .lettre.petite { width: 26px; height: 26px; font-size: .9rem; border-radius: 6px; display: inline-grid; }
+  .saut .fl { font-size: 1.6rem; color: var(--d-doux); }
+  .saut small { display: block; font-size: .8rem; color: var(--d-doux); }
+  .echelle { display: grid; gap: 4px; }
+  .echelle div { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; font-size: .78rem; color: var(--d-doux); white-space: nowrap; }
+  .echelle b { display: inline-flex; align-items: center; height: 24px; padding-left: 9px; color: #1b1b1b; font-family: var(--d-titre); font-size: .9rem; flex: none;
+    clip-path: polygon(0 0, calc(100% - 10px) 0, 100% 50%, calc(100% - 10px) 100%, 0 100%); }
+  .echelle .marque-d { font-weight: 700; color: var(--d-encre); }
+  .echelle .avant { color: var(--d-alerte); } .echelle .apres { color: var(--d-bon); }
+  .dossier a { color: var(--d-prim); }
+  @media print {
+    @page { size: A4; margin: 12mm; }
+    body { background: #fff !important; }
+    .dossier { gap: 0; }
+    .feuille { box-shadow: none; border-radius: 0; padding: 0 0 6mm; break-after: page; page-break-after: always; min-height: 270mm; display: flex; flex-direction: column; }
+    .feuille > * + * { margin-top: 14px; }
+    .feuille > .pied { margin-top: auto; }
+    .galerie { grid-auto-rows: 30mm; }
+    .carte-geo, .carte-geo .leaflet-container { min-height: 0; height: 62mm; }
+    .feuille:last-child { break-after: auto; page-break-after: auto; }
+    .couv .corps { padding: 18px 0 0; }
+    .couv .photo { padding: 22px 26px; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    .dossier * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    .dossier .defile { overflow: visible; }
+    .dossier a { color: inherit; text-decoration: none; }
+  }
+</style>

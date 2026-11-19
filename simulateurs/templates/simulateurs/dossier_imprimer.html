@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Dossier de financement · {{ p.nom }}</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap">
+{% include "simulateurs/_dossier_style.html" %}
+<style>
+  body { margin: 0; font-family: Inter, -apple-system, "Segoe UI", Roboto, Arial, sans-serif; font-size: 14px; line-height: 1.5; background: #e7eeee; }
+  .outils { position: sticky; top: 0; z-index: 1000; display: flex; gap: 10px; align-items: center; justify-content: space-between; flex-wrap: wrap;
+    padding: 10px max(16px, calc(50vw - 420px)); background: #24585c; color: #fff; }
+  .outils button { border: 0; border-radius: 999px; padding: 9px 18px; background: #fff; color: #24585c; font: inherit; font-weight: 600; cursor: pointer; }
+  .outils a { color: #fff; font-size: .9rem; }
+  .page { max-width: 840px; margin: 22px auto 40px; padding: 0 16px; }
+  @media print { .outils { display: none; } .page { margin: 0; padding: 0; max-width: none; } }
+</style>
+</head>
+<body>
+<div class="outils"><a href="{% url 'simulateurs:simulation_dossier' s.pk %}">← Préparer le dossier</a>
+  <span>Choisissez « Enregistrer au format PDF » comme imprimante pour obtenir le fichier.</span>
+  <button type="button" onclick="window.print()">Imprimer ou enregistrer en PDF</button></div>
+<div class="page">{% include "simulateurs/_dossier_pages.html" %}</div>
+</body>
+</html>

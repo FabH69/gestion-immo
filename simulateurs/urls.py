@@ -16,6 +16,9 @@ urlpatterns = [path("", views.accueil, name="accueil")] + [
     path("rentabilite/<int:pk>/", views.simulation, name="simulation"),
     path("rentabilite/<int:pk>/dupliquer/", views.simulation_dupliquer, name="simulation_dupliquer"),
     path("rentabilite/<int:pk>/devis/", views.simulation_devis, name="simulation_devis"),
+    path("rentabilite/<int:pk>/dossier-banque/", views.simulation_dossier, name="simulation_dossier"),
+    path("rentabilite/<int:pk>/dossier-banque/imprimer/", views.simulation_dossier_imprimer, name="simulation_dossier_imprimer"),
+    path("rentabilite/<int:pk>/dossier-banque/photos/", views.simulation_dossier_photo, name="simulation_dossier_photo"),
     path("rentabilite/<int:pk>/supprimer/", views.simulation_supprimer, name="simulation_supprimer"),
     path("rentabilite/<int:pk>/creer-le-bien/", views.simulation_creer_bien, name="simulation_creer_bien"),
 ]

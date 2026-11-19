@@ -199,6 +199,7 @@ def lire_chiffrage(texte):
             "prix": max(0.0, nombre(l.get("prix"))), "quantite": None if qte in (None, "") else max(0.0, nombre(qte)),
             "devis": max(0.0, nombre(l.get("devis"))), "entreprise": str(l.get("entreprise") or "")[:120],
             "agrandissement": bool(l.get("agrandissement")),
+            "energie": bool(l.get("energie")),
             "piece": piece if isinstance(piece, int) else None, "piece_nom": str(l.get("piece_nom") or "")[:120],
             "piece_url": url if (url := str(l.get("piece_url") or "")).startswith("/prive/devis-travaux/") else "",
         })
