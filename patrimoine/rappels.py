@@ -39,7 +39,7 @@ def _anniversaire_recent(depart, aujourdhui):
 
 # filtres de la page « À faire » : (code, libellé)
 GENRES = [("loyers", "Loyers"), ("revisions", "Révisions"), ("assurances", "Assurances"), ("chaudieres", "Chaudières"),
-          ("entrees", "Entrées et sorties"), ("rappels", "Mes rappels")]
+          ("dpe", "DPE"), ("entrees", "Entrées et sorties"), ("rappels", "Mes rappels")]
 
 
 def a_faire(aujourdhui, horizon_jours=PREAVIS_JOURS, avec_taches=False):
@@ -76,6 +76,23 @@ def a_faire(aujourdhui, horizon_jours=PREAVIS_JOURS, avec_taches=False):
             ajouter(echeance, "Demander l'attestation d'entretien de la chaudière", lieu, "Chaudière",
                     reverse("admin:patrimoine_lot_change", args=[bail.lot.pk]),
                     action=reverse("rappel_fait", args=["chaudiere", bail.lot.pk]), genre="chaudieres")
+
+    # DPE : fin de validité (prévenu 6 mois avant) et date d'interdiction de louer selon la classe (prévenu 1 an avant)
+    from . import dpe
+    from .models import Lot
+
+    for lot in Lot.objects.filter(vendu=False, bien__vendu=False, type__in=("appartement", "maison", "studio")).select_related("bien"):
+        url = reverse("admin:patrimoine_lot_change", args=[lot.pk])
+        fin = lot.dpe_fin_validite
+        if fin:
+            ajouter(fin, "Faire refaire le DPE" if fin >= aujourdhui else "DPE expiré : le faire refaire",
+                    f"{lot} · classe {lot.classe_dpe or '?'}, valable jusqu'au {fin:%d/%m/%Y}", "DPE", url,
+                    limite_propre=aujourdhui + timedelta(days=dpe.PREVENIR_JOURS), genre="dpe", important=fin < aujourdhui)
+        quand = dpe.interdiction(lot.classe_dpe, lot.bien.code_postal)
+        if quand and lot.exploitation != "courte":
+            sens = "depuis le" if quand <= aujourdhui else "à partir du"
+            ajouter(quand, f"Classe {lot.classe_dpe} : location interdite {sens} {quand:%d/%m/%Y}", f"{lot} · selon la loi en vigueur, travaux nécessaires pour louer", "DPE", url,
+                    limite_propre=aujourdhui + timedelta(days=365), genre="dpe", important=True)
 
     # loyers en retard de plus de 5 jours (12 derniers mois) : un rappel par loyer, réglé dès que le paiement est saisi
     impayes = (Echeance.objects.exclude(statut=Echeance.Statut.PAYE)

@@ -11,6 +11,7 @@ urlpatterns = [path("", views.accueil, name="accueil")] + [
     # module investisseur : calcul public, enregistrement dans l'espace connecté
     path("rentabilite/calcul/", views.rentabilite_calcul, name="rentabilite_calcul"),
     path("rentabilite/prix-du-marche/", views.rentabilite_dvf, name="rentabilite_dvf"),
+    path("rentabilite/verifier-dpe/", views.rentabilite_dpe, name="rentabilite_dpe"),
     path("rentabilite/mes-simulations/", views.mes_simulations, name="mes_simulations"),
     path("rentabilite/enregistrer/", views.simulation_enregistrer, name="simulation_enregistrer"),
     path("rentabilite/<int:pk>/", views.simulation, name="simulation"),

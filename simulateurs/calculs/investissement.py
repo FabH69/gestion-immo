@@ -254,6 +254,8 @@ class Parametres:
     jeanbrun_zone: str = ""
     jeanbrun_plafond: float = 0            # plafond de loyer de la commune (€/m²) ; 0 : valeur indicative de la zone
     jeanbrun_autres: float = 0             # amortissement Jeanbrun déjà utilisé par d'autres logements du foyer (€/an)
+    # DPE fournis par le vendeur : [{numero, lot (n° du lot à partir de 1, 0 = tout l'immeuble), classe_annoncee, verifie: {…}}]
+    dpe: list = field(default_factory=list)
 
     # --- stockage (JSON) ---
     def en_dict(self):

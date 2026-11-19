@@ -53,6 +53,33 @@ def lots_sans_dpe():
     return [(f"lot:{l.pk}", _nom(l), _a("lot", l.pk)) for l in _lots_habitation() if not l.classe_dpe]
 
 
+def lots_dpe_expire():
+    from django.utils import timezone
+
+    aujourdhui = timezone.localdate()
+    return [(f"lot:{l.pk}", f"{_nom(l)} · expiré le {l.dpe_fin_validite:%d/%m/%Y}", _a("lot", l.pk)) for l in _lots_habitation()
+            if l.classe_dpe and l.dpe_fin_validite and l.dpe_fin_validite < aujourdhui]
+
+
+def lots_dpe_sans_date():
+    return [(f"lot:{l.pk}", _nom(l), _a("lot", l.pk)) for l in _lots_habitation() if l.classe_dpe and not l.dpe_fin_validite]
+
+
+def lots_location_interdite():
+    """Logements loués ou à louer dont la classe est déjà interdite à la location (loi Climat)."""
+    from django.utils import timezone
+
+    from . import dpe
+
+    aujourdhui = timezone.localdate()
+    lignes = []
+    for l in _lots_habitation():
+        quand = dpe.interdiction(l.classe_dpe, l.bien.code_postal)
+        if quand and quand <= aujourdhui and l.exploitation != "courte":
+            lignes.append((f"lot:{l.pk}:{l.classe_dpe}", f"{_nom(l)} · classe {l.classe_dpe}", _a("lot", l.pk)))
+    return lignes
+
+
 def locataires_sans_email():
     vus, lignes = set(), []
     for b in _baux_actifs():
@@ -162,6 +189,10 @@ CONTROLES = [
      baux_sans_locataire, "baux"),
     ("lot_surface", BLOQUANT, "Logements sans surface", "Mention obligatoire dans le bail et l'annonce.", "surface", lots_sans_surface, "biens"),
     ("lot_dpe", BLOQUANT, "Logements sans DPE", "Classe énergie obligatoire dans le bail et l'annonce.", "dpe", lots_sans_dpe, "biens"),
+    ("lot_dpe_expire", BLOQUANT, "Logements au DPE expiré", "Un DPE valable est obligatoire pour l'annonce et le bail : à refaire.",
+     "dpe", lots_dpe_expire, "biens"),
+    ("lot_interdit", BLOQUANT, "Logements interdits à la location (classe DPE)",
+     "Selon la loi en vigueur, ni nouveau bail ni renouvellement : travaux ou nouveau DPE nécessaires.", "dpe", lots_location_interdite, "biens"),
     ("locataire_email", A_COMPLETER, "Locataires sans adresse e-mail", "Quittances et relances par mail impossibles.", "mail",
      locataires_sans_email, "locataires"),
     ("bail_depot", A_COMPLETER, "Baux avec un dépôt de garantie à 0 €", "À vérifier : dépôt non versé, ou montant non saisi ?", "depot",
@@ -174,12 +205,15 @@ CONTROLES = [
      "La facture arrive vers le 5 du mois suivant : déposez-la pour la contrôler.", "facture", conciergerie_manquante, "compta"),
     ("booking", A_COMPLETER, "Mois sans séjour Booking", "Relevé des versements Booking pas encore importé ?", "booking",
      booking_manquant, "lcd"),
+    ("lot_dpe_date", A_COMPLETER, "DPE sans date", "Saisissez la date ou le n° du DPE pour être prévenu avant la fin de validité.",
+     "dpe", lots_dpe_sans_date, "biens"),
     ("pret_tableau", A_COMPLETER, "Prêts sans tableau de la banque", "L'échéancier est calculé : importez le tableau pour avoir les "
      "montants exacts.", "banque", prets_sans_tableau, "finances"),
 ]
 NIVEAUX = [(BLOQUANT, "Bloquent un document"), (A_COMPLETER, "À compléter")]
 # ce qui est vérifié, dit court pour « Tout est bon »
-SUJETS = {"bail_irl": "IRL des baux", "bail_locataire": "locataires des baux", "lot_surface": "surfaces", "lot_dpe": "DPE",
+SUJETS = {"bail_irl": "IRL des baux", "bail_locataire": "locataires des baux", "lot_surface": "surfaces", "lot_dpe": "DPE", "lot_dpe_expire": "validité des DPE",
+          "lot_interdit": "classes DPE louables", "lot_dpe_date": "dates des DPE",
           "locataire_email": "e-mails des locataires", "bail_depot": "dépôts de garantie", "bail_pdl": "compteurs électriques",
           "chaudiere": "entretien des chaudières", "conciergerie": "factures de conciergerie", "booking": "imports Booking",
           "pret_tableau": "tableaux des prêts"}

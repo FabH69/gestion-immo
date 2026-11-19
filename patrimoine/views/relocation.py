@@ -1,6 +1,7 @@
 """Candidatures (formulaire public et mails), photos et annonces."""
 import io
 import zipfile
+from datetime import date
 
 from django.contrib import messages
 from django.contrib.admin.views.decorators import staff_member_required
@@ -140,3 +141,40 @@ def annonce_pdf(request, pk):
     photos = [Path(p.image.path).as_uri() for p in a.lot.photos.all()[:7] if p.image and Path(p.image.path).exists()]
     html = render_to_string("patrimoine/annonce_pdf.html", {"a": a, "lot": a.lot, "bien": a.lot.bien, "photos": photos})
     return _pdf(html, f"annonce {a.lot.bien.ville or a.lot}")
+
+
+@staff_member_required
+@require_POST
+def lot_dpe_ademe(request, pk):
+    """Complète la fiche du lot depuis la base de l'ADEME : classes énergie et GES, date et fin de validité du DPE."""
+    from .. import dpe
+
+    lot = get_object_or_404(Lot, pk=pk)
+    retour = redirect("admin:patrimoine_lot_change", lot.pk)
+    numero = dpe.normaliser_numero(request.POST.get("numero_dpe") or lot.numero_dpe)
+    if not dpe.numero_valide(numero):
+        messages.error(request, "Saisissez d'abord le n° du DPE (13 caractères, ex. 2369E0123456X), puis recommencez.")
+        return retour
+    try:
+        fiche = dpe.chercher(numero)
+    except dpe.DpeIndisponible as e:
+        messages.error(request, f"{e} {dpe.lien_observatoire(numero)}")
+        return retour
+    if not fiche:
+        messages.error(request, f"Le DPE n° {numero} est introuvable dans la base de l'ADEME. Vérifiez le numéro.")
+        return retour
+    lot.numero_dpe = numero
+    if fiche["classe"] in dpe.CLASSES:
+        lot.classe_dpe = fiche["classe"]
+    if fiche["ges"] in dpe.CLASSES:
+        lot.classe_ges = fiche["ges"]
+    for champ, cle in (("date_dpe", "date_etablissement"), ("fin_validite_dpe", "date_fin_validite")):
+        try:
+            setattr(lot, champ, date.fromisoformat(fiche[cle]))
+        except ValueError:
+            pass
+    lot.save(update_fields=["numero_dpe", "classe_dpe", "classe_ges", "date_dpe", "fin_validite_dpe"])
+    fin = lot.dpe_fin_validite
+    messages.success(request, f"DPE n° {numero} trouvé : classe {lot.classe_dpe or '?'}, GES {lot.classe_ges or '?'}"
+                              + (f", valable jusqu'au {fin:%d/%m/%Y}." if fin else "."))
+    return retour

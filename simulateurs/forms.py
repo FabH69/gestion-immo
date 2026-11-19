@@ -1,3 +1,4 @@
+import json
 from decimal import Decimal, InvalidOperation
 
 from django import forms
@@ -220,6 +221,31 @@ def lire_lots(data):
     return lots
 
 
+def lire_dpe(brut, nb_lots):
+    """DPE saisis (champ caché JSON) : numéro, lot concerné, classe annoncée et dernier résultat de la vérification."""
+    from patrimoine import dpe
+
+    try:
+        lignes = json.loads(brut) if isinstance(brut, str) else (brut or [])
+    except ValueError:
+        return []
+    res = []
+    for l in lignes[:inv.MAX_LOTS + 1] if isinstance(lignes, list) else []:
+        if not isinstance(l, dict):
+            continue
+        numero = dpe.normaliser_numero(l.get("numero"))[:13]
+        if not numero:
+            continue
+        lot = entier(l.get("lot"), 0, 0, nb_lots)
+        classe = str(l.get("classe_annoncee") or "").upper()[:1]
+        v = l.get("verifie") if isinstance(l.get("verifie"), dict) else {}
+        verifie = {k: str(v.get(k) or "")[:20] for k in ("classe", "ges", "date_etablissement", "fin_validite", "statut")}
+        verifie["surface"] = nombre(v.get("surface")) or None
+        res.append({"numero": numero, "lot": lot, "classe_annoncee": classe if classe in dpe.CLASSES else "",
+                    "verifie": verifie if verifie.get("statut") in ("vert", "orange", "rouge") else {}})
+    return res
+
+
 def lire_parametres(data):
     """Paramètres d'une simulation depuis un formulaire envoyé (POST)."""
     defaut = inv.Parametres()
@@ -241,6 +267,7 @@ def lire_parametres(data):
     p.travaux_communs = lire_chiffrage(data.get("travaux_communs"))
     p.niveau_renovation = entier(data.get("niveau_renovation"), 1, 0, 2)
     p.regime = (data.get("regime") or "")[:20]
+    p.dpe = lire_dpe(data.get("dpe"), len(p.lots))
     p.associes = []
     for i in range(inv.MAX_ASSOCIES):
         parts = nombre(data.get(f"assoc-{i}-parts"))

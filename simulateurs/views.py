@@ -133,6 +133,7 @@ def _contexte_invest(request, p, simulation=None):
                            "peut_joindre": bool(simulation) and request.user.is_authenticated and _peut_enregistrer(request.user)},
         "travaux_communs_json": json.dumps(p.travaux_communs) if p.travaux_communs else "",
         "lots_detail_json": [json.dumps(l.travaux_detail) if l.travaux_detail else "" for l in p.lots],
+        "dpe_json": json.dumps(p.dpe), "classes_dpe": "ABCDEFG",
     }
 
 
@@ -283,6 +284,27 @@ def _decouper_adresse(adresse):
     return (adresse or "").strip(), "", ""
 
 
+def _dpe_du_lot(d):
+    """Champs DPE du lot créé : numéro, et classes et dates si le DPE a été trouvé à l'ADEME."""
+    from datetime import date
+
+    if not d:
+        return {}
+    v = d.get("verifie") or {}
+    champs = {"numero_dpe": d["numero"]}
+    classe = v.get("classe") or d.get("classe_annoncee")
+    if classe and classe in "ABCDEFG":
+        champs["classe_dpe"] = classe
+    if v.get("ges") and v["ges"] in "ABCDEFG":
+        champs["classe_ges"] = v["ges"]
+    for champ, cle in (("date_dpe", "date_etablissement"), ("fin_validite_dpe", "fin_validite")):
+        try:
+            champs[champ] = date.fromisoformat(v.get(cle, ""))
+        except ValueError:
+            pass
+    return champs
+
+
 @connecte
 def simulation_creer_bien(request, pk):
     """Transforme une simulation (projet acheté) en bien et lots dans la gestion locative."""
@@ -307,11 +329,12 @@ def simulation_creer_bien(request, pk):
                     proprietaire=proprietaire, nom=(request.POST.get("nom") or s.nom)[:200],
                     adresse=(request.POST.get("adresse") or rue)[:255], code_postal=(request.POST.get("code_postal") or cp)[:10],
                     ville=(request.POST.get("ville") or ville)[:100], prix_acquisition=round(p.prix, 2) or None)
+                dpe_par_lot = {d["lot"]: d for d in p.dpe if d.get("lot")}
                 for i, l in enumerate(p.lots, 1):
                     type_lot, pieces = TYPES_VERS_LOT.get(l.type, ("appartement", None))
                     Lot.objects.create(bien=bien, designation=f"Lot {i:03d} · {l.nom_type}"[:100], type=type_lot,
                                        nb_pieces=pieces, surface=round(l.surface, 2) or None, meuble=l.meuble,
-                                       etage=l.etage[:50])
+                                       etage=l.etage[:50], **_dpe_du_lot(dpe_par_lot.get(i)))
                 s.bien = bien
                 s.save(update_fields=["bien"])
             messages.success(request, f"Bien « {bien.nom} » créé avec {len(p.lots)} lot(s). Complétez la fiche si besoin.")
@@ -327,3 +350,16 @@ def rentabilite_dvf(request):
         return JsonResponse(dvf.prix_du_marche(request.GET.get("adresse", "")[:255], type_local))
     except dvf.DvfIndisponible as e:
         return JsonResponse({"erreur": str(e)})
+
+
+def rentabilite_dpe(request):
+    """Vérification d'un DPE fourni par le vendeur, dans la base de l'ADEME, en JSON pour la page."""
+    from patrimoine import dpe as regles
+
+    numero = request.GET.get("numero", "")[:30]
+    try:
+        return JsonResponse(regles.verifier(numero, surface=request.GET.get("surface"), adresse=request.GET.get("adresse", "")[:255],
+                                            classe_annoncee=request.GET.get("classe", "")[:1]))
+    except regles.DpeIndisponible as e:
+        valide = regles.numero_valide(numero)
+        return JsonResponse({"erreur": str(e), "lien": regles.lien_observatoire(numero) if valide else ""})

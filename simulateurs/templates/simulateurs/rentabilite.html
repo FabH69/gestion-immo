@@ -97,6 +97,25 @@
   @media (max-width: 960px) { .mise-en-page { grid-template-columns: minmax(0, 1fr); } .resume { position: static; order: -1; } }
   @media print { .barre, .actions, #ecran-parametres { display: none !important; } #ecran-resultats { display: block !important; } }
   .liste-devis { margin: 6px 0 0; padding-left: 18px; font-size: .92rem; }
+  .dpe-ligne { border: 1px solid var(--bord); border-radius: 12px; padding: 12px 14px; margin-bottom: 10px; }
+  .dpe-saisie { display: grid; grid-template-columns: minmax(150px, 1.4fr) minmax(130px, 1fr) minmax(90px, .6fr) auto auto; gap: 10px; align-items: end; }
+  .dpe-saisie label { display: block; font-size: .8rem; color: var(--doux); margin-bottom: 3px; }
+  .dpe-saisie input, .dpe-saisie select { width: 100%; padding: 9px 10px; border: 1px solid var(--bord); border-radius: 10px; font: inherit; background: #fff; color: var(--texte); }
+  .dpe-saisie input:focus, .dpe-saisie select:focus { outline: 2px solid rgba(47,111,115,.25); border-color: var(--primaire); }
+  .dpe-saisie input { text-transform: uppercase; letter-spacing: .04em; }
+  @media (max-width: 640px) { .dpe-saisie { grid-template-columns: 1fr 1fr; } .dpe-saisie > :first-child { grid-column: 1 / -1; } }
+  .dpe-res { margin-top: 10px; }
+  .dpe-res .tuiles { margin: 0 0 8px; }
+  .etiquette-dpe { display: inline-grid; place-items: center; width: 34px; height: 34px; border-radius: 8px; font-weight: 800; color: #fff; font-size: 1.1rem; margin-right: 6px; vertical-align: middle; }
+  .etiquette-dpe.A { background: #009c6d; } .etiquette-dpe.B { background: #52b153; } .etiquette-dpe.C { background: #a5cc74; color: #1d2b12; }
+  .etiquette-dpe.D { background: #f4e70f; color: #3a3500; } .etiquette-dpe.E { background: #f0b40f; color: #3a2800; }
+  .etiquette-dpe.F { background: #eb8235; } .etiquette-dpe.G { background: #d7221f; }
+  .dpe-alertes { list-style: none; padding: 0; margin: 8px 0 0; display: grid; gap: 6px; }
+  .dpe-alertes li { padding: 8px 12px; border-radius: 10px; font-size: .9rem; }
+  .dpe-alertes .rouge { background: #fdecea; color: #7a2416; }
+  .dpe-alertes .orange { background: #fff4e5; color: #6b4000; }
+  .dpe-alertes .info { background: var(--teinte); color: var(--texte, inherit); }
+  .dpe-alertes .vert { background: #e8f5ee; color: #1e5a3a; }
 </style>{% endblock %}
 {% block contenu %}
 <div class="ecran-titre">
@@ -158,6 +177,13 @@
         </table></div>
         <button type="button" class="bouton secondaire petit" id="ajouter-lot" style="margin-top:10px">+ Ajouter un lot</button>
         <p class="aide">Loyer cible : le loyer visé après l'achat (et les travaux). Le choix « Loyers actuels / cibles » en haut de page dit lequel sert au calcul.</p>
+      </details>
+
+      <details class="bloc" id="bloc-dpe"{% if p.dpe %} open{% endif %}><summary>DPE fourni par le vendeur <span class="sous">vérifié dans la base officielle de l'ADEME</span></summary>
+        <input type="hidden" name="dpe" id="dpe" value="{{ dpe_json }}">
+        <p class="aide" style="margin-top:0">Le numéro (13 caractères) est en haut à droite de la première page du DPE. On vérifie qu'il existe, qu'il est encore valable, et que la classe, la surface et l'adresse correspondent à l'annonce.</p>
+        <div id="dpe-liste"></div>
+        <button type="button" class="bouton secondaire petit" id="dpe-ajouter">+ Ajouter un DPE</button>
       </details>
 
       <details class="bloc" id="bloc-travaux"{% if p.travaux_communs or r.recap_travaux %} open{% endif %}><summary>Chiffrage des travaux <span class="sous">par corps de métier, au m², à l'unité, au forfait ou sur devis</span></summary>
@@ -295,6 +321,7 @@
     $("nb_lots").value = lignes.length;
     $("ajouter-lot").hidden = lignes.length >= max;
     if (window.chiffrageCibles) window.chiffrageCibles();
+    if (window.dpeLots) window.dpeLots();
   }
   $("ajouter-lot").addEventListener("click", () => {
     const lignes = corps.querySelectorAll("tr[data-ligne]");
@@ -601,6 +628,111 @@
       </div><div class="defile"><table><thead><tr><th>Date</th><th>Bien</th><th class="m">Surface</th><th class="m">Prix</th><th class="m">€/m²</th><th class="m">Distance</th></tr></thead><tbody>${lignes}</tbody></table></div></div>`;
   }
   $("dvf-actualiser").addEventListener("click", chargerDvf);
+
+  /* ---------- DPE fourni par le vendeur ---------- */
+  const urlDpe = "{% url 'simulateurs:rentabilite_dpe' %}", CLASSES = "ABCDEFG";
+  let dpes = [];
+  try { dpes = JSON.parse($("dpe").value || "[]"); } catch (e) { dpes = []; }
+  const resultatsDpe = {};
+  function sauverDpe(recalcul) { $("dpe").value = JSON.stringify(dpes); if (recalcul) recalculer(); }
+  function surfaceLot(n) {
+    const lignes = Array.from(corps.querySelectorAll("tr[data-ligne]"));
+    const val = (tr) => parseFloat((tr.querySelector("[name$=-surface]").value || "0").replace(/\s/g, "").replace(",", ".")) || 0;
+    return n ? (lignes[n - 1] ? val(lignes[n - 1]) : 0) : lignes.reduce((t, tr) => t + val(tr), 0);
+  }
+  const dateFr = (iso) => iso ? iso.split("-").reverse().join("/") : "?";
+  function afficherResultat(i) {
+    const zone = document.querySelector(`[data-dpe-res="${i}"]`), d = resultatsDpe[i];
+    if (!zone) return;
+    if (!d) {
+      const v = dpes[i].verifie || {};
+      zone.innerHTML = v.statut ? `<p class="aide">Dernière vérification : classe ${echap(v.classe || "?")}, valable jusqu'au ${dateFr(v.fin_validite)}. « Vérifier » pour actualiser.</p>` : "";
+      return;
+    }
+    if (d.chargement) { zone.innerHTML = '<p class="aide">Recherche dans la base de l\'ADEME…</p>'; return; }
+    const lien = d.lien ? `<a href="${d.lien}" target="_blank" rel="noopener">Voir ce DPE sur l'observatoire de l'ADEME</a>` : "";
+    if (d.erreur) { zone.innerHTML = `<ul class="dpe-alertes"><li class="orange">${echap(d.erreur)}</li></ul><p class="note">${lien}</p>`; return; }
+    const alertes = (d.alertes || []).map((a) => `<li class="${a.niveau}">${echap(a.texte)}</li>`).join("");
+    if (!d.trouve) { zone.innerHTML = `<ul class="dpe-alertes">${alertes}</ul><p class="note">${lien}</p>`; return; }
+    const f = d.fiche;
+    const ok = d.statut === "vert" ? '<li class="vert">DPE authentique et valable : il est bien enregistré à l\'ADEME, et rien ne contredit l\'annonce.</li>' : "";
+    zone.innerHTML = `<div class="tuiles">
+        <div class="tuile"><div class="l">Classe énergie / GES</div><div class="v"><span class="etiquette-dpe ${f.classe}">${f.classe || "?"}</span><span class="etiquette-dpe ${f.ges}">${f.ges || "?"}</span></div><div class="s">${f.conso_m2 ? f.conso_m2 + " kWh/m²/an" : ""}${f.ges_m2 ? " · " + f.ges_m2 + " kg CO₂/m²/an" : ""}</div></div>
+        <div class="tuile"><div class="l">Valable jusqu'au</div><div class="v">${dateFr(d.fin_validite)}</div><div class="s">réalisé le ${dateFr(f.date_etablissement)}</div></div>
+        <div class="tuile"><div class="l">Logement diagnostiqué</div><div class="v">${f.surface ? String(f.surface).replace(".", ",") + " m²" : "?"}</div><div class="s">${echap([f.type_batiment, f.annee_construction ? "construit " + f.annee_construction : ""].filter(Boolean).join(" · "))}</div></div>
+      </div>
+      <p class="note">Adresse du DPE : ${echap(f.adresse && f.code_postal && f.adresse.includes(f.code_postal) ? f.adresse : [f.adresse, f.code_postal, f.commune].filter(Boolean).join(" ")) || "non renseignée"}</p>
+      <ul class="dpe-alertes">${ok}${alertes}</ul><p class="note">${lien}</p>`;
+  }
+  function dessinerDpe() {
+    const nb = corps.querySelectorAll("tr[data-ligne]").length;
+    const options = (choisi) => `<option value="0">Tout l'immeuble</option>` + Array.from({ length: nb }, (_, k) => `<option value="${k + 1}"${choisi === k + 1 ? " selected" : ""}>Lot ${String(k + 1).padStart(3, "0")}</option>`).join("");
+    $("dpe-liste").innerHTML = dpes.map((d, i) => `<div class="dpe-ligne" data-dpe="${i}">
+        <div class="dpe-saisie">
+          <div><label for="dpe-num-${i}">N° du DPE</label><input type="text" id="dpe-num-${i}" data-dpe-champ="numero" value="${echap(d.numero || "")}" maxlength="17" placeholder="2369E0123456X" autocomplete="off" spellcheck="false"></div>
+          <div><label for="dpe-lot-${i}">Logement</label><select id="dpe-lot-${i}" data-dpe-champ="lot">${options(+d.lot || 0)}</select></div>
+          <div><label for="dpe-cl-${i}">Classe annoncée</label><select id="dpe-cl-${i}" data-dpe-champ="classe_annoncee"><option value="">–</option>${CLASSES.split("").map((c) => `<option${c === d.classe_annoncee ? " selected" : ""}>${c}</option>`).join("")}</select></div>
+          <button type="button" class="bouton petit" data-dpe-verifier>Vérifier</button>
+          <button type="button" class="retirer" data-dpe-retirer title="Retirer ce DPE" aria-label="Retirer ce DPE">×</button>
+        </div><div class="dpe-res" data-dpe-res="${i}"></div></div>`).join("");
+    dpes.forEach((_, i) => afficherResultat(i));
+  }
+  async function verifierDpe(i) {
+    const d = dpes[i];
+    if (!d || !d.numero) return;
+    resultatsDpe[i] = { chargement: true }; afficherResultat(i);
+    const params = new URLSearchParams({ numero: d.numero, surface: surfaceLot(+d.lot || 0) || "", adresse: $("adresse").value.trim(), classe: d.classe_annoncee || "" });
+    try {
+      const rep = await fetch(`${urlDpe}?${params}`), r = await rep.json();
+      resultatsDpe[i] = r;
+      if (r.trouve) {
+        d.verifie = { classe: r.fiche.classe, ges: r.fiche.ges, date_etablissement: r.fiche.date_etablissement, fin_validite: r.fin_validite, surface: r.fiche.surface, statut: r.statut };
+        if (!d.classe_annoncee) d.classe_annoncee = "";
+      } else if (!r.erreur) d.verifie = {};
+      sauverDpe(false);
+    } catch (e) {
+      resultatsDpe[i] = { erreur: "La vérification n'a pas abouti. Réessayez dans un instant." };
+    }
+    afficherResultat(i);
+  }
+  $("dpe-liste").addEventListener("input", (e) => {
+    const el = e.target.closest("[data-dpe-champ]"), i = +e.target.closest("[data-dpe]").dataset.dpe;
+    if (!el) return;
+    e.stopPropagation();
+    dpes[i][el.dataset.dpeChamp] = el.dataset.dpeChamp === "lot" ? +el.value : el.value.toUpperCase().replace(/[\s.\-]/g, "");
+    if (el.dataset.dpeChamp === "numero") { delete resultatsDpe[i]; dpes[i].verifie = {}; }
+    sauverDpe(false);
+  });
+  $("dpe-liste").addEventListener("change", (e) => {
+    e.stopPropagation();
+    const el = e.target.closest("[data-dpe-champ]"), i = +e.target.closest("[data-dpe]").dataset.dpe;
+    if (el && el.dataset.dpeChamp === "lot") dpes[i].lot = +el.value;
+    sauverDpe(false);
+    if (el && el.dataset.dpeChamp !== "numero" && resultatsDpe[i] && !resultatsDpe[i].chargement) verifierDpe(i);
+  });
+  $("dpe-liste").addEventListener("keydown", (e) => {
+    if (e.key === "Enter" && e.target.dataset.dpeChamp === "numero") { e.preventDefault(); verifierDpe(+e.target.closest("[data-dpe]").dataset.dpe); }
+  });
+  $("dpe-liste").addEventListener("click", (e) => {
+    const ligne = e.target.closest("[data-dpe]");
+    if (!ligne) return;
+    const i = +ligne.dataset.dpe;
+    if (e.target.closest("[data-dpe-verifier]")) verifierDpe(i);
+    if (e.target.closest("[data-dpe-retirer]")) {
+      dpes.splice(i, 1);
+      Object.keys(resultatsDpe).forEach((k) => delete resultatsDpe[k]);
+      sauverDpe(true); dessinerDpe();
+    }
+  });
+  $("dpe-ajouter").addEventListener("click", () => {
+    const nb = corps.querySelectorAll("tr[data-ligne]").length;
+    dpes.push({ numero: "", lot: nb === 1 ? 1 : 0, classe_annoncee: "", verifie: {} });
+    sauverDpe(false); dessinerDpe();
+    $(`dpe-num-${dpes.length - 1}`).focus();
+  });
+  window.dpeLots = dessinerDpe;
+  dessinerDpe();
+  dpes.forEach((d, i) => { if (d.numero) verifierDpe(i); });
 
   onglet(location.hash === "#resultats" ? "resultats" : "parametres", false);
   dessiner();
