@@ -44,6 +44,7 @@ urlpatterns = [
     path("reglages/sauvegardes/<str:nom>", views.telecharger_sauvegarde, name="telecharger_sauvegarde"),
     path("garants/<int:pk>/acte-de-cautionnement.pdf", views.acte_cautionnement, name="acte_cautionnement"),
     path("lots/<int:pk>/photos.zip", views.photos_zip, name="photos_zip"),
+    path("lots/<int:pk>/dpe-ademe/", views.lot_dpe_ademe, name="lot_dpe_ademe"),
     path("finances/encaissements/", views.suivi_encaissements, name="suivi_encaissements"),
     path("lmnp/", views.biens_lmnp, name="biens_lmnp"),
     path("impayes/relancer/", views.relances_impayes, name="relances_impayes"),

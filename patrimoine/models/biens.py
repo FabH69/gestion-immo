@@ -243,6 +243,11 @@ class Lot(models.Model):
                                            help_text="Reprise dans le bail, ex. WC broyeur : ne rien jeter d'autre que du papier toilette…")
     classe_dpe = models.CharField("classe DPE", max_length=1, blank=True, choices=[(c, c) for c in "ABCDEFG"])
     classe_ges = models.CharField("classe GES", max_length=1, blank=True, choices=[(c, c) for c in "ABCDEFG"])
+    numero_dpe = models.CharField("n° du DPE", max_length=13, blank=True,
+                                  help_text="13 caractères, en haut à droite du DPE (ex. 2369E0123456X) : sert à le vérifier sur l'ADEME")
+    date_dpe = models.DateField("date du DPE", null=True, blank=True, help_text="Date de réalisation (« établi le »)")
+    fin_validite_dpe = models.DateField("fin de validité du DPE", null=True, blank=True,
+                                        help_text="Calculée depuis la date du DPE si vide (10 ans ; DPE d'avant juillet 2021 : plus valables)")
     energie_min = models.PositiveIntegerField("dépenses d'énergie annuelles estimées, min (€)", null=True, blank=True, help_text="Indiquées sur le DPE")
     energie_max = models.PositiveIntegerField("dépenses d'énergie annuelles estimées, max (€)", null=True, blank=True)
     energie_annee = models.PositiveSmallIntegerField("année de référence des prix de l'énergie", null=True, blank=True, help_text="ex. 2023, indiquée sur le DPE")
@@ -285,6 +290,32 @@ class Lot(models.Model):
     @property
     def bail_actif(self):
         return self.baux.filter(actif=True).first()
+
+    @property
+    def dpe_fin_validite(self):
+        """Fin de validité du DPE : saisie, sinon calculée depuis sa date (None si on ne sait pas)."""
+        from .. import dpe
+
+        return self.fin_validite_dpe or dpe.fin_validite(self.date_dpe)
+
+    def dpe_alertes(self, aujourdhui=None):
+        """Validité du DPE et conséquences de la classe (loi Climat) : liste de {niveau, texte}, la plus grave d'abord."""
+        from datetime import timedelta
+
+        from django.utils import timezone
+
+        from .. import dpe
+
+        aujourdhui = aujourdhui or timezone.localdate()
+        alertes = []
+        fin = self.dpe_fin_validite
+        if fin and fin < aujourdhui:
+            alertes.append({"niveau": "rouge", "texte": f"DPE expiré depuis le {fin:%d/%m/%Y} : à refaire avant tout nouveau bail ou annonce."})
+        elif fin and fin <= aujourdhui + timedelta(days=dpe.PREVENIR_JOURS):
+            alertes.append({"niveau": "orange", "texte": f"DPE valable jusqu'au {fin:%d/%m/%Y} : à refaire avant la prochaine relocation."})
+        alertes += dpe.loi_climat(self.classe_dpe, self.bien.code_postal, aujourdhui)
+        ordre = {"rouge": 0, "orange": 1, "info": 2}
+        return sorted(alertes, key=lambda a: ordre[a["niveau"]])
 
     @property
     def loyer_reference(self):

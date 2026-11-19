@@ -40,6 +40,7 @@ from .relocation import (  # noqa: F401
     annonce_pdf,
     candidature_publique,
     envoyer_lien_candidature,
+    lot_dpe_ademe,
     photos_zip,
     preparer_mail_candidature,
 )

@@ -356,9 +356,14 @@ def fiche_lot(lot):
                f"{eur(bail.loyer_cc)} CC · depuis le {bail.date_debut:%d/%m/%Y}", bouton=("Ouvrir", _a("bail", bail.pk)))
     elif lot.loyer_propose:
         f.info("Loyer proposé", eur(lot.loyer_propose), "pour la prochaine annonce")
+    alertes_dpe = lot.dpe_alertes() if lot.type in ("appartement", "maison", "studio") else []
+    fin_dpe = lot.dpe_fin_validite
+    grave = next((a["niveau"] for a in alertes_dpe if a["niveau"] in ("rouge", "orange")), "")
     f.info("Surface et DPE", (m2(lot.surface) if lot.surface else "Surface à compléter")
            + (f" · classe {lot.classe_dpe}" if lot.classe_dpe else " · DPE à compléter"),
-           "", "" if lot.surface and lot.classe_dpe else "orange", None if lot.surface and lot.classe_dpe else ("Compléter", "#caracteristiques"))
+           alertes_dpe[0]["texte"] if grave else (f"DPE valable jusqu'au {fin_dpe:%d/%m/%Y}" if fin_dpe else ""),
+           grave or ("" if lot.surface and lot.classe_dpe else "orange"),
+           None if lot.surface and lot.classe_dpe and not grave else ("Compléter", "#caracteristiques"))
     if lot.chaudiere_gaz:
         d = lot.date_entretien_chaudiere
         en_retard = not d or d < timezone.localdate() - timedelta(days=365)

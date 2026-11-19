@@ -4,7 +4,7 @@ from decimal import Decimal
 from django import forms
 from django.contrib import admin, messages
 from django.urls import reverse
-from django.utils.html import format_html
+from django.utils.html import format_html, format_html_join
 
 from ..models import Syndic, Bail, Bien, PhotoLot, Lot, Proprietaire
 from .communs import euros_liste
@@ -284,7 +284,23 @@ class LotAdmin(FicheMixin, admin.ModelAdmin):
     list_filter = [VenduFilter, "bien__proprietaire"]
     search_fields = ["designation", "bien__nom"]
     inlines = [BailInline, PhotoInline]
-    readonly_fields = ["outils_relocation"]
+    readonly_fields = ["outils_relocation", "verification_dpe"]
+
+    @admin.display(description="vérification")
+    def verification_dpe(self, obj):
+        from .. import dpe
+
+        if not obj.pk:
+            return "Enregistrez le lot, puis revenez ici pour vérifier le DPE sur la base de l'ADEME."
+        alertes = format_html_join("", '<div class="pill {}" style="display:block;margin:4px 0;white-space:normal">{}</div>',
+                                   (({"rouge": "rouge", "orange": "orange"}.get(a["niveau"], "bleu"), a["texte"]) for a in obj.dpe_alertes()))
+        fin = obj.dpe_fin_validite
+        etat = format_html("Valable jusqu'au <strong>{}</strong>.", f"{fin:%d/%m/%Y}") if fin else "Fin de validité inconnue : saisissez la date du DPE."
+        lien = format_html(' <a href="{}" target="_blank" rel="noopener">Voir sur l\'observatoire de l\'ADEME</a>', dpe.lien_observatoire(obj.numero_dpe)) if obj.numero_dpe else ""
+        bouton = format_html('<button type="submit" class="button" formaction="{}" formnovalidate>Compléter depuis l\'ADEME</button>',
+                             reverse("lot_dpe_ademe", args=[obj.pk]))
+        return format_html('{} {}{}<div style="margin-top:6px">{} <span class="help">Remplit classe énergie, GES, date et fin de validité '
+                           'à partir du n° saisi (les autres modifications non enregistrées sont perdues).</span></div>', etat, alertes, lien, bouton)
 
     @admin.display(description="outils")
     def outils_relocation(self, obj):
@@ -301,7 +317,8 @@ class LotAdmin(FicheMixin, admin.ModelAdmin):
     fieldsets = [
         (None, {"classes": ["identite-lot"], "fields": ["bien", "designation", ("type", "surface", "nb_pieces", "meuble"), "etage", ("exploitation", "tourisme_classe", "lmnp")]}),
         ("Caractéristiques (reprises dans le bail)", {"fields": ["annee_construction", ("mode_chauffage", "chauffage"), ("mode_eau_chaude", "eau_chaude"),
-                                                              ("code_porte", "cave", "parking"), "classe_dpe", "equipements", "annexes", "clause_particuliere"],
+                                                              ("code_porte", "cave", "parking"), ("classe_dpe", "numero_dpe"), ("date_dpe", "fin_validite_dpe"), "verification_dpe",
+                                                              "equipements", "annexes", "clause_particuliere"],
                                                    "description": "Le régime de copropriété, les équipements communs et la zone tendue se règlent sur la fiche du bien."}),
         ("Chaudière gaz", {"fields": [("chaudiere_gaz", "date_entretien_chaudiere")]}),
         ("Relocation et annonce", {"fields": ["loyer_propose", ("classe_ges", "energie_annee"), ("energie_min", "energie_max"), "outils_relocation"]}),
@@ -312,6 +329,9 @@ class LotAdmin(FicheMixin, admin.ModelAdmin):
     ]
 
     def save_model(self, request, obj, form, change):
+        from .. import dpe
+
+        obj.numero_dpe = dpe.normaliser_numero(obj.numero_dpe)
         if obj.date_vente:
             obj.vendu = True
         super().save_model(request, obj, form, change)

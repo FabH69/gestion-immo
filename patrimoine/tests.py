@@ -2327,7 +2327,7 @@ class ControlesTests(TestCase):
         self.assertEqual(controles.executer(aide), [])  # aucun module : aucun contrôle
         droits.appliquer(aide, {"outils": droits.CONSULTATION, "biens": droits.CONSULTATION})
         aide = User.objects.get(pk=aide.pk)
-        self.assertEqual({r["code"] for r in controles.executer(aide)}, {"lot_surface", "lot_dpe", "chaudiere"})
+        self.assertEqual({r["code"] for r in controles.executer(aide)}, {"lot_surface", "lot_dpe", "lot_dpe_expire", "lot_interdit", "lot_dpe_date", "chaudiere"})
         self.client.force_login(aide)
         self.assertEqual(self.client.get("/controles/").status_code, 200)
         self.client.post("/controles/ecarter/", {"code": "lot_dpe", "cle": "lot:1"})  # consultation seule : refusé
