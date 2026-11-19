@@ -126,6 +126,7 @@ ICONES = {
     "photo": '<rect x="3" y="5" width="18" height="15" rx="2"/><circle cx="12" cy="12.5" r="3.5"/><path d="M8 5l1.5-2h5L16 5"/>',
     "euro": '<path d="M17 6.5A7 7 0 1 0 17 17.5M4 10h9M4 14h9"/>',
     "nouveau": '<path d="M12 5v14M5 12h14"/>',
+    "invest": '<path d="M3 17l6-6 4 4 8-8"/><path d="M15 7h6v6"/>',
     "import": '<path d="M12 3v12M7 10l5 5 5-5"/><path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/>',
 }
 
@@ -169,6 +170,9 @@ def _menu():
               ("Charges mensuelles", a("chargelcd")), ("Frais de gestion", a("parametreslcd")), ("Comparatif location nue", r("comparatif_lcd"))]),
         ]),
         ("Finances", [
+            ("invest", "Investissement", r("simulateurs:mes_simulations"),
+             [r("simulateurs:mes_simulations"), r("simulateurs:rentabilite")],
+             [("Mes simulations", r("simulateurs:mes_simulations")), ("Nouvelle simulation", r("simulateurs:rentabilite"))]),
             ("encaissements", "Encaissements", r("suivi_encaissements"), [r("suivi_encaissements")], []),
             ("prets", "Prêts et endettement", a("pret"), [a("pret"), r("etat_endettement")], [("Endettement à une date", r("etat_endettement"))]),
             ("etats", "États", r("etat_loyers_encaisses"), [r("etat_loyers_encaisses"), r("plus_value")],
@@ -277,6 +281,7 @@ def menu_lateral(context):
                       "encaissements": "finances", "prets": "finances", "etats": "etats",
                       "foncier": "compta", "lmnp": "compta", "societe": "compta", "regimes": "compta",
                       "rappels": "outils", "modeles": "outils", "liens": "outils", "balles": "balles", "controles": "outils",
+                      "invest": "investissement",
                       "import": "biens"}
     groupes, actif_trouve = [], False
     for titre, liens in _menu():

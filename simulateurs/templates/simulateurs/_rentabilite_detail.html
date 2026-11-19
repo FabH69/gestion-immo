@@ -1,0 +1,120 @@
+{% load invest %}<div id="bloc-resultats" class="pile-res">
+  <div class="tuiles">
+    <div class="tuile"><div class="l">Coût total du projet</div><div class="v">{{ r.cout_total|euros }}</div><div class="s">{% if r.surface %}{{ r.cout_m2|euros }}/m² · {{ r.surface|saisie }} m²{% endif %}</div></div>
+    <div class="tuile"><div class="l">Rentabilité brute</div><div class="v">{{ r.renta_brute|pct:2 }}</div><div class="s">{{ r.loyers_an|euros }} de loyers par an</div></div>
+    <div class="tuile"><div class="l">Rentabilité nette de charges</div><div class="v">{{ r.renta_nette|pct:2 }}</div><div class="s">intérêts compris</div></div>
+    <div class="tuile"><div class="l">Cash-flow avant impôt</div><div class="v {{ r.cash_flow_avant_impot|signe_classe }}">{{ r.cash_flow_avant_impot|euros_signe }}</div><div class="s">par mois · {{ r.cash_flow_avant_impot_an|euros_signe }} par an</div></div>
+    {% with g=r.retenu %}<div class="tuile"><div class="l">Cash-flow après impôt</div><div class="v {{ g.cash_flow|signe_classe }}">{{ g.cash_flow|euros_signe }}</div><div class="s">{{ g.nom }}</div></div>{% endwith %}
+    <div class="tuile"><div class="l">Apport</div><div class="v">{{ r.apport|euros }}</div><div class="s">{% if r.cout_total %}{{ r.apport|div_ou_zero:r.cout_total|pct }} du projet{% endif %}</div></div>
+  </div>
+
+  <div class="carte">
+    <h2>Comparatif des régimes fiscaux</h2>
+    <p class="aide" style="margin-top:-8px">Année 1 : impôt dû en plus à cause de l'investissement, pour votre foyer ({{ p.revenu_imposable|euros }} de revenu imposable).</p>
+    <div class="defile"><table>
+      <thead><tr><th>Régime</th><th class="m">Revenu imposé</th><th class="m">Amortissements</th><th class="m">Impôt en plus / an</th><th class="m">Cash-flow / mois</th><th class="m">Renta nette d'impôt</th><th></th></tr></thead>
+      <tbody>{% for g in r.regimes %}
+        <tr{% if g == r.retenu %} class="retenu"{% endif %}><td>{{ g.nom }}{% if g.detail %}<span class="detail">{{ g.detail }}</span>{% endif %}{% if g.report > 0.5 %}<span class="detail">Reporté sur les années suivantes : {{ g.report|euros }}</span>{% endif %}</td>
+          <td class="m">{% if g.base is not None %}{{ g.base|euros }}{% else %}–{% endif %}</td>
+          <td class="m">{% if g.amortissements > 0.5 %}{{ g.amortissements|euros }}{% else %}–{% endif %}</td>
+          <td class="m">{% if g.eligible %}{{ g.impot|euros }}{% else %}–{% endif %}</td>
+          <td class="m">{% if g.eligible %}<span class="{{ g.cash_flow|signe_classe }}">{{ g.cash_flow|euros_signe }}</span>{% else %}–{% endif %}</td>
+          <td class="m">{% if g.eligible %}{{ g.renta_nette_nette|pct:2 }}{% else %}–{% endif %}</td>
+          <td>{% if not g.eligible %}<span class="pastille non">{{ g.motif }}</span>{% elif g.conditions_ko %}<span class="pastille alerte">Condition non remplie</span>{% elif g == r.meilleur %}<span class="pastille">Le meilleur</span>{% endif %}</td></tr>
+      {% endfor %}</tbody>
+    </table></div>
+    <p class="note">Impôt sur le revenu au {{ mise_a_jour }}, avec le quotient familial (sans décote), plus {{ p.taux_ps|saisie }} % de prélèvements sociaux sur le revenu imposé. Un déficit foncier hors intérêts baisse l'impôt jusqu'à 10 700 €. En meublé au réel, les amortissements effacent le bénéfice sans créer de déficit : le reste est reporté. SCI à l'IS : 15 % jusqu'à 42 500 € puis 25 %, et flat tax de {{ p.taux_pfu|saisie }} % sur les dividendes.</p>
+  </div>
+
+  {% with j=r.jeanbrun %}{% if j %}
+  <details class="carte jeanbrun" id="jeanbrun"{% if r.retenu == j or p.regime == "jeanbrun" %} open{% endif %}>
+    <summary><h2>Dispositif Jeanbrun : les conditions à remplir</h2>
+      {% if j.conditions_ko %}<span class="pastille non">{{ j.conditions_ko|length }} condition{{ j.conditions_ko|length|pluralize }} non remplie{{ j.conditions_ko|length|pluralize }}</span>{% else %}<span class="pastille">Conditions vérifiables remplies</span>{% endif %}</summary>
+    {% if j.conditions_ko %}<div class="alerte-jeanbrun" role="alert"><strong>Le projet ne semble pas remplir les conditions du dispositif.</strong> {% if j.eligible %}Le comparatif le calcule quand même, avec les loyers ramenés au plafond : c'est ce que vous toucheriez en respectant le dispositif.{% else %}Il n'est pas retenu dans le comparatif tant que ces points ne sont pas réglés.{% endif %}</div>{% endif %}
+    <ul class="conditions">{% for etat, texte in j.conditions %}
+      <li class="cond-{{ etat }}"><span class="marque" aria-hidden="true">{% if etat == "ok" %}✓{% elif etat == "ko" %}✕{% else %}?{% endif %}</span><span><span class="sr">{% if etat == "ok" %}Remplie : {% elif etat == "ko" %}Non remplie : {% else %}À vérifier : {% endif %}</span>{{ texte }}</span></li>
+    {% endfor %}</ul>
+    <p class="note">Amortissement de 80 % du prix{% if p.jeanbrun_etat != "neuf" %} plus les travaux{% endif %}, chaque année, au taux du niveau de loyer choisi (neuf : 3,5 / 4,5 / 5,5 % ; ancien : 3 / 3,5 / 4 %), dans la limite de 8 000, 10 000 ou 12 000 € par an pour tout le foyer. Deux points attendent la doctrine de l'administration : l'imputation du déficit sur le revenu global (le calcul la retient, jusqu'à 10 700 €) et la réintégration des amortissements dans la plus-value à la revente.</p>
+  </details>
+  {% endif %}{% endwith %}
+
+  <div class="carte">
+    <h2>Détail par lot</h2>
+    <div class="defile"><table>
+      <thead><tr><th>Lot</th><th>Type</th><th class="m">Surface</th><th class="m">Loyer {% if p.scenario == "cible" %}cible{% else %}actuel{% endif %}</th><th class="m">Loyer / m²</th><th class="m">Part du prix</th><th class="m">Travaux</th><th class="m">Meubles</th><th class="m">Prix de revient</th><th class="m">€ / m²</th><th class="m">Renta brute</th></tr></thead>
+      <tbody>{% for l in r.lignes_lots %}
+        <tr><td>{{ l.numero|stringformat:"03d" }}</td><td>{{ l.lot.nom_type }} {% if l.lot.meuble %}meublé{% else %}nu{% endif %}{% if l.lot.loue %} · loué{% endif %}</td>
+          <td class="m">{{ l.lot.surface|saisie }} m²</td><td class="m">{{ l.loyer|euros }}</td><td class="m">{{ l.loyer_m2|euros:1 }}</td>
+          <td class="m">{{ l.part_prix|euros }}</td><td class="m">{{ l.travaux|euros }}</td><td class="m">{{ l.lot.meubles|euros }}</td>
+          <td class="m">{{ l.prix_revient|euros }}</td><td class="m">{{ l.prix_revient_m2|euros }}</td><td class="m">{{ l.renta_brute|pct }}</td></tr>
+      {% endfor %}</tbody>
+    </table></div>
+    <p class="note">Prix d'achat réparti au prorata de la surface. Prix de revient = part du prix + travaux + meubles (hors frais).{% if r.travaux_communs %} Les travaux des parties communes ({{ r.travaux_communs|euros }}) sont répartis au prorata de la surface.{% endif %}</p>
+  </div>
+
+  {% if r.recap_travaux %}
+  <div class="carte">
+    <h2>Travaux par corps de métier</h2>
+    <div class="defile"><table>
+      <thead><tr><th>Poste</th><th class="m">Estimé</th><th class="m">Sur devis</th><th class="m">Total</th><th class="m">Part</th></tr></thead>
+      <tbody>{% for poste, e, d, t, part in r.recap_lignes %}
+        <tr><td>{{ poste }}</td><td class="m">{% if e %}{{ e|euros }}{% else %}–{% endif %}</td><td class="m">{% if d %}{{ d|euros }}{% else %}–{% endif %}</td>
+          <td class="m">{{ t|euros }}</td><td class="m">{{ part|pct }}</td></tr>
+      {% endfor %}
+        <tr class="total"><td>Total travaux</td><td class="m">{{ r.travaux_estimes|euros }}</td><td class="m">{{ r.travaux_sur_devis|euros }}</td><td class="m">{{ r.travaux|euros }}</td><td class="m">{{ r.part_travaux_devis|pct:0 }} sur devis</td></tr>
+      </tbody>
+    </table></div>
+    {% if r.lignes_devis %}
+    <h3>Devis retenus</h3>
+    <ul class="liste-devis">{% for d in r.lignes_devis %}
+      <li>{{ d.lieu }} · {{ d.poste }}{% if d.entreprise %} · {{ d.entreprise }}{% endif %} : <strong>{{ d.montant|euros }}</strong>{% if d.piece_url %} · <a href="{{ d.piece_url }}" target="_blank" rel="noopener">{{ d.piece_nom|default:"voir le devis" }}</a>{% endif %}</li>
+    {% endfor %}</ul>
+    {% endif %}
+    <p class="note">Les imprévus s'appliquent aux postes estimés seulement.{% if r.travaux_deductibles and r.travaux_deductibles != r.travaux %} Hors agrandissement, {{ r.travaux_deductibles|euros }} sont déductibles en location nue.{% endif %}</p>
+  </div>
+  {% endif %}
+
+  <div class="deux-colonnes-egales">
+    <div class="carte">
+      <h2>Plan de financement</h2>
+      <table><tbody>
+        <tr><td>Prix d'achat</td><td class="m">{{ p.prix|euros }}</td></tr>
+        {% if p.frais_agence %}<tr><td>Frais d'agence</td><td class="m">{{ p.frais_agence|euros }}</td></tr>{% endif %}
+        {% if p.frais_ingenierie %}<tr><td>Frais d'ingénierie</td><td class="m">{{ p.frais_ingenierie|euros }}</td></tr>{% endif %}
+        <tr><td>Frais de notaire<span class="detail">Droits {{ p.departement }} et émoluments 2026</span></td><td class="m">{{ r.frais_notaire|euros }}</td></tr>
+        {% if r.travaux %}<tr><td>Travaux</td><td class="m">{{ r.travaux|euros }}</td></tr>{% endif %}
+        {% if r.meubles %}<tr><td>Meubles</td><td class="m">{{ r.meubles|euros }}</td></tr>{% endif %}
+        <tr><td>Frais bancaires</td><td class="m">{{ r.frais_bancaires|euros }}</td></tr>
+        <tr><td>Garantie du prêt</td><td class="m">{{ r.garantie|euros }}</td></tr>
+        <tr class="total"><td>Coût total</td><td class="m">{{ r.cout_total|euros }}</td></tr>
+        <tr><td>Apport</td><td class="m">{{ r.apport|euros }}</td></tr>
+        <tr><td>Emprunt sur {{ p.duree }} ans à {{ p.taux|saisie }} %</td><td class="m">{{ r.emprunt|euros }}</td></tr>
+        <tr><td>Mensualité hors assurance</td><td class="m">{{ r.mensualite|euros }}</td></tr>
+        <tr><td>Assurance par mois</td><td class="m">{{ r.assurance_mois|euros }}</td></tr>
+        <tr><td>Coût du crédit (intérêts + assurance)</td><td class="m">{{ r.cout_credit|euros }}</td></tr>
+      </tbody></table>
+    </div>
+    <div class="carte">
+      <h2>Charges annuelles</h2>
+      <table><tbody>
+        {% for libelle, montant in r.charges.items %}{% if montant %}<tr><td>{{ libelle }}</td><td class="m">{{ montant|euros }}</td></tr>{% endif %}{% endfor %}
+        <tr><td>Intérêts du prêt (année 1)</td><td class="m">{{ r.interets_an1|euros }}</td></tr>
+        <tr class="total"><td>Total</td><td class="m">{{ r.charges_total|add:r.interets_an1|euros }}</td></tr>
+      </tbody></table>
+      <h3>Amortissements (meublé au réel, SCI à l'IS)</h3>
+      <table><tbody>
+        {% for libelle, montant in r.amortissements.items %}<tr><td>{{ libelle }}</td><td class="m">{{ montant|euros }}</td></tr>{% endfor %}
+        <tr class="total"><td>Total par an</td><td class="m">{{ r.amortissements_total|euros }}</td></tr>
+      </tbody></table>
+    </div>
+  </div>
+
+  <div class="carte">
+    <h2>Le prêt année par année</h2>
+    <div class="defile"><table>
+      <thead><tr><th>Année</th><th class="m">Mensualités</th><th class="m">Dont intérêts</th><th class="m">Dont capital</th><th class="m">Assurance</th><th class="m">Reste dû en fin d'année</th></tr></thead>
+      <tbody>{% for a in r.annees %}<tr{% if a.annee > 1 and a.annee|divisibleby:5 is False and not forloop.last %} class="annee-secondaire"{% endif %}><td>{{ a.annee }}</td><td class="m">{{ a.mensualites|euros }}</td><td class="m">{{ a.interets|euros }}</td><td class="m">{{ a.capital|euros }}</td><td class="m">{{ a.assurance|euros }}</td><td class="m">{{ a.restant|euros }}</td></tr>{% endfor %}</tbody>
+    </table></div>
+    <button type="button" class="bouton secondaire petit" data-toutes-annees>Voir toutes les années</button>
+  </div>
+</div>
