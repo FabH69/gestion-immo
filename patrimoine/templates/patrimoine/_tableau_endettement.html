@@ -4,6 +4,7 @@
     <th>Mensualité</th><th>Intérêts {{ annee }}</th><th class="fort">Restant dû au {{ date|date:"d/m/Y" }}</th>
   </tr></thead>
   <tbody>
+  {# Un seul emprunteur choisi : sa ligne s'appelle « Total » et la ligne TOTAL générale est inutile. #}
   {% for bloc in blocs %}
     <tr class="proprio"><td colspan="8">{{ bloc.proprietaire.nom }} <span class="type">({{ bloc.proprietaire.get_type_display }})</span></td></tr>
     {% for g in bloc.groupes %}
@@ -22,10 +23,10 @@
     {% endfor %}
     {% if g.libelle %}<tr class="st"><td class="libelle" colspan="2">Sous-total {{ g.libelle|lower }}</td><td>{{ g.montant|floatformat:"2g" }}</td><td></td><td></td><td>{{ g.mensualite|floatformat:"2g" }}</td><td>{{ g.interets|floatformat:"2g" }}</td><td class="fort">{{ g.restant|floatformat:"2g" }}</td></tr>{% endif %}
     {% endfor %}
-    <tr class="stp"><td class="libelle" colspan="2">Total {{ bloc.proprietaire.nom }}</td><td>{{ bloc.montant|floatformat:"2g" }}</td><td></td><td></td><td>{{ bloc.mensualite|floatformat:"2g" }}</td><td>{{ bloc.interets|floatformat:"2g" }}</td><td class="fort">{{ bloc.restant|floatformat:"2g" }}</td></tr>
+    <tr class="stp"><td class="libelle" colspan="2">Total{% if not proprietaire %} {{ bloc.proprietaire.nom }}{% endif %}</td><td>{{ bloc.montant|floatformat:"2g" }}</td><td></td><td></td><td>{{ bloc.mensualite|floatformat:"2g" }}</td><td>{{ bloc.interets|floatformat:"2g" }}</td><td class="fort">{{ bloc.restant|floatformat:"2g" }}</td></tr>
   {% empty %}
     <tr><td colspan="8" class="vide">Aucun prêt enregistré.</td></tr>
   {% endfor %}
   </tbody>
-  {% if blocs %}<tfoot><tr class="total"><td class="libelle" colspan="2">TOTAL</td><td>{{ total.montant|floatformat:"2g" }}</td><td></td><td></td><td>{{ total.mensualite|floatformat:"2g" }}</td><td>{{ total.interets|floatformat:"2g" }}</td><td class="fort">{{ total.restant|floatformat:"2g" }}</td></tr></tfoot>{% endif %}
+  {% if blocs and not proprietaire %}<tfoot><tr class="total"><td class="libelle" colspan="2">TOTAL</td><td>{{ total.montant|floatformat:"2g" }}</td><td></td><td></td><td>{{ total.mensualite|floatformat:"2g" }}</td><td>{{ total.interets|floatformat:"2g" }}</td><td class="fort">{{ total.restant|floatformat:"2g" }}</td></tr></tfoot>{% endif %}
 </table>

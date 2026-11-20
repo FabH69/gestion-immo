@@ -94,7 +94,7 @@ def etat_endettement(request):
                 p = l["pret"]
                 w.writerow([p.proprietaire.nom, p.banque, p.reference, p.bien.nom if p.bien else "", fr(p.montant), fr(p.taux), f"{p.date_derniere_echeance:%m/%Y}", fr(l["mensualite"]), fr(l["interets"]), fr(l["restant"])])
         t = etat["total"]
-        w.writerow(["TOTAL", "", "", "", fr(t["montant"]), "", "", fr(t["mensualite"]), fr(t["interets"]), fr(t["restant"])])
+        w.writerow(["Total" if proprietaire else "TOTAL", "", "", "", fr(t["montant"]), "", "", fr(t["mensualite"]), fr(t["interets"]), fr(t["restant"])])
         return response
     if request.GET.get("format") == "pdf":
         return _pdf(render_to_string("patrimoine/endettement_pdf.html", contexte), nom_fichier)
