@@ -325,10 +325,6 @@ def fiche_lot(lot):
         f.badge("LMNP", "gris")
     if bail:
         badge_impayes(f, [bail], reverse("admin:patrimoine_echeance_changelist") + f"?bail={bail.pk}")
-    f.sous_titre = [x for x in [f"{lot.get_type_display()}{' meublé' if lot.meuble else ''}",
-                                m2(lot.surface) if lot.surface else "",
-                                f"{lot.nb_pieces} pièce{'s' if lot.nb_pieces > 1 else ''}" if lot.nb_pieces else "",
-                                f"{lot.bien.nom} ({lot.bien.ville})", lot.bien.proprietaire.nom] if x]
     f.lien("biens", f"Bien {lot.bien.nom}", _a("bien", lot.bien_id))
     if bail:
         f.lien("baux", "Bail en cours", _a("bail", bail.pk))
