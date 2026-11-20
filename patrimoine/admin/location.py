@@ -374,8 +374,18 @@ class BailAdmin(FicheMixin, LotsALouerMixin, admin.ModelAdmin):
     list_filter = [BailEnCoursFilter, "lot__bien__proprietaire"]
     search_fields = ["lot__designation", "lot__bien__nom", "locataires__nom"]
     autocomplete_fields = ["locataires"]
-    date_hierarchy = "date_debut"
+    # Pas de filtre de période (« Cette année / Année dernière / Tout / Période… ») : retiré à la demande, la liste
+    # montre tous les baux du statut choisi. Un ancien lien qui porte encore une période est redirigé sans elle.
     readonly_fields = ["documents", "etat_depot", "historique"]
+
+    def changelist_view(self, request, extra_context=None):
+        anciens = [k for k in request.GET if k.startswith("date_debut__")]
+        if anciens:
+            params = request.GET.copy()
+            for k in anciens:
+                del params[k]
+            return redirect(f"{request.path}?{params.urlencode()}" if params else request.path)
+        return super().changelist_view(request, extra_context)
     fieldsets = [
         (None, {"fields": [("lot", "type"), "locataires", ("date_debut", "date_fin"), "destination", "actif"]}),
         ("Conditions financières", {"fields": [("loyer_initial", "loyer_hc"), ("charges", "mode_charges"), ("depot_garantie", "etat_depot"), "jour_echeance", "paiement_a_echoir"]}),
