@@ -3,6 +3,7 @@ from decimal import Decimal
 
 from django.contrib.auth.models import User
 from django.test import TestCase, TransactionTestCase
+from django.urls import reverse
 from django.utils import timezone
 
 from .models import Annonce, Bail, Bien, Echeance, Locataire, Lot, MouvementDepot, Paiement, Proprietaire, Rappel
@@ -3300,3 +3301,33 @@ class RegimesFiscauxTests(TestCase):
         self.assertEqual(bilan_lot(lot, 2025)["abattement_micro"], Decimal(30))
         lot.tourisme_classe = True
         self.assertEqual(bilan_lot(lot, 2025)["abattement_micro"], Decimal(50))
+
+
+class ListeBauxSansPeriodeTests(TestCase):
+    """La liste des baux n'a plus de filtre de période : tous les baux du statut choisi s'affichent."""
+
+    def setUp(self):
+        proprio = Proprietaire.objects.create(nom="SCI", type=Proprietaire.Type.SCI_IR)
+        bien = Bien.objects.create(proprietaire=proprio, nom="Immeuble", adresse="1 rue", code_postal="69000", ville="Lyon")
+        for i, debut in enumerate((date(2019, 3, 1), date(timezone.localdate().year, 1, 1))):
+            lot = Lot.objects.create(bien=bien, designation=f"Apt {i}")
+            Bail.objects.create(lot=lot, type=Bail.Type.NU, date_debut=debut, loyer_hc=Decimal("500"))
+        self.client.force_login(User.objects.create_superuser("admin", "a@example.com", "x"))
+        self.url = reverse("admin:patrimoine_bail_changelist")
+
+    def test_pas_de_boutons_de_periode(self):
+        r = self.client.get(self.url)
+        self.assertEqual(r.status_code, 200)
+        self.assertNotContains(r, "navigation-periode")
+        self.assertNotContains(r, "Année dernière")
+        self.assertEqual(r.context["cl"].result_count, 2)  # l'ancien bail de 2019 aussi
+
+    def test_ancien_lien_avec_periode_redirige_sans_elle(self):
+        r = self.client.get(self.url, {"date_debut__gte": "2026-01-01", "date_debut__lte": "2026-12-31", "q": "Apt"})
+        self.assertRedirects(r, f"{self.url}?q=Apt", fetch_redirect_response=False)
+        r = self.client.get(self.url, {"date_debut__gte": "2026-01-01"})
+        self.assertRedirects(r, self.url, fetch_redirect_response=False)
+
+    def test_loyers_gardent_leur_periode(self):
+        r = self.client.get(reverse("admin:patrimoine_echeance_changelist"))
+        self.assertContains(r, "navigation-periode")
