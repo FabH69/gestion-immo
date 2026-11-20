@@ -20,3 +20,21 @@
   </div>
 </aside>
 <div id="voile-menu" onclick="document.body.classList.remove('menu-ouvert')"></div>
+<script>
+/* Le menu latéral garde sa position d'une page à l'autre, et la rubrique ouverte (ses sous-menus) reste visible. */
+(function () {
+  var barre = document.getElementById("barre-laterale"), cle = "menu-lateral-defilement";
+  if (!barre) return;
+  function memoriser() { try { sessionStorage.setItem(cle, String(barre.scrollTop)); } catch (e) {} }
+  barre.addEventListener("click", function (e) { if (e.target.closest("a")) memoriser(); });
+  window.addEventListener("pagehide", memoriser);
+  var position = null;
+  try { position = sessionStorage.getItem(cle); } catch (e) {}
+  if (position !== null) barre.scrollTop = parseInt(position, 10) || 0;
+  var bloc = barre.querySelector(".menu-bloc.ouvert");
+  if (!bloc) return;
+  var cadre = barre.getBoundingClientRect(), b = bloc.getBoundingClientRect(), marge = 12;
+  if (b.bottom > cadre.bottom - marge) barre.scrollTop += Math.min(b.bottom - cadre.bottom + marge, b.top - cadre.top - marge);
+  else if (b.top < cadre.top + marge) barre.scrollTop -= cadre.top + marge - b.top;
+})();
+</script>
