@@ -2417,6 +2417,7 @@ class FichesTests(TestCase):
         page = self.client.get(f"/admin/patrimoine/lot/{self.lot.pk}/change/").content.decode()
         self.assertIn("Ouvrir le bail", page)
         self.assertIn("32\u00a0m²", page)
+        self.assertNotIn('class="sous-titre-fiche"', page)  # plus de ligne d'infos sous le titre du lot
         self.assertIn("DPE à compléter", page)
         self.bail.actif = False
         self.bail.save()
