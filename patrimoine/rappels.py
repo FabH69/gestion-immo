@@ -1,8 +1,9 @@
 """Liste « À faire » : rappels calculés (révisions, assurances, chaudières, check-lists) et rappels saisis."""
-from datetime import timedelta
+from datetime import time, timedelta
 
 from django.urls import reverse
 
+from .models.outils import heure_courte
 from .models import Bail, Echeance, JournalFait, Rappel, RevisionLoyer, Tache, _ajouter_mois
 
 PREAVIS_JOURS = 30
@@ -46,10 +47,11 @@ def a_faire(aujourdhui, horizon_jours=PREAVIS_JOURS, avec_taches=False):
     limite = aujourdhui + timedelta(days=horizon_jours)
     items = []
 
-    def ajouter(date, titre, detail, categorie, url, action=None, stop=None, important=False, limite_propre=None, genre="rappels"):
+    def ajouter(date, titre, detail, categorie, url, action=None, stop=None, important=False, limite_propre=None, genre="rappels",
+                heure=None, agenda=None):
         if date <= (limite_propre or limite):
             items.append({
-                "date": date, "titre": titre, "detail": detail, "categorie": categorie, "genre": genre,
+                "date": date, "heure": heure, "heure_texte": heure_courte(heure), "agenda": agenda, "titre": titre, "detail": detail, "categorie": categorie, "genre": genre,
                 "url": url, "action": action, "stop": stop, "en_retard": date < aujourdhui, "important": important,
             })
 
@@ -109,7 +111,8 @@ def a_faire(aujourdhui, horizon_jours=PREAVIS_JOURS, avec_taches=False):
         propre = aujourdhui + timedelta(days=rappel.prevenir_jours) if rappel.prevenir_jours is not None else None
         ajouter(rappel.date, rappel.titre, str(rappel.bien or ""), rappel.get_categorie_display(),
                 reverse("admin:patrimoine_rappel_change", args=[rappel.pk]),
-                action=reverse("rappel_fait", args=["rappel", rappel.pk]), important=rappel.important, limite_propre=propre)
+                action=reverse("rappel_fait", args=["rappel", rappel.pk]), important=rappel.important, limite_propre=propre,
+                heure=rappel.heure, agenda=reverse("rappel_agenda", args=[rappel.pk]))
 
     if avec_taches:
         taches = (Tache.objects.filter(faite=False, changement__termine=False, echeance__isnull=False)
@@ -120,7 +123,8 @@ def a_faire(aujourdhui, horizon_jours=PREAVIS_JOURS, avec_taches=False):
                     reverse("admin:patrimoine_changementlocataire_change", args=[t.changement_id]),
                     action=reverse("tache_faite", args=[t.pk]), genre="entrees")
 
-    return sorted(items, key=lambda i: (not i["important"], i["date"]))
+    # même jour : d'abord ce qui n'a pas d'heure (toute la journée), puis les rendez-vous dans l'ordre des heures
+    return sorted(items, key=lambda i: (not i["important"], i["date"], i["heure"] is not None, i["heure"] or time.min))
 
 
 def deja_fait(aujourdhui, jours=HISTORIQUE_JOURS):

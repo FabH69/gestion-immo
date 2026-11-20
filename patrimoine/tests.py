@@ -322,6 +322,82 @@ class RappelsEtRevisionTests(TestCase):
         self.assertNotIn("AG", titres)  # au-delà de 30 jours
         self.assertEqual(a_faire(date(2026, 9, 1)), [])
 
+    def test_heure_facultative_du_rappel(self):
+        from datetime import time
+        from io import StringIO
+        from unittest import mock
+
+        from django.core.management import call_command
+
+        from .models import Rappel
+        from .rappels import a_faire
+        from .templatetags.tableau_bord import a_faire_groupes
+
+        jour = date(2026, 12, 3)
+        Rappel.objects.create(titre="Artisan", date=jour, heure=time(14, 30))
+        Rappel.objects.create(titre="Visite", date=jour, heure=time(9, 0))
+        Rappel.objects.create(titre="Sans heure", date=jour)
+        items = [i for i in a_faire(date(2026, 12, 1)) if i["genre"] == "rappels"]
+        # même jour : la journée d'abord, puis les rendez-vous par heure
+        self.assertEqual([i["titre"] for i in items], ["Sans heure", "Visite", "Artisan"])
+        self.assertEqual([i["heure_texte"] for i in items], ["", "9h", "14h30"])
+        details = [g["detail"] for g in a_faire_groupes(items, date(2026, 12, 1))]
+        self.assertEqual(details, ["le 03/12/2026, dans 2 jours", "le 03/12/2026 à 9h, dans 2 jours", "le 03/12/2026 à 14h30, dans 2 jours"])
+        # formulaire : champ heure à côté de la date, facultatif
+        page = self.client.get("/admin/patrimoine/rappel/add/").content.decode()
+        self.assertIn('type="time"', page)
+        reponse = self.client.post("/admin/patrimoine/rappel/add/", {
+            "titre": "AG", "date": "10/12/2026", "heure": "18:15", "periodicite": "ponctuel", "categorie": "ag", "actif": "on"})
+        self.assertEqual(reponse.status_code, 302)
+        self.assertEqual(Rappel.objects.get(titre="AG").heure, time(18, 15))
+        self.client.post("/admin/patrimoine/rappel/add/", {
+            "titre": "Taxe", "date": "10/12/2026", "heure": "", "periodicite": "ponctuel", "categorie": "fiscal", "actif": "on"})
+        self.assertIsNone(Rappel.objects.get(titre="Taxe").heure)
+        self.assertIn("10/12/2026 à 18h15", self.client.get("/admin/patrimoine/rappel/").content.decode())
+        # mail du rappel important
+        Rappel.objects.create(titre="Signature", date=date(2026, 12, 5), heure=time(10, 0), important=True)
+        sortie = StringIO()
+        with mock.patch("patrimoine.management.commands.rappels_par_mail.timezone.localdate", return_value=date(2026, 12, 1)):
+            call_command("rappels_par_mail", "--essai", stdout=sortie)
+        self.assertIn("le 05/12/2026 à 10h (dans 4 jours)", sortie.getvalue())
+
+    def test_rappel_dans_agenda(self):
+        from datetime import time
+        from urllib.parse import parse_qs, urlparse
+
+        from .agenda import lien_google
+        from .models import Rappel
+
+        bien = self.lot.bien
+        rdv = Rappel.objects.create(titre="AG, copro; salle 2", date=date(2026, 12, 10), heure=time(18, 15), bien=bien,
+                                    notes="Apporter le pouvoir")
+        ics = self.client.get(f"/rappels/{rdv.pk}/agenda.ics")
+        self.assertEqual(ics["Content-Type"], "text/calendar; charset=utf-8")
+        texte = ics.content.decode()
+        self.assertIn("DTSTART:20261210T171500Z", texte)  # 18h15 à Paris en hiver
+        self.assertIn("DTEND:20261210T181500Z", texte)
+        self.assertIn("SUMMARY:AG\\, copro\\; salle 2", texte)
+        self.assertIn("LOCATION:Immeuble – 1 rue\\, 69000 Lyon", texte)
+        self.assertIn("TRIGGER:-PT1H", texte)
+        self.assertIn("Apporter le pouvoir", texte)
+        journee = Rappel.objects.create(titre="Taxe foncière", date=date(2026, 10, 15), periodicite=Rappel.Periodicite.ANNUEL)
+        texte = self.client.get(f"/rappels/{journee.pk}/agenda.ics").content.decode()
+        self.assertIn("DTSTART;VALUE=DATE:20261015", texte)
+        self.assertIn("DTEND;VALUE=DATE:20261016", texte)
+        self.assertIn("RRULE:FREQ=YEARLY", texte)
+        self.assertNotIn("VALARM", texte)
+        self.assertTrue(all(len(l.encode()) <= 75 for l in texte.split("\r\n")))
+        params = parse_qs(urlparse(lien_google(rdv)).query)
+        self.assertEqual(params["dates"], ["20261210T171500Z/20261210T181500Z"])
+        self.assertEqual(params["text"], ["AG, copro; salle 2"])
+        # boutons sur la fiche du rappel (pas sur l'ajout), lien 📅 dans la page À faire
+        self.assertIn("Ajouter à mon agenda", self.client.get(f"/admin/patrimoine/rappel/{rdv.pk}/change/").content.decode())
+        self.assertNotIn("Ajouter à mon agenda", self.client.get("/admin/patrimoine/rappel/add/").content.decode())
+        self.assertIn(f"/rappels/{rdv.pk}/agenda.ics", self.client.get("/a-faire/", {"jours": "90"}).content.decode())
+        # un utilisateur sans droit sur les rappels n'y a pas accès
+        self.client.force_login(User.objects.create_user("invite", "i@example.com", "x", is_staff=True))
+        self.assertEqual(self.client.get(f"/rappels/{rdv.pk}/agenda.ics").status_code, 403)
+
     def test_bouton_fait(self):
         from .models import Rappel
 

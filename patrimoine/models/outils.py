@@ -6,6 +6,13 @@ from .communs import _ajouter_mois, stockage_prive
 from .biens import Bien
 
 
+def heure_courte(heure):
+    """09:00 → « 9h », 14:30 → « 14h30 », None → « »."""
+    if heure is None:
+        return ""
+    return f"{heure.hour}h{heure.minute:02d}" if heure.minute else f"{heure.hour}h"
+
+
 class SiteUtile(models.Model):
     """Lien affiché dans le menu « Sites utiles »."""
 
@@ -42,6 +49,9 @@ class Rappel(models.Model):
 
     titre = models.CharField(max_length=200)
     date = models.DateField()
+    heure = models.TimeField(
+        null=True, blank=True,
+        help_text="Facultatif : heure d'un rendez-vous (AG, visite, artisan…). Vide : rappel pour la journée.")
     categorie = models.CharField("catégorie", max_length=20, choices=Categorie.choices, default=Categorie.AUTRE)
     bien = models.ForeignKey(Bien, on_delete=models.CASCADE, null=True, blank=True, related_name="rappels")
     periodicite = models.CharField("périodicité", max_length=12, choices=Periodicite.choices, default=Periodicite.PONCTUEL)
@@ -60,9 +70,14 @@ class Rappel(models.Model):
 
     class Meta:
         verbose_name = "rappel"
-        ordering = ["fait", "-important", "date"]
+        ordering = ["fait", "-important", "date", "heure"]
 
     MAIL_JOURS_PAR_DEFAUT = 7
+
+    @property
+    def heure_texte(self):
+        """« 14h30 » (« 9h » pour une heure pile), vide sans heure."""
+        return heure_courte(self.heure)
 
     @property
     def date_mail(self):

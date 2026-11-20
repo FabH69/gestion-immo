@@ -77,7 +77,7 @@ div.breadcrumbs a { color: var(--breadcrumbs-link-fg); }
 .submit-row { padding: 14px 16px; }
 .submit-row a.deletelink { border-radius: 999px; height: auto; padding: 9px 18px; }
 .object-tools a:link, .object-tools a:visited { border-radius: 999px; padding: 7px 14px; font-weight: 600; text-transform: none; letter-spacing: 0; font-size: .8rem; }
-input[type=text], input[type=password], input[type=email], input[type=url], input[type=number], input[type=tel], input[type=date], textarea, select, .vTextField {
+input[type=text], input[type=password], input[type=email], input[type=url], input[type=number], input[type=tel], input[type=date], input[type=time], textarea, select, .vTextField {
   border-radius: var(--radius-sm); border: 1px solid var(--border-color); padding: 7px 10px;
 }
 input:focus, textarea:focus, select:focus { outline: 2px solid color-mix(in srgb, var(--primary) 35%, transparent); border-color: var(--primary); }
@@ -165,7 +165,7 @@ a.bouton-recu { display: inline-block; padding: 2px 10px; border: 1px solid var(
 #changelist table thead th .text a, #changelist table thead th .text span { white-space: normal; display: block; padding: 8px 8px 6px; }
 
 /* Listes déroulantes et champs : hauteur suffisante pour ne pas couper le texte */
-select, input[type=text], input[type=email], input[type=url], input[type=number], input[type=tel], input[type=date], .vTextField, .vDateField {
+select, input[type=text], input[type=email], input[type=url], input[type=number], input[type=tel], input[type=date], input[type=time], .vTextField, .vDateField {
   min-height: 36px; line-height: 1.35; box-sizing: border-box;
 }
 select { height: auto; padding-top: 6px; padding-bottom: 6px; }
@@ -862,3 +862,13 @@ fieldset.mail-envoi .form-multiline input { width: 100%; max-width: 340px; box-s
 fieldset.mail-envoi .form-multiline .help { margin: 4px 0 0; padding: 0; }
 fieldset.mail-envoi .checkbox-row label.vCheckboxLabel { white-space: nowrap; }
 @media (max-width: 767px) { fieldset.mail-envoi .form-multiline { grid-template-columns: 1fr; gap: 12px; } }
+
+/* Rappel : heure à côté de la date, boutons « Ajouter à mon agenda » et leur aide pas à pas */
+input.champ-heure { width: 9em; }
+.boutons-agenda { display: flex; flex-wrap: wrap; gap: 8px; }
+.aide-agenda { margin-top: 10px; max-width: 640px; font-size: .85rem; color: var(--body-quiet-color); }
+.aide-agenda summary { cursor: pointer; color: var(--link-fg); font-weight: 600; }
+.aide-agenda p, .aide-agenda ul { margin: 8px 0; padding-left: 0; }
+.aide-agenda ul { margin-left: 0 !important; padding-left: 18px !important; }
+.aide-agenda li { margin-bottom: 4px; list-style: disc; }
+.model-rappel .fieldBox.field-heure label { width: auto !important; min-width: 0 !important; padding-right: 8px !important; }

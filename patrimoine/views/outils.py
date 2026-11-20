@@ -27,6 +27,22 @@ def _lieu(bail):
 
 
 @staff_member_required
+def rappel_agenda(request, pk):
+    """Fichier .ics d'un rappel : « Ajouter à mon agenda » l'ouvre dans le calendrier du téléphone ou de l'ordinateur."""
+    from django.http import HttpResponse, HttpResponseForbidden
+
+    from ..agenda import fichier_ics
+
+    if not request.user.has_perm("patrimoine.view_rappel"):
+        return HttpResponseForbidden()
+    rappel = get_object_or_404(Rappel.objects.select_related("bien"), pk=pk)
+    lien = request.build_absolute_uri(reverse("admin:patrimoine_rappel_change", args=[pk]))
+    reponse = HttpResponse(fichier_ics(rappel, lien), content_type="text/calendar; charset=utf-8")
+    reponse["Content-Disposition"] = f'attachment; filename="rappel-{pk}.ics"'
+    return reponse
+
+
+@staff_member_required
 @require_POST
 def rappel_fait(request, type_rappel, pk):
     """Bouton « Fait » du bloc À faire de la page d'accueil."""

@@ -12,6 +12,7 @@
 .page-a-faire .a-faire td.liens { text-align: right; white-space: nowrap; width: 1%; }
 .page-a-faire .a-faire td.date, .page-a-faire .a-faire td.type { width: 1%; white-space: nowrap; }
 .page-a-faire .a-faire td.liens a { font-size: .82rem; }
+.page-a-faire .a-faire td.date .heure { font-weight: 600; }
 .page-a-faire .resume-retard { color: var(--rouge); font-weight: 600; }
 .page-a-faire .lien-rappels { font-size: .85rem; margin: 10px 2px 0; }
 .visuellement-cache { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
@@ -45,17 +46,17 @@
       {% for i in lignes %}
       <tr>
         <td class="coche-cellule">{% if vue == "fait" %}<input type="checkbox" checked disabled aria-label="Fait">{% elif i.cochable %}<form method="post" action="{{ i.action }}">{% csrf_token %}<input type="hidden" name="next" value="{{ ici }}"><input type="checkbox" class="case-fait" title="Cocher quand c'est fait" aria-label="Marquer « {{ i.titre }} » comme fait" onchange="this.form.submit()"></form>{% endif %}</td>
-        <td class="date{% if i.en_retard %} retard{% endif %}">{{ i.date|date:"d/m/Y" }}</td>
+        <td class="date{% if i.en_retard %} retard{% endif %}">{{ i.date|date:"d/m/Y" }}{% if i.heure_texte %} <span class="heure">{{ i.heure_texte }}</span>{% endif %}</td>
         <td class="type"><span class="categorie">{{ i.categorie }}</span></td>
         <th scope="row">{% if i.important %}<span class="etoile" title="Rappel important">★</span> {% endif %}<a href="{{ i.url }}">{{ i.titre }}</a>{% if i.detail %}<div class="detail">{{ i.detail }}</div>{% endif %}
           {% if i.stop and i.cochable %}<form method="post" action="{{ i.stop }}" class="ne-plus-rappeler">{% csrf_token %}<input type="hidden" name="next" value="{{ ici }}"><button type="submit" onclick="return confirm('Ne plus rappeler pour ce bail ? Vous pourrez réactiver le rappel sur la fiche du bail.')">Ne plus rappeler</button></form>{% endif %}</th>
-        <td class="liens">{% if i.genre == "loyers" %}<a href="{% url 'relances_impayes' %}">Relancer</a>{% elif i.genre == "revisions" %}<a href="{{ i.url }}">Réviser</a>{% else %}<a href="{{ i.url }}">Ouvrir</a>{% endif %}</td>
+        <td class="liens">{% if i.genre == "loyers" %}<a href="{% url 'relances_impayes' %}">Relancer</a>{% elif i.genre == "revisions" %}<a href="{{ i.url }}">Réviser</a>{% else %}{% if i.agenda %}<a href="{{ i.agenda }}" title="Ajouter à mon agenda" aria-label="Ajouter « {{ i.titre }} » à mon agenda">📅</a> {% endif %}<a href="{{ i.url }}">Ouvrir</a>{% endif %}</td>
       </tr>
       {% empty %}
       <tr><td colspan="5" style="padding:16px;color:var(--body-quiet-color)">{% if vue == "fait" %}Rien de fait ces {{ historique_jours }} derniers jours.{% else %}Rien à faire sur cette période.{% endif %}</td></tr>
       {% endfor %}
     </table>
   </div>
-  {% if genre == "rappels" or genre == "" and vue != "fait" %}<p class="lien-rappels"><a href="{% url 'admin:patrimoine_rappel_changelist' %}">Tous mes rappels</a> (périodiques, à venir, déjà faits) · <a href="{% url 'admin:patrimoine_changementlocataire_changelist' %}">Entrées et sorties en cours</a></p>{% endif %}
+  {% if genre == "rappels" or genre == "" and vue != "fait" %}<p class="lien-rappels"><a href="{% url 'admin:patrimoine_rappel_changelist' %}">Tous mes rappels</a> (périodiques, à venir, déjà faits) · 📅 : ajouter un rappel à l'agenda du téléphone (aide sur la fiche du rappel) · <a href="{% url 'admin:patrimoine_changementlocataire_changelist' %}">Entrées et sorties en cours</a></p>{% endif %}
 </div>
 {% endblock %}
