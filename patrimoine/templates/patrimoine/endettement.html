@@ -9,7 +9,7 @@
 <form method="get" class="filtres">
   <label>Au <input type="date" name="date" value="{{ date|date:'Y-m-d' }}"></label>
   <label>Emprunteur
-    <select name="proprietaire">
+    <select name="proprietaire" onchange="this.form.submit()">
       <option value="">Tous</option>
       {% for p in proprietaires_choix %}<option value="{{ p.pk }}" {% if proprietaire.pk == p.pk %}selected{% endif %}>{{ p.nom }}</option>{% endfor %}
     </select>

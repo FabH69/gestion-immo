@@ -265,6 +265,9 @@ class PretTests(TestCase):
         self.client.force_login(User.objects.create_superuser("admin", "a@example.com", "x"))
         r = self.client.get("/etats/endettement/", {"date": "2020-01-31"})
         self.assertEqual(r.context["total"]["restant"], Decimal("199390.80"))
+        # Changer d'emprunteur recharge la page sans cliquer sur « Afficher » (bouton gardé en repli).
+        self.assertContains(r, '<select name="proprietaire" onchange="this.form.submit()">', html=False)
+        self.assertContains(r, ">Afficher</button>")
         self.assertIn("199390,80", self.client.get("/etats/endettement/", {"date": "2020-01-31", "format": "csv"}).content.decode("utf-8-sig"))
         self.assertEqual(self.client.get("/etats/endettement/", {"format": "pdf"})["Content-Type"], "application/pdf")
         self.assertEqual(self.client.get(f"/prets/{self.pret.pk}/amortissement.pdf").status_code, 200)
