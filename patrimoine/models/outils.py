@@ -58,11 +58,11 @@ class Rappel(models.Model):
     important = models.BooleanField(
         "★ important", default=False,
         help_text="Paiement ou date limite à ne pas manquer : le rappel passe en tête de l'accueil et vous recevez un mail "
-                  "quelques jours avant (Paramètres › Mails).")
+                  "7 jours avant (ou au délai choisi), puis le jour même s'il n'est pas fait.")
     prevenir_jours = models.PositiveSmallIntegerField(
-        "prévenir … jours avant", null=True, blank=True,
-        help_text="Le rappel apparaît dans « À faire » (et le mail part s'il est important) ce nombre de jours avant la date. "
-                  "Vide : 30 jours avant, et mail 7 jours avant.")
+        "me prévenir par mail … jours avant", null=True, blank=True,
+        help_text="Un mail de rappel part ce jour-là, une seule fois (0 : le jour même). Vide : pas de mail, sauf pour un "
+                  "rappel ★ (7 jours avant). Le rappel, lui, est affiché dans « À faire » dès 30 jours avant.")
     actif = models.BooleanField(default=True, help_text="Décocher pour arrêter un rappel périodique sans le supprimer")
     fait = models.BooleanField(default=False)
     notes = models.TextField(blank=True)
@@ -81,19 +81,23 @@ class Rappel(models.Model):
 
     @property
     def date_mail(self):
-        """Jour où part le mail d'un rappel important."""
+        """Jour où part le mail « … jours avant » (7 jours avant par défaut pour un rappel ★), None sans mail."""
         from datetime import timedelta
 
+        if self.prevenir_jours is None and not self.important:
+            return None
         return self.date - timedelta(days=self.MAIL_JOURS_PAR_DEFAUT if self.prevenir_jours is None else self.prevenir_jours)
 
     def mail_a_envoyer(self, aujourdhui):
-        """Un mail quelques jours avant, puis un le jour même si ce n'est toujours pas fait (un seul par étape)."""
-        if not (self.important and self.actif and not self.fait):
+        """Un mail le jour choisi (« me prévenir par mail … jours avant »), une seule fois ; pour un rappel ★, un second
+        le jour même s'il n'est toujours pas fait. Retourne « avant », « jour » ou None."""
+        if not self.actif or self.fait or self.date_mail is None:
             return None
-        if aujourdhui >= self.date and (self.dernier_mail is None or self.dernier_mail < self.date):
+        deja = lambda depuis: self.dernier_mail is not None and self.dernier_mail >= depuis
+        if self.important and aujourdhui >= self.date and not deja(self.date):
             return "jour"
-        if self.date_mail <= aujourdhui < self.date and (self.dernier_mail is None or self.dernier_mail < self.date_mail):
-            return "avant"
+        if self.date_mail <= aujourdhui <= self.date and not deja(self.date_mail):
+            return "jour" if aujourdhui == self.date else "avant"
         return None
 
     def __str__(self):
@@ -154,9 +158,9 @@ class ParametresMail(models.Model):
     nom_expediteur = models.CharField("nom affiché", max_length=100, blank=True, help_text="ex. « Fabien Hunault »")
     alerte_nouveau_dossier = models.BooleanField("me prévenir à chaque dossier de candidature reçu", default=True)
     alerte_rappels = models.BooleanField(
-        "m'envoyer les rappels importants (★) par mail", default=True,
-        help_text="Quelques jours avant la date limite, puis le jour même si ce n'est pas fait. Nécessite la tâche quotidienne "
-                  "de PythonAnywhere (onglet Tasks).")
+        "m'envoyer les rappels par mail", default=True,
+        help_text="Le jour choisi sur chaque rappel (« me prévenir par mail … jours avant ») ; pour un rappel ★, aussi le jour "
+                  "même s'il n'est pas fait. Nécessite la tâche quotidienne de PythonAnywhere (onglet Tasks).")
     accuse_au_candidat = models.BooleanField("envoyer un accusé de réception au candidat", default=True)
 
     class Meta:

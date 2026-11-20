@@ -1,7 +1,7 @@
 #!/bin/bash
 # Tâche quotidienne (PythonAnywhere › onglet Tasks › Daily, par exemple à 07:00) :
 #     bash ~/gestion-immo/deploiement/tache_quotidienne.sh
-# Envoie le mail des rappels importants (★) quelques jours avant leur date limite, et relit les calendriers .ics.
+# Envoie le mail des rappels (le jour choisi sur chaque rappel), et relit les calendriers .ics.
 APPLI="$HOME/gestion-immo"
 VENV="$HOME/.virtualenvs/gestion-immo"
 DOMAINE="$(echo "$USER" | tr 'A-Z' 'a-z').pythonanywhere.com"

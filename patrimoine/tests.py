@@ -401,27 +401,47 @@ class RappelsEtRevisionTests(TestCase):
         self.client.force_login(User.objects.create_user("invite", "i@example.com", "x", is_staff=True))
         self.assertEqual(self.client.get(f"/rappels/{rdv.pk}/agenda.ics").status_code, 403)
 
-    def test_rappel_prevenir_visible_des_l_enregistrement(self):
-        from .models import Rappel
+    def test_rappel_visible_tout_de_suite_et_mail_j_moins_x(self):
+        from io import StringIO
+
+        from django.core import mail
+        from django.core.management import call_command
+        from django.test import override_settings
+
+        from .models import ParametresMail, Rappel
         from .rappels import a_faire
 
+        ParametresMail.objects.create(adresse="moi@example.com", mot_de_passe="x")
         with mock.patch("django.utils.timezone.localdate", return_value=date(2026, 11, 20)):
             reponse = self.client.post("/admin/patrimoine/rappel/add/?next=/admin/", {
-                "titre": "Visite", "date": "27/11/2026", "periodicite": "ponctuel", "categorie": "autre",
+                "titre": "Visite", "date": "27/11/2026", "heure": "10:00", "periodicite": "ponctuel", "categorie": "autre",
                 "prevenir_jours": "2", "actif": "on"}, follow=True)
             page = reponse.content.decode()
-            rappel = Rappel.objects.get(titre="Visite")
-            # le message dit quand il arrive sur l'accueil et donne le lien agenda
-            self.assertIn("à partir du 25/11/2026 (2 jours avant)", page)
-            self.assertIn(f"/rappels/{rappel.pk}/agenda.ics", page)
-            # accueil : pas avant J-2 ; page À faire et liste : tout de suite
-            self.assertNotIn("Visite", [i["titre"] for i in a_faire(date(2026, 11, 20))])
-            self.assertIn("Visite", [i["titre"] for i in a_faire(date(2026, 11, 25))])
-            page = self.client.get("/a-faire/", {"type": "rappels"}).content.decode()
-            self.assertIn("Visite", page)
-            self.assertIn("sur l&#x27;accueil à partir du 25/11/2026", page)
+            visite = Rappel.objects.get(titre="Visite")
+            self.assertIn("Il est affiché sur l&#x27;accueil", page)
+            self.assertIn("Mail de rappel le 25/11/2026", page)
+            self.assertIn(f"/rappels/{visite.pk}/agenda.ics", page)
+            # affiché tout de suite sur l'accueil et dans À faire, sans attendre J-2
+            self.assertIn("Visite", [i["titre"] for i in a_faire(date(2026, 11, 20))])
+            self.assertIn("Visite", page.split("Bonjour")[-1])
+            self.assertIn("Visite", self.client.get("/a-faire/", {"type": "rappels"}).content.decode())
+        sans_mail = Rappel.objects.create(titre="Sans mail", date=date(2026, 11, 27))
+        self.assertIsNone(sans_mail.mail_a_envoyer(date(2026, 11, 27)))
+        self.assertEqual(Rappel.objects.create(titre="Jour J", date=date(2026, 11, 27), prevenir_jours=0)
+                         .mail_a_envoyer(date(2026, 11, 27)), "jour")
+        commande = "patrimoine.management.commands.rappels_par_mail.timezone.localdate"
+        with override_settings(ENVOI_MAIL_BACKEND="django.core.mail.backends.locmem.EmailBackend"):
+            for jour in (24, 25, 26, 27):
+                with mock.patch(commande, return_value=date(2026, 11, jour)):
+                    call_command("rappels_par_mail", stdout=StringIO())
+        visites = [m for m in mail.outbox if "Visite" in m.body]
+        self.assertEqual(len(visites), 1)  # un seul mail, le 25 (J-2), même s'il n'est pas important
+        self.assertIn("Rappel : Visite le 27/11 à 10h", visites[0].subject)
+        self.assertNotIn("Sans mail", "".join(m.body for m in mail.outbox))
+        visite.refresh_from_db()
+        self.assertEqual(visite.dernier_mail, date(2026, 11, 25))
         liste = self.client.get("/admin/patrimoine/rappel/").content.decode()
-        self.assertIn(f"/rappels/{rappel.pk}/agenda.ics", liste)
+        self.assertIn(f"/rappels/{visite.pk}/agenda.ics", liste)
 
     def test_bouton_fait(self):
         from .models import Rappel
@@ -2354,7 +2374,8 @@ class TableauxBanqueEtRappelsTests(TestCase):
                                     bien=self.bien, periodicite=Rappel.Periodicite.ANNUEL)
         loin = Rappel.objects.create(titre="Payer plus tard", date=jour + timedelta_jours(20), important=True, prevenir_jours=10)
         items = a_faire(jour)
-        self.assertEqual([i["titre"] for i in items], ["Payer la CFE", "Tondre"])  # ★ en tête ; 20 jours > 10 jours : pas encore
+        # ★ en tête ; « me prévenir par mail 10 jours avant » ne masque plus le rappel à 20 jours (affiché dès 30 jours)
+        self.assertEqual([i["titre"] for i in items], ["Payer la CFE", "Payer plus tard", "Tondre"])
         accueil = self.client.get("/admin/").content.decode()
         self.assertIn("★", accueil)
         self.assertIn(f"/rappels/rappel/{cfe.pk}/fait/", accueil)

@@ -64,11 +64,19 @@ class RappelAdmin(admin.ModelAdmin):
         super().save_model(request, obj, form, change)
         if obj.fait or not obj.actif:
             return
+        from .. import mails
+
         aujourdhui = timezone.localdate()
-        jours = 30 if obj.prevenir_jours is None else obj.prevenir_jours
-        debut = obj.date - timedelta(days=jours)
-        quand = (f"Il apparaîtra sur l'accueil à partir du {debut:%d/%m/%Y} ({jours} jour{'s' if jours > 1 else ''} avant) ; "
-                 f"il est déjà visible dans la page À faire et dans la liste des rappels. " if debut > aujourdhui else "")
+        debut = obj.date - timedelta(days=max(30, obj.prevenir_jours or 0))
+        quand = (f"Il apparaîtra sur l'accueil et dans « À faire » à partir du {debut:%d/%m/%Y}. " if debut > aujourdhui
+                 else "Il est affiché sur l'accueil et dans « À faire ». ")
+        if obj.date_mail is not None and obj.date_mail <= obj.date and obj.date >= aujourdhui:
+            reglage = mails.reglage()
+            if reglage and reglage.alerte_rappels:
+                quand += (f"Mail de rappel le {obj.date_mail:%d/%m/%Y}. " if obj.date_mail > aujourdhui
+                          else "Mail de rappel au prochain envoi du matin. ")
+            else:
+                quand += "Mail de rappel prévu, mais les mails sont désactivés (Paramètres › Mails). "
         messages.info(request, format_html(
             "{}<a href=\"{}\">📅 Ajouter « {} » à mon agenda</a> (téléphone ou ordinateur).",
             quand, reverse("rappel_agenda", args=[obj.pk]), obj.titre))
@@ -94,10 +102,12 @@ class RappelAdmin(admin.ModelAdmin):
         date = f"{obj.date:%d/%m/%Y}"
         return f"{date} à {obj.heure_texte}" if obj.heure else date
 
-    @admin.display(description="prévenir")
+    @admin.display(description="mail")
     def prevenir(self, obj):
         jours = obj.prevenir_jours
-        return f"{jours} j avant" if jours is not None else "–"
+        if jours is None:
+            return "7 j avant" if obj.important else "–"
+        return "le jour même" if jours == 0 else f"{jours} j avant"
     list_display_links = ["titre"]
     search_fields = ["titre", "notes"]
 
@@ -139,7 +149,7 @@ class ParametresMailAdmin(admin.ModelAdmin):
         # Libellés courts : chaque case tient sur une seule ligne, même sur téléphone.
         for champ, libelle in (("alerte_nouveau_dossier", "Alerte à chaque candidature reçue"),
                                ("accuse_au_candidat", "Accusé de réception au candidat"),
-                               ("alerte_rappels", "Rappels importants (★) par mail")):
+                               ("alerte_rappels", "Rappels par mail")):
             form.base_fields[champ].label = libelle
         return form
 
