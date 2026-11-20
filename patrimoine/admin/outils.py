@@ -37,7 +37,7 @@ AIDE_AGENDA = mark_safe(
 class RappelAdmin(admin.ModelAdmin):
     date_hierarchy = "date"
     navigation_par = "mois"
-    list_display = ["important", "date_heure", "titre", "categorie", "bien", "periodicite", "prevenir", "actif", "fait"]
+    list_display = ["important", "date_heure", "titre", "categorie", "bien", "periodicite", "prevenir", "actif", "fait", "agenda_liste"]
     list_editable = ["important", "actif", "fait"]
     list_filter = ["important", "fait", "bien__proprietaire"]
     # l'heure (facultative) sur la même ligne que la date, pour noter un rendez-vous
@@ -48,6 +48,30 @@ class RappelAdmin(admin.ModelAdmin):
     def get_fields(self, request, obj=None):
         champs = super().get_fields(request, obj)
         return champs if obj else [c for c in champs if c != "agenda"]
+
+    @admin.display(description="agenda")
+    def agenda_liste(self, obj):
+        return format_html('<a href="{}" title="Ajouter à mon agenda" aria-label="Ajouter « {} » à mon agenda">📅</a>',
+                           reverse("rappel_agenda", args=[obj.pk]), obj.titre)
+
+    def save_model(self, request, obj, form, change):
+        """Après l'enregistrement : quand le rappel apparaîtra sur l'accueil, et le lien pour l'ajouter à l'agenda."""
+        from datetime import timedelta
+
+        from django.contrib import messages
+        from django.utils import timezone
+
+        super().save_model(request, obj, form, change)
+        if obj.fait or not obj.actif:
+            return
+        aujourdhui = timezone.localdate()
+        jours = 30 if obj.prevenir_jours is None else obj.prevenir_jours
+        debut = obj.date - timedelta(days=jours)
+        quand = (f"Il apparaîtra sur l'accueil à partir du {debut:%d/%m/%Y} ({jours} jour{'s' if jours > 1 else ''} avant) ; "
+                 f"il est déjà visible dans la page À faire et dans la liste des rappels. " if debut > aujourdhui else "")
+        messages.info(request, format_html(
+            "{}<a href=\"{}\">📅 Ajouter « {} » à mon agenda</a> (téléphone ou ordinateur).",
+            quand, reverse("rappel_agenda", args=[obj.pk]), obj.titre))
 
     @admin.display(description="agenda")
     def agenda(self, obj):

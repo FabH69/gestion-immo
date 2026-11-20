@@ -43,7 +43,9 @@ GENRES = [("loyers", "Loyers"), ("revisions", "Révisions"), ("assurances", "Ass
           ("dpe", "DPE"), ("entrees", "Entrées et sorties"), ("rappels", "Mes rappels")]
 
 
-def a_faire(aujourdhui, horizon_jours=PREAVIS_JOURS, avec_taches=False):
+def a_faire(aujourdhui, horizon_jours=PREAVIS_JOURS, avec_taches=False, selon_prevenir=True):
+    """Liste « À faire ». selon_prevenir : un rappel « prévenir N jours avant » n'apparaît qu'à partir de J-N (accueil) ;
+    la page À faire passe False pour montrer tous les rappels de la période choisie, dès leur enregistrement."""
     limite = aujourdhui + timedelta(days=horizon_jours)
     items = []
 
@@ -109,7 +111,13 @@ def a_faire(aujourdhui, horizon_jours=PREAVIS_JOURS, avec_taches=False):
     for rappel in Rappel.objects.filter(fait=False, actif=True).select_related("bien"):
         # « prévenir N jours avant » : le rappel n'apparaît qu'à partir de ce jour-là (30 jours avant sinon)
         propre = aujourdhui + timedelta(days=rappel.prevenir_jours) if rappel.prevenir_jours is not None else None
-        ajouter(rappel.date, rappel.titre, str(rappel.bien or ""), rappel.get_categorie_display(),
+        detail = str(rappel.bien or "")
+        if not selon_prevenir:
+            if propre and rappel.date > propre:
+                debut = rappel.date - timedelta(days=rappel.prevenir_jours)
+                detail = " · ".join(x for x in (detail, f"sur l'accueil à partir du {debut:%d/%m/%Y}") if x)
+            propre = None
+        ajouter(rappel.date, rappel.titre, detail, rappel.get_categorie_display(),
                 reverse("admin:patrimoine_rappel_change", args=[rappel.pk]),
                 action=reverse("rappel_fait", args=["rappel", rappel.pk]), important=rappel.important, limite_propre=propre,
                 heure=rappel.heure, agenda=reverse("rappel_agenda", args=[rappel.pk]))

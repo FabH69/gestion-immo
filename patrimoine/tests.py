@@ -1,6 +1,8 @@
 from datetime import date
 from decimal import Decimal
 
+from unittest import mock
+
 from django.contrib.auth.models import User
 from django.test import TestCase, TransactionTestCase
 from django.urls import reverse
@@ -398,6 +400,28 @@ class RappelsEtRevisionTests(TestCase):
         # un utilisateur sans droit sur les rappels n'y a pas accès
         self.client.force_login(User.objects.create_user("invite", "i@example.com", "x", is_staff=True))
         self.assertEqual(self.client.get(f"/rappels/{rdv.pk}/agenda.ics").status_code, 403)
+
+    def test_rappel_prevenir_visible_des_l_enregistrement(self):
+        from .models import Rappel
+        from .rappels import a_faire
+
+        with mock.patch("django.utils.timezone.localdate", return_value=date(2026, 11, 20)):
+            reponse = self.client.post("/admin/patrimoine/rappel/add/?next=/admin/", {
+                "titre": "Visite", "date": "27/11/2026", "periodicite": "ponctuel", "categorie": "autre",
+                "prevenir_jours": "2", "actif": "on"}, follow=True)
+            page = reponse.content.decode()
+            rappel = Rappel.objects.get(titre="Visite")
+            # le message dit quand il arrive sur l'accueil et donne le lien agenda
+            self.assertIn("à partir du 25/11/2026 (2 jours avant)", page)
+            self.assertIn(f"/rappels/{rappel.pk}/agenda.ics", page)
+            # accueil : pas avant J-2 ; page À faire et liste : tout de suite
+            self.assertNotIn("Visite", [i["titre"] for i in a_faire(date(2026, 11, 20))])
+            self.assertIn("Visite", [i["titre"] for i in a_faire(date(2026, 11, 25))])
+            page = self.client.get("/a-faire/", {"type": "rappels"}).content.decode()
+            self.assertIn("Visite", page)
+            self.assertIn("sur l&#x27;accueil à partir du 25/11/2026", page)
+        liste = self.client.get("/admin/patrimoine/rappel/").content.decode()
+        self.assertIn(f"/rappels/{rappel.pk}/agenda.ics", liste)
 
     def test_bouton_fait(self):
         from .models import Rappel
