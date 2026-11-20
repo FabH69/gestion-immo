@@ -174,7 +174,7 @@ def _menu():
              [r("simulateurs:mes_simulations"), r("simulateurs:rentabilite")],
              [("Mes simulations", r("simulateurs:mes_simulations")), ("Nouvelle simulation", r("simulateurs:rentabilite"))]),
             ("encaissements", "Encaissements", r("suivi_encaissements"), [r("suivi_encaissements")], []),
-            ("prets", "Prêts et endettement", a("pret"), [a("pret"), r("etat_endettement")], [("Endettement à une date", r("etat_endettement"))]),
+            ("prets", "Prêts et endettement", a("pret"), [a("pret"), r("etat_endettement")], []),
             ("etats", "États", r("etat_loyers_encaisses"), [r("etat_loyers_encaisses"), r("plus_value")],
              [("Loyers encaissés", r("etat_loyers_encaisses")), ("Simulation de plus-value", r("plus_value"))]),
             ("euro", "Simulateurs", r("simulateurs:accueil"), [r("simulateurs:accueil")],
