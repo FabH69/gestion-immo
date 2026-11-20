@@ -63,6 +63,7 @@ from .outils import (  # noqa: F401
     enregistrer_note,
     fichier_prive,
     ne_plus_rappeler,
+    rappel_agenda,
     rappel_fait,
     recherche,
     sauvegardes,

@@ -414,7 +414,11 @@ TYPES_A_FAIRE = {
 
 def a_faire_groupes(items, aujourdhui):
     """Regroupe la liste « À faire » par type : nombre, retard, précision et l'action la plus utile."""
+    from datetime import time
+
     from django.urls import reverse
+
+    from patrimoine.models.outils import heure_courte
 
     groupes = {}
     lignes = []
@@ -422,12 +426,13 @@ def a_faire_groupes(items, aujourdhui):
         # rappels importants et rappels saisis (« Mes rappels ») : une ligne chacun, avec le bouton « Fait »
         if i.get("important") or (i.get("genre") == "rappels" and i.get("action")):
             jours = (i["date"] - aujourdhui).days
-            quand = ("aujourd'hui" if jours == 0 else f"en retard depuis le {i['date']:%d/%m}" if jours < 0
-                     else f"le {i['date']:%d/%m/%Y}, dans {jours} jour{'s' if jours > 1 else ''}")
+            a_heure = f" à {heure_courte(i['heure'])}" if i.get("heure") else ""
+            quand = (f"aujourd'hui{a_heure}" if jours == 0 else f"en retard depuis le {i['date']:%d/%m}" if jours < 0
+                     else f"le {i['date']:%d/%m/%Y}{a_heure}, dans {jours} jour{'s' if jours > 1 else ''}")
             titre = i["titre"] if i.get("important") else f"{i['categorie']} : {i['titre']}"
             lignes.append({"categorie": i["categorie"], "titre": titre, "detail": " · ".join(x for x in (i["detail"], quand) if x),
                            "url": i["url"], "bouton": "Ouvrir", "nombre": 1, "retard": int(i["en_retard"]), "date": i["date"],
-                           "important": bool(i.get("important")), "action": i.get("action")})
+                           "heure": i.get("heure"), "important": bool(i.get("important")), "action": i.get("action")})
             continue
         groupes.setdefault(i["categorie"], []).append(i)
     for categorie, liste in groupes.items():
@@ -448,7 +453,8 @@ def a_faire_groupes(items, aujourdhui):
         lignes.append({"categorie": categorie, "titre": titre, "detail": detail, "url": url, "bouton": bouton, "nombre": n,
                        "retard": sum(1 for i in liste if i["en_retard"]), "date": plus_ancien,
                        "detail_url": reverse("a_faire") + f"?type={liste[0].get('genre', '')}"})
-    return sorted(lignes, key=lambda l: (not l.get("important"), not l["retard"], l["date"]))
+    return sorted(lignes, key=lambda l: (not l.get("important"), not l["retard"], l["date"],
+                                         l.get("heure") is not None, l.get("heure") or time.min))
 
 
 @register.simple_tag

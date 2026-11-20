@@ -4,6 +4,7 @@ from django.contrib import admin
 from django.shortcuts import redirect
 from django.urls import reverse
 from django.utils.html import format_html, format_html_join
+from django.utils.safestring import mark_safe
 
 from ..models import ModeleDocument, ParametresMail, SiteUtile, Rappel
 
@@ -15,14 +16,59 @@ class SiteUtileAdmin(admin.ModelAdmin):
     fields = ["nom", "url", "ordre"]
 
 
+# aide pas à pas sous les boutons « Ajouter à mon agenda » de la fiche d'un rappel
+AIDE_AGENDA = mark_safe(
+    "<p>Le bouton <b>📅 Ajouter à mon agenda</b> télécharge un petit fichier agenda (.ics) de ce rappel : "
+    "avec l'heure, un rendez-vous d'une heure et une alerte 1 heure avant ; sans heure, un événement sur la journée ; "
+    "un rappel périodique se répète dans l'agenda. On le retrouve aussi dans la page <b>À faire</b> : icône 📅 au bout de la ligne.</p>"
+    "<ul>"
+    "<li><b>iPhone</b> (Safari) : touchez « 📅 Ajouter à mon agenda », l'aperçu s'ouvre, touchez <b>Ajouter au calendrier</b>.</li>"
+    "<li><b>Android</b> : touchez <b>Google Agenda ↗</b>, l'événement s'ouvre déjà rempli, touchez <b>Enregistrer</b>. "
+    "(Le fichier .ics marche aussi : ouvrez-le depuis la notification de téléchargement, puis choisissez Agenda.)</li>"
+    "<li><b>Outlook</b> (ordinateur) : cliquez « 📅 Ajouter à mon agenda », ouvrez le fichier <i>rappel-….ics</i> téléchargé, "
+    "puis <b>Enregistrer et fermer</b>.</li>"
+    "<li><b>Google Agenda sur l'ordinateur</b> : cliquez <b>Google Agenda ↗</b>, puis <b>Enregistrer</b>.</li>"
+    "</ul>"
+    "<p>L'agenda garde une copie : si vous changez la date ou l'heure ici, ajoutez le rappel à nouveau "
+    "(iPhone et Outlook mettent l'événement à jour ; dans Google Agenda, supprimez l'ancien).</p>")
+
+
 @admin.register(Rappel)
 class RappelAdmin(admin.ModelAdmin):
     date_hierarchy = "date"
     navigation_par = "mois"
-    list_display = ["important", "date", "titre", "categorie", "bien", "periodicite", "prevenir", "actif", "fait"]
+    list_display = ["important", "date_heure", "titre", "categorie", "bien", "periodicite", "prevenir", "actif", "fait"]
     list_editable = ["important", "actif", "fait"]
     list_filter = ["important", "fait", "bien__proprietaire"]
-    fields = ["titre", "date", "periodicite", "categorie", "bien", ("important", "prevenir_jours"), "actif", "fait", "notes"]
+    # l'heure (facultative) sur la même ligne que la date, pour noter un rendez-vous
+    fields = ["titre", ("date", "heure"), "periodicite", "categorie", "bien", ("important", "prevenir_jours"), "actif", "fait", "notes",
+              "agenda"]
+    readonly_fields = ["agenda"]
+
+    def get_fields(self, request, obj=None):
+        champs = super().get_fields(request, obj)
+        return champs if obj else [c for c in champs if c != "agenda"]
+
+    @admin.display(description="agenda")
+    def agenda(self, obj):
+        """Boutons « Ajouter à mon agenda » (.ics, iPhone et Android) et Google Agenda, une fois le rappel enregistré."""
+        from ..agenda import lien_google
+
+        return format_html(
+            '<div class="boutons-agenda"><a class="button" href="{}">📅 Ajouter à mon agenda</a> '
+            '<a class="button" href="{}" target="_blank" rel="noopener">Google Agenda ↗</a></div>'
+            '<details class="aide-agenda"><summary>Comment l\'ajouter au calendrier du téléphone ?</summary>{}</details>',
+            reverse("rappel_agenda", args=[obj.pk]), lien_google(obj), AIDE_AGENDA)
+
+    def formfield_for_dbfield(self, db_field, request, **kwargs):
+        if db_field.name == "heure":
+            kwargs["widget"] = forms.TimeInput(attrs={"type": "time", "class": "champ-heure"}, format="%H:%M")
+        return super().formfield_for_dbfield(db_field, request, **kwargs)
+
+    @admin.display(description="date", ordering="date")
+    def date_heure(self, obj):
+        date = f"{obj.date:%d/%m/%Y}"
+        return f"{date} à {obj.heure_texte}" if obj.heure else date
 
     @admin.display(description="prévenir")
     def prevenir(self, obj):

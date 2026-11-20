@@ -30,7 +30,7 @@ class Command(BaseCommand):
             self.stdout.write("Mails des rappels désactivés (Paramètres › Mails).")
             return
         a_envoyer = []
-        for r in Rappel.objects.filter(important=True, actif=True, fait=False).select_related("bien").order_by("date"):
+        for r in Rappel.objects.filter(important=True, actif=True, fait=False).select_related("bien").order_by("date", "heure"):
             etape = r.mail_a_envoyer(aujourdhui)
             if etape:
                 a_envoyer.append((r, etape))
@@ -44,10 +44,12 @@ class Command(BaseCommand):
             quand = ("aujourd'hui" if jours == 0 else f"en retard de {-jours} jour{'s' if -jours > 1 else ''}" if jours < 0
                      else f"dans {jours} jour{'s' if jours > 1 else ''}")
             lien = site + reverse("admin:patrimoine_rappel_change", args=[r.pk]) if site else ""
-            lignes.append(f"★ {r.titre}{' – ' + r.bien.nom if r.bien else ''} : le {r.date:%d/%m/%Y} ({quand})"
+            a_heure = f" à {r.heure_texte}" if r.heure else ""
+            lignes.append(f"★ {r.titre}{' – ' + r.bien.nom if r.bien else ''} : le {r.date:%d/%m/%Y}{a_heure} ({quand})"
                           + (f"\n   {r.notes.strip()}" if r.notes.strip() else "") + (f"\n   {lien}" if lien else ""))
         n = len(a_envoyer)
-        sujet = (f"Rappel : {a_envoyer[0][0].titre} le {a_envoyer[0][0].date:%d/%m}" if n == 1
+        premier = a_envoyer[0][0]
+        sujet = (f"Rappel : {premier.titre} le {premier.date:%d/%m}{' à ' + premier.heure_texte if premier.heure else ''}" if n == 1
                  else f"{n} rappels importants à traiter")
         texte = ("Bonjour,\n\n" + ("Ce rappel arrive à échéance :" if n == 1 else "Ces rappels arrivent à échéance :") + "\n\n"
                  + "\n\n".join(lignes) + "\n\nCochez-les « Fait » sur l'accueil de l'appli une fois réglés"
