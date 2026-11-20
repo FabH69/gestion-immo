@@ -265,9 +265,13 @@ class PretTests(TestCase):
         self.client.force_login(User.objects.create_superuser("admin", "a@example.com", "x"))
         r = self.client.get("/etats/endettement/", {"date": "2020-01-31"})
         self.assertEqual(r.context["total"]["restant"], Decimal("199390.80"))
-        # Changer d'emprunteur recharge la page sans cliquer sur « Afficher » (bouton gardé en repli).
+        # Changer d'emprunteur ou de date recharge la page : « Afficher » ne reste que sans JavaScript.
         self.assertContains(r, '<select name="proprietaire" onchange="this.form.submit()">', html=False)
-        self.assertContains(r, ">Afficher</button>")
+        self.assertContains(r, '<noscript><button type="submit" class="button">Afficher</button></noscript>', html=False)
+        self.assertContains(r, 'data-initiale="2020-01-31"')
+        # Plus de sous-menu « Endettement à une date » ; la page reste accessible depuis la liste des prêts.
+        self.assertNotContains(r, ">Endettement à une date</a>")
+        self.assertContains(self.client.get("/admin/patrimoine/pret/"), 'href="/etats/endettement/"')
         self.assertContains(r, ">TOTAL</td>")  # tous les emprunteurs : total général gardé
         # Un seul emprunteur : sa ligne s'appelle « Total », sans son nom, et la ligne TOTAL disparaît (page et PDF).
         pk = self.pret.proprietaire_id

@@ -6,17 +6,37 @@
 {% block breadcrumbs %}<div class="breadcrumbs"><a href="{% url 'admin:index' %}">Accueil</a> › <a href="{% url 'admin:patrimoine_pret_changelist' %}">Prêts et endettement</a> › Endettement à une date</div>{% endblock %}
 {% block content %}
 <p>Capital restant dû calculé à partir des conditions de chaque prêt ; mensualité assurance comprise. Il peut différer de quelques euros du tableau de la banque.</p>
-<form method="get" class="filtres">
-  <label>Au <input type="date" name="date" value="{{ date|date:'Y-m-d' }}"></label>
+<form method="get" class="filtres" id="filtres-endettement">
+  <label>Au <input type="date" name="date" value="{{ date|date:'Y-m-d' }}" data-initiale="{{ date|date:'Y-m-d' }}"></label>
   <label>Emprunteur
     <select name="proprietaire" onchange="this.form.submit()">
       <option value="">Tous</option>
       {% for p in proprietaires_choix %}<option value="{{ p.pk }}" {% if proprietaire.pk == p.pk %}selected{% endif %}>{{ p.nom }}</option>{% endfor %}
     </select>
   </label>
-  <button type="submit" class="button">Afficher</button>
+  <noscript><button type="submit" class="button">Afficher</button></noscript>
   <a class="button" href="?date={{ date|date:'Y-m-d' }}&proprietaire={{ proprietaire.pk|default:'' }}&format=pdf" target="_blank">Télécharger en PDF</a>
   <a class="button" href="?date={{ date|date:'Y-m-d' }}&proprietaire={{ proprietaire.pk|default:'' }}&format=csv">Télécharger pour Excel</a>
 </form>
+<script>
+/* La page s'actualise dès qu'on choisit une date : tout de suite au calendrier, et pendant une saisie au clavier,
+   une fois la frappe terminée (pause d'une seconde), à la touche Entrée ou en quittant le champ. */
+(function () {
+  var champ = document.querySelector('#filtres-endettement input[name="date"]'), clavier = 0, minuteur;
+  function envoyer() {
+    clearTimeout(minuteur);
+    if (/^[12]\d{3}-/.test(champ.value) && champ.value !== champ.dataset.initiale) { champ.dataset.initiale = champ.value; champ.form.submit(); }
+  }
+  champ.addEventListener("keydown", function (e) {
+    clavier = Date.now();
+    if (e.key === "Enter") { e.preventDefault(); envoyer(); }
+  });
+  champ.addEventListener("change", function () {
+    clearTimeout(minuteur);
+    if (Date.now() - clavier < 300) minuteur = setTimeout(envoyer, 1200); else envoyer();
+  });
+  champ.addEventListener("blur", envoyer);
+})();
+</script>
 <div class="etat-scroll">{% include "patrimoine/_tableau_endettement.html" %}</div>
 {% endblock %}
