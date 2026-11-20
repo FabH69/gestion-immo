@@ -268,6 +268,16 @@ class PretTests(TestCase):
         # Changer d'emprunteur recharge la page sans cliquer sur « Afficher » (bouton gardé en repli).
         self.assertContains(r, '<select name="proprietaire" onchange="this.form.submit()">', html=False)
         self.assertContains(r, ">Afficher</button>")
+        self.assertContains(r, ">TOTAL</td>")  # tous les emprunteurs : total général gardé
+        # Un seul emprunteur : sa ligne s'appelle « Total », sans son nom, et la ligne TOTAL disparaît (page et PDF).
+        pk = self.pret.proprietaire_id
+        r = self.client.get("/etats/endettement/", {"date": "2020-01-31", "proprietaire": pk})
+        self.assertContains(r, '<td class="libelle" colspan="2">Total</td>', html=False)
+        self.assertNotContains(r, ">TOTAL</td>")
+        self.assertNotContains(r, f"Total {self.pret.proprietaire.nom}<")
+        csv_un = self.client.get("/etats/endettement/", {"date": "2020-01-31", "proprietaire": pk, "format": "csv"}).content.decode("utf-8-sig")
+        self.assertIn("\nTotal;", csv_un)
+        self.assertNotIn("TOTAL", csv_un)
         self.assertIn("199390,80", self.client.get("/etats/endettement/", {"date": "2020-01-31", "format": "csv"}).content.decode("utf-8-sig"))
         self.assertEqual(self.client.get("/etats/endettement/", {"format": "pdf"})["Content-Type"], "application/pdf")
         self.assertEqual(self.client.get(f"/prets/{self.pret.pk}/amortissement.pdf").status_code, 200)
