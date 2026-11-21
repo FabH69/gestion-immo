@@ -185,6 +185,16 @@ class Pret(models.Model):
             ligne = l
         return ligne["mensualite"] + ligne["assurance"]
 
+    def montants_declares(self, annee):
+        """Intérêts et assurance à déclarer pour l'année : l'attestation de la banque si elle est saisie, sinon l'échéancier.
+        Renvoie aussi la source : "attestation", "banque" (tableau importé) ou "estimation" (échéancier calculé)."""
+        attestation = self.attestations.filter(annee=annee).first() if self.pk else None
+        if attestation:
+            return {"interets": attestation.interets, "assurance": attestation.assurance, "source": "attestation"}
+        cumul = self.cumul_annee(annee)
+        return {"interets": cumul["interets"], "assurance": cumul["assurance"],
+                "source": "banque" if self.pk and self.lignes.exists() else "estimation"}
+
     def cumul_annee(self, annee):
         lignes = [l for l in self.echeancier() if l["date"].year == annee]
         return {
@@ -217,6 +227,25 @@ class LigneEcheancier(models.Model):
     @property
     def echeance(self):
         return self.capital + self.interets + self.assurance
+
+
+class AttestationPret(models.Model):
+    """Montants de l'attestation fiscale annuelle de la banque : ils remplacent l'échéancier pour la déclaration de l'année
+    (2044, annexe 2072), quand l'assurance réellement prélevée diffère du tableau d'amortissement."""
+
+    pret = models.ForeignKey(Pret, on_delete=models.CASCADE, related_name="attestations", verbose_name="prêt")
+    annee = models.PositiveSmallIntegerField("année")
+    interets = models.DecimalField("intérêts (€)", max_digits=10, decimal_places=2)
+    assurance = models.DecimalField("assurance et frais (€)", max_digits=10, decimal_places=2, default=0)
+
+    class Meta:
+        verbose_name = "attestation annuelle de la banque"
+        verbose_name_plural = "attestations annuelles de la banque"
+        ordering = ["pret", "-annee"]
+        constraints = [models.UniqueConstraint(fields=["pret", "annee"], name="attestation_unique_par_annee")]
+
+    def __str__(self):
+        return f"{self.pret} – attestation {self.annee}"
 
 
 class AnneeCloturee(models.Model):

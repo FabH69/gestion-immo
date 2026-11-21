@@ -3344,6 +3344,14 @@ class RetoursNovembreTests(TestCase):
         c = colonne(self.bien, 2025)
         self.assertEqual(c["valeurs"]["17"], Decimal("52.01"))
         self.assertNotIn("estimation", c["detail"]["17"][0][0])
+        pret.attestations.create(annee=2025, interets=Decimal("566.12"), assurance=Decimal("57.96"))
+        c = colonne(self.bien, 2025)
+        self.assertEqual(c["valeurs"]["17"], Decimal("624.08"))
+        self.assertIn("attestation 2025", c["detail"]["17"][0][0])
+        self.assertEqual(colonne(self.bien, 2026)["valeurs"].get("17", Decimal(0)), Decimal(0))  # autre année : le tableau
+        page = self.client.get(f"/admin/patrimoine/pret/{pret.pk}/change/").content.decode()
+        self.assertIn("Attestations annuelles de la banque", page)
+        self.assertIn("566.12", page)
 
     def test_annees_anterieures_toujours_proposees(self):
         t = timezone.localdate().year

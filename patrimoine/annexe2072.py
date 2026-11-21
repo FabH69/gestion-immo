@@ -83,12 +83,14 @@ def colonne(bien, annee):
 
     # ligne 17 : intérêts et assurance des prêts rattachés au bien
     for pret in Pret.objects.filter(bien=bien):
-        cumul = pret.cumul_annee(annee)
-        montant = cumul["interets"] + cumul["assurance"]
+        m = pret.montants_declares(annee)
+        montant = m["interets"] + m["assurance"]
         if montant:
             v["17"] += montant
-            libelle = f"{pret.banque} {pret.reference} : intérêts {cumul['interets']} € + assurance {cumul['assurance']} €"
-            if not pret.lignes.exists():
+            libelle = f"{pret.banque} {pret.reference} : intérêts {m['interets']} € + assurance {m['assurance']} €"
+            if m["source"] == "attestation":
+                libelle += f" (attestation {annee} de la banque)"
+            elif m["source"] == "estimation":
                 libelle += " (estimation : tableau d'amortissement de la banque non importé)"
             detail["17"].append((libelle, montant, None))
 
