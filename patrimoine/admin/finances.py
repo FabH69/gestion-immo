@@ -8,12 +8,22 @@ from django.utils import timezone
 from django.utils.html import format_html
 
 from .. import compta
-from ..models import AnneeCloturee, PieceComptable, Bien, Pret
+from ..models import AnneeCloturee, AttestationPret, PieceComptable, Bien, Pret
 from .communs import euros_liste
+
+
+class AttestationPretInline(admin.TabularInline):
+    model = AttestationPret
+    extra = 0
+    fields = ["annee", "interets", "assurance"]
+    verbose_name = "attestation annuelle de la banque"
+    verbose_name_plural = ("Attestations annuelles de la banque (facultatif : les montants saisis pour une année remplacent "
+                           "l'échéancier dans la 2044 et l'annexe 2072)")
 
 
 @admin.register(Pret)
 class PretAdmin(admin.ModelAdmin):
+    inlines = [AttestationPretInline]
     list_display = ["fiche_pret", "proprietaire", "bien", "taux_affiche", "mensualite", "fin", "restant_du", "amortissement"]
     list_display_links = ["fiche_pret"]
     list_filter = ["proprietaire"]
