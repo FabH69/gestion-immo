@@ -714,6 +714,36 @@ class AnnonceTests(TestCase):
         a.save()
         self.assertEqual(Annonce.objects.get().texte, "Texte retouché")
 
+    def test_depot_suit_la_correction_du_loyer(self):
+        from .models import Annonce
+
+        a = Annonce.objects.create(lot=self.lot, loyer_cc=Decimal("610"), charges=Decimal("10"))
+        self.assertEqual(a.depot_garantie, Decimal("1200"))  # meublé : 2 mois hors charges
+        a.loyer_cc = Decimal("630")
+        a.save()
+        self.assertEqual(Annonce.objects.get().depot_garantie, Decimal("1240"))
+        # un dépôt saisi à la main n'est pas écrasé
+        a.depot_garantie = Decimal("900")
+        a.save()
+        a.loyer_cc = Decimal("650")
+        a.save()
+        self.assertEqual(Annonce.objects.get().depot_garantie, Decimal("900"))
+
+    def test_page_modifier_annonce(self):
+        from django.contrib.auth.models import User
+
+        from .models import Annonce
+
+        self.client.force_login(User.objects.create_superuser("chef", "c@exemple.fr", "x"))
+        a = Annonce.objects.create(lot=self.lot, loyer_cc=Decimal("610"), charges=Decimal("10"))
+        page = self.client.get(f"/admin/patrimoine/annonce/{a.pk}/change/").content.decode()
+        self.assertIn("Loyer mensuel charges comprises", page)
+        self.assertIn('value="610.00"', page)
+        self.assertRegex(page, r'for="id_depot_garantie">Dépôt de garantie\s:')
+        self.assertNotIn("Dépôt de garantie (€)", page)
+        self.assertIn("conditions-annonce", page)
+        self.assertIn("annonce_modele.js", page)
+
     def test_photos_zip(self):
         import io as _io
         import zipfile as _zip

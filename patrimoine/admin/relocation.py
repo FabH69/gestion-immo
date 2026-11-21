@@ -400,9 +400,11 @@ class AnnonceAdmin(LotsALouerMixin, admin.ModelAdmin):
         form = super().get_form(request, obj, **kwargs)
         form.base_fields["texte"].widget.attrs.update(rows=22, style="width:100%;max-width:720px")
         form.base_fields["titre"].widget.attrs.update(size=60)
+        form.base_fields["loyer_cc"].label = "Loyer mensuel charges comprises"
+        form.base_fields["depot_garantie"].label = "Dépôt de garantie"
         return form
     fieldsets = [
-        (None, {"fields": ["lot", "modele", ("loyer_cc", "charges", "charges_forfait", "depot_garantie"), "disponible_le"]}),
+        (None, {"classes": ["conditions-annonce"], "fields": ["lot", "modele", "loyer_cc", ("charges", "charges_forfait"), "depot_garantie", "disponible_le"]}),
         ("Annonce", {"fields": ["titre", "texte", "a_copier"]}),
     ]
 

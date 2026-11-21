@@ -872,3 +872,8 @@ input.champ-heure { width: 9em; }
 .aide-agenda ul { margin-left: 0 !important; padding-left: 18px !important; }
 .aide-agenda li { margin-bottom: 4px; list-style: disc; }
 .model-rappel .fieldBox.field-heure label { width: auto !important; min-width: 0 !important; padding-right: 8px !important; }
+
+/* Annonce : « Loyer mensuel charges comprises » sur une seule ligne */
+@media (min-width: 768px) {
+  fieldset.conditions-annonce .flex-container > label:not(.inline):not(.vCheckboxLabel) { width: 270px; white-space: nowrap; }
+}

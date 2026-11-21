@@ -1,5 +1,6 @@
 """Changements de locataire (tâches d'entrée et de sortie), candidatures et annonces."""
 from datetime import date, timedelta
+from decimal import Decimal
 
 from django.core.validators import FileExtensionValidator
 from django.db import models
@@ -444,12 +445,26 @@ class Annonce(models.Model):
             manque.append("dépenses d'énergie estimées")
         return manque
 
+    def depot_calcule(self, loyer_cc=None, charges=None):
+        loyer_cc = self.loyer_cc if loyer_cc is None else loyer_cc
+        charges = self.charges if charges is None else charges
+        return (Decimal(loyer_cc or 0) - Decimal(charges or 0)) * (2 if self.lot.meuble else 1)
+
+    def _depot_suit_le_loyer(self):
+        """Loyer ou charges corrigés alors que le dépôt enregistré était le calcul automatique : il suit."""
+        if not self.pk:
+            return False
+        avant = Annonce.objects.filter(pk=self.pk).values("loyer_cc", "charges", "depot_garantie").first()
+        if not avant or (avant["loyer_cc"], avant["charges"]) == (self.loyer_cc, self.charges):
+            return False
+        return avant["depot_garantie"] == self.depot_calcule(avant["loyer_cc"], avant["charges"]) == self.depot_garantie
+
     def save(self, *args, **kwargs):
         if not self.titre:
             self.titre = (self.modele.titre if self.modele_id and self.modele.titre else self.titre_genere())[:100]
-        if not self.depot_garantie and self.loyer_cc:
+        if self.loyer_cc and (not self.depot_garantie or self._depot_suit_le_loyer()):
             # 1 mois de loyer HC en location nue, 2 mois en meublé (calculé avant le texte, qui l'indique)
-            self.depot_garantie = (self.loyer_cc - self.charges) * (2 if self.lot.meuble else 1)
+            self.depot_garantie = self.depot_calcule()
         if not self.texte:
             self.texte = self.texte_genere()
         super().save(*args, **kwargs)
