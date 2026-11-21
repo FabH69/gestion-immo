@@ -68,10 +68,12 @@ def colonne(bien, annee):
         if p.ligne == "non" or p.a_codifier:
             continue
         cle = "9" if p.ligne == "9b" else p.ligne
-        v[cle] += p.montant
+        # ligne 14 (2044 : ligne 230) : montant à retrancher, positif même si l'avoir du syndic est saisi en négatif
+        montant = abs(p.montant) if p.ligne == "14" else p.montant
+        v[cle] += montant
         if p.ligne == "9b":
-            v["9b"] += p.montant
-        detail[p.ligne].append((f"{p.date:%d/%m/%Y} {p.fournisseur} – {p.libelle}".strip(), p.montant, p))
+            v["9b"] += montant
+        detail[p.ligne].append((f"{p.date:%d/%m/%Y} {p.fournisseur} – {p.libelle}".strip(), montant, p))
 
     # ligne 7 : forfait de 20 € par local (lots non vendus avant l'année)
     nb_locaux = bien.lots.filter(Q(vendu=False) | Q(date_vente__year__gte=annee)).count()
@@ -81,12 +83,16 @@ def colonne(bien, annee):
 
     # ligne 17 : intérêts et assurance des prêts rattachés au bien
     for pret in Pret.objects.filter(bien=bien):
-        cumul = pret.cumul_annee(annee)
-        montant = cumul["interets"] + cumul["assurance"]
+        m = pret.montants_declares(annee)
+        montant = m["interets"] + m["assurance"]
         if montant:
             v["17"] += montant
-            detail["17"].append((f"{pret.banque} {pret.reference} : intérêts {cumul['interets']} € + assurance {cumul['assurance']} €",
-                                 montant, None))
+            libelle = f"{pret.banque} {pret.reference} : intérêts {m['interets']} € + assurance {m['assurance']} €"
+            if m["source"] == "attestation":
+                libelle += f" (attestation {annee} de la banque)"
+            elif m["source"] == "estimation":
+                libelle += " (estimation : tableau d'amortissement de la banque non importé)"
+            detail["17"].append((libelle, montant, None))
 
     v["5"] = v["1"] + v["2"] + v["3"] + v["4"]
     v["16"] = v["6"] + v["7"] + v["8"] + v["9"] + v["10"] + v["11"] + v["12"] + v["13"] - v["14"] + v["15"]

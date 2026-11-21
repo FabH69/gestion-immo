@@ -3326,6 +3326,33 @@ class RetoursNovembreTests(TestCase):
         texte = "Avis d'échéance - Assurance emprunteur - prêt immobilier n° 123\nMontant à payer : 45,20 €\nDate : 05/01/2025"
         self.assertEqual(analyser(texte).get("ligne"), "17")
 
+    def test_ligne_230_toujours_retranchee_et_pret_estime_signale(self):
+        from .annexe2072 import colonne
+        from .models import PieceComptable, Pret
+
+        PieceComptable.objects.create(bien=self.bien, date=date(2025, 3, 1), libelle="Appel T1", montant=Decimal("110.62"), ligne="13")
+        PieceComptable.objects.create(bien=self.bien, date=date(2025, 9, 22), libelle="Régul T4", montant=Decimal("-78.12"), ligne="14")
+        pret = Pret.objects.create(proprietaire=self.sci, bien=self.bien, banque="CM", reference="1", montant=Decimal("20000"),
+                                   taux=Decimal("3"), duree_mois=120, date_premiere_echeance=date(2024, 1, 5),
+                                   assurance_mensuelle=Decimal("8"))
+        c = colonne(self.bien, 2025)
+        self.assertEqual(c["valeurs"]["14"], Decimal("78.12"))
+        self.assertEqual(c["valeurs"]["16"], Decimal("110.62") - Decimal("78.12"))  # 32,50 et non 188,74
+        self.assertIn("estimation", c["detail"]["17"][0][0])
+        pret.lignes.create(rang=1, date=date(2025, 1, 5), capital=Decimal("100"), interets=Decimal("47.18"),
+                           assurance=Decimal("4.83"), restant=Decimal("19900"))
+        c = colonne(self.bien, 2025)
+        self.assertEqual(c["valeurs"]["17"], Decimal("52.01"))
+        self.assertNotIn("estimation", c["detail"]["17"][0][0])
+        pret.attestations.create(annee=2025, interets=Decimal("566.12"), assurance=Decimal("57.96"))
+        c = colonne(self.bien, 2025)
+        self.assertEqual(c["valeurs"]["17"], Decimal("624.08"))
+        self.assertIn("attestation 2025", c["detail"]["17"][0][0])
+        self.assertEqual(colonne(self.bien, 2026)["valeurs"].get("17", Decimal(0)), Decimal(0))  # autre année : le tableau
+        page = self.client.get(f"/admin/patrimoine/pret/{pret.pk}/change/").content.decode()
+        self.assertIn("Attestations annuelles de la banque", page)
+        self.assertIn("566.12", page)
+
     def test_annees_anterieures_toujours_proposees(self):
         t = timezone.localdate().year
         page = self.client.get("/admin/patrimoine/piececomptable/?compta=foncier").content.decode()
