@@ -149,8 +149,8 @@ def _menu():
     a = lambda nom: r(f"admin:patrimoine_{nom}_changelist")
     return [
         (None, [
-            ("accueil", "Tableau de bord", r("admin:index"), ["/admin/$"], []),
-            ("rappels", "À faire", r("a_faire"), [r("a_faire"), a("rappel"), a("tache")], []),
+            # « À faire » n'a plus d'entrée : on y va depuis le bloc À faire de l'accueil, qui reste allumé sur ces pages
+            ("accueil", "Tableau de bord", r("admin:index"), ["/admin/$", r("a_faire"), a("rappel"), a("tache")], []),
             ("biens", "Biens et lots", a("bien"), [a("bien"), a("lot")],
              [("Propriétaires", a("proprietaire")), ("Lots", a("lot")), ("Syndics", a("syndic"))]),
             ("locataires", "Locataires", a("locataire"), [a("locataire")], []),
@@ -160,8 +160,8 @@ def _menu():
               ("Dépôts de garantie", a("mouvementdepot"))]),
         ]),
         ("Relocation", [
-            ("candidatures", "Candidatures", a("candidature"), [a("candidature")], []),
             ("annonces", "Annonces", a("annonce"), [a("annonce")], []),
+            ("candidatures", "Candidatures", a("candidature"), [a("candidature")], []),
             ("cles", "Changements de locataire", a("changementlocataire"), [a("changementlocataire")], []),
         ]),
         ("Courte durée", [

@@ -474,6 +474,26 @@ class RappelsEtRevisionTests(TestCase):
         self.assertGreater(pret.date_derniere_echeance, fin)  # capital plus élevé : même mensualité, prêt allongé
         self.assertEqual(lignes[-2]["mensualite"], pret.mensualite_hors_assurance)
 
+    def test_endettement_mensualite_a_la_date_choisie(self):
+        from .etats import endettement
+        from .models import LigneEcheancier, Pret
+
+        proprio = Proprietaire.objects.create(nom="SCI M", type=Proprietaire.Type.SCI_IR)
+        pret = Pret.objects.create(proprietaire=proprio, banque="CM", montant=Decimal("76767.16"), taux=Decimal("1.84"), duree_mois=12,
+                                   date_premiere_echeance=date(2028, 1, 5), assurance_mensuelle=Decimal("10"))
+        # Tableau de la banque : l'assurance baisse chaque année, la mensualité change donc selon la date.
+        for rang in range(1, 13):
+            LigneEcheancier.objects.create(pret=pret, rang=rang, date=date(2028, rang, 5), capital=Decimal("450"), interets=Decimal("10"),
+                                           assurance=Decimal("11.88") if rang < 8 else Decimal("11.48"), restant=Decimal(70000 - rang * 450))
+        ligne = endettement(date(2028, 8, 6), proprio)["blocs"][0]["lignes"][0]
+        self.assertEqual(ligne["mensualite"], Decimal("471.48"))
+        self.assertEqual(pret.mensualite_au(date(2028, 3, 6)), Decimal("471.88"))
+        self.assertEqual(pret.mensualite_au(date(2027, 6, 1)), Decimal("471.88"))  # avant le début : première échéance
+        page = self.client.get(f"/etats/endettement/?date=2028-08-06&proprietaire={proprio.pk}")
+        self.assertContains(page, "471,48")
+        excel = self.client.get(f"/etats/endettement/?date=2028-08-06&proprietaire={proprio.pk}&format=csv")
+        self.assertIn("471,48", excel.content.decode("utf-8-sig"))
+
     def test_endettement_residence_principale_a_part(self):
         from .etats import endettement
         from .models import Pret
@@ -1169,6 +1189,17 @@ class MenusNovembreTests(TestCase):
         self.assertIn("anil.org", page)  # créé par la migration
         self.assertNotIn("Ajouter un site utile", page)  # bouton retiré de l'accueil, reste dans le menu
         self.assertIn("+ Ajouter un site", page)
+
+    def test_relocation_annonces_avant_candidatures(self):
+        page = self.client.get("/admin/").content.decode()
+        relocation = page.split("Relocation</div>")[1]
+        self.assertLess(relocation.index("<span>Annonces</span>"), relocation.index("<span>Candidatures</span>"))
+
+    def test_a_faire_hors_du_menu(self):
+        menu = lambda url: self.client.get(url).content.decode().split('id="barre-laterale"')[1].split("</aside>")[0]
+        self.assertNotIn("<span>À faire</span>", menu("/admin/"))
+        actif = menu("/a-faire/").split('menu-entree actif')[1]
+        self.assertIn("<span>Tableau de bord</span>", actif.split("</a>")[0])  # on sait où on est
 
 
 class SuiviEncaissementsTests(TestCase):
@@ -2678,8 +2709,9 @@ class UneSeuleFaconTests(TestCase):
     def test_page_a_faire(self):
         Rappel.objects.create(titre="AG copropriété", date=timezone.localdate())
         page = self.client.get("/a-faire/").content.decode()
-        for texte in ("AG copropriété", "Mes rappels", "Entrées et sorties", "+ Rappel", 'href="/a-faire/"'):
+        for texte in ("AG copropriété", "Mes rappels", "Entrées et sorties", "+ Rappel"):
             self.assertIn(texte, page)
+        self.assertIn('href="/a-faire/"', self.client.get("/admin/").content.decode())  # accès par le bloc À faire de l'accueil
         self.assertIn("AG copropriété", self.client.get("/a-faire/?type=rappels").content.decode())
         self.assertNotIn("AG copropriété", self.client.get("/a-faire/?type=loyers").content.decode())
 

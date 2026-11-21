@@ -172,6 +172,19 @@ class Pret(models.Model):
             restant = ligne["restant"]
         return restant
 
+    def mensualite_au(self, a_date):
+        """Échéance assurance comprise en vigueur à cette date : la dernière échéance passée à cette date (incluse), ou la
+        première si le prêt n'a pas encore commencé. Suit le tableau de la banque (assurance qui change chaque année)."""
+        lignes = self.echeancier()
+        if not lignes:
+            return self.mensualite_totale
+        ligne = lignes[0]
+        for l in lignes:
+            if l["date"] > a_date:
+                break
+            ligne = l
+        return ligne["mensualite"] + ligne["assurance"]
+
     def cumul_annee(self, annee):
         lignes = [l for l in self.echeancier() if l["date"].year == annee]
         return {
