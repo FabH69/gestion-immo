@@ -3446,6 +3446,24 @@ class RegimesFiscauxTests(TestCase):
         self.assertEqual(list(compta.biens_2044()), [reel])
         self.assertEqual(compta.biens_2072().count(), 1)
 
+    def test_2044_detail_deplie_sous_chaque_ligne(self):
+        from .models import PieceComptable, Pret
+
+        a = self._bien(self.foyer, "Pollionnay", regime_fiscal="nu")
+        b = self._bien(self.foyer, "Craponne", regime_fiscal="nu")
+        PieceComptable.objects.create(bien=a, date=date(2025, 1, 10), fournisseur="Syndic", libelle="Appel T1", montant=Decimal("420"), ligne="13")
+        PieceComptable.objects.create(bien=b, date=date(2025, 9, 18), fournisseur="Isol", libelle="Combles", montant=Decimal("3200"), ligne="9b")
+        Pret.objects.create(proprietaire=self.foyer, bien=a, banque="CM", reference="P1", montant=Decimal("20000"), taux=Decimal("3"),
+                            duree_mois=120, date_premiere_echeance=date(2024, 1, 5), assurance_mensuelle=Decimal("8"))
+        page = self.client.get("/comptabilite/2044/?annee=2025").content.decode()
+        self.assertNotIn("Détail par bien", page)
+        self.assertIn("Tout déplier", page)
+        # la facture apparaît dans une sous-ligne de la ligne 229, dans la colonne de son bien, avec le lien vers la facture
+        self.assertRegex(page, r'(?s)229</td>.*?<tr class="sous">.*?Syndic – Appel T1</a>.*?420,00')
+        # 9 bis rangée sous la ligne 224 avec son étiquette ; prêt sans tableau signalé « estimation »
+        self.assertRegex(page, r"(?s)224</td>.*?Isol – Combles</a>.*?rénovation énergétique")
+        self.assertRegex(page, r"(?s)250</td>.*?Prêt CM P1.*?estimation")
+
     def test_formulaire_du_bien(self):
         from . import regimes
 
