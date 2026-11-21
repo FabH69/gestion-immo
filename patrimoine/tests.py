@@ -474,6 +474,26 @@ class RappelsEtRevisionTests(TestCase):
         self.assertGreater(pret.date_derniere_echeance, fin)  # capital plus élevé : même mensualité, prêt allongé
         self.assertEqual(lignes[-2]["mensualite"], pret.mensualite_hors_assurance)
 
+    def test_endettement_mensualite_a_la_date_choisie(self):
+        from .etats import endettement
+        from .models import LigneEcheancier, Pret
+
+        proprio = Proprietaire.objects.create(nom="SCI M", type=Proprietaire.Type.SCI_IR)
+        pret = Pret.objects.create(proprietaire=proprio, banque="CM", montant=Decimal("76767.16"), taux=Decimal("1.84"), duree_mois=12,
+                                   date_premiere_echeance=date(2028, 1, 5), assurance_mensuelle=Decimal("10"))
+        # Tableau de la banque : l'assurance baisse chaque année, la mensualité change donc selon la date.
+        for rang in range(1, 13):
+            LigneEcheancier.objects.create(pret=pret, rang=rang, date=date(2028, rang, 5), capital=Decimal("450"), interets=Decimal("10"),
+                                           assurance=Decimal("11.88") if rang < 8 else Decimal("11.48"), restant=Decimal(70000 - rang * 450))
+        ligne = endettement(date(2028, 8, 6), proprio)["blocs"][0]["lignes"][0]
+        self.assertEqual(ligne["mensualite"], Decimal("471.48"))
+        self.assertEqual(pret.mensualite_au(date(2028, 3, 6)), Decimal("471.88"))
+        self.assertEqual(pret.mensualite_au(date(2027, 6, 1)), Decimal("471.88"))  # avant le début : première échéance
+        page = self.client.get(f"/etats/endettement/?date=2028-08-06&proprietaire={proprio.pk}")
+        self.assertContains(page, "471,48")
+        excel = self.client.get(f"/etats/endettement/?date=2028-08-06&proprietaire={proprio.pk}&format=csv")
+        self.assertIn("471,48", excel.content.decode("utf-8-sig"))
+
     def test_endettement_residence_principale_a_part(self):
         from .etats import endettement
         from .models import Pret
