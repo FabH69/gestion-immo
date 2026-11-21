@@ -1170,6 +1170,17 @@ class MenusNovembreTests(TestCase):
         self.assertNotIn("Ajouter un site utile", page)  # bouton retiré de l'accueil, reste dans le menu
         self.assertIn("+ Ajouter un site", page)
 
+    def test_relocation_annonces_avant_candidatures(self):
+        page = self.client.get("/admin/").content.decode()
+        relocation = page.split("Relocation</div>")[1]
+        self.assertLess(relocation.index("<span>Annonces</span>"), relocation.index("<span>Candidatures</span>"))
+
+    def test_a_faire_hors_du_menu(self):
+        menu = lambda url: self.client.get(url).content.decode().split('id="barre-laterale"')[1].split("</aside>")[0]
+        self.assertNotIn("<span>À faire</span>", menu("/admin/"))
+        actif = menu("/a-faire/").split('menu-entree actif')[1]
+        self.assertIn("<span>Tableau de bord</span>", actif.split("</a>")[0])  # on sait où on est
+
 
 class SuiviEncaissementsTests(TestCase):
     def setUp(self):
@@ -2678,8 +2689,9 @@ class UneSeuleFaconTests(TestCase):
     def test_page_a_faire(self):
         Rappel.objects.create(titre="AG copropriété", date=timezone.localdate())
         page = self.client.get("/a-faire/").content.decode()
-        for texte in ("AG copropriété", "Mes rappels", "Entrées et sorties", "+ Rappel", 'href="/a-faire/"'):
+        for texte in ("AG copropriété", "Mes rappels", "Entrées et sorties", "+ Rappel"):
             self.assertIn(texte, page)
+        self.assertIn('href="/a-faire/"', self.client.get("/admin/").content.decode())  # accès par le bloc À faire de l'accueil
         self.assertIn("AG copropriété", self.client.get("/a-faire/?type=rappels").content.decode())
         self.assertNotIn("AG copropriété", self.client.get("/a-faire/?type=loyers").content.decode())
 
