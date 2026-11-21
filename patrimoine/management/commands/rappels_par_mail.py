@@ -1,4 +1,4 @@
-"""Mail des rappels importants (★) : quelques jours avant la date limite, puis le jour même si ce n'est pas fait.
+"""Mail des rappels : le jour choisi sur chaque rappel (« me prévenir par mail … jours avant »), et pour un rappel ★ aussi le jour même s'il n'est pas fait.
 
     python manage.py rappels_par_mail [--essai]
 
@@ -18,7 +18,7 @@ def adresse_du_site():
 
 
 class Command(BaseCommand):
-    help = "Envoie par mail les rappels importants arrivant à échéance"
+    help = "Envoie par mail les rappels arrivant à échéance"
 
     def add_arguments(self, parser):
         parser.add_argument("--essai", action="store_true", help="Affiche les mails sans les envoyer")
@@ -30,7 +30,7 @@ class Command(BaseCommand):
             self.stdout.write("Mails des rappels désactivés (Paramètres › Mails).")
             return
         a_envoyer = []
-        for r in Rappel.objects.filter(important=True, actif=True, fait=False).select_related("bien").order_by("date", "heure"):
+        for r in Rappel.objects.filter(actif=True, fait=False).select_related("bien").order_by("date", "heure"):
             etape = r.mail_a_envoyer(aujourdhui)
             if etape:
                 a_envoyer.append((r, etape))
@@ -45,12 +45,12 @@ class Command(BaseCommand):
                      else f"dans {jours} jour{'s' if jours > 1 else ''}")
             lien = site + reverse("admin:patrimoine_rappel_change", args=[r.pk]) if site else ""
             a_heure = f" à {r.heure_texte}" if r.heure else ""
-            lignes.append(f"★ {r.titre}{' – ' + r.bien.nom if r.bien else ''} : le {r.date:%d/%m/%Y}{a_heure} ({quand})"
+            lignes.append(f"{'★ ' if r.important else '• '}{r.titre}{' – ' + r.bien.nom if r.bien else ''} : le {r.date:%d/%m/%Y}{a_heure} ({quand})"
                           + (f"\n   {r.notes.strip()}" if r.notes.strip() else "") + (f"\n   {lien}" if lien else ""))
         n = len(a_envoyer)
         premier = a_envoyer[0][0]
         sujet = (f"Rappel : {premier.titre} le {premier.date:%d/%m}{' à ' + premier.heure_texte if premier.heure else ''}" if n == 1
-                 else f"{n} rappels importants à traiter")
+                 else f"{n} rappels à traiter")
         texte = ("Bonjour,\n\n" + ("Ce rappel arrive à échéance :" if n == 1 else "Ces rappels arrivent à échéance :") + "\n\n"
                  + "\n\n".join(lignes) + "\n\nCochez-les « Fait » sur l'accueil de l'appli une fois réglés"
                  + (f" : {site}/admin/" if site else ".") + "\n")

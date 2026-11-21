@@ -95,7 +95,7 @@ def a_faire(request):
     vue = "fait" if request.GET.get("vue") == "fait" else ""
     genre = request.GET.get("type", "")
     relocation = droits.niveau(request.user, "relocation")
-    items = calculer(aujourdhui, jours, avec_taches=bool(relocation), selon_prevenir=False)
+    items = calculer(aujourdhui, jours, avec_taches=bool(relocation))
     comptes = Counter(i["genre"] for i in items)
     filtres = [{"code": code, "libelle": libelle, "nombre": comptes[code]} for code, libelle in GENRES
                if comptes[code] or code in ("loyers", "revisions", "assurances", "rappels") or (code == "entrees" and relocation)]

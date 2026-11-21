@@ -43,9 +43,7 @@ GENRES = [("loyers", "Loyers"), ("revisions", "Révisions"), ("assurances", "Ass
           ("dpe", "DPE"), ("entrees", "Entrées et sorties"), ("rappels", "Mes rappels")]
 
 
-def a_faire(aujourdhui, horizon_jours=PREAVIS_JOURS, avec_taches=False, selon_prevenir=True):
-    """Liste « À faire ». selon_prevenir : un rappel « prévenir N jours avant » n'apparaît qu'à partir de J-N (accueil) ;
-    la page À faire passe False pour montrer tous les rappels de la période choisie, dès leur enregistrement."""
+def a_faire(aujourdhui, horizon_jours=PREAVIS_JOURS, avec_taches=False):
     limite = aujourdhui + timedelta(days=horizon_jours)
     items = []
 
@@ -109,14 +107,11 @@ def a_faire(aujourdhui, horizon_jours=PREAVIS_JOURS, avec_taches=False, selon_pr
                 reverse("admin:patrimoine_echeance_change", args=[e.pk]), genre="loyers")
 
     for rappel in Rappel.objects.filter(fait=False, actif=True).select_related("bien"):
-        # « prévenir N jours avant » : le rappel n'apparaît qu'à partir de ce jour-là (30 jours avant sinon)
-        propre = aujourdhui + timedelta(days=rappel.prevenir_jours) if rappel.prevenir_jours is not None else None
+        # affiché dès qu'il entre dans la période (30 jours sur l'accueil) ; « me prévenir par mail N jours avant »
+        # ne masque plus rien : il sert au mail, et l'avance seulement si N dépasse la période
+        propre = (aujourdhui + timedelta(days=rappel.prevenir_jours)
+                  if rappel.prevenir_jours is not None and rappel.prevenir_jours > horizon_jours else None)
         detail = str(rappel.bien or "")
-        if not selon_prevenir:
-            if propre and rappel.date > propre:
-                debut = rappel.date - timedelta(days=rappel.prevenir_jours)
-                detail = " · ".join(x for x in (detail, f"sur l'accueil à partir du {debut:%d/%m/%Y}") if x)
-            propre = None
         ajouter(rappel.date, rappel.titre, detail, rappel.get_categorie_display(),
                 reverse("admin:patrimoine_rappel_change", args=[rappel.pk]),
                 action=reverse("rappel_fait", args=["rappel", rappel.pk]), important=rappel.important, limite_propre=propre,
