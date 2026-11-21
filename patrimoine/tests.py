@@ -1140,6 +1140,11 @@ class MenusNovembreTests(TestCase):
         self.assertNotIn("Ajouter un site utile", page)  # bouton retiré de l'accueil, reste dans le menu
         self.assertIn("+ Ajouter un site", page)
 
+    def test_relocation_annonces_avant_candidatures(self):
+        page = self.client.get("/admin/").content.decode()
+        relocation = page.split("Relocation</div>")[1]
+        self.assertLess(relocation.index("<span>Annonces</span>"), relocation.index("<span>Candidatures</span>"))
+
 
 class SuiviEncaissementsTests(TestCase):
     def setUp(self):

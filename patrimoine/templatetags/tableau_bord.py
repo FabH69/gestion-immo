@@ -160,8 +160,8 @@ def _menu():
               ("Dépôts de garantie", a("mouvementdepot"))]),
         ]),
         ("Relocation", [
-            ("candidatures", "Candidatures", a("candidature"), [a("candidature")], []),
             ("annonces", "Annonces", a("annonce"), [a("annonce")], []),
+            ("candidatures", "Candidatures", a("candidature"), [a("candidature")], []),
             ("cles", "Changements de locataire", a("changementlocataire"), [a("changementlocataire")], []),
         ]),
         ("Courte durée", [
