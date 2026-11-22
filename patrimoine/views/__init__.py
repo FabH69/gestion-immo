@@ -56,7 +56,7 @@ from .finances import (  # noqa: F401
     plus_value,
     suivi_encaissements,
 )
-from .compta import compta_recap, conciergerie_ajouter, controle_conciergerie, declarations, recap_2044, regimes_fiscaux  # noqa: F401
+from .compta import compta_accueil, compta_recap, conciergerie_ajouter, controle_conciergerie, declarations, dossier_compta, recap_2044, regimes_fiscaux  # noqa: F401
 from .outils import (  # noqa: F401
     _lieu,
     a_faire,

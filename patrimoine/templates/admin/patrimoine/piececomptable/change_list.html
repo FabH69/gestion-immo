@@ -1,5 +1,5 @@
 {% extends "admin/patrimoine/change_list.html" %}
-{% block breadcrumbs %}{% if regime %}{% include "patrimoine/_fil_compta.html" with page_fil="Factures" %}{% else %}{{ block.super }}{% endif %}{% endblock %}
+{% block breadcrumbs %}{% if regime or dossier %}{% include "patrimoine/_fil_compta.html" with page_fil="Factures" %}{% else %}{{ block.super }}{% endif %}{% endblock %}
 {% block sous_titre %}{% if onglets %}{% include "patrimoine/_onglets_compta.html" %}{% endif %}
 {% if nb_a_saisir %}<p class="bandeau-compta orange"><b>{{ nb_a_saisir }} pièce{{ nb_a_saisir|pluralize }} à compléter</b> :
 {{ nb_a_saisir|pluralize:"elle n'a,elles n'ont" }} pas pu être lue{{ nb_a_saisir|pluralize }} automatiquement (lignes « À saisir à la main »).

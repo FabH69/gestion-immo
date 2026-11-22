@@ -1,0 +1,57 @@
+{% extends "admin/base_site.html" %}
+{% load tableau_bord %}
+{% block extrastyle %}{{ block.super }}<style>{% include "patrimoine/_style_dossiers.css" %}</style>{% endblock %}
+{% block content_title %}{% endblock %}
+{% block breadcrumbs %}<div class="breadcrumbs"><a href="{% url 'admin:index' %}">Accueil</a> › Comptabilité</div>{% endblock %}
+{% block content %}
+<div class="titre-liste titre-compta"><h1>Mes dossiers comptables</h1>
+  <ul class="object-tools"><li><a href="{{ lien_import }}" class="addlink">Déposer des factures</a></li></ul></div>
+<div class="barre-compta">{% boutons_annees annees annee "civil" %}</div>
+
+{% if nb_a_saisir or attestations_manquantes %}
+<div class="a-faire-d" role="status"><b>À faire</b>
+  {% if nb_a_saisir %}<a href="{{ lien_a_saisir }}"><b>{{ nb_a_saisir }} facture{{ nb_a_saisir|pluralize }} importée{{ nb_a_saisir|pluralize }}</b> pas encore saisie{{ nb_a_saisir|pluralize }}</a>{% endif %}
+  {% if nb_hors_dossier %}<span><b>{{ nb_hors_dossier }}</b> sur un bien sans dossier (régime fiscal à renseigner)</span>{% endif %}
+  {% if attestations_manquantes %}<a href="{{ carte_attestation.url }}"><b>{{ attestations_manquantes }} dossier{{ attestations_manquantes|pluralize }}</b> avec une attestation d'emprunt manquante</a>{% endif %}
+</div>
+{% else %}<div class="a-faire-d vide" role="status">Tout est saisi : aucune facture importée en attente.</div>{% endif %}
+
+{% if cartes %}
+<div class="cartes-dossiers">
+  {% for c in cartes %}
+  <section class="carte-dossier" aria-label="{{ c.titre }}">
+    <div class="entete">
+      <div><div class="qui">{{ c.titre }}</div><div class="petit-d">{{ c.sous_titre }} · {{ c.cerfa }}</div></div>
+      {% if c.declaree %}<span class="pill-d lock">{{ c.statut.1 }}</span>{% elif c.nb_a_saisir %}<a class="pill-d todo" href="{{ c.lien_a_saisir }}">{{ c.nb_a_saisir }} à saisir</a>{% else %}<span class="pill-d ok">À jour</span>{% endif %}
+    </div>
+    <div class="chiffres-d">
+      <div><span>Factures saisies en {{ annee }}</span><b>{{ c.nb_saisies }}</b></div>
+      <div><span>Montant des factures</span><b>{{ c.charges|floatformat:"0g" }} €</b></div>
+      {% if c.resultat is not None %}<div><span>Résultat provisoire</span><b>{{ c.resultat|floatformat:"0g" }} €</b></div>{% endif %}
+    </div>
+    <div class="boutons"><a href="{{ c.url }}" class="button default">Ouvrir</a><a href="{{ c.lien }}" class="button">{{ c.libelle_lien }}</a></div>
+  </section>
+  {% endfor %}
+</div>
+{% else %}<p>Aucun bien n'a encore de régime fiscal : renseignez-le dans la fiche de chaque bien, ou ouvrez les <a href="{% url 'regimes_fiscaux' %}">Réglages fiscaux</a>.</p>{% endif %}
+
+<div class="deux-col-d">
+  <section class="bloc-d large">
+    <h2>Factures importées, pas encore saisies</h2>
+    {% if recentes %}
+    <table class="liste-d"><thead><tr><th>Facture</th><th>Bien</th><th>Dossier</th><th style="text-align:right">Montant</th></tr></thead><tbody>
+      {% for r in recentes %}<tr><td><a href="{{ r.lien }}">{{ r.piece.fournisseur|default:r.piece.libelle|default:"Pièce à lire"|truncatechars:40 }}</a>{% if r.piece.preremplie %} <span class="pill-d todo">lu auto</span>{% endif %}</td>
+        <td>{{ r.piece.bien.nom }}</td><td>{% if r.dossier %}<a class="pill-d mute" href="{% url 'dossier_compta' r.dossier.code %}">{{ r.dossier.titre }}</a>{% else %}<span class="pill-d ko">Sans dossier</span>{% endif %}</td>
+        <td class="m">{% if r.piece.montant %}{{ r.piece.montant|floatformat:"2g" }} €{% else %}à saisir{% endif %}</td></tr>{% endfor %}
+    </tbody></table>
+    {% if nb_a_saisir > recentes|length %}<p class="petit-d"><a href="{{ lien_a_saisir }}">Voir les {{ nb_a_saisir }} factures à saisir</a></p>{% endif %}
+    {% else %}<p class="petit-d">Aucune facture en attente.</p>{% endif %}
+  </section>
+  <section class="bloc-d etroit">
+    <h2>Déclarations {{ annee|add:"-1" }}</h2>
+    {% if declarees %}<div class="chiffres-d">{% for d in declarees %}<div><span>{{ d.libelle_court }}</span><span class="pill-d lock">Déclarée le {{ d.date_declaration|date:"d/m/Y" }}</span></div>{% endfor %}</div>
+    {% else %}<p class="petit-d">Aucune déclaration cochée pour {{ annee|add:"-1" }}.</p>{% endif %}
+    <p class="petit-d"><a href="{% url 'declarations' %}">Toutes les déclarations</a></p>
+  </section>
+</div>
+{% endblock %}

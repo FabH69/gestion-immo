@@ -213,6 +213,16 @@ def _regime(request):
     return valeur if valeur in compta.REGIMES else ""
 
 
+def _dossier(request):
+    """Dossier comptable choisi (?dossier=…, depuis l'accueil Comptabilité), aussi retrouvé depuis une fiche ouverte de sa liste."""
+    from django.http import QueryDict
+
+    from .. import dossiers
+
+    code = request.GET.get("dossier") or request.POST.get("dossier") or QueryDict(request.GET.get("_changelist_filters", "")).get("dossier", "")
+    return dossiers.trouver(code) if code else None
+
+
 def _saisie_retenue(request):
     """Dernier propriétaire (et bien) choisis dans la liste des factures, gardés en session pour l'ajout de factures.
     ?proprietaire=tous sur la page d'ajout les ignore une fois (tous les biens)."""
@@ -238,6 +248,23 @@ class ComptabiliteFilter(admin.SimpleListFilter):
         return queryset.filter(bien__comptabilite=self.value()) if self.value() else queryset
 
 
+class DossierFilter(admin.SimpleListFilter):
+    """Dossier comptable (2044, une SCI, LMNP, une société) : choisi depuis l'accueil Comptabilité, pas affiché dans la liste."""
+    title = "dossier"
+    parameter_name = "dossier"
+
+    def lookups(self, request, model_admin):
+        from .. import dossiers
+
+        return [(d["code"], d["titre"]) for d in dossiers.tous()]
+
+    def queryset(self, request, queryset):
+        from .. import dossiers
+
+        d = dossiers.trouver(self.value()) if self.value() else None
+        return queryset.filter(bien__in=dossiers.biens(d)) if d else queryset
+
+
 class BienPieceFilter(admin.SimpleListFilter):
     """Biens de l'entrée de comptabilité choisie ; limités au propriétaire choisi s'il y en a un, sans les biens vendus
     avant l'année regardée. Affiché sous le filtre propriétaire."""
@@ -247,6 +274,11 @@ class BienPieceFilter(admin.SimpleListFilter):
 
     def lookups(self, request, model_admin):
         biens = _biens_comptables(_regime(request))
+        dossier = _dossier(request)
+        if dossier:
+            from .. import dossiers
+
+            biens = dossiers.biens(dossier)
         # un bien vendu disparaît de la liste à partir de l'année qui suit sa vente (année filtrée, sinon année en cours)
         annee = request.GET.get("annee", "")
         annee = int(annee) if annee.isdigit() else timezone.localdate().year
@@ -342,9 +374,9 @@ class ImportFacturesForm(forms.Form):
                                          "Leurs données sont lues directement, sans ressaisie.",
                                widget=EntreeFichiersMultiples(attrs={"accept": ".pdf,.jpg,.jpeg,.png,.heic,.xml"}))
 
-    def __init__(self, *args, regime="", proprietaire=None, bien_choisi=None, **kwargs):
+    def __init__(self, *args, regime="", proprietaire=None, bien_choisi=None, biens=None, **kwargs):
         super().__init__(*args, **kwargs)
-        biens = _biens_comptables(regime)
+        biens = _biens_comptables(regime) if biens is None else biens
         # dernier propriétaire choisi dans la liste des factures : seulement ses biens (tous s'il n'en a aucun ici)
         if proprietaire and biens.filter(proprietaire=proprietaire).exists():
             biens = biens.filter(proprietaire=proprietaire)
@@ -414,7 +446,7 @@ class PieceComptableAdmin(admin.ModelAdmin):
     form = PieceComptableForm
     list_display_links = ["date_affichee", "libelle"]
     filtres_en_liste = ("bien__proprietaire",)  # propriétaire en liste déroulante, comme le bien
-    filtres_caches = ("compta",)  # choisie par le menu
+    filtres_caches = ("compta", "dossier")  # choisis par le menu ou l'accueil Comptabilité
     search_fields = ["fournisseur", "libelle", "bien__nom", "notes", "numero_facture", "siren_fournisseur"]
     fieldsets = [
         (None, {"classes": ["identite-lot"], "fields": ["bien", ("date", "date_paiement"), ("fournisseur", "montant"), ("numero_facture", "siren_fournisseur"), ("montant_ht", "montant_tva"), "libelle", "ligne",
@@ -437,7 +469,7 @@ class PieceComptableAdmin(admin.ModelAdmin):
     def get_list_filter(self, request):
         regime = _regime(request)
         codif = {"foncier": ["ligne"], "lmnp": [RubriqueFilter], "societe": [RubriqueFilter]}.get(regime, ["ligne", RubriqueFilter])
-        return [ComptabiliteFilter, ACodifierFilter, AnneeFiscaleFilter, "bien__proprietaire", BienPieceFilter] + codif
+        return [ComptabiliteFilter, DossierFilter, ACodifierFilter, AnneeFiscaleFilter, "bien__proprietaire", BienPieceFilter] + codif
 
     def get_list_display(self, request):
         if self._codifier(request):
@@ -558,12 +590,15 @@ class PieceComptableAdmin(admin.ModelAdmin):
 
         from .. import conciergerie
 
+        from .. import dossiers
+
         regime = _regime(request) or request.POST.get("compta", "")
+        dossier = _dossier(request)
         proprietaire, bien_choisi = _saisie_retenue(request)
-        if request.method == "POST":
-            proprietaire = None  # le bien envoyé est contrôlé parmi tous les biens
+        if request.method == "POST" or dossier:
+            proprietaire = None  # dossier : ses biens seulement ; envoi : le bien est contrôlé parmi tous les biens
         form = ImportFacturesForm(request.POST or None, request.FILES or None, regime=regime, proprietaire=proprietaire,
-                                  bien_choisi=bien_choisi)
+                                  bien_choisi=bien_choisi, biens=dossiers.biens(dossier, timezone.localdate().year - 1) if dossier else None)
         if request.method == "POST" and form.is_valid() and not request.FILES.getlist("fichiers"):
             form.add_error("fichiers", "Choisissez au moins une facture.")
         if request.method == "POST" and form.is_valid():
@@ -664,15 +699,16 @@ class PieceComptableAdmin(admin.ModelAdmin):
                 return redirect("controle_conciergerie", pk=controles[0].pk)
             for p in controles:
                 messages.info(request, f"Facture de conciergerie contrôlée et répartie en rubriques : {p.libelle}.")
-            suite = f"?compta={bien.comptabilite}" + ("&a_codifier=oui" if crees - len(controles) else "")
+            suite = (f"?dossier={dossier['code']}" if dossier else f"?compta={bien.comptabilite}") + ("&a_codifier=oui" if crees - len(controles) else "")
             return redirect(reverse("admin:patrimoine_piececomptable_changelist") + suite)
         return render(request, "admin/patrimoine/piececomptable/import.html",
                       {**self.admin_site.each_context(request), "form": form, "opts": self.model._meta, "regime": regime,
                        "libelle_regime": compta.libelle(regime) if regime else "", "title": "Ajouter des factures",
-                       "par_rubrique": regime in compta.PAR_RUBRIQUE, "proprietaire_retenu": proprietaire,
+                       "par_rubrique": regime in compta.PAR_RUBRIQUE, "proprietaire_retenu": proprietaire, "dossier": dossier,
                        "lien_tous_les_biens": reverse("admin:patrimoine_piececomptable_import") + "?" + "&".join(
                            x for x in (f"compta={regime}" if regime else "", "proprietaire=tous") if x),
-                       "lien_factures": reverse("admin:patrimoine_piececomptable_changelist") + (f"?compta={regime}" if regime else "")})
+                       "lien_factures": reverse("admin:patrimoine_piececomptable_changelist") + (
+                           f"?dossier={dossier['code']}" if dossier else f"?compta={regime}" if regime else "")})
 
     actions = ["valider_preremplies"]
 
@@ -861,7 +897,9 @@ class PieceComptableAdmin(admin.ModelAdmin):
             request.session["saisie_proprietaire"] = int(choisi)
         if request.GET.get("bien", "").isdigit():
             request.session["saisie_bien"] = int(request.GET["bien"])
-        lien_import = reverse("admin:patrimoine_piececomptable_import") + (f"?compta={regime}" if regime else "")
+        dossier = _dossier(request)
+        lien_import = reverse("admin:patrimoine_piececomptable_import") + (
+            f"?dossier={dossier['code']}" if dossier else f"?compta={regime}" if regime else "")
         extra_context = {**(extra_context or {}), "lien_2072": reverse("annexe_2072"), "lien_import": lien_import,
                          "regime": regime, "libelle_regime": compta.libelle(regime) if regime else "",
                          "nb_a_codifier": compta.a_codifier(regime or None).count(),
@@ -876,6 +914,14 @@ class PieceComptableAdmin(admin.ModelAdmin):
             extra_context["title"] = f"Factures · {compta.libelle(regime)}"
             extra_context["onglets"] = onglets(regime, "codifier" if self._codifier(request) else "factures")
             extra_context["lien_regime"] = reverse(f"compta_{regime}") if regime in compta.PAR_RUBRIQUE else ""
+        if dossier:
+            from .. import declarations, dossiers
+
+            annee_d = int(annee) if annee.isdigit() else declarations.annee_fiscale(request)
+            extra_context.update({"title": f"Factures · {dossier['titre']}", "dossier": dossier, "libelle_regime": dossier["titre"],
+                                  "lien_regime": reverse("dossier_compta", args=[dossier["code"]]),
+                                  "nb_a_codifier": dossiers.a_saisir(dossier).count(),
+                                  "onglets": dossiers.onglets(dossier, "a_saisir" if self._codifier(request) else "factures", annee_d)})
         return super().changelist_view(request, extra_context)
 
     def changeform_view(self, request, object_id=None, form_url="", extra_context=None):
