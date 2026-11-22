@@ -5,7 +5,7 @@
 {% block breadcrumbs %}<div class="breadcrumbs"><a href="{% url 'admin:index' %}">Accueil</a> › Comptabilité</div>{% endblock %}
 {% block content %}
 <div class="titre-liste titre-compta"><h1>Mes dossiers comptables</h1>
-  <ul class="object-tools"><li><a href="{{ lien_import }}" class="addlink">Déposer des factures</a></li></ul></div>
+  <ul class="object-tools"><li><a href="{% url 'evolution_depenses' %}">Évolution des dépenses</a></li><li><a href="{{ lien_import }}" class="addlink">Déposer des factures</a></li></ul></div>
 <div class="barre-compta">{% boutons_annees annees annee "civil" %}</div>
 
 {% if nb_a_saisir or attestations_manquantes %}

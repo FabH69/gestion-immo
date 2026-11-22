@@ -277,3 +277,34 @@ def dossier_compta(request, code):
                 "retour": request.get_full_path()}
     return render(request, "patrimoine/dossier_compta.html",
                   {**admin.site.each_context(request), **contexte, "title": f"{dossier['titre']} · comptabilité {annee}"})
+
+
+@staff_member_required
+def evolution_depenses(request):
+    """Comptabilité › Évolution des dépenses : dépenses par nature sur plusieurs années, avec l'écart d'une année sur
+    l'autre. Filtres : dossier, propriétaire, bien et plage d'années."""
+    from .. import dossiers, synthese_depenses as sd
+    from ..models import Proprietaire
+
+    t = timezone.localdate().year
+
+    def entier(nom, defaut):
+        v = request.GET.get(nom, "")
+        return int(v) if v.isdigit() and t - 15 <= int(v) <= t else defaut
+
+    fin = entier("fin", t - 1)  # par défaut la dernière année complète : l'année en cours fausserait l'écart
+    debut = min(entier("debut", fin - 3), fin)
+    annees = list(range(max(debut, fin - 7), fin + 1))  # 8 années au plus, pour que le tableau reste lisible
+    liste = dossiers.tous()
+    dossier = dossiers.trouver(request.GET.get("dossier"))
+    tous_biens = sd.biens_du_perimetre(dossier)
+    proprietaires = sorted({b.proprietaire for b in tous_biens}, key=lambda p: p.nom)
+    proprietaire = next((p for p in proprietaires if str(p.pk) == request.GET.get("proprietaire")), None)
+    biens_choix = [b for b in tous_biens if proprietaire is None or b.proprietaire_id == proprietaire.pk]
+    bien = next((b for b in biens_choix if str(b.pk) == request.GET.get("bien")), None)
+    biens = sd.biens_du_perimetre(dossier, proprietaire, bien)
+    contexte = {"dossiers": liste, "dossier": dossier, "proprietaires": proprietaires, "proprietaire": proprietaire,
+                "biens_choix": biens_choix, "bien": bien, "debut": annees[0], "fin": fin, "choix_annees": range(t, t - 16, -1),
+                "biens": biens, **sd.synthese(annees, biens)}
+    return render(request, "patrimoine/evolution_depenses.html",
+                  {**admin.site.each_context(request), **contexte, "title": "Évolution des dépenses"})
