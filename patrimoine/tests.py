@@ -3508,6 +3508,26 @@ class RegimesFiscauxTests(TestCase):
         self.assertRegex(page, r"(?s)224</td>.*?Isol – Combles</a>.*?rénovation énergétique")
         self.assertRegex(page, r"(?s)250</td>.*?Prêt CM P1.*?estimation")
 
+    def test_2072_detail_deplie_sous_chaque_ligne(self):
+        from .models import PieceComptable, Pret
+
+        a = self._bien(self.sci, "Vaugneray")
+        b = self._bien(self.sci, "Tassin")
+        PieceComptable.objects.create(bien=a, date=date(2025, 1, 10), fournisseur="Syndic", libelle="Honoraires", montant=Decimal("540"), ligne="6")
+        PieceComptable.objects.create(bien=b, date=date(2025, 9, 18), fournisseur="Isol", libelle="Combles", montant=Decimal("4800"), ligne="9b")
+        Pret.objects.create(proprietaire=self.sci, bien=a, banque="CM", reference="S1", montant=Decimal("20000"), taux=Decimal("3"),
+                            duree_mois=120, date_premiere_echeance=date(2024, 1, 5), assurance_mensuelle=Decimal("8"))
+        page = self.client.get(f"/comptabilite/2072/?sci={self.sci.pk}&annee=2025").content.decode()
+        self.assertNotIn("Détail par immeuble", page)
+        self.assertIn("Tout déplier", page)
+        self.assertRegex(page, r'(?s)▸</button>6</td>.*?<tr class="sous">.*?Syndic – Honoraires</a>.*?540,00')
+        # les travaux 9 bis apparaissent sous la ligne 9 (qui les inclut) et sous la ligne 9 bis
+        self.assertRegex(page, r"(?s)▸</button>9</td>.*?Isol – Combles</a>.*?rénovation énergétique.*?▸</button>9 bis</td>.*?Isol – Combles</a>")
+        self.assertRegex(page, r"(?s)▸</button>17</td>.*?Prêt CM S1.*?estimation")
+        # le PDF garde le formulaire sans sous-lignes
+        pdf = self.client.get(f"/comptabilite/2072/?sci={self.sci.pk}&annee=2025&format=pdf")
+        self.assertEqual(pdf.status_code, 200)
+
     def test_formulaire_du_bien(self):
         from . import regimes
 
