@@ -232,6 +232,38 @@ def suivi_annuel(lot, annee):
     return mois
 
 
+# Charges mensuelles du fichier Excel de suivi courte durée (onglets Recap25 et Recap26), par nature.
+CHARGES_EXCEL = [
+    ("Électricité", "80.00", None, None),
+    ("Eau", "29.00", None, None),
+    ("Internet (fibre)", "25.99", None, None),
+    ("Assurance PNO", "11.90", None, None),
+    ("Charges de copropriété", "32.90", None, None),
+    ("Taxe foncière", "32.17", None, date(2025, 12, 31)),   # 386 € en 2025
+    ("Taxe foncière", "33.78", date(2026, 1, 1), None),     # 405,30 € en 2026
+]
+
+
+def reprendre_charges_excel(lot):
+    """Remplace les charges mensuelles du logement par le détail par nature du fichier Excel de suivi."""
+    from .models import ChargeLCD
+
+    lot.charges_lcd.all().delete()
+    ChargeLCD.objects.bulk_create([ChargeLCD(lot=lot, libelle=libelle, montant_mensuel=Decimal(montant), debut=debut, fin=fin)
+                                   for libelle, montant, debut, fin in CHARGES_EXCEL])
+    return len(CHARGES_EXCEL)
+
+
+def charges_par_nature(mois):
+    """Lignes du détail dépliable de « Charges mensuelles » : [(libellé, [montant de chaque mois ou None], total)]."""
+    natures = {}
+    for m in mois:
+        for libelle, montant in m["charges_detail"]:
+            ligne = natures.setdefault(libelle, [None] * 12)
+            ligne[m["mois"] - 1] = (ligne[m["mois"] - 1] or Decimal(0)) + montant
+    return [(libelle, valeurs, sum((v for v in valeurs if v), Decimal(0))) for libelle, valeurs in natures.items()]
+
+
 def totaliser(mois, jusqua=12):
     """Cumul des mois 1 à `jusqua`."""
     retenus = [m for m in mois if m["mois"] <= jusqua]
