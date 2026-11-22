@@ -618,6 +618,26 @@ class CandidatureEtGarantTests(TestCase):
         bien = Bien.objects.create(proprietaire=proprio, nom="Immeuble", adresse="1 rue", code_postal="69000", ville="Lyon")
         self.lot = Lot.objects.create(bien=bien, designation="Apt 2", surface=40, nb_pieces=2)
 
+    def test_liste_colonne_et_filtre_bien(self):
+        from .models import Candidature
+
+        autre_bien = Bien.objects.create(proprietaire=self.lot.bien.proprietaire, nom="Maison Chazay", adresse="2 rue", code_postal="69380", ville="Chazay")
+        autre_lot = Lot.objects.create(bien=autre_bien, designation="Maison", surface=90, nb_pieces=4)
+        Bien.objects.create(proprietaire=self.lot.bien.proprietaire, nom="Sans candidat", adresse="3 rue", code_postal="69000", ville="Lyon")
+        Candidature.objects.create(lot=self.lot, statut="recue", prenom="Léa", nom="Durand", situation="cdi")
+        Candidature.objects.create(lot=autre_lot, statut="recue", prenom="Tom", nom="Martin")
+        self.client.force_login(User.objects.create_superuser("admin", "a@example.com", "x"))
+        page = self.client.get("/admin/patrimoine/candidature/").content.decode()
+        self.assertIn("column-bien", page)
+        self.assertIn("Immeuble – Apt 2", page)
+        self.assertNotIn("column-situation", page)
+        self.assertNotIn("lot__bien__proprietaire", page)
+        self.assertIn(f"?bien={autre_bien.pk}", page)
+        self.assertNotIn("Sans candidat", page)
+        filtre = self.client.get(f"/admin/patrimoine/candidature/?bien={autre_bien.pk}").content.decode()
+        self.assertIn("Tom Martin", filtre)
+        self.assertNotIn("Léa Durand", filtre)
+
     def test_retenir_et_preparer_le_bail(self):
         from urllib.parse import parse_qs, urlparse
 
