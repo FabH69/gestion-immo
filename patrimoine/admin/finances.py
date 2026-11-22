@@ -469,7 +469,9 @@ class PieceComptableAdmin(admin.ModelAdmin):
     def get_list_filter(self, request):
         regime = _regime(request)
         codif = {"foncier": ["ligne"], "lmnp": [RubriqueFilter], "societe": [RubriqueFilter]}.get(regime, ["ligne", RubriqueFilter])
-        return [ComptabiliteFilter, DossierFilter, ACodifierFilter, AnneeFiscaleFilter, "bien__proprietaire", BienPieceFilter] + codif
+        # dans un dossier, le propriétaire est déjà fixé : pas de filtre propriétaire
+        proprietaire = [] if _dossier(request) else ["bien__proprietaire"]
+        return [ComptabiliteFilter, DossierFilter, ACodifierFilter, AnneeFiscaleFilter] + proprietaire + [BienPieceFilter] + codif
 
     def get_list_display(self, request):
         if self._codifier(request):
