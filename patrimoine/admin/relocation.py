@@ -260,13 +260,30 @@ class PieceCandidatureInline(admin.TabularInline):
         return format_html('<a href="{}" target="_blank">{}</a>', obj.fichier.url, obj.fichier.name.rsplit("/", 1)[-1][17:])
 
 
+class BienCandidatureFilter(admin.SimpleListFilter):
+    """Biens qui ont au moins une candidature (remplace le filtre propriétaire)."""
+    title = "bien"
+    parameter_name = "bien"
+    a_droite = True
+
+    def lookups(self, request, model_admin):
+        from ..models import Bien
+
+        ids = model_admin.get_queryset(request).values_list("lot__bien_id", flat=True)
+        return [(str(b.pk), b.nom) for b in Bien.objects.filter(pk__in=ids).order_by("nom")]
+
+    def queryset(self, request, queryset):
+        return queryset.filter(lot__bien_id=self.value()) if self.value() else queryset
+
+
 @admin.register(Candidature)
 class CandidatureAdmin(LotsALouerMixin, admin.ModelAdmin):
     date_hierarchy = "recue_le"
     navigation_par = "mois"
     inlines = [GarantCandidatureInline, PieceCandidatureInline]
-    list_display = ["__str__", "statut", "situation", "revenus_mensuels", "taux_effort", "type_garantie", "recue_le"]
-    list_filter = ["statut", "lot__bien__proprietaire"]
+    list_display = ["candidat", "bien", "statut", "revenus_mensuels", "taux_effort", "type_garantie", "recue_le"]
+    list_filter = ["statut", BienCandidatureFilter]
+    list_select_related = ["lot__bien"]
     readonly_fields = ["lien_a_envoyer", "statut", "recue_le", "taux_effort", "suite"]
     actions = ["retenir", "refuser"]
 
@@ -293,6 +310,14 @@ class CandidatureAdmin(LotsALouerMixin, admin.ModelAdmin):
 
     def get_inlines(self, request, obj):
         return self.inlines if obj else []
+
+    @admin.display(description="candidat", ordering="nom")
+    def candidat(self, obj):
+        return f"{obj.prenom} {obj.nom}".strip() or "(non remplie)"
+
+    @admin.display(description="bien", ordering="lot__bien__nom")
+    def bien(self, obj):
+        return str(obj.lot)
 
     @admin.display(description="taux d'effort")
     def taux_effort(self, obj):
