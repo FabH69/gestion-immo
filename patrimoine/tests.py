@@ -3695,6 +3695,7 @@ class DeclarationsTests(TestCase):
         page = self.client.get("/admin/").content.decode()
         for texte in ("Déclarations</span>", "Saisie</span>", "Réglages fiscaux</span>"):
             self.assertIn(texte, page)
+        self.assertLess(page.index("Saisie</span>"), page.index("Déclarations</span>"))  # Saisie au-dessus
         for ancien in ("Revenus fonciers</span>", "Régimes fiscaux</span>", "LMNP</span>"):
             self.assertNotIn(ancien, page)
         factures = self.client.get("/admin/patrimoine/piececomptable/").content.decode()
@@ -3707,3 +3708,46 @@ class DeclarationsTests(TestCase):
         self.assertContains(self.client.get("/comptabilite/2044/"), "revenus 2024")
         self.assertContains(self.client.get("/comptabilite/regimes-fiscaux/"), "revenus 2024")
         self.assertContains(self.client.get("/comptabilite/2072/"), "revenus 2024")
+
+
+class SaisieProprietaireRetenuTests(TestCase):
+    """Saisie : le propriétaire choisi dans la liste des factures limite les biens proposés à l'ajout de factures,
+    et le seul bien de ce propriétaire est déjà choisi."""
+
+    def setUp(self):
+        self.client.force_login(User.objects.create_superuser("admin", "a@example.com", "x"))
+        commun = {"adresse": "1 rue", "code_postal": "69000", "ville": "Lyon", "comptabilite": "foncier", "regime_fiscal": "sci_ir"}
+        self.alfab = Proprietaire.objects.create(nom="SCI ALFAB", type=Proprietaire.Type.SCI_IR)
+        self.tata = Proprietaire.objects.create(nom="SCI TATA", type=Proprietaire.Type.SCI_IR)
+        self.a1 = Bien.objects.create(proprietaire=self.alfab, nom="Immeuble A1", **commun)
+        self.a2 = Bien.objects.create(proprietaire=self.alfab, nom="Immeuble A2", **commun)
+        self.t1 = Bien.objects.create(proprietaire=self.tata, nom="Immeuble T1", **commun)
+        self.liste = "/admin/patrimoine/piececomptable/"
+        self.ajout = "/admin/patrimoine/piececomptable/import/"
+
+    def test_seul_bien_du_proprietaire_preselectionne(self):
+        self.client.get(f"{self.liste}?bien__proprietaire__id__exact={self.tata.pk}")
+        page = self.client.get(self.ajout).content.decode()
+        self.assertIn(f'<option value="{self.t1.pk}" selected>', page)
+        self.assertNotIn("Immeuble A1", page)
+        self.assertIn("Biens de <b>SCI TATA</b>", page)
+        # nouvelle facture saisie à la main : même bien
+        self.assertContains(self.client.get(f"{self.liste}add/"), f'<option value="{self.t1.pk}" selected>')
+
+    def test_plusieurs_biens_proposes_sans_choix(self):
+        self.client.get(f"{self.liste}?bien__proprietaire__id__exact={self.alfab.pk}")
+        page = self.client.get(self.ajout).content.decode()
+        self.assertIn("Immeuble A1", page)
+        self.assertIn("Immeuble A2", page)
+        self.assertNotIn("Immeuble T1", page)
+        self.assertIn('<option value="" selected>', page.split('name="bien"')[1].split("</select>")[0])
+        # bien choisi dans le filtre : repris tel quel
+        self.client.get(f"{self.liste}?bien__proprietaire__id__exact={self.alfab.pk}&bien={self.a2.pk}")
+        self.assertContains(self.client.get(self.ajout), f'<option value="{self.a2.pk}" selected>')
+
+    def test_voir_tous_les_biens_et_sans_choix(self):
+        self.assertContains(self.client.get(self.ajout), "Immeuble T1")  # aucun propriétaire choisi : tous les biens
+        self.client.get(f"{self.liste}?bien__proprietaire__id__exact={self.tata.pk}")
+        page = self.client.get(f"{self.ajout}?proprietaire=tous").content.decode()
+        self.assertIn("Immeuble A1", page)
+        self.assertIn("Immeuble T1", page)

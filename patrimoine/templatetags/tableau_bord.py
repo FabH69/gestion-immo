@@ -234,8 +234,8 @@ def _menu_compta():
 
     if lots_conciergerie().exists():
         sous_saisie.append(("Contrôle conciergerie", conciergerie))
-    return [("declarations", "Déclarations", r("declarations"), prefixes_decl, sous_decl),
-            ("saisie", "Saisie", factures, [factures, conciergerie], sous_saisie),
+    return [("saisie", "Saisie", factures, [factures, conciergerie], sous_saisie),
+            ("declarations", "Déclarations", r("declarations"), prefixes_decl, sous_decl),
             ("regimes", "Réglages fiscaux", r("regimes_fiscaux"), [r("regimes_fiscaux")], [])]
 
 

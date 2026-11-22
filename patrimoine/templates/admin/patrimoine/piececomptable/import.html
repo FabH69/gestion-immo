@@ -10,7 +10,8 @@
     {% if form.non_field_errors %}{{ form.non_field_errors }}{% endif %}
     {% for champ in form %}
     <div class="form-row">{{ champ.errors }}<label for="{{ champ.id_for_label }}" class="required">{{ champ.label|capfirst }}</label> {{ champ }}
-      {% if champ.help_text %}<div class="help">{{ champ.help_text }}</div>{% endif %}</div>
+      {% if champ.help_text %}<div class="help">{{ champ.help_text }}</div>{% endif %}
+      {% if champ.name == "bien" and proprietaire_retenu %}<div class="help">Biens de <b>{{ proprietaire_retenu.nom }}</b> (dernier propriétaire choisi dans les factures). <a href="{{ lien_tous_les_biens }}">Voir tous les biens</a></div>{% endif %}</div>
     {% endfor %}
     <div class="submit-row"><input type="submit" class="default" value="Importer"><a class="button annuler" href="{{ lien_factures }}">Annuler</a></div>
   </form>
