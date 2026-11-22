@@ -53,6 +53,20 @@ def biens(regime, annee=None):
     return qs
 
 
+def code_du_fournisseur(fournisseur, par_rubrique):
+    """Règle par fournisseur : la ligne 2072 (revenus fonciers) ou la rubrique (LMNP, société) de la dernière facture
+    déjà classée de ce fournisseur, dans la même famille de comptabilité. {} si aucune (EDF classée en Énergie une fois :
+    les suivantes le sont aussi)."""
+    fournisseur = (fournisseur or "").strip()
+    if not fournisseur:
+        return {}
+    champ = "rubrique" if par_rubrique else "ligne"
+    qs = PieceComptable.objects.filter(fournisseur__iexact=fournisseur, preremplie=False).exclude(**{champ: ""})
+    qs = qs.filter(_RUBRIQUE) if par_rubrique else qs.exclude(_RUBRIQUE)
+    valeur = qs.order_by("-pk").values_list(champ, flat=True).first()
+    return {champ: valeur} if valeur else {}
+
+
 def a_codifier(regime=None):
     qs = PieceComptable.objects.filter(MANQUE)
     return qs.filter(bien__comptabilite=regime) if regime else qs

@@ -2290,7 +2290,7 @@ class VocabulaireEtListesTests(TestCase):
         lots = self.client.get("/admin/patrimoine/lot/").content.decode()
         self.assertNotIn('<td class="field-bien_nom">Vaugneray</td>', lots)  # le nom du bien ne répète pas la désignation
         factures = self.client.get("/admin/patrimoine/piececomptable/").content.decode()
-        self.assertIn("Ajouter des factures", factures)
+        self.assertIn("Déposer des factures", factures)
         self.assertNotIn("Annexe 2072</a></li>", factures)
 
     def test_dates_au_format_court(self):
@@ -4225,3 +4225,127 @@ class BlocComptaAccueilTests(TestCase):
         droits.appliquer(user, {"loyers": droits.MODIFICATION})
         self.client.force_login(user)
         self.assertNotIn("Comptabilité à faire", self.client.get("/admin/").content.decode())
+
+
+class FacturesAjouterRecurrentesTests(TestCase):
+    """Factures et dépenses : menu « + Ajouter », dépenses récurrentes, colonne « Déclaration », règles par fournisseur."""
+
+    def setUp(self):
+        self.client.force_login(User.objects.create_superuser("admin", "a@example.com", "x"))
+        self.alfab = Proprietaire.objects.create(nom="SCI ALFAB", type=Proprietaire.Type.SCI_IR)
+        self.societe = Proprietaire.objects.create(nom="H-INVEST", type=Proprietaire.Type.SCI_IR)
+        commun = {"adresse": "1 rue", "code_postal": "69000", "ville": "Lyon"}
+        self.a = Bien.objects.create(proprietaire=self.alfab, nom="Immeuble A", regime_fiscal="sci_ir", comptabilite="foncier", **commun)
+        self.h = Bien.objects.create(proprietaire=self.societe, nom="Bureaux H", comptabilite="societe", **commun)
+        self.liste = "/admin/patrimoine/piececomptable/"
+
+    def test_menu_ajouter(self):
+        page = self.client.get(self.liste).content.decode()
+        self.assertIn('class="menu-ajouter"', page)
+        for texte in ("Déposer des factures", "Saisir sans justificatif", "Dépense récurrente",
+                      "/admin/patrimoine/piececomptable/import/", "/admin/patrimoine/piececomptable/add/",
+                      "/admin/patrimoine/depenserecurrente/add/"):
+            self.assertIn(texte, page)
+        self.assertNotIn("Saisie sans fichier", page)
+
+    def test_colonne_declaration_hors_dossier_seulement(self):
+        from .models import PieceComptable
+
+        PieceComptable.objects.create(bien=self.a, date=date(2025, 3, 1), fournisseur="Plombier", libelle="Fuite",
+                                      montant=Decimal("120"), ligne="9")
+        PieceComptable.objects.create(bien=self.h, date=date(2025, 3, 1), fournisseur="EDF", libelle="Électricité",
+                                      montant=Decimal("60"), rubrique="electricite")
+        page = self.client.get(self.liste).content.decode()
+        self.assertIn("column-declaration", page)
+        self.assertIn("2072 · SCI ALFAB", page)
+        self.assertIn("Société · H-INVEST", page)
+        self.assertIn(f"/comptabilite/dossier/2072-{self.alfab.pk}/", page)
+        dossier = self.client.get(f"{self.liste}?dossier=2072-{self.alfab.pk}").content.decode()
+        self.assertNotIn("column-declaration", dossier)
+
+    def test_depense_recurrente_cree_les_echeances_passees(self):
+        from .models import DepenseRecurrente, PieceComptable
+
+        r = DepenseRecurrente.objects.create(bien=self.a, fournisseur="Allianz", libelle="Assurance PNO", montant=Decimal("26"),
+                                             ligne="8", frequence="mensuelle", premiere_echeance=date(2026, 1, 31))
+        self.assertEqual(r.generer(date(2026, 4, 15)), 3)  # 31/01, 28/02 (jour ramené), 31/03
+        self.assertEqual(sorted(r.pieces.values_list("date", flat=True)), [date(2026, 1, 31), date(2026, 2, 28), date(2026, 3, 31)])
+        p = r.pieces.first()
+        self.assertEqual((p.ligne, p.montant, p.preremplie, p.fournisseur), ("8", Decimal("26.00"), False, "Allianz"))
+        self.assertEqual(r.generer(date(2026, 4, 15)), 0)  # pas de doublon
+        r.pieces.filter(date=date(2026, 2, 28)).delete()
+        self.assertEqual(r.generer(date(2026, 4, 30)), 1)  # 30/04 seulement : la facture supprimée ne revient pas
+        self.assertEqual(r.prochaine(date(2026, 4, 30)), date(2026, 5, 31))
+        r.active = False
+        r.save()
+        self.assertEqual(r.generer(date(2026, 12, 31)), 0)
+        self.assertEqual(PieceComptable.objects.filter(recurrence=r).count(), 3)
+
+    def test_depense_recurrente_respecte_la_declaration_et_la_fin(self):
+        from .models import DeclarationFaite, DepenseRecurrente
+
+        DeclarationFaite.objects.create(annee=2025, formulaire="2072", proprietaire=self.alfab, date_declaration=date(2026, 5, 15))
+        r = DepenseRecurrente.objects.create(bien=self.a, fournisseur="Trésor public", libelle="Taxe foncière", montant=Decimal("900"),
+                                             ligne="12", frequence="annuelle", premiere_echeance=date(2025, 10, 15),
+                                             fin=date(2027, 10, 15))
+        self.assertEqual(r.generer(date(2030, 1, 1)), 2)  # 2025 déclarée : rien ; 2026 et 2027 ; rien après la fin
+        self.assertEqual(sorted(d.year for d in r.pieces.values_list("date", flat=True)), [2026, 2027])
+
+    def test_depense_recurrente_controle_et_ecran(self):
+        from django.core.exceptions import ValidationError
+
+        from .models import DepenseRecurrente
+
+        r = DepenseRecurrente(bien=self.h, fournisseur="EDF", montant=Decimal("60"), premiere_echeance=date(2026, 1, 5))
+        with self.assertRaises(ValidationError):
+            r.full_clean()  # bien en société : rubrique obligatoire
+        r.rubrique = "electricite"
+        r.full_clean()
+        r.save()
+        page = self.client.get("/admin/patrimoine/depenserecurrente/").content.decode()
+        self.assertIn("EDF", page)
+        self.assertIn("Prochaine échéance", page)
+        self.assertTrue(r.pieces.exists())  # l'écran crée les échéances passées
+        self.assertEqual(self.client.get("/admin/patrimoine/depenserecurrente/add/").status_code, 200)
+        factures = self.client.get(f"{self.liste}?a_codifier=recurrentes").content.decode()
+        self.assertIn("Récurrentes (1)", factures)
+        self.assertIn("Créée automatiquement", "".join(r.pieces.values_list("notes", flat=True)))
+
+    def test_ajout_par_l_ecran_cree_les_factures(self):
+        from .models import DepenseRecurrente
+
+        r = self.client.post("/admin/patrimoine/depenserecurrente/add/", {
+            "bien": self.a.pk, "fournisseur": "Foncia", "montant": "150", "libelle": "Appel de fonds", "ligne": "13", "rubrique": "",
+            "frequence": "trimestrielle", "premiere_echeance": "2026-01-01", "fin": "", "active": "on"}, follow=True)
+        self.assertEqual(r.status_code, 200)
+        d = DepenseRecurrente.objects.get()
+        self.assertGreaterEqual(d.pieces.count(), 1)
+        self.assertContains(r, "créée")
+
+    def test_regle_par_fournisseur(self):
+        from . import compta
+        from .models import PieceComptable
+
+        # EDF déjà classée en Électricité dans une société, en ligne 12 côté revenus fonciers
+        PieceComptable.objects.create(bien=self.h, date=date(2026, 1, 5), fournisseur="EDF", libelle="Janv.",
+                                      montant=Decimal("60"), rubrique="electricite")
+        PieceComptable.objects.create(bien=self.a, date=date(2026, 1, 5), fournisseur="Foncia", libelle="Syndic",
+                                      montant=Decimal("60"), ligne="6")
+        PieceComptable.objects.create(bien=self.a, date=date(2026, 2, 5), fournisseur="Foncia", libelle="Proposée",
+                                      montant=Decimal("60"), ligne="9", preremplie=True)  # pas encore vérifiée : ignorée
+        self.assertEqual(compta.code_du_fournisseur("edf", True), {"rubrique": "electricite"})
+        self.assertEqual(compta.code_du_fournisseur("EDF", False), {})
+        self.assertEqual(compta.code_du_fournisseur("FONCIA", False), {"ligne": "6"})
+        self.assertEqual(compta.code_du_fournisseur("", False), {})
+
+        import tempfile
+
+        from django.core.files.uploadedfile import SimpleUploadedFile
+        from django.test import override_settings
+
+        with tempfile.TemporaryDirectory() as prive, override_settings(PRIVE_ROOT=prive), \
+                mock.patch("patrimoine.lecture_factures.texte_pdf", return_value="Foncia appel"), \
+                mock.patch("patrimoine.lecture_factures.analyser", return_value={"fournisseur": "Foncia", "ligne": "9"}):
+            self.client.post("/admin/patrimoine/piececomptable/import/", {"bien": self.a.pk, "fichiers": [SimpleUploadedFile("f.pdf", b"%PDF-x")]})
+        p = PieceComptable.objects.order_by("-pk").first()
+        self.assertEqual((p.fournisseur, p.ligne, p.preremplie), ("Foncia", "6", True))  # la règle l'emporte, reste à vérifier
