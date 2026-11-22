@@ -34,10 +34,25 @@ Saisissez montant, date et bien dans le tableau, puis « Enregistrer ma saisie �
 {% block footer %}{{ block.super }}
 {% load static %}
 <div id="apercu-piece" hidden></div>
+<div id="fenetre-selection" role="dialog" aria-label="Lignes sélectionnées" hidden>
+  <span class="fenetre-compte"></span><span class="fenetre-boutons"></span>
+  <button type="button" id="fenetre-selection-annuler" class="button annuler">Annuler</button>
+</div>
 <style>
 #apercu-piece { position: fixed; z-index: 1000; width: min(700px, 55vw); height: 90vh; overflow-y: auto; box-sizing: border-box; background: #f3f4f6; border: 1px solid var(--border-color, #ccc);
   border-radius: 10px; box-shadow: 0 8px 30px rgba(0,0,0,.25); padding: 8px; }
 #apercu-piece canvas, #apercu-piece img { display: block; width: 100%; height: auto; background: #fff; margin-bottom: 8px; box-shadow: 0 1px 3px rgba(0,0,0,.15); }
+#fenetre-selection { position: fixed; z-index: 999; left: 50%; bottom: 20px; transform: translateX(-50%); display: flex; flex-wrap: wrap; align-items: center; gap: 10px;
+  max-width: calc(100vw - 32px); box-sizing: border-box; background: var(--body-bg, #fff); color: var(--body-fg); border: 1px solid var(--border-color, #ccc);
+  border-radius: 14px; box-shadow: 0 10px 30px rgba(0,0,0,.25); padding: 12px 16px; }
+#fenetre-selection[hidden] { display: none; }
+#changelist-form .actions .actions-boutons { display: none; }  /* les boutons sont dans la fenêtre du bas */
+#fenetre-selection .fenetre-compte { font-weight: 600; margin-right: 4px; }
+#fenetre-selection .fenetre-boutons { display: inline-flex; flex-wrap: wrap; gap: 8px; }
+#fenetre-selection .button { cursor: pointer; height: auto; padding: 8px 14px; border-radius: 10px; border: 1px solid var(--border-color); background: var(--body-bg); color: var(--primary); font-weight: 600; }
+#fenetre-selection .button.principal { background: var(--primary); color: #fff; border-color: var(--primary); }
+#fenetre-selection .button.danger { color: var(--rouge, #c8463d); border-color: var(--rouge, #c8463d); }
+#fenetre-selection .button:disabled { opacity: .45; cursor: not-allowed; }
 #apercu-piece .attente { padding: 40px 0; text-align: center; color: #666; }
 </style>
 <script src="{% static 'patrimoine/pdfjs/pdf.min.js' %}"></script>
@@ -108,7 +123,41 @@ Saisissez montant, date et bien dans le tableau, puis « Enregistrer ma saisie �
     valider.disabled = coches.length > 0 && lues === 0;
     valider.title = valider.disabled ? "Ces pièces n'ont pas été lues automatiquement : saisissez montant, date et bien, puis « Enregistrer ma saisie »." : "";
   }
-  function plusTard() { setTimeout(majBoutons, 0); }
+  // Lignes cochées : les actions (Valider, Supprimer) s'affichent dans une fenêtre en bas de l'écran, visible même en
+  // bas de la liste. Chaque bouton déclenche l'action d'origine : la suppression demande toujours confirmation.
+  function libelleCourt(texte) {
+    if (/lus automatiquement/.test(texte)) return "Valider";
+    if (/^Supprimer/.test(texte)) return "Supprimer";
+    return texte;
+  }
+  function majFenetre() {
+    var form = document.getElementById("changelist-form"), fenetre = document.getElementById("fenetre-selection");
+    var boutons = form && form.querySelector(".actions-boutons");
+    if (!fenetre) return;
+    var coches = form ? form.querySelectorAll("tr input.action-select:checked") : [];
+    if (!boutons || !coches.length) { fenetre.hidden = true; return; }
+    var n = coches.length, liste = fenetre.querySelector(".fenetre-boutons");
+    fenetre.querySelector(".fenetre-compte").textContent = n + " ligne" + (n > 1 ? "s" : "") + " sélectionnée" + (n > 1 ? "s" : "");
+    liste.innerHTML = "";
+    boutons.querySelectorAll("button").forEach(function (b) {
+      var c = document.createElement("button");
+      c.type = "button"; c.className = b.className; c.textContent = libelleCourt(b.textContent); c.disabled = b.disabled; c.title = b.title || b.textContent;
+      c.addEventListener("click", function (e) { e.stopPropagation(); b.click(); });
+      liste.appendChild(c);
+    });
+    fenetre.hidden = false;
+  }
+  document.getElementById("fenetre-selection-annuler").addEventListener("click", function () {
+    var form = document.getElementById("changelist-form");
+    if (!form) return;
+    form.querySelectorAll("input.action-select:checked, #action-toggle:checked").forEach(function (c) {
+      c.checked = false; c.dispatchEvent(new Event("change", {bubbles: true}));
+      var tr = c.closest("tr"); if (tr) tr.classList.remove("selected");
+    });
+    form.classList.remove("selection-active");
+    majFenetre();
+  });
+  function plusTard() { setTimeout(function () { majBoutons(); majFenetre(); }, 0); }
   document.addEventListener("DOMContentLoaded", plusTard);
   document.addEventListener("liste-rechargee", plusTard);
   document.addEventListener("change", plusTard);
