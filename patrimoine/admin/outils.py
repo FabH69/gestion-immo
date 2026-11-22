@@ -37,11 +37,11 @@ AIDE_AGENDA = mark_safe(
 class RappelAdmin(admin.ModelAdmin):
     date_hierarchy = "date"
     navigation_par = "mois"
-    list_display = ["important", "date_heure", "titre", "categorie", "bien", "periodicite", "prevenir", "actif", "fait", "agenda_liste"]
-    list_editable = ["important", "actif", "fait"]
-    list_filter = ["important", "fait", "bien__proprietaire"]
+    list_display = ["important", "date_heure", "titre", "categorie", "bien", "periodicite", "prevenir", "actif", "dans_agenda", "fait", "agenda_liste"]
+    list_editable = ["important", "actif", "dans_agenda", "fait"]
+    list_filter = ["important", "dans_agenda", "fait", "bien__proprietaire"]
     # l'heure (facultative) sur la même ligne que la date, pour noter un rendez-vous
-    fields = ["titre", ("date", "heure"), "periodicite", "categorie", "bien", ("important", "prevenir_jours"), "actif", "fait", "notes",
+    fields = ["titre", ("date", "heure"), "periodicite", "categorie", "bien", ("important", "prevenir_jours"), ("actif", "dans_agenda"), "fait", "notes",
               "agenda"]
     readonly_fields = ["agenda"]
 
@@ -89,8 +89,10 @@ class RappelAdmin(admin.ModelAdmin):
         return format_html(
             '<div class="boutons-agenda"><a class="button" href="{}">📅 Ajouter à mon agenda</a> '
             '<a class="button" href="{}" target="_blank" rel="noopener">Google Agenda ↗</a></div>'
-            '<details class="aide-agenda"><summary>Comment l\'ajouter au calendrier du téléphone ?</summary>{}</details>',
-            reverse("rappel_agenda", args=[obj.pk]), lien_google(obj), AIDE_AGENDA)
+            '<details class="aide-agenda"><summary>Comment l\'ajouter au calendrier du téléphone ?</summary>{}</details>'
+            '<p class="help">Pour ne plus le faire rappel par rappel : cochez « 📅 dans mon agenda » et abonnez une fois votre téléphone '
+            'depuis <a href="{}">📅 Mon agenda</a>.</p>',
+            reverse("rappel_agenda", args=[obj.pk]), lien_google(obj), AIDE_AGENDA, reverse("agenda_abonnement"))
 
     def formfield_for_dbfield(self, db_field, request, **kwargs):
         if db_field.name == "heure":
@@ -111,7 +113,19 @@ class RappelAdmin(admin.ModelAdmin):
     list_display_links = ["titre"]
     search_fields = ["titre", "notes"]
 
-    actions = ["marquer_fait", "desactiver", "reactiver"]
+    actions = ["marquer_fait", "desactiver", "reactiver", "mettre_dans_agenda", "retirer_de_agenda"]
+
+    @admin.action(description="📅 Mettre dans mon agenda (abonnement automatique)")
+    def mettre_dans_agenda(self, request, queryset):
+        n = queryset.update(dans_agenda=True)
+        from django.contrib import messages
+
+        messages.success(request, format_html("{} rappel(s) ajouté(s) à l'agenda abonné. <a href=\"{}\">Abonner mon téléphone</a>",
+                                              n, reverse("agenda_abonnement")))
+
+    @admin.action(description="Retirer de mon agenda")
+    def retirer_de_agenda(self, request, queryset):
+        queryset.update(dans_agenda=False)
 
     @admin.action(description="Marquer comme fait (les rappels périodiques passent à l'échéance suivante)")
     def marquer_fait(self, request, queryset):

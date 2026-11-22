@@ -64,6 +64,10 @@ class Rappel(models.Model):
         help_text="Un mail de rappel part ce jour-là, une seule fois (0 : le jour même). Vide : pas de mail, sauf pour un "
                   "rappel ★ (7 jours avant). Le rappel, lui, est affiché dans « À faire » dès 30 jours avant.")
     actif = models.BooleanField(default=True, help_text="Décocher pour arrêter un rappel périodique sans le supprimer")
+    dans_agenda = models.BooleanField(
+        "📅 dans mon agenda", default=False,
+        help_text="Cochée : le rappel arrive tout seul dans l'agenda du téléphone (ou Google Agenda) abonné depuis "
+                  "« À faire › 📅 Mon agenda ». Décochée : il reste seulement dans l'appli.")
     fait = models.BooleanField(default=False)
     notes = models.TextField(blank=True)
     dernier_mail = models.DateField("dernier mail envoyé le", null=True, blank=True, editable=False)
@@ -226,3 +230,35 @@ class NoteRapide(models.Model):
 
     def __str__(self):
         return f"Notes de {self.utilisateur}"
+
+
+class AbonnementAgenda(models.Model):
+    """Lien secret d'abonnement à l'agenda d'un utilisateur : le téléphone ou Google Agenda le relit tout seul.
+
+    Toujours rangé dans la vraie base (comme les comptes), même en mode test : le téléphone n'a pas le cookie du mode test."""
+
+    utilisateur = models.OneToOneField("auth.User", on_delete=models.CASCADE, related_name="abonnement_agenda")
+    jeton = models.CharField(max_length=64, unique=True)
+    cree_le = models.DateTimeField("créé le", auto_now_add=True)
+    dernier_acces = models.DateTimeField("dernière lecture par l'agenda", null=True, blank=True)
+    types = models.CharField(
+        "échéances calculées à ajouter", max_length=200, blank=True,
+        help_text="Codes séparés par des virgules (revisions, assurances, chaudieres, dpe, loyers, entrees). "
+                  "Les rappels saisis, eux, vont dans l'agenda quand leur case « 📅 dans mon agenda » est cochée.")
+
+    class Meta:
+        verbose_name = "abonnement agenda"
+        verbose_name_plural = "abonnements agenda"
+
+    def __str__(self):
+        return f"Agenda de {self.utilisateur}"
+
+    @property
+    def liste_types(self):
+        return [t for t in self.types.split(",") if t]
+
+    @staticmethod
+    def nouveau_jeton():
+        import secrets
+
+        return secrets.token_urlsafe(32)

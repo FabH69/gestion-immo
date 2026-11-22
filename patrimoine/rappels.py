@@ -143,3 +143,46 @@ def deja_fait(aujourdhui, jours=HISTORIQUE_JOURS):
         items.append({"date": r.date_effet, "titre": f"Loyer révisé : {r.ancien_loyer} € → {r.nouveau_loyer} €", "detail": str(r.bail.lot),
                       "categorie": "Révision", "url": reverse("admin:patrimoine_revisionloyer_change", args=[r.pk])})
     return sorted(items, key=lambda i: i["date"], reverse=True)
+
+
+# « Partir de zéro » : grandes dates de chaque année, créées en un clic (code, titre, mois, jour, catégorie, ★, mail N jours avant, notes)
+RAPPELS_DE_BASE = [
+    ("declaration", "Déclarer les revenus locatifs (2044, LMNP ou société)", 5, 20, "fiscal", True, 15,
+     "Déclaration en ligne sur impots.gouv.fr : date limite entre fin mai et début juin selon votre département. "
+     "Le récapitulatif 2044 et la compta LMNP de l'appli donnent les montants à reporter."),
+    ("regularisation", "Faire la régularisation annuelle des charges", 6, 30, "administratif", False, 15,
+     "Une fois les comptes de copropriété approuvés : comparer les provisions versées par chaque locataire aux charges réelles, "
+     "puis envoyer le décompte (un mois avant, tenir les justificatifs à disposition)."),
+    ("ag", "Assemblée générale de copropriété : lire la convocation", 4, 1, "ag", False, None,
+     "Date indicative : remplacez-la par la date reçue du syndic et ajoutez l'heure pour l'avoir en rendez-vous dans l'agenda."),
+    ("taxe_fonciere", "Payer la taxe foncière", 10, 15, "fiscal", True, 10,
+     "Avis dans l'espace particulier d'impots.gouv.fr (fin août). Une fois payée, ajoutez-la dans la compta du bien. "
+     "Pensez à refacturer la taxe d'enlèvement des ordures ménagères aux locataires."),
+]
+
+
+def _prochaine(mois, jour, aujourdhui):
+    from datetime import date
+
+    quand = date(aujourdhui.year, mois, jour)
+    return quand if quand >= aujourdhui else date(aujourdhui.year + 1, mois, jour)
+
+
+def rappels_de_base(aujourdhui):
+    """Liste proposée sur la page d'abonnement : déjà créé (même titre) ou non, et la prochaine date."""
+    titres = {t.lower() for t in Rappel.objects.values_list("titre", flat=True)}
+    return [{"code": code, "titre": titre, "date": _prochaine(mois, jour, aujourdhui), "existe": titre.lower() in titres}
+            for code, titre, mois, jour, *_ in RAPPELS_DE_BASE]
+
+
+def creer_rappels_de_base(codes, aujourdhui):
+    """Crée les rappels annuels choisis qui n'existent pas encore ; renvoie le nombre créé."""
+    existants = {t.lower() for t in Rappel.objects.values_list("titre", flat=True)}
+    crees = 0
+    for code, titre, mois, jour, categorie, important, prevenir, notes in RAPPELS_DE_BASE:
+        if code in codes and titre.lower() not in existants:
+            Rappel.objects.create(titre=titre, date=_prochaine(mois, jour, aujourdhui), categorie=categorie,
+                                  periodicite=Rappel.Periodicite.ANNUEL, important=important, prevenir_jours=prevenir, notes=notes,
+                                  dans_agenda=True)
+            crees += 1
+    return crees
