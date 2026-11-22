@@ -1,0 +1,13 @@
+{% load tableau_bord %}{% if baux_forfait %}<details class="rappel-forfait">
+  <summary>Charges au forfait comprises dans la ligne {{ ligne_loyers|default:"1" }} : {{ baux_forfait|length }} bail{{ baux_forfait|length|pluralize:"x" }}</summary>
+  <p>Un forfait de charges fait partie du loyer : il est déclaré avec lui. Les baux en provisions pour charges sont déclarés hors charges.</p>
+  <ul>{% for bail in baux_forfait %}
+    <li>{% url "admin:patrimoine_bail_change" bail.pk as fiche %}{% avec_retour fiche "ligne-"|add:ligne_ancre as lien %}<a href="{{ lien }}">{{ bail.lot.bien.nom }} · {{ bail.lot.designation }} · {% for l in bail.locataires.all %}{{ l }}{% if not forloop.last %}, {% endif %}{% empty %}sans locataire{% endfor %}</a> : {{ bail.charges|euros }} de charges par mois</li>{% endfor %}
+  </ul>
+</details>
+<style>
+  .rappel-forfait { margin: 0 0 12px; padding: 8px 12px; border: 1px solid var(--hairline-color, #ddd); border-radius: 8px; background: var(--darkened-bg, #f8f8f8); }
+  .rappel-forfait summary { cursor: pointer; font-weight: 600; }
+  .rappel-forfait ul { margin: 6px 0 0; padding-left: 18px; }
+  .rappel-forfait p { margin: 6px 0 0; color: var(--body-quiet-color, #666); }
+</style>{% endif %}

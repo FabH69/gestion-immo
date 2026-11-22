@@ -1907,14 +1907,14 @@ class Annexe2072Tests(TestCase):
         from .annexe2072 import colonne
 
         v = colonne(self.bien, 2025)["valeurs"]
-        self.assertEqual(v["1"], Decimal("1100.00"))  # loyers charges comprises (choix de Fabien)
+        self.assertEqual(v["1"], Decimal("1000.00"))  # bail en provisions : hors charges
         self.assertEqual(v["7"], Decimal("40"))  # 2 locaux
         self.assertEqual(v["9"], Decimal("1200"))
         self.assertEqual(v["9b"], Decimal("1200"))
         self.assertEqual(v["12"], Decimal("800"))
         self.assertEqual(v["6"], Decimal("0"))
         self.assertEqual(v["16"], Decimal("2040"))
-        self.assertEqual(v["18"], Decimal("-940.00"))
+        self.assertEqual(v["18"], Decimal("-1040.00"))
 
     def test_pages(self):
         self.client.force_login(User.objects.create_superuser("admin", "a@example.com", "x"))
@@ -1933,9 +1933,9 @@ class Annexe2072Tests(TestCase):
         self.client.force_login(User.objects.create_superuser("admin", "a@example.com", "x"))
         r = self.client.get(f"/comptabilite/2072/?sci={self.sci.pk}&annee=2025")
         cadre = {code: (montant, part) for code, _, _, montant, part in r.context["cadre_i"]}
-        self.assertEqual(cadre["R1"], (Decimal("1100.00"), Decimal("550.00")))
+        self.assertEqual(cadre["R1"], (Decimal("1000.00"), Decimal("500.00")))
         self.assertEqual(cadre["R2"][1], Decimal("600.00"))
-        self.assertEqual(cadre["R5"], (Decimal("-940.00"), Decimal("-470.00")))
+        self.assertEqual(cadre["R5"], (Decimal("-1040.00"), Decimal("-520.00")))
         self.assertContains(r, "Votre part (50 %)")
 
 
@@ -3649,10 +3649,39 @@ class RegimesFiscauxTests(TestCase):
                                         date_exigibilite=date(2025, mois, 1))
             Paiement.objects.create(echeance=e, date=date(2025, mois, jour), montant=Decimal("650"))
         page = self.client.get(f"/comptabilite/2072/?sci={self.sci.pk}&annee=2025").content.decode()
-        # une sous-ligne par loyer, avec le mois et le locataire, du 1er janvier au 31 décembre, montant charges comprises (choix de Fabien)
-        self.assertRegex(page, r"(?s)▸</button>1</td>.*?05/01/2025 · loyer de janvier 2025 · M. Jean DUPONT \(Apt 1er\).*?650,00"
+        # une sous-ligne par loyer, avec le mois et le locataire, du 1er janvier au 31 décembre, bail en provisions : montant hors charges
+        self.assertRegex(page, r"(?s)▸</button>1</td>.*?05/01/2025 · loyer de janvier 2025 · M. Jean DUPONT \(Apt 1er\) · hors provisions de charges.*?600,00"
                                r".*?03/02/2025 · loyer de février 2025.*?04/03/2025 · loyer de mars 2025")
-        self.assertRegex(page, r"(?s)>1</td>.*?<td class=\"montant\">1 950\xa0€</td>")
+        self.assertRegex(page, r"(?s)>1</td>.*?<td class=\"montant\">1 800\xa0€</td>")
+
+    def test_charges_au_forfait_declarees_avec_le_loyer(self):
+        from .models import Bail, Echeance, Locataire, Lot, Paiement
+
+        a = self._bien(self.sci, "Vaugneray")
+        lot = Lot.objects.create(bien=a, designation="Vaugneray", type="appartement")
+        bail = Bail.objects.create(lot=lot, type=Bail.Type.NU, date_debut=date(2024, 1, 1), loyer_hc=560, charges=10,
+                                   mode_charges="forfait")
+        bail.locataires.add(Locataire.objects.create(nom="DAGNELIE", prenom="Gael", civilite="M."))
+        for mois in (1, 2):
+            e = Echeance.objects.create(bail=bail, periode=date(2025, mois, 1), loyer_hc=560, charges=10,
+                                        date_exigibilite=date(2025, mois, 1))
+            Paiement.objects.create(echeance=e, date=date(2025, mois, 2), montant=Decimal("570"))
+        from .annexe2072 import colonne
+
+        self.assertEqual(colonne(a, 2025)["valeurs"]["1"], Decimal("1140"))  # forfait : charges comprises
+        page = self.client.get(f"/comptabilite/2072/?sci={self.sci.pk}&annee=2025").content.decode()
+        self.assertRegex(page, r"(?s)02/01/2025 · loyer de janvier 2025 · M. Gael DAGNELIE \(Vaugneray\) · forfait de charges compris.*?570,00")
+        # rappel des baux au forfait, avec un lien vers le bail qui ramène à la déclaration
+        self.assertIn("Charges au forfait comprises dans la ligne 1 : 1 bail", page)
+        self.assertIn(f"/admin/patrimoine/bail/{bail.pk}/change/?next=", page)
+        # liste des baux : repère « forfait » et filtre par mode de règlement des charges
+        liste = self.client.get("/admin/patrimoine/bail/?mode_charges=forfait").content.decode()
+        self.assertIn(">forfait</span>", liste)
+        # en provisions, le même bail est déclaré hors charges et sort du rappel
+        bail.mode_charges = "provision"
+        bail.save()
+        self.assertEqual(colonne(a, 2025)["valeurs"]["1"], Decimal("1120"))
+        self.assertNotIn("Charges au forfait comprises", self.client.get(f"/comptabilite/2072/?sci={self.sci.pk}&annee=2025").content.decode())
 
     def test_fiche_facture_montre_le_pdf_d_origine(self):
         import tempfile

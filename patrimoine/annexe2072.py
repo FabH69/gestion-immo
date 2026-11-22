@@ -51,10 +51,20 @@ MOIS_LONGS = ["janvier", "février", "mars", "avril", "mai", "juin", "juillet", 
               "décembre"]
 
 
+def _retenu(montant, charges, bail):
+    """Part du loyer encaissé à déclarer en ligne 1. Charges au forfait : elles font partie du loyer, on déclare le
+    montant encaissé charges comprises. Provisions pour charges : ce n'est pas un revenu, on déclare le loyer hors
+    charges (les charges récupérables payées ne sont alors pas déductibles, sauf celles non récupérées au départ du
+    locataire, ligne 10 de la 2072 / 225 de la 2044)."""
+    if bail is not None and bail.mode_charges == "provision":
+        return montant - charges
+    return montant
+
+
 def loyers_par_mois(bien, annee):
-    """Loyers charges comprises encaissés dans l'année, un par paiement (ou par mois repris d'un ancien suivi), du
-    1er janvier au 31 décembre : [(« 05/01/2025 · loyer de janvier 2025 · M. Jean DUPONT (Apt 1er) », montant encaissé)].
-    Choix de Fabien : la ligne 1 retient le loyer charges comprises, tel qu'encaissé."""
+    """Loyers encaissés dans l'année à déclarer en ligne 1, un par paiement (ou par mois repris d'un ancien suivi), du
+    1er janvier au 31 décembre : [(« 05/01/2025 · loyer de janvier 2025 · M. Jean DUPONT (Apt 1er) · forfait de
+    charges compris », montant retenu)]. Forfait de charges : charges comprises ; provisions : hors charges."""
     from .models import EncaissementHistorique, Paiement
 
     lignes = []
@@ -63,9 +73,11 @@ def loyers_par_mois(bien, annee):
     deja = set()
     for p in paiements:
         e = p.echeance
+        part_charges = (p.montant * e.charges / e.total).quantize(Decimal("0.01"), ROUND_HALF_UP) if e.total else ZERO
         noms = ", ".join(str(l) for l in e.bail.locataires.all()) or "locataire"
         lignes.append((p.date, f"{p.date:%d/%m/%Y} · loyer de {MOIS_LONGS[e.periode.month - 1]} {e.periode.year} · {noms} "
-                                f"({e.bail.lot.designation})", p.montant))
+                                f"({e.bail.lot.designation}){_precision(e.bail, part_charges)}",
+                       _retenu(p.montant, part_charges, e.bail)))
         deja.add((e.bail.lot_id, p.date.month))
     for h in EncaissementHistorique.objects.filter(mois__year=annee, lot__bien=bien).select_related("lot"):
         if (h.lot_id, h.mois.month) in deja:
@@ -73,30 +85,39 @@ def loyers_par_mois(bien, annee):
         bail = h.lot.baux.filter(date_debut__lte=h.mois).order_by("-date_debut").first()
         noms = ", ".join(str(l) for l in bail.locataires.all()) if bail else ""
         lignes.append((h.mois, f"{MOIS_LONGS[h.mois.month - 1].capitalize()} {h.mois.year} · {noms or 'suivi repris'} "
-                               f"({h.lot.designation}, suivi repris)", h.montant))
+                               f"({h.lot.designation}, suivi repris){_precision(bail, h.charges)}",
+                       _retenu(h.montant, h.charges, bail)))
     lignes.sort(key=lambda x: x[0])
     return [(libelle, montant) for _, libelle, montant in lignes]
 
 
+def _precision(bail, charges):
+    if not charges or bail is None:
+        return ""
+    return " · hors provisions de charges" if bail.mode_charges == "provision" else " · forfait de charges compris"
+
+
+def baux_au_forfait(biens, annee):
+    """Rappel : baux au forfait de charges (avec des charges) des immeubles, actifs pendant l'année."""
+    from .models import Bail
+
+    return list(Bail.objects.filter(lot__bien__in=biens, mode_charges="forfait", charges__gt=0, date_debut__year__lte=annee)
+                .exclude(date_fin__year__lt=annee).select_related("lot__bien").prefetch_related("locataires")
+                .order_by("lot__bien__nom", "lot__designation"))
+
+
 def colonne(bien, annee):
     """Montants de l'annexe pour un immeuble et une année, avec le détail des sources."""
-    from .etats import loyers_encaisses
     from .models import PieceComptable, Pret
 
     v = defaultdict(lambda: ZERO)
     detail = defaultdict(list)
 
-    # ligne 1 : loyers charges comprises encaissés dans l'année (date de paiement), choix de Fabien
-    for bloc in loyers_encaisses(annee, bien.proprietaire)["proprietaires"]:
-        for b in bloc["biens"]:
-            if b["bien"].pk == bien.pk:
-                v["1"] += b["sous_total"]["total"]
+    # ligne 1 : loyers encaissés dans l'année (date de paiement), forfait de charges compris, provisions exclues
+    lignes = loyers_par_mois(bien, annee)
+    v["1"] = sum((m for _, m in lignes), ZERO)
     if v["1"]:
-        lignes = loyers_par_mois(bien, annee)
-        if sum((m for _, m in lignes), ZERO) == v["1"]:
-            detail["1"] += [(libelle, montant, None) for libelle, montant in lignes]
-        else:  # par sécurité : une seule ligne si le détail ne retombe pas sur le total
-            detail["1"].append(("Loyers charges comprises encaissés (paiements de l'année)", v["1"], None))
+        detail["1"] += [(libelle, montant, None) for libelle, montant in lignes]
 
     # factures codées
     for p in PieceComptable.objects.filter(_annee_q(annee), bien=bien).order_by("date"):
@@ -200,7 +221,8 @@ def annexe(biens, annee):
         ("R4", "Intérêts d'emprunts", "total des lignes 17", somme(("17", 1))),
         ("R5", "Revenu net (+) ou déficit net (−)", "total des lignes 23", total_23),
     ]
-    return {"colonnes": colonnes, "pages": pages, "total_23": total_23, "annee": annee, "resultat": resultat}
+    return {"colonnes": colonnes, "pages": pages, "total_23": total_23, "annee": annee, "resultat": resultat,
+            "baux_forfait": baux_au_forfait(biens, annee)}
 
 
 def part_personnelle(resultat, pourcentage):

@@ -369,9 +369,18 @@ class BailAdmin(FicheMixin, LotsALouerMixin, admin.ModelAdmin):
 
     class Media:
         js = ["patrimoine/depot_garantie.js", "patrimoine/heures_creuses.js"]
-    list_display = ["liste_locataires", "lot", "type", "date_debut", "colonne_loyer_initial", "colonne_loyer_actuel", "charges", "loyer_cc", "actif"]
+    list_display = ["liste_locataires", "lot", "type", "date_debut", "colonne_loyer_initial", "colonne_loyer_actuel", "colonne_charges", "loyer_cc", "actif"]
     list_display_links = ["liste_locataires", "lot"]
-    list_filter = [BailEnCoursFilter, "lot__bien__proprietaire"]
+    list_filter = [BailEnCoursFilter, "lot__bien__proprietaire", "mode_charges"]
+
+    @admin.display(description="charges (€)", ordering="charges")
+    def colonne_charges(self, obj):
+        """Les charges, avec « forfait » quand elles sont au forfait : elles sont alors déclarées avec le loyer."""
+        if not obj.charges:
+            return "–"
+        if obj.mode_charges == "forfait":
+            return format_html('{} <span class="pill" title="Charges au forfait : déclarées avec le loyer (ligne 1 de la 2072, 211 de la 2044)">forfait</span>', obj.charges)
+        return obj.charges
     search_fields = ["lot__designation", "lot__bien__nom", "locataires__nom", "locataires__prenom"]
     autocomplete_fields = ["locataires"]
     # Pas de filtre de période (« Cette année / Année dernière / Tout / Période… ») : retiré à la demande, la liste

@@ -281,4 +281,6 @@ def recap_2044(annee):
     lignes = [{"numero": n, "code": code, "libelle": l, "genre": g, "detail": sous_lignes(colonnes, code, annee) if g != "total" else [],
                "montants": [c["valeurs"].get(code, ZERO) for c in colonnes],
                "total": sum((c["valeurs"].get(code, ZERO) for c in colonnes), ZERO)} for n, l, code, g in LIGNES_2044]
-    return {"colonnes": colonnes, "lignes": lignes}
+    from .annexe2072 import baux_au_forfait
+
+    return {"colonnes": colonnes, "lignes": lignes, "baux_forfait": baux_au_forfait([c["bien"] for c in colonnes], annee)}
