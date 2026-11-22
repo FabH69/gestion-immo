@@ -104,6 +104,8 @@ def _avec_retour(methode):
 
 admin.ModelAdmin.response_add = _avec_retour(admin.ModelAdmin.response_add)
 admin.ModelAdmin.response_change = _avec_retour(admin.ModelAdmin.response_change)
+# « Supprimer » depuis une fiche ouverte depuis une déclaration : retour à la déclaration après la confirmation
+admin.ModelAdmin.response_delete = _avec_retour(admin.ModelAdmin.response_delete)
 
 
 class LotsALouerMixin:

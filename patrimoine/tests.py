@@ -3578,6 +3578,16 @@ class RegimesFiscauxTests(TestCase):
         # « Enregistrer et continuer » reste sur la fiche
         reponse = self.client.post(lien, {**donnees, "_continue": "1"})
         self.assertTrue(reponse["Location"].startswith(f"/admin/patrimoine/piececomptable/{p.pk}/change/"))
+        # « Supprimer » garde la page d'origine, « Annuler » y ramène, et la confirmation de suppression y revient
+        fiche = self.client.get(lien).content.decode()
+        suite = "next=/comptabilite/2072/%3Fsci%3D{}%26annee%3D2025%23ligne-6".format(self.sci.pk)
+        self.assertRegex(fiche, rf'href="/admin/patrimoine/piececomptable/{p.pk}/delete/[^"]*{suite}"')
+        self.assertIn(f'href="{retour}" class="annuler"'.replace("&", "&amp;"), fiche)
+        url_suppression = f"/admin/patrimoine/piececomptable/{p.pk}/delete/?{suite}"
+        self.assertEqual(self.client.get(url_suppression).status_code, 200)
+        reponse = self.client.post(url_suppression, {"post": "yes"})
+        self.assertEqual(reponse["Location"], retour)
+        self.assertFalse(PieceComptable.objects.filter(pk=p.pk).exists())
 
     def test_formulaire_du_bien(self):
         from . import regimes
