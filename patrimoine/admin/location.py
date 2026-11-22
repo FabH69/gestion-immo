@@ -372,7 +372,7 @@ class BailAdmin(FicheMixin, LotsALouerMixin, admin.ModelAdmin):
     list_display = ["liste_locataires", "lot", "type", "date_debut", "colonne_loyer_initial", "colonne_loyer_actuel", "charges", "loyer_cc", "actif"]
     list_display_links = ["liste_locataires", "lot"]
     list_filter = [BailEnCoursFilter, "lot__bien__proprietaire"]
-    search_fields = ["lot__designation", "lot__bien__nom", "locataires__nom"]
+    search_fields = ["lot__designation", "lot__bien__nom", "locataires__nom", "locataires__prenom"]
     autocomplete_fields = ["locataires"]
     # Pas de filtre de période (« Cette année / Année dernière / Tout / Période… ») : retiré à la demande, la liste
     # montre tous les baux du statut choisi. Un ancien lien qui porte encore une période est redirigé sans elle.
@@ -594,7 +594,7 @@ class GarantActifFilter(admin.SimpleListFilter):
 class GarantAdmin(admin.ModelAdmin):
     list_display = ["__str__", "locataire", "bail", "type_caution", "montant_max", "acte"]
     list_filter = [GarantActifFilter, "bail__lot__bien__proprietaire"]
-    search_fields = ["nom", "prenom", "locataire__nom"]
+    search_fields = ["nom", "prenom", "locataire__nom", "locataire__prenom"]
 
     @admin.display(description="acte")
     def acte(self, obj):

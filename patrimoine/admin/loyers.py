@@ -123,7 +123,7 @@ class EcheanceAdmin(admin.ModelAdmin):
     list_filter = [EcheanceStatutFilter, EnRetardFilter, BailEcheanceFilter]
     filtres_en_liste = ("bail",)  # liste déroulante des baux, à droite
     filtres_caches = ("reglement", "retard")  # remplacés par les raccourcis en haut de la liste
-    search_fields = ["bail__lot__designation", "bail__lot__bien__nom", "bail__locataires__nom"]
+    search_fields = ["bail__lot__designation", "bail__lot__bien__nom", "bail__locataires__nom", "bail__locataires__prenom"]
     date_hierarchy = "periode"
     navigation_par = "mois"
     readonly_fields = ["statut", "document"]
@@ -398,7 +398,7 @@ class VersementAdmin(admin.ModelAdmin):
     list_filter = [BailEcheanceFilter]
     filtres_en_liste = ("bail",)
     date_hierarchy = "date"
-    search_fields = ["bail__lot__designation", "bail__lot__bien__nom", "bail__locataires__nom", "notes"]
+    search_fields = ["bail__lot__designation", "bail__lot__bien__nom", "bail__locataires__nom", "bail__locataires__prenom", "notes"]
     fields = ["bail", "date", "montant", "mode", "notes", "avance_restante"]
     readonly_fields = ["bail", "date", "montant", "mode", "avance_restante"]
     inlines = [VersementPaiementInline]
@@ -468,7 +468,7 @@ class MouvementDepotAdmin(admin.ModelAdmin):
     def proprietaire(self, obj):
         return obj.bail.lot.bien.proprietaire
     list_filter = [DepotEnCoursFilter, "bail__lot__bien__proprietaire"]
-    search_fields = ["bail__lot__designation", "bail__locataires__nom"]
+    search_fields = ["bail__lot__designation", "bail__locataires__nom", "bail__locataires__prenom"]
     date_hierarchy = "date"
     change_list_template = "admin/patrimoine/mouvementdepot/change_list.html"
 
