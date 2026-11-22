@@ -87,6 +87,14 @@ def apercu(dossier, annee, bien=None):
     return lignes + [("Total des charges", recap["total"], True)], None
 
 
+def charges_saisies(qs):
+    """Total des factures saisies, avec leur signe ; la régularisation de la ligne 14 (2044 : 230) se retranche,
+    comme sur le cerfa, qu'elle soit saisie en positif ou en négatif."""
+    saisies = qs.exclude(compta.MANQUE)
+    regul = sum((abs(p.montant) for p in saisies.filter(ligne="14")), ZERO)
+    return (saisies.exclude(ligne="14").aggregate(s=Sum("montant"))["s"] or ZERO) - regul
+
+
 def resume(dossier, annee, acces=None):
     """Carte d'un dossier : étapes et statut de la déclaration, factures saisies et à saisir, charges, aperçu."""
     carte = declarations.carte(dossier["formulaire"], dossier["proprietaire"], dossier["titre"], dossier["sous_titre"],
@@ -95,7 +103,7 @@ def resume(dossier, annee, acces=None):
     lignes, resultat = apercu(dossier, annee)
     return {**carte, **dossier, **resume_liens(dossier, annee),
             "nb_a_saisir": a_saisir(dossier).count(), "nb_saisies": de_l_annee.exclude(compta.MANQUE).count(),
-            "charges": de_l_annee.exclude(compta.MANQUE).aggregate(s=Sum("montant"))["s"] or ZERO,
+            "charges": charges_saisies(de_l_annee),
             "apercu": lignes, "resultat": resultat}
 
 

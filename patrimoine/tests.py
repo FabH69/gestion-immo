@@ -3540,6 +3540,51 @@ class RegimesFiscauxTests(TestCase):
         self.assertRegex(page, r"(?s)>14</td>.*?<td class=\"montant\">82\xa0€</td>")
         self.assertRegex(page, r"(?s)>16</td>.*?<td class=\"montant\">418\xa0€</td>")  # 500 − 82
 
+    def test_montants_negatifs_dans_toutes_les_declarations(self):
+        """Avoirs saisis en négatif : signe gardé dans les détails et les sous-totaux, effet juste sur les totaux."""
+        from . import compta, dossiers, lmnp
+        from .models import ChargeLMNP, Lot, PieceComptable
+
+        F = lambda bien, montant, **kw: PieceComptable.objects.create(bien=bien, date=date(2025, 5, 2), fournisseur="F",
+                                                                       libelle=kw.pop("libelle", "Avoir"), montant=Decimal(montant), **kw)
+        # 2044 : avoir de 100 € sur des travaux de 1 000 € → ligne 224 à 900 €, détail −100,00 €
+        n = self._bien(self.foyer, "Pollionnay", regime_fiscal="nu")
+        F(n, "1000", ligne="9", libelle="Travaux")
+        F(n, "-100", ligne="9", libelle="Avoir travaux")
+        r = compta.recap_2044(2025)
+        l224 = next(l for l in r["lignes"] if l["numero"] == "224")
+        self.assertEqual(l224["total"], Decimal("900"))
+        self.assertIn(Decimal("-100"), [d["total"] for d in l224["detail"]])
+        self.assertIn("−100,00", self.client.get("/comptabilite/2044/?annee=2025").content.decode())
+        # 2072 : avoir de 50 € sur une assurance de 300 € → ligne 8 à 250 €, cadre I R3 cohérent
+        s = self._bien(self.sci, "Vaugneray")
+        F(s, "300", ligne="8", libelle="PNO")
+        F(s, "-50", ligne="8", libelle="Avoir PNO")
+        page = self.client.get(f"/comptabilite/2072/?sci={self.sci.pk}&annee=2025").content.decode()
+        self.assertRegex(page, r"(?s)>8</td>.*?<td class=\"montant\">250\xa0€</td>")
+        self.assertIn("−50,00", page)
+        # LMNP et société : rubriques et totaux signés
+        m = self._bien(self.foyer, "Chazay", regime_fiscal="lmnp")
+        Lot.objects.create(bien=m, designation="T2", type="appartement")
+        F(m, "200", rubrique="electricite")
+        F(m, "-80", rubrique="electricite")
+        ChargeLMNP.objects.create(lot=m.lots.first(), annee=2025, categorie="assurance", montant=Decimal("-30"))
+        recap = compta.recapitulatif("lmnp", 2025)
+        self.assertEqual(recap["total"], Decimal("90"))  # 200 − 80 − 30
+        self.assertIn("120,00", self.client.get("/comptabilite/lmnp/?annee=2025").content.decode())
+        bloc = next(b for b in lmnp.bilan(2025)["blocs"] if b["lot"].bien_id == m.pk)
+        self.assertIn(Decimal("-30"), [c["montant"] for c in bloc["charges"]])
+        h = self._bien(self.h, "Villeurbanne", regime_fiscal="societe_is")
+        F(h, "500", rubrique="autre")
+        F(h, "-120", rubrique="autre")
+        self.assertEqual(compta.recapitulatif("societe", 2025)["total"], Decimal("380"))
+        pdf = self.client.get("/comptabilite/societe/?annee=2025&format=pdf")
+        self.assertEqual(pdf.status_code, 200)
+        # cartes des dossiers : « charges saisies » de la 2072 avec une régularisation ligne 14 (à retrancher)
+        F(s, "40", ligne="14", libelle="Régul")
+        d2072 = next(d for d in dossiers.tous() if d["code"] == f"2072-{self.sci.pk}")
+        self.assertEqual(dossiers.resume(d2072, 2025)["charges"], Decimal("210"))  # 300 − 50 − 40
+
     def _donnees_fiche(self, url):
         """Données POST d'une fiche d'admin telle qu'affichée (champs et formulaires en ligne)."""
         ctx = self.client.get(url).context
