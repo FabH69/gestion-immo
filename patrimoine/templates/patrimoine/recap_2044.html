@@ -10,6 +10,7 @@
 <div class="barre-compta">{% boutons_annees annees annee "civil" %}</div>
 <p class="aide-compta">Biens en nom propre déclarés en revenus fonciers, à reporter sur la déclaration 2044 des revenus {{ annee }}. Loyers, forfait de 20 € par local, intérêts et assurance des prêts sont calculés ; le reste vient des factures codées, dans l'année de leur paiement. Faites valider par votre comptable avant de déclarer.</p>
 {% if colonnes %}
+{% include "patrimoine/_rappel_forfait.html" with ligne_loyers="211" ligne_ancre="1" %}
 {% include "patrimoine/_barre_deplier.html" %}
 <section class="module etat-scroll tableau-compta recap-2044 depliable{% if colonnes|length > 1 %} multi{% endif %}">
   <table class="etat">
