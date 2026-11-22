@@ -137,7 +137,7 @@ table.etat tr.bien td { background: var(--selected-bg) !important; color: var(--
 .a-faire .onglet.actif { background: var(--body-bg); color: var(--secondary); box-shadow: var(--shadow); }
 .a-faire .onglet .compte { margin-left: 4px; padding: 1px 7px; border-radius: 999px; background: var(--selected-bg); font-size: .72rem; }
 .a-faire .coche { color: #2e7d32; font-weight: 700; font-size: 1.1rem; }
-.a-faire .aide-bloc { margin: 0; padding: 8px 12px; font-size: .78rem; color: var(--body-quiet-color); }
+.a-faire .aide-bloc, .compta-a-faire .aide-bloc { margin: 0; padding: 8px 12px; font-size: .78rem; color: var(--body-quiet-color); }
 .dashboard #content-main { float: none; width: 100%; }
 .a-faire td.coche-cellule { width: 1%; padding-right: 0; }
 .a-faire input[type=checkbox] { width: 20px; height: 20px; accent-color: var(--primary); cursor: pointer; vertical-align: middle; }

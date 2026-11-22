@@ -3982,3 +3982,69 @@ class DossiersComptablesTests(TestCase):
         self.assertRedirects(r, retour, fetch_redirect_response=False)
         self.assertTrue(DeclarationFaite.objects.filter(proprietaire=self.alfab, annee=2025, active=True).exists())
         self.assertContains(self.client.get(retour), "Déclarée le 15/05/2026")
+
+
+class BlocComptaAccueilTests(TestCase):
+    """Tableau de bord : bloc « Comptabilité à faire » avec un lien vers le dossier concerné, masqué quand tout est à jour."""
+
+    def setUp(self):
+        self.admin = User.objects.create_superuser("admin", "a@example.com", "x")
+        self.client.force_login(self.admin)
+        self.alfab = Proprietaire.objects.create(nom="SCI ALFAB", type=Proprietaire.Type.SCI_IR)
+        self.bien = Bien.objects.create(proprietaire=self.alfab, nom="Immeuble A", regime_fiscal="sci_ir", adresse="1 rue",
+                                        code_postal="69000", ville="Lyon", comptabilite="foncier")
+        self.code = f"2072-{self.alfab.pk}"
+
+    def _accueil(self, annee=None):
+        if annee:
+            self.client.get(f"/comptabilite/?annee={annee}")  # l'année fiscale est gardée en session
+        return self.client.get("/admin/").content.decode()
+
+    def test_masque_quand_tout_est_a_jour(self):
+        self.assertNotIn("Comptabilité à faire", self._accueil(timezone.localdate().year))
+
+    def test_factures_a_saisir_renvoient_au_dossier(self):
+        from .models import PieceComptable
+
+        PieceComptable.objects.create(bien=self.bien, date=date(2025, 4, 1), libelle="Importée", montant=Decimal("10"))
+        PieceComptable.objects.create(bien=self.bien, libelle="Pas encore lue")
+        page = self._accueil(timezone.localdate().year)
+        self.assertIn("Comptabilité à faire", page)
+        self.assertIn("2 factures à saisir", page)
+        self.assertIn(f"dossier={self.code}&amp;a_codifier=oui", page)
+        self.assertIn(reverse("compta_accueil"), page)
+
+    def test_bien_sans_dossier(self):
+        from .models import PieceComptable
+
+        moi = Proprietaire.objects.create(nom="Fabien", type=Proprietaire.Type.NOM_PROPRE)
+        sans = Bien.objects.create(proprietaire=moi, nom="Garage", regime_fiscal="nu", option_fiscale="micro", adresse="2 rue",
+                                   code_postal="69000", ville="Lyon")
+        PieceComptable.objects.create(bien=sans, libelle="Importée")
+        page = self._accueil(timezone.localdate().year)
+        self.assertIn("Bien hors dossier", page)
+        self.assertIn(reverse("regimes_fiscaux"), page)
+
+    def test_attestation_manquante_annee_terminee_non_declaree(self):
+        from .models import DeclarationFaite, Pret
+
+        annee = timezone.localdate().year - 1
+        p = Pret.objects.create(proprietaire=self.alfab, bien=self.bien, banque="B", type="in_fine", montant=Decimal("100000"),
+                                taux=Decimal("2.4"), duree_mois=120, date_premiere_echeance=date(annee, 1, 1))
+        page = self._accueil(annee)
+        self.assertIn("1 attestation manquante", page)
+        self.assertIn(reverse("admin:patrimoine_pret_change", args=[p.pk]) + "?next=", page)
+        DeclarationFaite.objects.create(annee=annee, formulaire="2072", proprietaire=self.alfab, date_declaration=date(annee + 1, 5, 15))
+        self.assertNotIn("Comptabilité à faire", self._accueil())
+        # année en cours : les attestations n'arrivent qu'en janvier, pas de rappel
+        self.assertNotIn("Comptabilité à faire", self._accueil(annee + 1))
+
+    def test_cache_sans_droit_compta(self):
+        from . import droits
+        from .models import PieceComptable
+
+        PieceComptable.objects.create(bien=self.bien, libelle="Importée")
+        user = User.objects.create_user("aide", password="x", is_staff=True)
+        droits.appliquer(user, {"loyers": droits.MODIFICATION})
+        self.client.force_login(user)
+        self.assertNotIn("Comptabilité à faire", self.client.get("/admin/").content.decode())
