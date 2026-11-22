@@ -33,8 +33,6 @@ NATURES = [
 HORS = ("hors", "Hors charges : capital des prêts, non déductible")
 PAR_LIGNE = {l: code for code, _, lignes, _ in NATURES for l in lignes}
 PAR_RUBRIQUE = {r: code for code, _, _, rubriques in NATURES for r in rubriques}
-COULEURS = {"gestion": "#2a78d6", "menage": "#8f5bd6", "assurance": "#1f9e8f", "travaux": "#e0742b", "energie": "#d6a32a",
-            "copro": "#5c7cfa", "taxes": "#c2417a", "interets": "#6b8e23", "autres": "#8a8f98"}
 
 
 def annees_par_defaut():
@@ -91,7 +89,7 @@ def ecart(avant, apres):
 
 
 def synthese(annees, biens):
-    """Tableau : une ligne par nature (avec le détail par bien), une colonne par année, l'écart entre les deux dernières."""
+    """Tableau d'évolution : une ligne par nature (avec le détail par bien), une colonne par année, l'écart entre les deux dernières."""
     annees = sorted(annees)
     par_bien = {b.pk: {a: montants_bien(b, a) for a in annees} for b in biens}
     lignes = []
@@ -104,21 +102,14 @@ def synthese(annees, biens):
             vb = [par_bien[b.pk][a][code] for a in annees]
             if any(vb):
                 detail.append({"bien": b, "valeurs": vb, "ecart": ecart(vb[-2], vb[-1]) if len(vb) > 1 else None})
-        lignes.append({"code": code, "libelle": libelle, "couleur": COULEURS[code], "valeurs": valeurs, "detail": detail,
+        lignes.append({"code": code, "libelle": libelle, "valeurs": valeurs, "detail": detail,
                        "ecart": ecart(valeurs[-2], valeurs[-1]) if len(annees) > 1 else None})
     totaux = [sum((l["valeurs"][i] for l in lignes), ZERO) for i in range(len(annees))]
     hors = [sum((par_bien[b.pk][a]["hors"] for b in biens), ZERO) for a in annees]
-    for l in lignes:
-        l["parts"] = [(v / t * 100) if t else 0 for v, t in zip(l["valeurs"], totaux)]
-    maxi = max(totaux + [ZERO]) or Decimal(1)
-    barres = [{"annee": a, "total": t, "hauteur": float(t / maxi * 100),
-               "segments": [{"code": l["code"], "libelle": l["libelle"], "couleur": l["couleur"], "montant": l["valeurs"][i],
-                             "hauteur": float(l["valeurs"][i] / t * 100) if t else 0} for l in lignes if l["valeurs"][i] > 0]}
-              for i, (a, t) in enumerate(zip(annees, totaux))]
     hausses = sorted((l for l in lignes if l["ecart"] and l["ecart"]["sens"] == "hausse"), key=lambda l: -l["ecart"]["montant"])
     baisses = sorted((l for l in lignes if l["ecart"] and l["ecart"]["sens"] == "baisse"), key=lambda l: l["ecart"]["montant"])
     en_cours = timezone.localdate().year
-    return {"annees": annees, "lignes": lignes, "totaux": totaux, "hors": hors if any(hors) else None, "barres": barres,
+    return {"annees": annees, "lignes": lignes, "totaux": totaux, "hors": hors if any(hors) else None,
             "ecart_total": ecart(totaux[-2], totaux[-1]) if len(annees) > 1 else None,
             "moyenne": sum(totaux, ZERO) / len(totaux) if totaux else ZERO,
             "plus_forte_hausse": hausses[0] if hausses else None, "plus_forte_baisse": baisses[0] if baisses else None,

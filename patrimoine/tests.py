@@ -3982,3 +3982,61 @@ class DossiersComptablesTests(TestCase):
         self.assertRedirects(r, retour, fetch_redirect_response=False)
         self.assertTrue(DeclarationFaite.objects.filter(proprietaire=self.alfab, annee=2025, active=True).exists())
         self.assertContains(self.client.get(retour), "Déclarée le 15/05/2026")
+
+
+class EvolutionDepensesTests(TestCase):
+    """Comptabilité › Évolution des dépenses : dépenses par nature sur plusieurs années, écart d'une année sur l'autre."""
+
+    def setUp(self):
+        from .models import PieceComptable
+
+        self.client.force_login(User.objects.create_superuser("admin", "a@example.com", "x"))
+        moi = Proprietaire.objects.create(nom="Fabien", type=Proprietaire.Type.NOM_PROPRE)
+        self.alfab = Proprietaire.objects.create(nom="SCI ALFAB", type=Proprietaire.Type.SCI_IR)
+        commun = {"adresse": "1 rue", "code_postal": "69000", "ville": "Lyon"}
+        self.a = Bien.objects.create(proprietaire=self.alfab, nom="Immeuble A", regime_fiscal="sci_ir", **commun)
+        self.s = Bien.objects.create(proprietaire=moi, nom="Studio LMNP", regime_fiscal="lmnp", **commun)
+        Lot.objects.create(bien=self.a, designation="Apt 1", type=Lot.Type.APPARTEMENT)
+        P = PieceComptable.objects.create
+        for annee, montant in ((2023, "600"), (2024, "800")):
+            P(bien=self.a, date=date(annee, 2, 1), libelle="PNO", montant=Decimal(montant), ligne="8")
+            P(bien=self.s, date=date(annee, 2, 1), libelle="PNO studio", montant=Decimal("100"), rubrique="pno")
+        P(bien=self.a, date=date(2024, 5, 1), libelle="Taxe", montant=Decimal("1000"), ligne="12")
+        P(bien=self.a, date=date(2024, 6, 1), libelle="Régul copro", montant=Decimal("50"), ligne="14")
+        P(bien=self.a, date=date(2024, 6, 1), libelle="Copro", montant=Decimal("300"), ligne="13")
+        P(bien=self.a, date=date(2024, 7, 1), libelle="Mobilier", montant=Decimal("400"), ligne="non")
+        P(bien=self.a, date=date(2024, 8, 1), libelle="Pas encore saisie", montant=Decimal("999"))  # à classer : ignorée
+
+    def test_natures_et_ecarts(self):
+        from . import synthese_depenses as sd
+
+        r = sd.synthese([2023, 2024], sd.biens_du_perimetre())
+        lignes = {l["code"]: l for l in r["lignes"]}
+        # 2072 (ligne 8) et LMNP (rubrique pno) additionnés dans la même nature
+        self.assertEqual(lignes["assurance"]["valeurs"], [Decimal("700"), Decimal("900")])
+        self.assertEqual(lignes["assurance"]["ecart"]["montant"], Decimal("200"))
+        self.assertEqual(lignes["assurance"]["ecart"]["sens"], "hausse")
+        self.assertEqual(len(lignes["assurance"]["detail"]), 2)
+        self.assertIsNone(lignes["taxes"]["ecart"]["pct"])  # rien l'année d'avant : « nouveau »
+        self.assertEqual(lignes["copro"]["valeurs"][1], Decimal("250"))  # régularisation retranchée
+        self.assertEqual(lignes["gestion"]["valeurs"], [Decimal("20"), Decimal("20")])  # forfait de 20 € par local
+        self.assertEqual(r["hors"][1], Decimal("400"))  # non déductible, hors total
+        self.assertEqual(r["totaux"][1], Decimal("900") + Decimal("1000") + Decimal("250") + Decimal("20"))
+
+    def test_page_et_filtres(self):
+        url = reverse("evolution_depenses")
+        page = self.client.get(f"{url}?debut=2023&fin=2024").content.decode()
+        for texte in ("Évolution des dépenses", "Assurance propriétaire (PNO)", "Taxe foncière et impôts", "Studio LMNP",
+                      "Total des dépenses", "Hors charges", "nouveau", "Plus forte hausse"):
+            self.assertIn(texte, page)
+        page = self.client.get(f"{url}?dossier=2072-{self.alfab.pk}&debut=2023&fin=2024").content.decode()
+        self.assertNotIn("Studio LMNP</td>", page)
+        page = self.client.get(f"{url}?bien={self.s.pk}&debut=2023&fin=2024").content.decode()
+        self.assertNotIn("Taxe foncière et impôts", page)
+        self.assertIn("Évolution des dépenses", self.client.get(reverse("compta_accueil")).content.decode())
+
+    def test_annees_par_defaut_sans_annee_en_cours(self):
+        t = timezone.localdate().year
+        page = self.client.get(reverse("evolution_depenses")).content.decode()
+        self.assertIn(f"<option selected>{t - 4}</option>", page)
+        self.assertIn(f"<option selected>{t - 1}</option>", page)
