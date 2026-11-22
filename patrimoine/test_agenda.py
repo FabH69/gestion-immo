@@ -135,3 +135,16 @@ class AbonnementAgendaTests(TestCase):
         fiche = self.client.get(f"/admin/patrimoine/rappel/{self.coche.pk}/change/").content.decode()
         self.assertIn("dans mon agenda", fiche)
         self.assertIn('href="/agenda/"', fiche)
+
+
+class RetourApresModificationRappelTests(TestCase):
+    def test_enregistrer_revient_au_tableau_de_bord(self):
+        self.client.force_login(User.objects.create_superuser("admin", "a@example.com", "x"))
+        rappel = Rappel.objects.create(titre="AG", date=date(2026, 12, 10))
+        donnees = {"titre": "AG modifiée", "date": "10/12/2026", "heure": "", "periodicite": "ponctuel", "categorie": "ag", "actif": "on"}
+        reponse = self.client.post(f"/admin/patrimoine/rappel/{rappel.pk}/change/", donnees)
+        self.assertRedirects(reponse, "/admin/", fetch_redirect_response=False)
+        reponse = self.client.post(f"/admin/patrimoine/rappel/{rappel.pk}/change/", {**donnees, "_continue": "1"})
+        self.assertEqual(reponse["Location"], f"/admin/patrimoine/rappel/{rappel.pk}/change/")
+        reponse = self.client.post(f"/admin/patrimoine/rappel/{rappel.pk}/change/?next=/a-faire/", donnees)
+        self.assertEqual(reponse["Location"], "/a-faire/")

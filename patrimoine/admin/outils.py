@@ -81,6 +81,16 @@ class RappelAdmin(admin.ModelAdmin):
             "{}<a href=\"{}\">📅 Ajouter « {} » à mon agenda</a> (téléphone ou ordinateur).",
             quand, reverse("rappel_agenda", args=[obj.pk]), obj.titre))
 
+    def response_change(self, request, obj):
+        """« Enregistrer » sur un rappel modifié : retour au tableau de bord (sauf « Enregistrer et continuer » ou lien ?next=)."""
+        from .communs import _page_d_origine
+
+        reponse = super().response_change(request, obj)
+        boutons = {"_continue", "_addanother", "_saveasnew", "_popup"}
+        if reponse.status_code == 302 and not _page_d_origine(request) and not boutons & set(request.POST) and "_popup" not in request.GET:
+            return redirect("admin:index")
+        return reponse
+
     @admin.display(description="agenda")
     def agenda(self, obj):
         """Boutons « Ajouter à mon agenda » (.ics, iPhone et Android) et Google Agenda, une fois le rappel enregistré."""
