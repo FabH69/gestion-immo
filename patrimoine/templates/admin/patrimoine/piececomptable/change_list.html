@@ -4,7 +4,7 @@
 {% if nb_a_saisir %}<p class="bandeau-compta orange"><b>{{ nb_a_saisir }} pièce{{ nb_a_saisir|pluralize }} à compléter</b> :
 {{ nb_a_saisir|pluralize:"elle n'a,elles n'ont" }} pas pu être lue{{ nb_a_saisir|pluralize }} automatiquement (lignes « À saisir à la main »).
 Saisissez montant, date et bien dans le tableau, puis « Enregistrer ma saisie ».</p>{% endif %}
-{% if annee_choisie and not annee_cloturee %}<p class="bandeau-compta info">Pour verrouiller la saisie d'une année déclarée, cochez « Déclaration effectuée le … » sur la page <a href="{% url 'declarations' %}?annee={{ annee_choisie }}">Déclarations</a>.</p>{% endif %}
+{% if annee_choisie and not annee_cloturee %}<p class="bandeau-compta info">Pour verrouiller la saisie d'une année déclarée, cochez « Déclaration effectuée le … » {% if dossier %}sur la <a href="{% url 'dossier_compta' dossier.code %}?annee={{ annee_choisie }}">vue d'ensemble du dossier {{ dossier.titre }}</a>{% else %}sur la page <a href="{% url 'declarations' %}?annee={{ annee_choisie }}">Déclarations</a>{% endif %}.</p>{% endif %}
 {% if annee_choisie and annee_cloturee %}
 <form method="post" action="{{ lien_cloture }}" class="cloture-annee{% if annee_cloturee %} fermee{% endif %}">{% csrf_token %}
   <input type="hidden" name="retour" value="{{ request.get_full_path }}">

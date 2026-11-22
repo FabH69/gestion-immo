@@ -3884,6 +3884,14 @@ class DossiersComptablesTests(TestCase):
         self.assertNotIn("Peinture", liste)
         self.assertIn(f"/admin/patrimoine/piececomptable/import/?dossier={self.code}", liste)
 
+    def test_dossier_sans_filtre_proprietaire_et_bandeau(self):
+        liste = self.client.get(f"/admin/patrimoine/piececomptable/?dossier={self.code}&annee=2025").content.decode()
+        self.assertNotIn("bien__proprietaire__id__exact", liste)  # le dossier fixe déjà le propriétaire
+        self.assertIn(f'href="/comptabilite/dossier/{self.code}/?annee=2025">vue d&#x27;ensemble du dossier SCI ALFAB', liste.replace("'", "&#x27;"))
+        toutes = self.client.get("/admin/patrimoine/piececomptable/?annee=2025").content.decode()
+        self.assertIn("bien__proprietaire__id__exact", toutes)
+        self.assertIn('href="/comptabilite/declarations/?annee=2025">Déclarations', toutes)
+
     def test_ajout_dans_le_dossier(self):
         page = self.client.get(f"/admin/patrimoine/piececomptable/import/?dossier={self.code}").content.decode()
         self.assertIn(f'<option value="{self.a.pk}" selected>', page)  # seul bien du dossier, déjà choisi
