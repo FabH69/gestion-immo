@@ -52,26 +52,37 @@ def a_saisir(dossier):
     return compta.a_codifier().filter(bien__in=biens(dossier))
 
 
-def apercu(dossier, annee):
-    """Lignes clés de la déclaration (provisoires) et le résultat : [(libellé, montant, en gras)], résultat."""
+def apercu(dossier, annee, bien=None):
+    """Lignes clés de la déclaration (provisoires) et le résultat : [(libellé, montant, en gras)], résultat.
+    bien : seulement ce bien du dossier (la part de ce bien dans la déclaration)."""
     f = dossier["formulaire"]
     if f == "2072":
         from . import annexe2072
 
-        res = annexe2072.annexe(list(biens(dossier, annee)), annee)["resultat"]
+        res = annexe2072.annexe([bien] if bien else list(biens(dossier, annee)), annee)["resultat"]
         return [(f"{code} · {libelle}", montant, code == "R5") for code, libelle, _, montant in res], res[-1][3]
     if f == "2044":
-        lignes = [l for l in compta.recap_2044(annee)["lignes"] if l["genre"] == "total" or l["numero"] == "250"]
+        if bien:
+            from .annexe2072 import colonne
+
+            v = colonne(bien, annee)["valeurs"]
+            toutes = [{"numero": n, "libelle": l, "genre": g, "total": v.get(code, ZERO)} for n, l, code, g in compta.LIGNES_2044]
+        else:
+            toutes = compta.recap_2044(annee)["lignes"]
+        lignes = [l for l in toutes if l["genre"] == "total" or l["numero"] == "250"]
         resultat = lignes[-1]["total"] if lignes else ZERO
         return [(f"{l['numero']} · {l['libelle']}".strip(" ·"), l["total"], l is lignes[-1]) for l in lignes], resultat
     if f == "2031":
         from . import lmnp
 
-        t = lmnp.bilan(annee)["total"]
+        blocs = lmnp.bilan(annee)["blocs"]
+        if bien:
+            blocs = [b for b in blocs if b["lot"].bien_id == bien.pk]
+        t = {k: sum((b[k] for b in blocs), ZERO) for k in ("total_recettes", "total_charges", "resultat", "amort_deduit", "resultat_fiscal")}
         return [("Recettes", t["total_recettes"], False), ("Charges", t["total_charges"], False),
                 ("Résultat avant amortissements", t["resultat"], False), ("Amortissements déduits", t["amort_deduit"], False),
                 ("Résultat fiscal", t["resultat_fiscal"], True)], t["resultat_fiscal"]
-    recap = compta.recapitulatif("societe", annee)
+    recap = compta.recapitulatif("societe", annee, bien)
     lignes = [(g["titre"] or "Autres charges", sum((l["total"] for l in g["lignes"]), ZERO), False) for g in recap["groupes"]]
     return lignes + [("Total des charges", recap["total"], True)], None
 

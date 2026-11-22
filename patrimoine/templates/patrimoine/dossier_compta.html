@@ -9,7 +9,8 @@
     <select class="choix-dossier-d" onchange="if(this.value)window.location.href=this.value">{% for x in dossiers %}<option value="{% url 'dossier_compta' x.code %}"{% if x.code == d.code %} selected{% endif %}>{{ x.titre }} ({{ x.cerfa }})</option>{% endfor %}</select></label>
   <ul class="object-tools"><li><a href="{{ d.lien_import }}" class="addlink">Ajouter des factures à ce dossier</a></li></ul></div>
 <p class="petit-d">{{ d.sous_titre }} · {{ d.cerfa }} · {% for b in biens_dossier %}{{ b.nom }}{% if not forloop.last %}, {% endif %}{% endfor %}</p>
-<div class="barre-compta">{% boutons_annees annees annee "civil" %}</div>
+<div class="barre-compta">{% boutons_annees annees annee "civil" %}
+  {% if filtre_biens|length > 2 %}<div class="groupe-filtre" role="group" aria-label="Bien">{% for f in filtre_biens %}<a href="{{ f.url }}" class="chip{% if f.actif %} actif{% endif %}">{{ f.libelle }}</a>{% endfor %}</div>{% endif %}</div>
 {% include "patrimoine/_onglets_compta.html" %}
 
 <div class="deux-col-d">
@@ -23,7 +24,7 @@
       </div>
     </section>
     <section class="bloc-d">
-      <h2>Factures {{ annee }} du dossier ({{ nb_pieces }})</h2>
+      <h2>Factures {{ annee }} {% if bien_choisi %}de {{ bien_choisi.nom }}{% else %}du dossier{% endif %} ({{ nb_pieces }})</h2>
       {% if pieces %}
       <table class="liste-d"><thead><tr><th>Date</th><th>Bien</th><th>Fournisseur</th><th>Classement</th><th style="text-align:right">Montant</th></tr></thead><tbody>
         {% for p in pieces %}<tr><td>{{ p.date_paiement|default:p.date|date:"d/m/Y"|default:"–" }}</td><td>{{ p.bien.nom }}</td>
@@ -31,13 +32,13 @@
           <td>{% if p.a_codifier %}<span class="pill-d todo">à saisir</span>{% elif p.par_rubrique %}{{ p.get_rubrique_display }}{% else %}{{ p.ligne }}{% endif %}</td>
           <td class="m">{% if p.montant %}{{ p.montant|floatformat:"2g" }} €{% else %}–{% endif %}</td></tr>{% endfor %}
       </tbody></table>
-      <p class="petit-d"><a href="{{ d.lien_factures }}">Ouvrir la saisie du dossier ({{ nb_pieces }} facture{{ nb_pieces|pluralize }})</a></p>
+      <p class="petit-d"><a href="{{ lien_saisie }}">Ouvrir la saisie {% if bien_choisi %}de ce bien{% else %}du dossier{% endif %} ({{ nb_pieces }} facture{{ nb_pieces|pluralize }})</a></p>
       {% else %}<p class="petit-d">Aucune facture pour {{ annee }}. <a href="{{ d.lien_import }}">Ajouter des factures à ce dossier</a></p>{% endif %}
     </section>
   </div>
   <aside class="bloc-d etroit">
     <h2>Aperçu de la déclaration</h2>
-    <div class="petit-d" style="margin-bottom:6px">{{ d.cerfa }} · {{ annee }} · {% if d.declaree %}déclarée{% else %}provisoire, recalculé à chaque saisie{% endif %}</div>
+    <div class="petit-d" style="margin-bottom:6px">{{ d.cerfa }} · {{ annee }}{% if bien_choisi %} · <b>{{ bien_choisi.nom }} seulement</b>{% endif %} · {% if d.declaree %}déclarée{% else %}provisoire, recalculé à chaque saisie{% endif %}</div>
     <div class="apercu-d">{% for libelle, montant, fort in d.apercu %}<div{% if fort %} class="fort"{% endif %}><span>{{ libelle }}</span><b>{{ montant|floatformat:"0g" }} €</b></div>{% endfor %}</div>
     <p style="margin:12px 0 0"><a href="{{ d.lien }}" class="button default" style="display:block;text-align:center">{{ d.libelle_lien }} complète</a></p>
     {% if d.declaree %}

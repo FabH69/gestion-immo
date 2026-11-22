@@ -3892,6 +3892,24 @@ class DossiersComptablesTests(TestCase):
         self.assertIn("bien__proprietaire__id__exact", toutes)
         self.assertIn('href="/comptabilite/declarations/?annee=2025">Déclarations', toutes)
 
+    def test_filtre_bien_dans_le_dossier(self):
+        from .models import PieceComptable
+
+        b2 = Bien.objects.create(proprietaire=self.alfab, nom="Garage B", regime_fiscal="sci_ir", adresse="2 rue", code_postal="69000",
+                                 ville="Lyon", comptabilite="foncier")
+        PieceComptable.objects.create(bien=b2, date=date(2025, 5, 1), fournisseur="Serrurier garage", libelle="Porte",
+                                      montant=Decimal("50"), ligne="9")
+        url = f"/comptabilite/dossier/{self.code}/?annee=2025"
+        page = self.client.get(url).content.decode()
+        self.assertIn("Tous les biens", page)
+        self.assertIn("Serrurier garage", page)
+        self.assertIn("Plombier ALFAB", page)
+        page = self.client.get(f"{url}&bien={b2.pk}").content.decode()
+        self.assertIn("Serrurier garage", page)
+        self.assertNotIn("Plombier ALFAB", page)
+        self.assertIn("Garage B seulement", page)  # aperçu de ce bien seulement
+        self.assertIn(f"&amp;bien={b2.pk}", page)  # la saisie s'ouvre filtrée sur ce bien
+
     def test_ajout_dans_le_dossier(self):
         page = self.client.get(f"/admin/patrimoine/piececomptable/import/?dossier={self.code}").content.decode()
         self.assertIn(f'<option value="{self.a.pk}" selected>', page)  # seul bien du dossier, déjà choisi

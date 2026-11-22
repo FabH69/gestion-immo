@@ -260,9 +260,19 @@ def dossier_compta(request, code):
     annee = annee_fiscale(request)
     acces = None if request.user.is_superuser else droits.niveaux(request.user)
     r = dossiers.resume(dossier, annee, acces)
+    biens_dossier = list(dossiers.biens(dossier, annee))
+    bien = next((b for b in biens_dossier if str(b.pk) == request.GET.get("bien")), None)
+    pieces = dossiers.pieces(dossier, annee)
+    if bien:  # filtre « Bien » : factures et aperçu de ce bien seulement
+        pieces = pieces.filter(bien=bien)
+        r["apercu"], r["resultat"] = dossiers.apercu(dossier, annee, bien)
+    url = reverse("dossier_compta", args=[code])
     contexte = {"annee": annee, "annees": _annees(), "d": r, "dossiers": dossiers.tous(), "aujourdhui": timezone.localdate(),
-                "pieces": dossiers.pieces(dossier, annee).order_by("-date_paiement", "-date", "-pk")[:15],
-                "nb_pieces": dossiers.pieces(dossier, annee).count(), "biens_dossier": dossiers.biens(dossier, annee),
+                "pieces": pieces.order_by("-date_paiement", "-date", "-pk")[:15], "nb_pieces": pieces.count(),
+                "biens_dossier": biens_dossier, "bien_choisi": bien,
+                "filtre_biens": [{"libelle": "Tous les biens", "url": f"{url}?annee={annee}", "actif": bien is None}]
+                + [{"libelle": b.nom, "url": f"{url}?annee={annee}&bien={b.pk}", "actif": b == bien} for b in biens_dossier],
+                "lien_saisie": r["lien_factures"] + (f"&bien={bien.pk}" if bien else ""),
                 "onglets": dossiers.onglets(dossier, "accueil", annee), "libelle_regime": dossier["titre"],
                 "retour": request.get_full_path()}
     return render(request, "patrimoine/dossier_compta.html",
