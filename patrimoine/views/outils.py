@@ -313,3 +313,92 @@ def toutes_les_tables(request):
             for a in admin.site.get_app_list(request)]
     return render(request, "patrimoine/toutes_les_tables.html", {
         **admin.site.each_context(request), "title": "Toutes les tables", "apps": [a for a in apps if a["tables"]]})
+
+
+def _abonnement(user):
+    """Abonnement agenda de l'utilisateur, toujours lu dans la vraie base (le téléphone n'a pas le cookie du mode test)."""
+    from ..models import AbonnementAgenda
+
+    return AbonnementAgenda.objects.using("default").filter(utilisateur=user).first()
+
+
+@staff_member_required
+def agenda_abonnement(request):
+    """Page « 📅 Mon agenda » : lien secret d'abonnement, ce qu'il contient, rappels de base en un clic, aide iPhone / Android / Google."""
+    from urllib.parse import quote as quote_url
+
+    from django.core.exceptions import PermissionDenied
+
+    from .. import droits
+    from ..agenda import TYPES_CALCULES
+    from ..models import AbonnementAgenda
+    from ..rappels import creer_rappels_de_base, rappels_de_base
+
+    outils = droits.niveau(request.user, "outils")
+    if not outils:
+        raise PermissionDenied("Vous n'avez pas accès aux rappels.")
+    aujourdhui = timezone.localdate()
+    abonnement = _abonnement(request.user)
+    if request.method == "POST":
+        quoi = request.POST.get("action")
+        if quoi in ("activer", "regenerer"):
+            if abonnement:
+                abonnement.jeton = AbonnementAgenda.nouveau_jeton()
+                abonnement.dernier_acces = None
+                abonnement.save(using="default")
+                messages.success(request, "Nouveau lien créé : l'ancien ne marche plus. Abonnez à nouveau votre téléphone avec le lien ci-dessous.")
+            else:
+                AbonnementAgenda.objects.using("default").create(utilisateur_id=request.user.pk, jeton=AbonnementAgenda.nouveau_jeton(),
+                                                                types="")
+                messages.success(request, "Votre lien d'agenda est prêt. Suivez les étapes ci-dessous pour votre téléphone.")
+        elif quoi == "desactiver" and abonnement:
+            abonnement.delete(using="default")
+            messages.success(request, "Abonnement arrêté : l'agenda du téléphone ne reçoit plus rien (vous pouvez supprimer l'agenda « Gestion immo »).")
+        elif quoi == "types" and abonnement:
+            codes = {c for c, _ in TYPES_CALCULES}
+            abonnement.types = ",".join(c for c in request.POST.getlist("types") if c in codes)
+            abonnement.save(using="default")
+            messages.success(request, "Contenu de l'agenda enregistré. Il arrivera au prochain rafraîchissement du téléphone.")
+        elif quoi == "base":
+            if outils != droits.MODIFICATION:
+                raise PermissionDenied("Il faut pouvoir modifier les rappels.")
+            n = creer_rappels_de_base(set(request.POST.getlist("base")), aujourdhui)
+            messages.success(request, f"{n} rappel{'s' if n > 1 else ''} annuel{'s' if n > 1 else ''} créé{'s' if n > 1 else ''}, case « 📅 dans mon agenda » cochée."
+                             if n else "Aucun rappel créé : rien de coché, ou déjà présents.")
+        return redirect("agenda_abonnement")
+
+    lien = webcal = google = ""
+    if abonnement:
+        lien = request.build_absolute_uri(reverse("agenda_flux", args=[abonnement.jeton]))
+        if not request.is_secure() and lien.startswith("http://") and not request.get_host().startswith(("localhost", "127.0.0.1", "testserver")):
+            lien = "https://" + lien[len("http://"):]
+        webcal = "webcal://" + lien.split("://", 1)[1]
+        google = "https://calendar.google.com/calendar/r?cid=" + quote_url(webcal, safe="")
+    choisis = abonnement.liste_types if abonnement else []
+    return render(request, "patrimoine/agenda_abonnement.html", {
+        **admin.site.each_context(request), "title": "Mon agenda", "abonnement": abonnement, "lien": lien, "webcal": webcal,
+        "google": google, "types": [{"code": c, "libelle": l, "coche": c in choisis} for c, l in TYPES_CALCULES],
+        "nb_coches": Rappel.objects.filter(fait=False, actif=True, dans_agenda=True).count(),
+        "nb_rappels": Rappel.objects.filter(fait=False, actif=True).count(),
+        "base": rappels_de_base(aujourdhui), "peut_modifier": outils == droits.MODIFICATION,
+    })
+
+
+def agenda_flux(request, jeton):
+    """Flux .ics lu par l'agenda du téléphone ou Google Agenda, sans connexion : le jeton secret identifie l'utilisateur.
+    Lien arrêté ou remplacé, compte désactivé : 404."""
+    from django.http import Http404, HttpResponse
+
+    from ..agenda import flux_ics
+    from ..models import AbonnementAgenda
+
+    abonnement = (AbonnementAgenda.objects.using("default").select_related("utilisateur")
+                  .filter(jeton=jeton, utilisateur__is_active=True, utilisateur__is_staff=True).first())
+    if not abonnement or len(jeton) < 20:
+        raise Http404
+    AbonnementAgenda.objects.using("default").filter(pk=abonnement.pk).update(dernier_acces=timezone.now())
+    base = request.build_absolute_uri("/").rstrip("/")
+    reponse = HttpResponse(flux_ics(abonnement.utilisateur, abonnement.liste_types, base), content_type="text/calendar; charset=utf-8")
+    reponse["Content-Disposition"] = 'inline; filename="gestion-immo.ics"'
+    reponse["Cache-Control"] = "private, max-age=900"
+    return reponse

@@ -28,4 +28,4 @@ from .relocation import (  # noqa: F401
 )
 from .courte_duree import CalendrierICS, ChargeLCD, ChargeLMNP, EvenementICS, ComparatifNue, EncaissementLCD, LigneComparatif, ParametresLCD, ReservationLCD  # noqa: F401
 from .finances import _chemin_facture, AnneeCloturee, AttestationPret, DeclarationFaite, biens_du_formulaire, LigneEcheancier, PieceComptable, Pret  # noqa: F401
-from .outils import ControleIgnore, JournalFait, ModeleDocument, NoteRapide, ParametresMail, Rappel, SiteUtile  # noqa: F401
+from .outils import AbonnementAgenda, ControleIgnore, JournalFait, ModeleDocument, NoteRapide, ParametresMail, Rappel, SiteUtile  # noqa: F401

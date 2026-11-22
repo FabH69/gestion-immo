@@ -37,6 +37,7 @@
         <label class="visuellement-cache" for="jours">Horizon</label>
         <select id="jours" name="jours" onchange="this.form.submit()"><option value="30"{% if jours == 30 %} selected{% endif %}>30 jours</option><option value="90"{% if jours == 90 %} selected{% endif %}>3 mois</option><option value="365"{% if jours == 365 %} selected{% endif %}>12 mois</option></select>
       </form>{% endif %}
+      <a class="button ajout" href="{% url 'agenda_abonnement' %}" title="Recevoir les rappels dans l'agenda du téléphone">📅 Mon agenda</a>
       {% if peut_ajouter %}<a class="button ajout" href="{% url 'admin:patrimoine_rappel_add' %}?next={{ request.get_full_path|urlencode }}">+ Rappel</a>{% endif %}
     </div>
   </div>
@@ -57,6 +58,6 @@
       {% endfor %}
     </table>
   </div>
-  {% if genre == "rappels" or genre == "" and vue != "fait" %}<p class="lien-rappels"><a href="{% url 'admin:patrimoine_rappel_changelist' %}">Tous mes rappels</a> (périodiques, à venir, déjà faits) · 📅 : ajouter un rappel à l'agenda du téléphone (aide sur la fiche du rappel) · <a href="{% url 'admin:patrimoine_changementlocataire_changelist' %}">Entrées et sorties en cours</a></p>{% endif %}
+  {% if genre == "rappels" or genre == "" and vue != "fait" %}<p class="lien-rappels"><a href="{% url 'admin:patrimoine_rappel_changelist' %}">Tous mes rappels</a> (périodiques, à venir, déjà faits) · 📅 : ajouter un rappel à l'agenda du téléphone, ou <a href="{% url 'agenda_abonnement' %}">tout recevoir automatiquement</a> · <a href="{% url 'admin:patrimoine_changementlocataire_changelist' %}">Entrées et sorties en cours</a></p>{% endif %}
 </div>
 {% endblock %}

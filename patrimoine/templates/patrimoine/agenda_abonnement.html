@@ -1,0 +1,97 @@
+{% extends "admin/base_site.html" %}
+{% block extrastyle %}{{ block.super }}<style>
+.page-agenda { max-width: 860px; }
+.page-agenda .module { padding: 14px 16px; margin-bottom: 18px; }
+.page-agenda .module h2 { margin: -14px -16px 12px; }
+.page-agenda .lien-flux { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin: 8px 0 12px; }
+.page-agenda .lien-flux input { flex: 1 1 320px; min-width: 0; font-family: monospace; font-size: .8rem; }
+.page-agenda .boutons { display: flex; gap: 8px; flex-wrap: wrap; margin: 6px 0 4px; }
+.page-agenda .boutons .button, .page-agenda button.button { border-radius: 999px; padding: 8px 14px; }
+.page-agenda .cases label { display: block; margin: 6px 0; font-weight: normal; }
+.page-agenda .cases .deja { color: var(--body-quiet-color); font-size: .85rem; }
+.page-agenda details { margin: 8px 0; }
+.page-agenda details summary { cursor: pointer; font-weight: 600; }
+.page-agenda .avertissement { background: var(--darkened-bg); border-left: 4px solid var(--accent, #c90); padding: 8px 12px; margin: 10px 0; }
+.page-agenda .discret { color: var(--body-quiet-color); font-size: .85rem; }
+.page-agenda form.en-ligne { display: inline; margin: 0; }
+.visuellement-cache { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+</style>{% endblock %}
+{% block breadcrumbs %}<div class="breadcrumbs"><a href="{% url 'admin:index' %}">Accueil</a> › <a href="{% url 'a_faire' %}">À faire</a> › Mon agenda</div>{% endblock %}
+{% block content_title %}<h1>📅 Mon agenda</h1>
+<p class="sous-titre-page">Abonnez une fois l'agenda de votre téléphone : les rappels cochés « 📅 dans mon agenda » y arrivent ensuite tout seuls, et se mettent à jour quand vous les modifiez ou les cochez « fait ».</p>{% endblock %}
+{% block content %}
+<div class="page-agenda">
+
+  <div class="module">
+    <h2>1. Mon lien d'abonnement</h2>
+    {% if abonnement %}
+      <p>Ce lien est <b>personnel et secret</b> : il donne accès à vos rappels sans mot de passe. Ne le partagez pas ; en cas de doute, créez-en un nouveau.</p>
+      <div class="lien-flux">
+        <label class="visuellement-cache" for="lien-agenda">Lien d'abonnement</label>
+        <input id="lien-agenda" type="text" value="{{ lien }}" readonly onclick="this.select()">
+        <button type="button" class="button" onclick="navigator.clipboard.writeText(document.getElementById('lien-agenda').value).then(()=>{this.textContent='Copié ✓'})">Copier le lien</button>
+      </div>
+      <div class="boutons">
+        <a class="button" href="{{ webcal }}">S'abonner sur iPhone / Mac</a>
+        <a class="button" href="{{ google }}" target="_blank" rel="noopener">Ajouter à Google Agenda ↗</a>
+      </div>
+      <p class="discret">{% if abonnement.dernier_acces %}Dernière lecture par votre agenda : {{ abonnement.dernier_acces|date:"d/m/Y à H:i" }}.{% else %}Pas encore lu par un agenda.{% endif %}</p>
+
+      <details open><summary>Comment s'abonner ?</summary>
+        <ul>
+          <li><b>iPhone</b> : touchez <b>S'abonner sur iPhone / Mac</b>, puis <b>S'abonner</b> et <b>Ajouter</b>. Pour recevoir les alertes, désactivez « Supprimer les alarmes » dans l'écran qui s'affiche.
+            Fréquence de mise à jour : Réglages › Calendrier › Comptes › Récupérer les données (toutes les heures, par exemple).</li>
+          <li><b>Android</b> : l'appli Google Agenda ne sait pas s'abonner à un lien depuis le téléphone. Faites-le une fois depuis un ordinateur
+            (ligne suivante), avec le même compte Google que le téléphone. L'agenda « Gestion immo » apparaît ensuite sur le téléphone ;
+            s'il n'y est pas : Google Agenda › Menu › Paramètres › Gestion immo › activer <b>Synchroniser</b>.</li>
+          <li><b>Google Agenda sur l'ordinateur</b> : cliquez <b>Ajouter à Google Agenda ↗</b> puis <b>Ajouter</b>.
+            (Ou : calendar.google.com › « Autres agendas » › <b>+</b> › <b>À partir de l'URL</b>, collez le lien.)</li>
+          <li><b>Outlook</b> : Agenda › Ajouter un calendrier › <b>S'abonner à partir du web</b>, collez le lien.</li>
+        </ul>
+        <p class="avertissement"><b>À savoir sur Google Agenda</b> : Google relit un agenda abonné seulement <b>toutes les quelques heures</b>
+          (parfois jusqu'à une journée), sans qu'on puisse l'accélérer. Un rappel ajouté ou modifié peut donc mettre du temps à apparaître.
+          Google n'utilise pas non plus les alertes du lien : réglez les notifications dans Paramètres › Gestion immo › Notifications.
+          Sur iPhone, la mise à jour suit la fréquence choisie (toutes les heures possible).</p>
+        <p class="discret">Les alertes prévues : 1 heure avant un rendez-vous (rappel avec heure), 9 h le jour même pour un rappel sur la journée,
+          et en plus le jour choisi dans « me prévenir par mail … jours avant » (7 jours avant pour un rappel ★).</p>
+      </details>
+
+      <div class="boutons">
+        <form method="post" class="en-ligne">{% csrf_token %}<input type="hidden" name="action" value="regenerer">
+          <button type="submit" class="button" onclick="return confirm('Créer un nouveau lien ? L\'ancien ne marchera plus : il faudra abonner le téléphone à nouveau.')">Nouveau lien (l'ancien ne marche plus)</button></form>
+        <form method="post" class="en-ligne">{% csrf_token %}<input type="hidden" name="action" value="desactiver">
+          <button type="submit" class="button" onclick="return confirm('Arrêter l\'abonnement ? L\'agenda du téléphone ne recevra plus rien.')">Arrêter l'abonnement</button></form>
+      </div>
+    {% else %}
+      <p>Pas encore de lien. Créez-le, puis abonnez votre téléphone en suivant les étapes (2 minutes, une seule fois).</p>
+      <form method="post">{% csrf_token %}<input type="hidden" name="action" value="activer">
+        <button type="submit" class="button default">Créer mon lien d'agenda</button></form>
+    {% endif %}
+  </div>
+
+  <div class="module">
+    <h2>2. Ce qui va dans l'agenda</h2>
+    <p><b>Mes rappels</b> : seulement ceux dont la case <b>📅 dans mon agenda</b> est cochée, soit <b>{{ nb_coches }}</b> sur {{ nb_rappels }} rappel{{ nb_rappels|pluralize }} en cours.
+      Cochez-la sur la fiche du rappel, ou dans <a href="{% url 'admin:patrimoine_rappel_changelist' %}">la liste des rappels</a> (colonne 📅, ou plusieurs d'un coup avec l'action « Mettre dans mon agenda »).</p>
+    {% if abonnement %}
+    <form method="post" class="cases">{% csrf_token %}<input type="hidden" name="action" value="types">
+      <p style="margin-bottom:2px">En plus, les échéances calculées par l'appli (12 prochains mois) :</p>
+      {% for t in types %}<label><input type="checkbox" name="types" value="{{ t.code }}"{% if t.coche %} checked{% endif %}> {{ t.libelle }}</label>{% endfor %}
+      <button type="submit" class="button">Enregistrer</button>
+    </form>
+    {% else %}<p class="discret">Après la création du lien, vous pourrez aussi y ajouter les révisions de loyer, assurances, chaudières, DPE, loyers impayés…</p>{% endif %}
+  </div>
+
+  {% if peut_modifier %}
+  <div class="module">
+    <h2>3. Partir de zéro : les grandes dates de l'année</h2>
+    <p>Rappels annuels utiles à tout propriétaire, créés en un clic avec la case « 📅 dans mon agenda » cochée. Modifiez ensuite la date si besoin.</p>
+    <form method="post" class="cases">{% csrf_token %}<input type="hidden" name="action" value="base">
+      {% for r in base %}<label>{% if r.existe %}<input type="checkbox" disabled> {{ r.titre }} <span class="deja">· déjà créé</span>{% else %}<input type="checkbox" name="base" value="{{ r.code }}" checked> {{ r.titre }} <span class="deja">· {{ r.date|date:"d/m/Y" }}, puis tous les ans</span>{% endif %}</label>{% endfor %}
+      <button type="submit" class="button">Créer les rappels cochés</button>
+    </form>
+    <p class="discret">Déjà automatiques sans rien saisir : révisions de loyer, assurances, chaudières, DPE et loyers impayés (à ajouter à l'agenda au point 2), et le rappel CFE des biens en LMNP ou en société.</p>
+  </div>
+  {% endif %}
+</div>
+{% endblock %}

@@ -60,6 +60,8 @@ from .compta import compta_recap, conciergerie_ajouter, controle_conciergerie, d
 from .outils import (  # noqa: F401
     _lieu,
     a_faire,
+    agenda_abonnement,
+    agenda_flux,
     enregistrer_note,
     fichier_prive,
     ne_plus_rappeler,
