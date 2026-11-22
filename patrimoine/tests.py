@@ -1907,14 +1907,14 @@ class Annexe2072Tests(TestCase):
         from .annexe2072 import colonne
 
         v = colonne(self.bien, 2025)["valeurs"]
-        self.assertEqual(v["1"], Decimal("1000.00"))
+        self.assertEqual(v["1"], Decimal("1100.00"))  # loyers charges comprises (choix de Fabien)
         self.assertEqual(v["7"], Decimal("40"))  # 2 locaux
         self.assertEqual(v["9"], Decimal("1200"))
         self.assertEqual(v["9b"], Decimal("1200"))
         self.assertEqual(v["12"], Decimal("800"))
         self.assertEqual(v["6"], Decimal("0"))
         self.assertEqual(v["16"], Decimal("2040"))
-        self.assertEqual(v["18"], Decimal("-1040.00"))
+        self.assertEqual(v["18"], Decimal("-940.00"))
 
     def test_pages(self):
         self.client.force_login(User.objects.create_superuser("admin", "a@example.com", "x"))
@@ -1933,9 +1933,9 @@ class Annexe2072Tests(TestCase):
         self.client.force_login(User.objects.create_superuser("admin", "a@example.com", "x"))
         r = self.client.get(f"/comptabilite/2072/?sci={self.sci.pk}&annee=2025")
         cadre = {code: (montant, part) for code, _, _, montant, part in r.context["cadre_i"]}
-        self.assertEqual(cadre["R1"], (Decimal("1000.00"), Decimal("500.00")))
+        self.assertEqual(cadre["R1"], (Decimal("1100.00"), Decimal("550.00")))
         self.assertEqual(cadre["R2"][1], Decimal("600.00"))
-        self.assertEqual(cadre["R5"], (Decimal("-1040.00"), Decimal("-520.00")))
+        self.assertEqual(cadre["R5"], (Decimal("-940.00"), Decimal("-470.00")))
         self.assertContains(r, "Votre part (50 %)")
 
 
@@ -3649,10 +3649,10 @@ class RegimesFiscauxTests(TestCase):
                                         date_exigibilite=date(2025, mois, 1))
             Paiement.objects.create(echeance=e, date=date(2025, mois, jour), montant=Decimal("650"))
         page = self.client.get(f"/comptabilite/2072/?sci={self.sci.pk}&annee=2025").content.decode()
-        # une sous-ligne par loyer, avec le mois et le locataire, du 1er janvier au 31 décembre, montant hors charges
-        self.assertRegex(page, r"(?s)▸</button>1</td>.*?05/01/2025 · loyer de janvier 2025 · M. Jean DUPONT \(Apt 1er\).*?600,00"
+        # une sous-ligne par loyer, avec le mois et le locataire, du 1er janvier au 31 décembre, montant charges comprises (choix de Fabien)
+        self.assertRegex(page, r"(?s)▸</button>1</td>.*?05/01/2025 · loyer de janvier 2025 · M. Jean DUPONT \(Apt 1er\).*?650,00"
                                r".*?03/02/2025 · loyer de février 2025.*?04/03/2025 · loyer de mars 2025")
-        self.assertRegex(page, r"(?s)>1</td>.*?<td class=\"montant\">1 800\xa0€</td>")
+        self.assertRegex(page, r"(?s)>1</td>.*?<td class=\"montant\">1 950\xa0€</td>")
 
     def test_fiche_facture_montre_le_pdf_d_origine(self):
         import tempfile
@@ -3669,7 +3669,8 @@ class RegimesFiscauxTests(TestCase):
             retour = f"/comptabilite/2072/?sci={self.sci.pk}&annee=2025"
             fiche = self.client.get(f"/admin/patrimoine/piececomptable/{p.pk}/change/?next={retour}").content.decode()
             self.assertIn("Facture d'origine", fiche)
-            self.assertIn(f'<iframe src="{p.fichier.url}#view=FitH"', fiche)
+            self.assertIn(f'class="pages-pdf" data-url="{p.fichier.url}"', fiche)
+            self.assertIn("pdfjs/pdf.min.js", fiche)  # dessiné par pdf.js, quel que soit le lecteur PDF du navigateur
             # le fichier s'affiche dans le cadre (même adresse) et en ligne, pas en téléchargement
             r = self.client.get(p.fichier.url)
             self.assertEqual(r.status_code, 200)
