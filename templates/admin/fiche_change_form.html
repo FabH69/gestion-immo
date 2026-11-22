@@ -30,7 +30,7 @@ et une seule barre « Enregistrer » toujours visible. Voir patrimoine/admin/fic
     <div class="sous-menu">
       {% for s in fiche.menu %}<a href="{{ s.url }}"{% if s.nouvel_onglet %} target="_blank"{% endif %}>{{ s.libelle }}</a>{% endfor %}
       <a href="{{ url_historique }}">Historique des modifications</a>
-      {% if has_delete_permission %}<a class="danger" href="{{ url_suppression }}">Supprimer…</a>{% endif %}
+      {% if has_delete_permission %}<a class="danger" href="{% garde_retour url_suppression %}">Supprimer…</a>{% endif %}
     </div>
   </details>
 </div>

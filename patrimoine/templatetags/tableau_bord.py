@@ -619,3 +619,25 @@ def avec_retour(context, url, ancre=""):
         return url
     ici = request.get_full_path() + (f"#{ancre}" if ancre else "")
     return f"{url}{'&' if '?' in url else '?'}next={quote(ici, safe='/')}"
+
+
+@register.simple_tag(takes_context=True)
+def garde_retour(context, url):
+    """Lien depuis une fiche (Supprimer, Annuler) qui garde la page d'origine (?next=…) de la fiche, s'il y en a une."""
+    from urllib.parse import quote
+
+    from patrimoine.admin.communs import _page_d_origine
+
+    request = context.get("request")
+    suite = _page_d_origine(request) if request is not None else None
+    if not suite or not url:
+        return url
+    return f"{url}{'&' if '?' in url else '?'}next={quote(suite, safe='/')}"
+
+
+@register.simple_tag(takes_context=True)
+def page_d_origine(context):
+    from patrimoine.admin.communs import _page_d_origine
+
+    request = context.get("request")
+    return (_page_d_origine(request) if request is not None else None) or ""

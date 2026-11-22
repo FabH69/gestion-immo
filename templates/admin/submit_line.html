@@ -1,9 +1,21 @@
 {% extends "admin/submit_line.html" %}
-{% load i18n admin_urls %}
+{% load i18n admin_urls tableau_bord %}
 {% block submit-row %}
-{{ block.super }}
+{% page_d_origine as origine %}
+{% if show_save %}<input type="submit" value="{% translate 'Save' %}" class="default" name="_save">{% endif %}
+{% if show_save_as_new %}<input type="submit" value="{% translate 'Save as new' %}" name="_saveasnew">{% endif %}
+{% if show_save_and_add_another %}<input type="submit" value="{% translate 'Save and add another' %}" name="_addanother">{% endif %}
+{% if show_save_and_continue %}<input type="submit" value="{% if can_change %}{% translate 'Save and continue editing' %}{% else %}{% translate 'Save and view' %}{% endif %}" name="_continue">{% endif %}
+{% url opts|admin_urlname:'changelist' as changelist_url %}
+{% if show_close %}
+    <a href="{% if origine %}{{ origine }}{% else %}{% add_preserved_filters changelist_url %}{% endif %}" class="closelink">{% translate 'Close' %}</a>
+{% endif %}
+{% if show_delete_link and original %}
+    {% url opts|admin_urlname:'delete' original.pk|admin_urlquote as delete_url %}
+    {% add_preserved_filters delete_url as delete_url_filtres %}
+    <a href="{% garde_retour delete_url_filtres %}" class="deletelink">{% translate "Delete" %}</a>
+{% endif %}
 {% if not show_close %}
-    {% url opts|admin_urlname:'changelist' as changelist_url %}
-    <a href="{% add_preserved_filters changelist_url %}" class="annuler" title="Quitter sans enregistrer">Annuler</a>
+    <a href="{% if origine %}{{ origine }}{% else %}{% add_preserved_filters changelist_url %}{% endif %}" class="annuler" title="Quitter sans enregistrer">Annuler</a>
 {% endif %}
 {% endblock %}
