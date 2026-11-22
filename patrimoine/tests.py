@@ -3528,6 +3528,57 @@ class RegimesFiscauxTests(TestCase):
         pdf = self.client.get(f"/comptabilite/2072/?sci={self.sci.pk}&annee=2025&format=pdf")
         self.assertEqual(pdf.status_code, 200)
 
+    def _donnees_fiche(self, url):
+        """Données POST d'une fiche d'admin telle qu'affichée (champs et formulaires en ligne)."""
+        ctx = self.client.get(url).context
+        form = ctx["adminform"].form
+        donnees = {}
+        for nom, champ in form.fields.items():
+            v = form.initial.get(nom, champ.initial)
+            if v is None or v is False or hasattr(v, "field"):  # fichiers : rien à renvoyer
+                continue
+            donnees[nom] = "on" if v is True else (v.pk if hasattr(v, "pk") else v)
+        for fs in ctx["inline_admin_formsets"]:
+            mf = fs.formset.management_form
+            for nom in mf.fields:
+                donnees[f"{mf.prefix}-{nom}"] = mf.initial.get(nom, 0) if nom != "TOTAL_FORMS" else len(fs.formset.initial_forms)
+            for f in fs.formset.initial_forms:
+                for nom in f.fields:
+                    v = f.initial.get(nom)
+                    if v not in (None, False):
+                        donnees[f"{f.prefix}-{nom}"] = v.pk if hasattr(v, "pk") else v
+        return donnees
+
+    def test_facture_ouverte_depuis_une_declaration_y_ramene(self):
+        from .models import PieceComptable
+
+        a = self._bien(self.sci, "Vaugneray")
+        p = PieceComptable.objects.create(bien=a, date=date(2025, 1, 10), fournisseur="Syndic", libelle="Honoraires", montant=Decimal("540"), ligne="6")
+        page = self.client.get(f"/comptabilite/2072/?sci={self.sci.pk}&annee=2025").content.decode()
+        retour = f"/comptabilite/2072/?sci={self.sci.pk}&annee=2025#ligne-6"
+        lien = f"/admin/patrimoine/piececomptable/{p.pk}/change/?next=" + retour.replace("?", "%3F").replace("&", "%26").replace("=", "%3D").replace("#", "%23")
+        self.assertIn(lien.replace("&", "&amp;"), page)
+        # Enregistrer : retour à la déclaration, sur la ligne dépliée ; la nature modifiée est prise en compte
+        donnees = {**self._donnees_fiche(lien), "ligne": "8"}
+        reponse = self.client.post(lien, donnees)
+        self.assertEqual(reponse.status_code, 302, getattr(reponse, "context", None) and reponse.context["adminform"].form.errors)
+        self.assertEqual(reponse["Location"], retour)
+        self.assertEqual(PieceComptable.objects.get(pk=p.pk).ligne, "8")
+        # même chose depuis la 2044
+        n = self._bien(self.foyer, "Pollionnay", regime_fiscal="nu")
+        PieceComptable.objects.create(bien=n, date=date(2025, 3, 1), fournisseur="AXA", libelle="PNO", montant=Decimal("142"), ligne="8")
+        self.assertIn("next=/comptabilite/2044/%3Fannee%3D2025%23ligne-8", self.client.get("/comptabilite/2044/?annee=2025").content.decode())
+        # liste des factures ouverte avec ?next= (cases des récapitulatifs) : la liste l'ignore comme filtre
+        # et la facture ouverte depuis cette liste ramène à la page d'origine
+        liste = self.client.get("/admin/patrimoine/piececomptable/?compta=foncier&next=/comptabilite/2031/")
+        self.assertEqual(liste.status_code, 200)
+        filtres = "_changelist_filters=compta%3Dfoncier%26next%3D%2Fcomptabilite%2F2031%2F"
+        reponse = self.client.post(f"/admin/patrimoine/piececomptable/{p.pk}/change/?{filtres}", donnees)
+        self.assertEqual(reponse["Location"], "/comptabilite/2031/")
+        # « Enregistrer et continuer » reste sur la fiche
+        reponse = self.client.post(lien, {**donnees, "_continue": "1"})
+        self.assertTrue(reponse["Location"].startswith(f"/admin/patrimoine/piececomptable/{p.pk}/change/"))
+
     def test_formulaire_du_bien(self):
         from . import regimes
 

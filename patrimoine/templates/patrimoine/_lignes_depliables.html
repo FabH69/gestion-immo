@@ -33,6 +33,13 @@ document.addEventListener("DOMContentLoaded", function () {
       if (tb && tb.classList.contains("a-detail")) basculer(tb, !tb.classList.contains("ouvert"));
     });
   });
+  // retour d'une fiche ouverte depuis le détail (#ligne-9) : la ligne se rouvre
+  var m = location.hash.match(/^#ligne-([\w]+)$/);
+  if (m) {
+    var cibles = document.querySelectorAll('.depliable tbody.a-detail[data-ligne="' + m[1] + '"]');
+    cibles.forEach(function (tb) { basculer(tb, true); });
+    if (cibles.length) cibles[0].scrollIntoView({block: "center"});
+  }
   document.querySelectorAll(".barre-deplier [data-tout]").forEach(function (b) {
     b.addEventListener("click", function () {
       document.querySelectorAll(".depliable tbody.a-detail").forEach(function (tb) { basculer(tb, b.dataset.tout === "1"); });

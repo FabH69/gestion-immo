@@ -1,5 +1,5 @@
 {% extends "admin/base_site.html" %}
-{% block breadcrumbs %}<div class="breadcrumbs"><a href="{% url 'admin:index' %}">Accueil</a> › <a href="{% url 'admin:patrimoine_pret_changelist' %}">Prêts</a> › <a href="{{ retour }}">{{ pret }}</a> › Tableau de la banque</div>{% endblock %}
+{% block breadcrumbs %}<div class="breadcrumbs"><a href="{% url 'admin:index' %}">Accueil</a> › <a href="{% url 'admin:patrimoine_pret_changelist' %}">Prêts</a> › <a href="{{ fiche_pret }}">{{ pret }}</a> › Tableau de la banque</div>{% endblock %}
 {% block content %}
 <div class="module aligned" style="max-width:720px;padding:16px 18px">
   <p>Déposez le tableau d'amortissement envoyé par la banque (PDF du Crédit Mutuel ou de la Caisse d'Épargne). Chaque échéance

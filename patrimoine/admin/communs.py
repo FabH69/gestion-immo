@@ -71,10 +71,19 @@ admin.ModelAdmin.message_user = _message_user_libelles
 
 # Retour à la page d'où l'on vient : un lien « …/add/?next=/admin/ » (ex. « + Rappel » de l'accueil) ramène à cette page
 # après « Enregistrer », au lieu de la liste de l'écran.
+# Le paramètre suit aussi une fiche ouverte depuis une liste elle-même ouverte avec ?next= (ex. une case du récapitulatif
+# LMNP → liste des factures filtrée → facture) : il voyage dans _changelist_filters, et la liste l'ignore comme filtre.
+from django.contrib.admin.views import main as _main  # noqa: E402
+
+_main.IGNORED_PARAMS = (*_main.IGNORED_PARAMS, "next")
+
+
 def _page_d_origine(request):
+    from django.http import QueryDict
     from django.utils.http import url_has_allowed_host_and_scheme
 
-    suite = request.GET.get("next") or request.POST.get("next")
+    suite = request.GET.get("next") or request.POST.get("next") \
+        or QueryDict(request.GET.get("_changelist_filters", "")).get("next")
     if suite and url_has_allowed_host_and_scheme(suite, allowed_hosts={request.get_host()}, require_https=request.is_secure()):
         return suite
     return None

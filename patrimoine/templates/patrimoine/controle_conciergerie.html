@@ -56,8 +56,8 @@
 <section class="module carte-compta">
   <h2>Enregistrée en comptabilité {{ libelle_regime }}</h2>
   <ul class="pieces-liees">
-    <li><a href="{% url 'admin:patrimoine_piececomptable_change' piece.pk %}">{{ piece.get_rubrique_display }} : {{ piece.montant|euros:2 }}</a>{% if piece.preremplie %} <span class="pill orange">à répartir</span>{% endif %}</li>
-    {% for p in pieces_liees %}<li><a href="{% url 'admin:patrimoine_piececomptable_change' p.pk %}">{{ p.get_rubrique_display }} : {{ p.montant|euros:2 }}</a></li>{% endfor %}
+    <li>{% url 'admin:patrimoine_piececomptable_change' piece.pk as lien_piece %}<a href="{% avec_retour lien_piece %}">{{ piece.get_rubrique_display }} : {{ piece.montant|euros:2 }}</a>{% if piece.preremplie %} <span class="pill orange">à répartir</span>{% endif %}</li>
+    {% for p in pieces_liees %}<li>{% url 'admin:patrimoine_piececomptable_change' p.pk as lien_p %}<a href="{% avec_retour lien_p %}">{{ p.get_rubrique_display }} : {{ p.montant|euros:2 }}</a></li>{% endfor %}
   </ul>
   <p class="aide-compta">Dans le récapitulatif, ces montants remplacent pour {{ mois|date:"F Y"|default:"ce mois" }} l'estimation tirée des réservations.</p>
 </section>
