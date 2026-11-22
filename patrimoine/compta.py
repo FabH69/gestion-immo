@@ -278,7 +278,7 @@ def recap_2044(annee):
     from .annexe2072 import colonne, sous_lignes
 
     colonnes = [colonne(b, annee) for b in biens_2044().filter(Q(vendu=False) | Q(date_vente__year__gte=annee)).order_by("nom")]
-    lignes = [{"numero": n, "libelle": l, "genre": g, "detail": sous_lignes(colonnes, code, annee) if g != "total" else [],
+    lignes = [{"numero": n, "code": code, "libelle": l, "genre": g, "detail": sous_lignes(colonnes, code, annee) if g != "total" else [],
                "montants": [c["valeurs"].get(code, ZERO) for c in colonnes],
                "total": sum((c["valeurs"].get(code, ZERO) for c in colonnes), ZERO)} for n, l, code, g in LIGNES_2044]
     return {"colonnes": colonnes, "lignes": lignes}

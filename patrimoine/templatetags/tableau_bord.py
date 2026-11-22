@@ -606,3 +606,16 @@ def note_rapide(context):
     if user is None or not user.is_authenticated:
         return None
     return NoteRapide.objects.filter(utilisateur=user).first()
+
+
+@register.simple_tag(takes_context=True)
+def avec_retour(context, url, ancre=""):
+    """Lien vers une fiche ou une liste qui ramène à la page affichée après « Enregistrer » (?next=…), avec une ancre
+    facultative (ex. « ligne-9 » : la ligne de la déclaration se rouvre au retour)."""
+    from urllib.parse import quote
+
+    request = context.get("request")
+    if not url or request is None:
+        return url
+    ici = request.get_full_path() + (f"#{ancre}" if ancre else "")
+    return f"{url}{'&' if '?' in url else '?'}next={quote(ici, safe='/')}"

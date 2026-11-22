@@ -8,13 +8,13 @@
   </thead>
   {% if not depliable %}<tbody>{% endif %}
     {% for l in page.lignes %}
-      {% if depliable %}<tbody class="{% if l.detail %}a-detail{% endif %}">{% endif %}
+      {% if depliable %}<tbody class="{% if l.detail %}a-detail{% endif %}" data-ligne="{{ l.code }}">{% endif %}
       {% if l.genre == "titre" %}
         <tr class="titre"><td></td><td colspan="7">{{ l.libelle }}</td></tr>
       {% else %}
         <tr class="{{ l.genre }}{% if l.code == '9b' %} dont{% endif %}{% if depliable and l.genre != 'total' %} principale{% endif %}"><td class="num">{% if depliable and l.detail %}<button type="button" class="deplier" aria-expanded="false" aria-label="Voir le détail de la ligne {{ l.numero }}">▸</button>{% endif %}{{ l.numero }}</td><td class="libelle">{{ l.libelle }}{% if depliable and l.detail %} <span class="nb">{{ l.detail|length }}</span>{% endif %}</td>
           {% for m in l.montants %}<td class="montant">{% if m %}{{ m|euros }}{% endif %}</td>{% endfor %}{% for v in page.vides %}<td class="montant"></td>{% endfor %}</tr>
-        {% if depliable %}{% for d in l.detail %}<tr class="sous"><td class="num"></td><td class="libelle">{% include "patrimoine/_sous_ligne_libelle.html" %}</td>
+        {% if depliable %}{% for d in l.detail %}<tr class="sous"><td class="num"></td><td class="libelle">{% include "patrimoine/_sous_ligne_libelle.html" with ancre="ligne-"|add:l.code %}</td>
           {% for m in d.montants %}<td class="montant">{% if m is not None %}{{ m|euros:2 }}{% endif %}</td>{% endfor %}{% for v in page.vides %}<td class="montant"></td>{% endfor %}</tr>{% endfor %}{% endif %}
       {% endif %}
       {% if depliable %}</tbody>{% endif %}

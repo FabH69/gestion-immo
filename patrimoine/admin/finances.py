@@ -117,7 +117,10 @@ class PretAdmin(admin.ModelAdmin):
         pret = Pret.objects.select_related("bien").filter(pk=pk).first()
         if not pret:
             return redirect("admin:patrimoine_pret_changelist")
-        retour = reverse("admin:patrimoine_pret_change", args=[pk])
+        from .communs import _page_d_origine
+
+        # ouvert depuis une déclaration (?next=) : retour à la déclaration après l'import ou « Annuler »
+        retour = _page_d_origine(request) or reverse("admin:patrimoine_pret_change", args=[pk])
         if request.method == "POST":
             if request.POST.get("action") == "calcul":
                 n = pret.lignes.count()
@@ -129,7 +132,7 @@ class PretAdmin(admin.ModelAdmin):
             if not lignes:
                 messages.error(request, "Aucune échéance n'a pu être lue dans ce fichier. S'il s'agit d'un scan (photo ou PDF "
                                         "numérisé), il ne contient pas de texte : transmettez-le pour une saisie manuelle.")
-                return redirect(request.path)
+                return redirect(request.get_full_path())
             erreurs = ta.anomalies(lignes)
             if request.POST.get("action") == "remplacer_debut" and pret.lignes.exists():
                 # avenant : on garde les échéances passées avant le nouveau tableau
@@ -148,7 +151,7 @@ class PretAdmin(admin.ModelAdmin):
                 messages.success(request, message)
             return redirect(retour)
         return render(request, "admin/patrimoine/pret/tableau.html", {
-            **self.admin_site.each_context(request), "pret": pret, "retour": retour, "nb_lignes": pret.lignes.count(),
+            **self.admin_site.each_context(request), "pret": pret, "retour": retour, "fiche_pret": reverse("admin:patrimoine_pret_change", args=[pk]), "nb_lignes": pret.lignes.count(),
             "title": f"Tableau d'amortissement de la banque – {pret}", "opts": self.model._meta})
 
 
