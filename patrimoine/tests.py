@@ -1006,6 +1006,24 @@ class LocationCourteDureeTests(TestCase):
         page = self.client.get(f"/location-courte-duree/?lot={self.lot.pk}&annee=2025&mois=2").content.decode()
         self.assertIn("Comparaison avec 2024", page)
         self.assertIn("Taux de remplissage", page)
+        # Seul le cumul est comparé : plus de colonnes pour le mois seul
+        self.assertIn("cumul à fin 02/2025", page)
+        self.assertNotIn('text-align:center">02/2025<', page)
+
+        # « Charges mensuelles » se déplie par nature ; reprise du détail de l'Excel de suivi
+        from .models import ChargeLCD
+        ChargeLCD.objects.create(lot=self.lot, libelle="Charges", montant_mensuel=214)
+        r = self.client.post("/location-courte-duree/?annee=2025", {"lot": self.lot.pk, "action": "charges_excel"})
+        self.assertEqual(r.status_code, 302)
+        self.assertFalse(ChargeLCD.objects.filter(lot=self.lot, libelle="Charges").exists())
+        mois = lcd.suivi_annuel(self.lot, 2025)
+        self.assertEqual(mois[0]["charges"], Decimal("211.96"))  # 80 + 29 + 25,99 + 11,90 + 32,90 + 32,17
+        self.assertEqual(lcd.suivi_annuel(self.lot, 2026)[0]["charges"], Decimal("213.57"))  # taxe foncière 2026
+        natures = {libelle: total for libelle, _, total in lcd.charges_par_nature(mois)}
+        self.assertEqual((natures["Électricité"], natures["Eau"], natures["Internet (fibre)"]), (Decimal(960), Decimal(348), Decimal("311.88")))
+        page = self.client.get(f"/location-courte-duree/?lot={self.lot.pk}&annee=2025").content.decode()
+        self.assertIn('class="nature-charge" hidden><td>Électricité</td>', page)
+        self.assertIn("Reprendre les charges de mon Excel de suivi", page)
 
 
 class PeriodiciteRappelsTests(TestCase):

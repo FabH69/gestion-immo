@@ -21,13 +21,21 @@ table.suivi td.total, table.suivi th.total { background: var(--darkened-bg); fon
 .neg { color: #c62828; }
 .pos { color: #2e7d32; }
 .aide { font-size: .8rem; color: var(--body-quiet-color); }
+table.suivi tr.depliable { cursor: pointer; }
+table.suivi tr.depliable:hover td { background: var(--darkened-bg); }
+table.suivi tr.depliable .fleche { display: inline-block; transition: transform .15s; color: var(--body-quiet-color); }
+table.suivi tr.depliable.ouvert .fleche { transform: rotate(90deg); }
+table.suivi tr.nature-charge td { color: var(--body-quiet-color); font-size: .78rem; }
+table.suivi tr.nature-charge td:first-child { padding-left: 22px; }
+.reprise-excel { display: inline; }
+.reprise-excel button { font-size: .78rem; }
 </style>{% endblock %}
 {% block content %}
 <div class="carte">
   <form method="get" class="barre">
     <div><label for="lot">Logement</label><select id="lot" name="lot" onchange="this.form.submit()">{% for l in lots %}<option value="{{ l.pk }}"{% if l == lot %} selected{% endif %}>{{ l }}</option>{% endfor %}</select></div>
     <div><label>Année</label>{% boutons_annees annees annee %}<input type="hidden" name="annee" value="{{ annee }}"></div>
-    {% if lot %}<div><label for="mois">Mois comparé à l'an dernier</label><select id="mois" name="mois" onchange="this.form.submit()">{% for m in mois %}<option value="{{ m.mois }}"{% if m.mois == mois_ref %} selected{% endif %}>{{ m.mois }}/{{ annee }}</option>{% endfor %}</select></div>{% endif %}
+    {% if lot %}<div><label for="mois">Cumul comparé jusqu'à fin</label><select id="mois" name="mois" onchange="this.form.submit()">{% for m in mois %}<option value="{{ m.mois }}"{% if m.mois == mois_ref %} selected{% endif %}>{{ m.mois }}/{{ annee }}</option>{% endfor %}</select></div>{% endif %}
   </form>
 </div>
 
@@ -89,12 +97,18 @@ table.suivi td.total, table.suivi th.total { background: var(--darkened-bg); fon
     <tr><td>Prix moyen / nuit</td>{% for m in mois %}<td>{{ m.prix_nuit|floatformat:0 }}</td>{% endfor %}<td class="total">{{ total.prix_nuit|floatformat:0 }}</td></tr>
     <tr class="section"><td colspan="14">Dépenses</td></tr>
     <tr><td>Ménage, consommables, conciergerie</td>{% for m in mois %}<td>{{ m.gestion|negatif }}</td>{% endfor %}<td class="total">{{ total.gestion|negatif }}</td></tr>
-    <tr><td>Charges mensuelles</td>{% for m in mois %}<td>{{ m.charges|negatif }}</td>{% endfor %}<td class="total">{{ total.charges|negatif }}</td></tr>
+    <tr id="charges" class="{% if charges_natures %}depliable{% endif %}"{% if charges_natures %} onclick="this.classList.toggle('ouvert');document.querySelectorAll('tr.nature-charge').forEach(function(l){l.hidden=!l.hidden})" title="Cliquer pour voir le détail par nature"{% endif %}><td>{% if charges_natures %}<span class="fleche">▸</span> {% endif %}Charges mensuelles</td>{% for m in mois %}<td>{{ m.charges|negatif }}</td>{% endfor %}<td class="total">{{ total.charges|negatif }}</td></tr>
+    {% for libelle, valeurs, total_nature in charges_natures %}<tr class="nature-charge" hidden><td>{{ libelle }}</td>{% for v in valeurs %}<td>{% if v %}{{ v|negatif }}{% endif %}</td>{% endfor %}<td class="total">{{ total_nature|negatif }}</td></tr>
+    {% endfor %}
     <tr class="fort"><td>Résultat avant prêt</td>{% for m in mois %}<td class="{% if m.resultat < 0 %}neg{% endif %}">{{ m.resultat|floatformat:0 }}</td>{% endfor %}<td class="total">{{ total.resultat|floatformat:"0g" }}</td></tr>
     <tr><td>Prêt (assurance comprise)</td>{% for m in mois %}<td>{{ m.pret|negatif }}</td>{% endfor %}<td class="total">{{ total.pret|negatif }}</td></tr>
     <tr class="fort"><td>Cash-flow</td>{% for m in mois %}<td class="{% if m.cash_flow < 0 %}neg{% else %}pos{% endif %}">{{ m.cash_flow|floatformat:0 }}</td>{% endfor %}<td class="total {% if total.cash_flow < 0 %}neg{% else %}pos{% endif %}">{{ total.cash_flow|floatformat:"0g" }}</td></tr>
   </table></div>
-  <p class="aide">Le prêt est celui rattaché au bien dans Finances › Prêts. Montants en euros.</p>
+  <p class="aide">Le prêt est celui rattaché au bien dans Finances › Prêts. Montants en euros. Cliquez sur « Charges mensuelles » pour voir le détail par nature (<a href="{% url 'admin:patrimoine_chargelcd_changelist' %}?lot__id__exact={{ lot.pk }}">modifier les charges</a>).</p>
+  <form method="post" class="reprise-excel" onsubmit="return confirm('Remplacer les charges mensuelles de ce logement par celles de votre Excel de suivi ?\n\n{% for libelle, montant, debut, fin in charges_excel %}{{ libelle|escapejs }} : {{ montant }} €/mois{% if debut %} à partir du {{ debut|date:'d/m/Y' }}{% endif %}{% if fin %} jusqu\'au {{ fin|date:'d/m/Y' }}{% endif %}\n{% endfor %}')">{% csrf_token %}
+    <input type="hidden" name="lot" value="{{ lot.pk }}"><input type="hidden" name="action" value="charges_excel">
+    <button type="submit" class="button">Reprendre les charges de mon Excel de suivi</button>
+  </form>
 </div>
 {% else %}
 <div class="carte"><p>Aucun logement.</p></div>

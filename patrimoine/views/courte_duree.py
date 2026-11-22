@@ -35,6 +35,11 @@ def suivi_lcd(request):
     aujourdhui = timezone.localdate()
     annee = int(request.GET.get("annee") or aujourdhui.year)
 
+    if request.method == "POST" and lot and request.POST.get("action") == "charges_excel":
+        n = lcd.reprendre_charges_excel(lot)
+        messages.success(request, f"{lot} : charges mensuelles remplacées par le détail de l'Excel de suivi ({n} lignes).")
+        return redirect(f"{reverse('suivi_lcd')}?lot={lot.pk}&annee={annee}#charges")
+
     if request.method == "POST" and lot:
         fichiers = request.FILES.getlist("fichiers")
         if not fichiers:
@@ -56,11 +61,11 @@ def suivi_lcd(request):
         precedente = lcd.suivi_annuel(lot, annee - 1)
         mois_ref = int(request.GET.get("mois") or (aujourdhui.month if annee == aujourdhui.year else 12))
         contexte.update(
-            mois=mois, total=lcd.totaliser(mois),
+            mois=mois, total=lcd.totaliser(mois), charges_natures=lcd.charges_par_nature(mois),
+            charges_excel=[(libelle, montant, debut, fin) for libelle, montant, debut, fin in lcd.CHARGES_EXCEL],
             plateformes=lcd.PLATEFORMES.choices,
             mois_ref=mois_ref,
             comparaison=_comparaison_lcd([
-                (f"{mois_ref:02d}/{annee}", mois[mois_ref - 1], precedente[mois_ref - 1]),
                 (f"cumul à fin {mois_ref:02d}/{annee}", lcd.totaliser(mois, mois_ref), lcd.totaliser(precedente, mois_ref)),
             ]),
             parametres=getattr(lot, "parametres_lcd", None),
