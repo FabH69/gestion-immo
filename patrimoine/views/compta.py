@@ -9,6 +9,7 @@ from django.urls import reverse
 from django.utils import timezone
 
 from .. import compta, conciergerie
+from ..declarations import annee_fiscale
 from ..models import Lot, PieceComptable
 from .communs import _pdf
 
@@ -30,7 +31,7 @@ def onglets(regime, actif, request=None):
         if compta.biens_2044().exists():
             liste.append(("2044", "Récapitulatif 2044", reverse("recap_2044"), None))
     liste += [("factures", "Factures", factures, None),
-              ("codifier", "À codifier", factures + "&a_codifier=oui", compta.a_codifier(regime).count() or None)]
+              ("codifier", "À classer", factures + "&a_codifier=oui", compta.a_codifier(regime).count() or None)]
     if regime in compta.PAR_RUBRIQUE and lots_conciergerie(regime).exists():
         liste.append(("conciergerie", "Contrôle conciergerie", reverse("conciergerie_ajouter") + f"?compta={regime}", None))
     if regime == "lmnp":
@@ -51,7 +52,7 @@ def compta_recap(request, regime):
     if regime not in compta.PAR_RUBRIQUE:
         raise Http404
     aujourdhui = timezone.localdate()
-    annee = int(request.GET.get("annee") or aujourdhui.year)
+    annee = annee_fiscale(request)
     biens = list(compta.biens(regime, annee))
     bien = next((b for b in biens if str(b.pk) == request.GET.get("bien")), None)
     par_mois = request.GET.get("vue") == "mois"
@@ -70,7 +71,7 @@ def compta_recap(request, regime):
 def recap_2044(request):
     """Récapitulatif 2044 des biens en location nue en nom propre, au réel (Pollionnay)."""
     aujourdhui = timezone.localdate()
-    annee = int(request.GET.get("annee") or aujourdhui.year - (1 if aujourdhui.month < 6 else 0))
+    annee = annee_fiscale(request)
     contexte = {"annee": annee, "annees": _annees(), "onglets": onglets("foncier", "2044"), **compta.recap_2044(annee)}
     return render(request, "patrimoine/recap_2044.html",
                   {**admin.site.each_context(request), **contexte, "title": f"Récapitulatif 2044 – revenus {annee}"})
@@ -165,8 +166,47 @@ def regimes_fiscaux(request):
     from .. import regimes
 
     aujourdhui = timezone.localdate()
-    annee = int(request.GET.get("annee") or aujourdhui.year - (1 if aujourdhui.month < 6 else 0))
+    annee = annee_fiscale(request)
     contexte = {"annee": annee, "annees": _annees(), "en_cours": annee == aujourdhui.year, **regimes.synthese(annee),
                 "seuils_reference": regimes}
     return render(request, "patrimoine/regimes_fiscaux.html",
                   {**admin.site.each_context(request), **contexte, "title": f"Régimes fiscaux – revenus {annee}"})
+
+
+@staff_member_required
+def declarations(request):
+    """Comptabilité › Déclarations : une carte par cerfa ; « Déclaration effectuée le … » verrouille la saisie qui l'alimente."""
+    from datetime import datetime
+
+    from .. import declarations as decl, droits
+    from ..models import DeclarationFaite, Proprietaire
+
+    annee = decl.annee_fiscale(request)
+    if request.method == "POST":
+        annee = int(request.POST.get("annee") or annee)
+        retour = reverse("declarations") + f"?annee={annee}"
+        if request.POST.get("action") == "decocher":
+            d = get_object_or_404(DeclarationFaite, pk=request.POST.get("declaration"), active=True)
+            decl.decocher(d)
+            messages.success(request, f"{d.libelle_court} {d.annee} : case décochée, la saisie est de nouveau modifiable "
+                                      "(déclaration rectificative). La déclaration reste dans l'historique.")
+            return redirect(retour)
+        formulaire = request.POST.get("formulaire", "")
+        if formulaire not in DeclarationFaite.Formulaire.values:
+            raise Http404
+        proprietaire = get_object_or_404(Proprietaire, pk=request.POST["proprietaire"]) if request.POST.get("proprietaire") else None
+        try:
+            le = datetime.strptime(request.POST.get("date", ""), "%Y-%m-%d").date()
+        except ValueError:
+            messages.error(request, "Indiquez la date à laquelle la déclaration a été faite.")
+            return redirect(retour)
+        d = decl.cocher(formulaire, proprietaire.pk if proprietaire else None, annee, le)
+        messages.success(request, f"{d.libelle_court} {annee} déclarée le {le:%d/%m/%Y} : la saisie qui l'alimente est verrouillée.")
+        return redirect(retour)
+
+    acces = None if request.user.is_superuser else droits.niveaux(request.user)
+    contexte = {"annee": annee, "annees": _annees(), "cartes": decl.cartes(annee, acces), "aujourdhui": timezone.localdate(),
+                "lien_saisie": reverse("admin:patrimoine_piececomptable_changelist") + f"?annee={annee}",
+                "historique": DeclarationFaite.objects.exclude(annee=annee).filter(active=True).select_related("proprietaire")[:12]}
+    return render(request, "patrimoine/declarations.html",
+                  {**admin.site.each_context(request), **contexte, "title": f"Déclarations – revenus {annee}"})

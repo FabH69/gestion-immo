@@ -8,7 +8,7 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
 
     dependencies = [
-        ("patrimoine", "0067_attestation_pret"),
+        ("patrimoine", "0068_declaration_faite"),
         migrations.swappable_dependency(settings.AUTH_USER_MODEL),
     ]
 

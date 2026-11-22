@@ -22,7 +22,7 @@
   <span class="periode-compta">{{ periode }}</span>
 </div>
 {% for o in onglets %}{% if o.code == "codifier" and o.compte %}
-<p class="bandeau-compta orange">{{ o.compte }} facture{{ o.compte|pluralize }} à codifier : {{ o.compte|pluralize:"elle n'est,elles ne sont" }} pas encore dans le récapitulatif. <a href="{{ o.url }}">Codifier</a></p>
+<p class="bandeau-compta orange">{{ o.compte }} facture{{ o.compte|pluralize }} à classer : {{ o.compte|pluralize:"elle n'est,elles ne sont" }} pas encore dans le récapitulatif. <a href="{{ o.url }}">Classer</a></p>
 {% endif %}{% endfor %}
 <div class="mise-compta{% if par_mois %} mensuel{% endif %}">
   <section class="module etat-scroll tableau-compta">

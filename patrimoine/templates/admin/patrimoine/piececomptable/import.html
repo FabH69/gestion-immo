@@ -2,7 +2,7 @@
 {% block breadcrumbs %}<div class="breadcrumbs"><a href="{% url 'admin:index' %}">Accueil</a> › Comptabilité{% if libelle_regime %} › {{ libelle_regime }}{% endif %} › <a href="{{ lien_factures }}">Factures</a> › Ajouter</div>{% endblock %}
 {% block content %}
 <div class="module aligned" style="max-width:720px;padding:16px 18px">
-  <p>Sélectionnez ou glissez plusieurs factures d'un coup. Chacune devient une pièce <b>à codifier</b> :
+  <p>Sélectionnez ou glissez plusieurs factures d'un coup. Chacune devient une pièce <b>à classer</b> :
   vous complétez ensuite date, fournisseur, montant et {% if par_rubrique %}rubrique{% elif regime == "foncier" %}ligne 2072{% else %}ligne 2072 ou rubrique selon le bien{% endif %} directement dans le tableau, puis un seul clic sur <b>Enregistrer</b>.</p>
   {% if regime != "foncier" %}<p class="help">Une facture de conciergerie d'un logement en courte durée est reconnue toute seule : elle est contrôlée avec les réservations du mois, répartie en Commission, Ménage et Consommables, et le rapport de contrôle s'affiche.</p>{% endif %}
   <form method="post" enctype="multipart/form-data">{% csrf_token %}

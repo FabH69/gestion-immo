@@ -2,7 +2,7 @@
 {% load tableau_bord %}
 {% block extrastyle %}{{ block.super }}<style>{% include "patrimoine/_style_etat.css" %}</style>{% endblock %}
 {% block content_title %}{% endblock %}
-{% block breadcrumbs %}{% url 'admin:patrimoine_piececomptable_changelist' as factures %}<div class="breadcrumbs"><a href="{% url 'admin:index' %}">Accueil</a> › Comptabilité › <a href="{{ factures }}?compta=foncier">Revenus fonciers</a> › Récapitulatif 2044</div>{% endblock %}
+{% block breadcrumbs %}{% url 'admin:patrimoine_piececomptable_changelist' as factures %}<div class="breadcrumbs"><a href="{% url 'admin:index' %}">Accueil</a> › Comptabilité › <a href="{% url 'declarations' %}">Déclarations</a> › Récapitulatif 2044</div>{% endblock %}
 {% block content %}
 <div class="titre-liste titre-compta"><h1>Récapitulatif 2044 – revenus {{ annee }}</h1>
   <ul class="object-tools"><li><a href="{% url 'admin:patrimoine_piececomptable_import' %}?compta=foncier" class="addlink">Ajouter des factures</a></li></ul></div>
