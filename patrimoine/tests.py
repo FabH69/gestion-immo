@@ -3751,3 +3751,31 @@ class SaisieProprietaireRetenuTests(TestCase):
         page = self.client.get(f"{self.ajout}?proprietaire=tous").content.decode()
         self.assertIn("Immeuble A1", page)
         self.assertIn("Immeuble T1", page)
+
+
+class SaisieFenetreSelectionTests(TestCase):
+    """Saisie : les lignes cochées font apparaître une fenêtre Valider / Supprimer (la suppression passe par la confirmation)."""
+
+    def setUp(self):
+        from .models import PieceComptable
+
+        self.client.force_login(User.objects.create_superuser("admin", "a@example.com", "x"))
+        bien = Bien.objects.create(proprietaire=Proprietaire.objects.create(nom="SCI F", type=Proprietaire.Type.SCI_IR), nom="Immeuble F",
+                                   adresse="1 rue", code_postal="69000", ville="Lyon", comptabilite="foncier")
+        self.piece = PieceComptable.objects.create(bien=bien, date=date(2025, 2, 5), libelle="Facture plombier", montant=Decimal("180"))
+
+    def test_fenetre_et_actions(self):
+        page = self.client.get("/admin/patrimoine/piececomptable/?a_codifier=oui").content.decode()
+        self.assertIn('id="fenetre-selection"', page)
+        self.assertIn('id="fenetre-selection-annuler"', page)
+        self.assertIn('value="valider_preremplies"', page)
+        self.assertIn('value="delete_selected"', page)
+
+    def test_supprimer_apres_confirmation(self):
+        from .models import PieceComptable
+
+        # sans confirmation (« post »), Django affiche la page de confirmation et ne supprime rien
+        self.client.post("/admin/patrimoine/piececomptable/", {"action": "delete_selected", "_selected_action": [self.piece.pk]})
+        self.assertTrue(PieceComptable.objects.filter(pk=self.piece.pk).exists())
+        self.client.post("/admin/patrimoine/piececomptable/", {"action": "delete_selected", "post": "yes", "_selected_action": [self.piece.pk]})
+        self.assertFalse(PieceComptable.objects.filter(pk=self.piece.pk).exists())
