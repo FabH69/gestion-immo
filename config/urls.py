@@ -37,6 +37,7 @@ urlpatterns = [
     path("candidature/<str:jeton>/", views.candidature_publique, name="candidature_publique"),
     path("prive/<path:chemin>", views.fichier_prive, name="fichier_prive"),
     path("reglages/sauvegardes/", views.sauvegardes, name="sauvegardes"),
+    path("reglages/tables/", views.toutes_les_tables, name="toutes_les_tables"),
     path("modeles/champs/", views.liste_champs, name="liste_champs"),
     path("modeles/<int:pk>/bail/<int:bail_pk>/", views.remplir_modele, name="remplir_modele"),
     path("reglages/mails/test/", views.tester_mail, name="tester_mail"),

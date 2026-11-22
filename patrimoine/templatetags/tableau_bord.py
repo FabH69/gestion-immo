@@ -140,6 +140,9 @@ def icone(nom, taille=18):
 register.simple_tag(icone, name="icone")
 
 
+ADMIN = "admin"  # sous-lien réservé aux administrateurs
+
+
 def _menu():
     """Groupes du menu : (titre, [(icône, libellé, url, préfixes qui l'activent, sous-liens)])."""
     from django.urls import reverse as r
@@ -169,29 +172,33 @@ def _menu():
              [("Calendrier", r("lcd_calendrier")), ("Suivi mensuel", r("suivi_lcd")), ("Réservations", a("reservationlcd")),
               ("Charges mensuelles", a("chargelcd")), ("Frais de gestion", a("parametreslcd")), ("Comparatif location nue", r("comparatif_lcd"))]),
         ]),
-        ("Finances", [
-            ("invest", "Investissement", r("simulateurs:mes_simulations"),
-             [r("simulateurs:mes_simulations"), r("simulateurs:rentabilite")],
-             [("Mes simulations", r("simulateurs:mes_simulations")), ("Nouvelle simulation", r("simulateurs:rentabilite"))]),
-            ("encaissements", "Encaissements", r("suivi_encaissements"), [r("suivi_encaissements")], []),
+        ("Argent", [
+            ("encaissements", "Encaissements", r("suivi_encaissements"), [r("suivi_encaissements"), r("etat_loyers_encaisses")],
+             [("État des loyers encaissés", r("etat_loyers_encaisses"), "etats")]),
             ("prets", "Prêts et endettement", a("pret"), [a("pret"), r("etat_endettement")], []),
-            ("etats", "États", r("etat_loyers_encaisses"), [r("etat_loyers_encaisses"), r("plus_value")],
-             [("Loyers encaissés", r("etat_loyers_encaisses")), ("Simulation de plus-value", r("plus_value"))]),
-            ("euro", "Simulateurs", r("simulateurs:accueil"), [r("simulateurs:accueil")],
-             [(s.titre, r(s.nom_url)) for s in disponibles()]),
         ]),
         ("Comptabilité", _menu_compta()),
-        ("Outils", [
-            ("modeles", "Modèles", a("modeledocument"), [a("modeledocument"), a("modeleannonce"), r("liste_champs")],
-             [("Modèles location", a("modeledocument")), ("Annonces", a("modeleannonce")), ("Liste des champs", r("liste_champs"))]),
-            ("liens", "Sites utiles", a("siteutile"), [a("siteutile")], []),
-            ("import", "Import Excel", r("import_excel"), [r("import_excel")], []),
+        ("Investir", [
+            ("invest", "Simulations", r("simulateurs:accueil"),
+             [r("simulateurs:accueil"), r("simulateurs:mes_simulations"), r("simulateurs:rentabilite")],
+             [("Mes simulations", r("simulateurs:mes_simulations"), "investissement"),
+              ("Nouvelle simulation", r("simulateurs:rentabilite"), "investissement")]
+             + [(s.titre, r(s.nom_url)) for s in disponibles()]),
+            ("etats", "Plus-value", r("plus_value"), [r("plus_value")], []),
+        ]),
+        # Un seul menu en bas : les outils et les réglages (entrées de droits différents, filtrées une à une)
+        (None, [
             ("reglages", "Paramètres", r("sauvegardes"),
-             [r("sauvegardes"), a("parametresmail"), a("tachepardefaut"), "/admin/auth/", "/admin/password_change/"],
-             [("Sauvegardes", r("sauvegardes")), ("Mails (Gmail)", a("parametresmail")), ("Tâches entrée / sortie", a("tachepardefaut")),
-              ("Utilisateurs", r("admin:auth_user_changelist")), ("Mot de passe", r("admin:password_change"))]),
-            ("balles", "Balles", r("balles:accueil"), [], []),
-            ("controles", "Contrôles", r("controles"), [r("controles")], []),
+             [a("modeledocument"), a("modeleannonce"), r("liste_champs"), a("siteutile"), r("import_excel"), r("controles"),
+              r("sauvegardes"), a("parametresmail"), a("tachepardefaut"), "/admin/auth/", "/admin/password_change/",
+              r("toutes_les_tables")],
+             [("Modèles location", a("modeledocument"), "outils"), ("Modèles d'annonces", a("modeleannonce"), "outils"),
+              ("Liste des champs", r("liste_champs"), "outils"), ("Sites utiles", a("siteutile"), "outils"),
+              ("Import Excel", r("import_excel"), "biens"), ("Contrôles", r("controles"), "outils"),
+              ("Balles", r("balles:accueil"), "balles"),
+              ("Sauvegardes", r("sauvegardes"), ADMIN), ("Mails (Gmail)", a("parametresmail"), ADMIN),
+              ("Tâches entrée / sortie", a("tachepardefaut"), ADMIN), ("Utilisateurs", r("admin:auth_user_changelist"), ADMIN),
+              ("Mot de passe", r("admin:password_change"), ADMIN), ("Toutes les tables", r("toutes_les_tables"))]),
         ]),
     ]
 
@@ -280,15 +287,11 @@ def menu_lateral(context):
                       "candidatures": "relocation", "annonces": "relocation", "cles": "relocation", "lcd": "lcd",
                       "encaissements": "finances", "prets": "finances", "etats": "etats",
                       "foncier": "compta", "lmnp": "compta", "societe": "compta", "regimes": "compta",
-                      "rappels": "outils", "modeles": "outils", "liens": "outils", "balles": "balles", "controles": "outils",
-                      "invest": "investissement",
-                      "import": "biens"}
+                      "rappels": "outils"}
     groupes, actif_trouve = [], False
     for titre, liens in _menu():
         lignes = []
         for ico, libelle, url, prefixes, sous in liens:
-            if ico == "reglages" and not (user and user.is_superuser):
-                continue  # Paramètres : administrateurs seulement ; le mot de passe reste accessible dans le menu du compte
             if ico in module_du_lien and not acces.get(module_du_lien[ico]):
                 continue
             actif = any(_correspond(p, chemin, params) for p in prefixes)
@@ -299,18 +302,26 @@ def menu_lateral(context):
                 from patrimoine import regimes
 
                 pastille = regimes.nombre_alertes_rouges()  # incohérences entre régime, propriétaire et lots
-            if ico == "controles":
-                from patrimoine import controles
-
-                pastille = controles.nombre_a_traiter(user)  # contrôles qui ont au moins une ligne
             sous_liens = [{"libelle": s[0], "url": s[1], "actif": _correspond(s[1], chemin, params)}
-                          for s in sous if len(s) < 3 or acces.get(s[2])]
+                          for s in sous if len(s) < 3 or acces.get(s[2]) or (s[2] == ADMIN and user is not None and user.is_superuser)]
+            if ico == "reglages":
+                # Paramètres : chacun n'y voit que ce que ses droits permettent ; on ouvre sur le premier lien visible
+                if not sous_liens:
+                    continue
+                if not any(s["url"] == url for s in sous_liens):
+                    url = sous_liens[0]["url"]
+                if acces.get("outils"):
+                    from patrimoine import controles
+
+                    pastille = controles.nombre_a_traiter(user)  # contrôles qui ont au moins une ligne
             lignes.append({"icone": icone(ico), "libelle": libelle, "url": url, "actif": actif and not actif_trouve,
-                           "pastille": pastille, "pastille_douce": ico in compta.REGIMES or ico == "controles", "sous": sous_liens})
+                           "pastille": pastille, "pastille_douce": ico in compta.REGIMES or ico == "reglages",
+                           "pastille_titre": "factures à codifier" if ico in compta.REGIMES else "contrôles à regarder" if ico == "reglages" else "",
+                           "sous": sous_liens})
             actif_trouve |= actif
         if lignes:
             groupes.append({"titre": titre, "liens": lignes})
-    return {"groupes": groupes, "user": context.get("user"), "liens_utiles": sites_utiles(),
+    return {"groupes": groupes, "user": context.get("user"), "liens_utiles": sites_utiles() if acces.get("outils") else [], "sites_visibles": bool(acces.get("outils")),
             "csrf_token": context.get("csrf_token"), "mode_test": context.get("mode_test")}
 
 

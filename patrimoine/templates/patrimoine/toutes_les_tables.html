@@ -1,0 +1,22 @@
+{% extends "admin/base_site.html" %}
+{% block extrastyle %}{{ block.super }}<style>
+.tables-grille { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 16px; margin-top: 8px; }
+.tables-bloc { background: var(--body-bg); border: 1px solid var(--hairline-color); border-radius: 12px; padding: 14px 16px; }
+.tables-bloc h2 { margin: 0 0 8px; font-size: 15px; }
+.tables-bloc ul { list-style: none; margin: 0; padding: 0; }
+.tables-bloc li { list-style-type: none; margin: 0; padding: 5px 0; border-top: 1px solid var(--hairline-color); }
+.tables-bloc li:first-child { border-top: 0; }
+.tables-bloc .lecture { font-size: 12px; color: var(--body-quiet-color); margin-left: 6px; }
+</style>{% endblock %}
+{% block breadcrumbs %}<div class="breadcrumbs"><a href="{% url 'admin:index' %}">Accueil</a> › Paramètres › Toutes les tables</div>{% endblock %}
+{% block content_title %}<h1>Toutes les tables</h1><p class="sous-titre-page">Chaque table de l'application, pour l'ouvrir directement, même quand elle n'a pas d'entrée dans le menu.</p>{% endblock %}
+{% block content %}
+<div class="tables-grille">
+  {% for a in apps %}
+  <section class="tables-bloc">
+    <h2>{{ a.nom }}</h2>
+    <ul>{% for t in a.tables %}<li><a href="{{ t.admin_url }}">{{ t.name }}</a>{% if t.view_only %}<span class="lecture">lecture seule</span>{% endif %}</li>{% endfor %}</ul>
+  </section>
+  {% endfor %}
+</div>
+{% endblock %}
