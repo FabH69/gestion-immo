@@ -8,7 +8,7 @@ from django.utils import timezone
 from django.utils.html import format_html
 
 from .. import compta
-from ..models import AnneeCloturee, AttestationPret, DeclarationFaite, PieceComptable, Bien, Pret, Proprietaire
+from ..models import AnneeCloturee, AttestationPret, DeclarationFaite, DepenseRecurrente, PieceComptable, Bien, Pret, Proprietaire
 from .communs import euros_liste
 
 
@@ -309,13 +309,19 @@ class ACodifierFilter(admin.SimpleListFilter):
 
     def lookups(self, request, model_admin):
         nombre = compta.a_codifier(_regime(request) or None).count()
-        return [("oui", f"À classer ({nombre})" if nombre else "À classer"), ("non", "Classées")]
+        choix = [("oui", f"À classer ({nombre})" if nombre else "À classer"), ("non", "Classées")]
+        recurrentes = DepenseRecurrente.objects.filter(active=True).count()
+        if recurrentes:
+            choix.append(("recurrentes", f"Récurrentes ({recurrentes})"))
+        return choix
 
     def queryset(self, request, queryset):
         if self.value() == "oui":
             return queryset.filter(self.MANQUE)
         if self.value() == "non":
             return queryset.exclude(self.MANQUE)
+        if self.value() == "recurrentes":
+            return queryset.filter(recurrence__isnull=False)
         return queryset
 
 
@@ -439,6 +445,56 @@ class PieceComptableForm(forms.ModelForm):
         return f
 
 
+@admin.register(DepenseRecurrente)
+class DepenseRecurrenteAdmin(admin.ModelAdmin):
+    """Dépenses qui reviennent : chaque échéance passée devient une facture déjà classée dans la saisie."""
+    list_display = ["fournisseur", "libelle", "bien", "montant_affiche", "frequence", "prochaine_echeance", "nb_factures", "active"]
+    list_filter = ["active", "frequence", "bien__proprietaire", "bien"]
+    search_fields = ["fournisseur", "libelle", "bien__nom"]
+    fieldsets = [(None, {"fields": ["bien", ("fournisseur", "montant"), "libelle", ("ligne", "rubrique"), "frequence",
+                                    ("premiere_echeance", "fin"), "active"],
+                         "description": "La facture de chaque échéance passée est créée toute seule dans la saisie, déjà classée "
+                                        "(ligne 2072 pour les revenus fonciers, rubrique en LMNP ou en société). Rien n'est ajouté "
+                                        "à une année déclarée. Une facture supprimée à la main n'est pas recréée."})]
+
+    @admin.display(description="montant", ordering="montant")
+    def montant_affiche(self, obj):
+        return euros_liste(obj.montant)
+
+    @admin.display(description="prochaine échéance")
+    def prochaine_echeance(self, obj):
+        d = obj.prochaine(timezone.localdate()) if obj.active else None
+        return f"{d:%d/%m/%Y}" if d else "–"
+
+    @admin.display(description="factures créées")
+    def nb_factures(self, obj):
+        n = obj.pieces.count()
+        if not n:
+            return "0"
+        url = reverse("admin:patrimoine_piececomptable_changelist") + f"?a_codifier=recurrentes&q={obj.fournisseur}"
+        return format_html('<a href="{}">{}</a>', url, n)
+
+    def get_changeform_initial_data(self, request):
+        initial = super().get_changeform_initial_data(request)
+        bien = request.GET.get("bien") or request.session.get("saisie_bien")
+        if bien and str(bien).isdigit() and "bien" not in initial:
+            initial["bien"] = bien
+        initial.setdefault("premiere_echeance", timezone.localdate())
+        return initial
+
+    def save_model(self, request, obj, form, change):
+        if change and {"premiere_echeance", "frequence"} & set(form.changed_data):
+            obj.generee_jusqua = None  # recalcul des échéances ; celles déjà créées ne sont pas doublées
+        super().save_model(request, obj, form, change)
+        n = obj.generer()
+        if n:
+            messages.info(request, f"{n} facture{'s' if n > 1 else ''} créée{'s' if n > 1 else ''} pour les échéances passées.")
+
+    def changelist_view(self, request, extra_context=None):
+        DepenseRecurrente.generer_toutes()
+        return super().changelist_view(request, extra_context)
+
+
 @admin.register(PieceComptable)
 class PieceComptableAdmin(admin.ModelAdmin):
     """Factures des trois comptabilités : la liste s'ouvre depuis le menu sur une entrée (?compta=foncier, lmnp ou societe)
@@ -478,7 +534,20 @@ class PieceComptableAdmin(admin.ModelAdmin):
             liste = self._liste_codifier(request)
             return liste[:1] + ["scinder"] + liste[1:]  # près du PDF : les dernières colonnes sortent de l'écran
         codif = {"foncier": "ligne_courte", "lmnp": "rubrique_courte", "societe": "rubrique_courte"}.get(_regime(request), "codification")
-        return ["date_affichee", "payee_le", "bien", "fournisseur", "libelle", codif, "montant_affiche", "piece", "scinder"]
+        # toutes les factures (hors dossier) : la déclaration où chacune compte
+        declaration = [] if _dossier(request) else ["declaration"]
+        return ["date_affichee", "payee_le", "bien"] + declaration + ["fournisseur", "libelle", codif, "montant_affiche", "piece", "scinder"]
+
+    @admin.display(description="déclaration")
+    def declaration(self, obj):
+        from .. import dossiers
+
+        if getattr(self, "_declarations", None) is None:
+            self._declarations = dossiers.declaration_des_biens()
+        d = self._declarations.get(obj.bien_id)
+        if not d:
+            return format_html('<span class="pill-decl ko" title="Régime fiscal du bien à renseigner">Hors dossier</span>')
+        return format_html('<a href="{}" class="pill-decl info">{}</a>', reverse("dossier_compta", args=[d["code"]]), dossiers.libelle_court(d))
 
     def get_ordering(self, request):
         # rangées par date de paiement (l'année fiscale), la date de la facture si le paiement n'est pas renseigné
@@ -631,8 +700,10 @@ class PieceComptableAdmin(admin.ModelAdmin):
                                         + (f"déjà importée pour {deja.bien.nom})" if deja else "en double dans cet envoi)"))
                         continue
                     numeros_vus.add(cle)
-                    piece = _piece_electronique(bien, f, empreinte, fmt, donnees,
-                                                analyser(fe.texte_pour_codifier(donnees), par_rubrique=bien.comptabilite in compta.PAR_RUBRIQUE))
+                    par_rubrique = bien.comptabilite in compta.PAR_RUBRIQUE
+                    propositions = {**analyser(fe.texte_pour_codifier(donnees), par_rubrique=par_rubrique),
+                                    **compta.code_du_fournisseur(donnees["fournisseur"], par_rubrique)}  # règle par fournisseur d'abord
+                    piece = _piece_electronique(bien, f, empreinte, fmt, donnees, propositions)
                     try:
                         piece.full_clean()
                     except ValidationError:
@@ -652,7 +723,10 @@ class PieceComptableAdmin(admin.ModelAdmin):
                     continue
                 piece = PieceComptable(empreinte=empreinte, bien=bien, libelle=Path(f.name).stem.replace("_", " ")[:200], fichier=f)
                 if texte:
-                    propositions = analyser(texte, par_rubrique=bien.comptabilite in compta.PAR_RUBRIQUE)
+                    par_rubrique = bien.comptabilite in compta.PAR_RUBRIQUE
+                    propositions = analyser(texte, par_rubrique=par_rubrique)
+                    # règle par fournisseur : la codification de ses factures déjà classées l'emporte sur les mots-clés
+                    propositions.update(compta.code_du_fournisseur(propositions.get("fournisseur"), par_rubrique))
                     for champ, valeur in propositions.items():
                         setattr(piece, champ, valeur)
                     if propositions:
@@ -888,6 +962,8 @@ class PieceComptableAdmin(admin.ModelAdmin):
         return initial
 
     def changelist_view(self, request, extra_context=None):
+        DepenseRecurrente.generer_toutes()  # factures des échéances passées des dépenses récurrentes
+        self._declarations = None  # colonne « Déclaration » : calculée une fois par affichage
         self._fermees = AnneeCloturee.annees()  # une seule requête pour toutes les lignes
         self._declares = DeclarationFaite.verrous()
         regime = _regime(request)

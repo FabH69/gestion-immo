@@ -218,8 +218,9 @@ def declarations(request):
 def compta_accueil(request):
     """Comptabilité › Mes dossiers : une carte par dossier, ce qui reste à faire et les dernières factures importées."""
     from .. import droits, dossiers
-    from ..models import DeclarationFaite
+    from ..models import DeclarationFaite, DepenseRecurrente
 
+    DepenseRecurrente.generer_toutes()  # les échéances passées comptent dans les cartes
     annee = annee_fiscale(request)
     acces = None if request.user.is_superuser else droits.niveaux(request.user)
     liste = dossiers.tous()

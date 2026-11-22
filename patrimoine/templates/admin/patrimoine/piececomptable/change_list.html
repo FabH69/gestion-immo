@@ -1,4 +1,5 @@
 {% extends "admin/patrimoine/change_list.html" %}
+{% load static %}
 {% block breadcrumbs %}{% if regime or dossier %}{% include "patrimoine/_fil_compta.html" with page_fil="Factures" %}{% else %}{{ block.super }}{% endif %}{% endblock %}
 {% block sous_titre %}{% if onglets %}{% include "patrimoine/_onglets_compta.html" %}{% endif %}
 {% if nb_a_saisir %}<p class="bandeau-compta orange"><b>{{ nb_a_saisir }} pièce{{ nb_a_saisir|pluralize }} à compléter</b> :
@@ -27,9 +28,39 @@ Saisissez montant, date et bien dans le tableau, puis « Enregistrer ma saisie �
 </style>
 {% endif %}{% endblock %}
 {% block object-tools-items %}
-  {# un seul bouton principal : l'import accepte une ou plusieurs factures, par glisser-déposer ; « À codifier » est un filtre, l'annexe 2072 est dans le menu #}
-  <li><a href="{{ lien_import }}" class="addlink">Ajouter des factures</a></li>
-  {% if has_add_permission %}<li class="lien-discret"><a href="{% url 'admin:patrimoine_piececomptable_add' %}">Saisie sans fichier</a></li>{% endif %}
+  {# un seul bouton « + Ajouter » : déposer des factures (glisser-déposer), saisir sans justificatif, dépense récurrente #}
+  <li class="menu-ajouter"><details>
+    <summary class="addlink">Ajouter</summary>
+    <ul role="menu">
+      <li><a href="{{ lien_import }}" role="menuitem"><b>Déposer des factures</b><span>PDF, photo ou facture électronique, une ou plusieurs</span></a></li>
+      {% if has_add_permission %}<li><a href="{% url 'admin:patrimoine_piececomptable_add' %}" role="menuitem"><b>Saisir sans justificatif</b><span>Frais bancaires, petite dépense sans facture</span></a></li>
+      <li><a href="{% url 'admin:patrimoine_depenserecurrente_add' %}" role="menuitem"><b>Dépense récurrente</b><span>Assurance, copropriété, abonnement : créée à chaque échéance</span></a></li>{% endif %}
+    </ul>
+  </details></li>
+  <li class="lien-discret"><a href="{% url 'admin:patrimoine_depenserecurrente_changelist' %}">Dépenses récurrentes</a></li>
+<style>
+.menu-ajouter { position: relative; }
+.menu-ajouter summary { list-style: none; line-height: 1.4; cursor: pointer; display: inline-block; border-radius: 999px; padding: 7px 14px 7px 26px; font-weight: 600; font-size: .8rem;
+  background: var(--object-tools-bg) url("{% static 'admin/img/tooltag-add.svg' %}") no-repeat 10px center; color: var(--object-tools-fg); }
+.menu-ajouter summary::-webkit-details-marker { display: none; }
+.menu-ajouter summary::after { content: " ▾"; }
+.menu-ajouter details[open] summary, .menu-ajouter summary:hover { background-color: var(--object-tools-hover-bg); color: #fff; }
+.menu-ajouter ul { position: absolute; z-index: 30; top: calc(100% + 6px); left: 0; min-width: 300px; margin: 0; padding: 6px; list-style: none;
+  background: var(--body-bg); border: 1px solid var(--border-color); border-radius: 12px; box-shadow: 0 8px 24px rgba(0,0,0,.12); }
+.object-tools .menu-ajouter ul li { list-style: none; margin: 0; float: none; height: auto; display: block; }
+.object-tools .menu-ajouter ul a, .object-tools .menu-ajouter ul a:link, .object-tools .menu-ajouter ul a:visited { float: none; line-height: 1.35; text-transform: none; letter-spacing: 0; display: block; padding: 8px 10px; border-radius: 8px; background: none; border: 0; box-shadow: none; color: var(--body-fg); text-decoration: none; font-weight: 400; }
+.object-tools .menu-ajouter ul a:hover { background: var(--selected-bg); }
+.menu-ajouter ul a b { display: block; font-size: .88rem; }
+.menu-ajouter ul a span { display: block; font-size: .78rem; color: var(--body-quiet-color); }
+.pill-decl { display: inline-block; border-radius: 999px; padding: 2px 9px; font-size: .75rem; font-weight: 600; white-space: nowrap; text-decoration: none; }
+.pill-decl.info { background: var(--darkened-bg); color: var(--body-fg) !important; border: 1px solid var(--border-color); }
+.pill-decl.ko { background: #fbe4e4; color: #a12b2b; }
+</style>
+<script>
+document.addEventListener("click", function (e) {  // un clic ailleurs referme le menu « Ajouter »
+  document.querySelectorAll(".menu-ajouter details[open]").forEach(function (d) { if (!d.contains(e.target)) d.removeAttribute("open"); });
+});
+</script>
 {% endblock %}
 {% block footer %}{{ block.super }}
 {% load static %}

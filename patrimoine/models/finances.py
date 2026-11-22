@@ -420,6 +420,9 @@ class PieceComptable(models.Model):
     fichier = models.FileField("facture (PDF, photo ou XML)", upload_to=_chemin_facture, storage=stockage_prive, blank=True,
                                validators=[FileExtensionValidator(["pdf", "jpg", "jpeg", "png", "heic", "xml"])])
     notes = models.TextField(blank=True)
+    recurrence = models.ForeignKey("DepenseRecurrente", null=True, blank=True, on_delete=models.SET_NULL, related_name="pieces",
+                                   editable=False, verbose_name="dépense récurrente",
+                                   help_text="Créée automatiquement par cette dépense récurrente")
     piece_mere = models.ForeignKey("self", null=True, blank=True, on_delete=models.CASCADE, related_name="parts", editable=False,
                                    verbose_name="facture scindée",
                                    help_text="Part d'une facture scindée sur plusieurs rubriques ou plusieurs biens "
@@ -522,3 +525,104 @@ class PieceComptable(models.Model):
     def annee(self):
         d = self.date_paiement or self.date
         return d.year if d else None
+
+
+def _ajouter_mois(d, n):
+    import calendar
+    from datetime import date
+
+    m = d.month - 1 + n
+    annee, mois = d.year + m // 12, m % 12 + 1
+    return date(annee, mois, min(d.day, calendar.monthrange(annee, mois)[1]))
+
+
+class DepenseRecurrente(models.Model):
+    """Dépense qui revient (assurance, taxe foncière, copropriété, abonnement) : la facture de chaque échéance passée
+    est créée toute seule dans la saisie, déjà classée. Rien n'est créé dans une année déclarée (saisie verrouillée)."""
+
+    class Frequence(models.TextChoices):
+        MENSUELLE = "mensuelle", "Chaque mois"
+        TRIMESTRIELLE = "trimestrielle", "Chaque trimestre"
+        ANNUELLE = "annuelle", "Chaque année"
+
+    PAS = {"mensuelle": 1, "trimestrielle": 3, "annuelle": 12}
+
+    bien = models.ForeignKey(Bien, on_delete=models.PROTECT, related_name="depenses_recurrentes")
+    fournisseur = models.CharField(max_length=150)
+    libelle = models.CharField("objet", max_length=200, blank=True, help_text="Ex. « Assurance PNO », « Taxe foncière »")
+    montant = models.DecimalField("montant TTC (€)", max_digits=10, decimal_places=2)
+    ligne = models.CharField("ligne de l'annexe 2072", max_length=4, choices=PieceComptable.Ligne.choices, blank=True,
+                             help_text="Revenus fonciers (SCI, nom propre)")
+    rubrique = models.CharField(max_length=15, choices=[(g, r) for g, r in PieceComptable.RUBRIQUES], blank=True,
+                                help_text="Biens en LMNP ou en société")
+    frequence = models.CharField("fréquence", max_length=15, choices=Frequence.choices, default=Frequence.MENSUELLE)
+    premiere_echeance = models.DateField("1re échéance", help_text="Date de la première facture ; les suivantes tombent le même jour")
+    fin = models.DateField("dernière échéance", null=True, blank=True, help_text="Vide : sans fin (jusqu'à ce que la dépense soit arrêtée)")
+    active = models.BooleanField(default=True, help_text="Décocher pour ne plus créer de facture (celles déjà créées restent)")
+    generee_jusqua = models.DateField("factures créées jusqu'au", null=True, blank=True, editable=False)
+
+    class Meta:
+        verbose_name = "dépense récurrente"
+        verbose_name_plural = "dépenses récurrentes"
+        ordering = ["bien__nom", "fournisseur"]
+
+    def __str__(self):
+        return f"{self.fournisseur} – {self.bien} – {self.montant} € ({self.get_frequence_display().lower()})"
+
+    def clean(self):
+        from django.core.exceptions import ValidationError
+
+        if self.bien_id:
+            par_rubrique = self.bien.comptabilite in ("lmnp", "societe")
+            if par_rubrique and not self.rubrique:
+                raise ValidationError({"rubrique": "Choisissez la rubrique (bien en LMNP ou en société)."})
+            if not par_rubrique and not self.ligne:
+                raise ValidationError({"ligne": "Choisissez la ligne de l'annexe 2072."})
+        if self.fin and self.premiere_echeance and self.fin < self.premiere_echeance:
+            raise ValidationError({"fin": "La dernière échéance est avant la première."})
+
+    def echeances(self, jusqua):
+        n, d = 0, self.premiere_echeance
+        limite = min(jusqua, self.fin) if self.fin else jusqua
+        while d <= limite:
+            yield d
+            n += 1
+            d = _ajouter_mois(self.premiere_echeance, n * self.PAS[self.frequence])
+
+    def prochaine(self, apres):
+        for d in self.echeances(_ajouter_mois(apres, 13)):
+            if d > apres:
+                return d
+        return None
+
+    def generer(self, jusqua=None):
+        """Crée les factures des échéances passées pas encore créées ; renvoie le nombre de factures créées."""
+        from django.core.exceptions import ValidationError
+        from django.utils import timezone
+
+        if not self.active:
+            return 0
+        jusqua = jusqua or timezone.localdate()
+        # une échéance n'est créée qu'une fois : une facture supprimée à la main ne revient pas
+        deja = set(self.pieces.values_list("date", flat=True))
+        creees = 0
+        for d in self.echeances(jusqua):
+            if d in deja or (self.generee_jusqua and d <= self.generee_jusqua):
+                continue
+            p = PieceComptable(bien=self.bien, date=d, fournisseur=self.fournisseur, libelle=self.libelle or self.fournisseur,
+                               montant=self.montant, ligne=self.ligne if not self.rubrique else "", rubrique=self.rubrique,
+                               recurrence=self, notes="Créée automatiquement (dépense récurrente).")
+            try:
+                p.full_clean()
+            except ValidationError:
+                continue  # année déclarée ou clôturée : rien n'est ajouté à la saisie verrouillée
+            p.save()
+            creees += 1
+        if self.generee_jusqua != jusqua and (not self.generee_jusqua or jusqua > self.generee_jusqua):
+            DepenseRecurrente.objects.filter(pk=self.pk).update(generee_jusqua=jusqua)
+            self.generee_jusqua = jusqua
+        return creees
+
+    @classmethod
+    def generer_toutes(cls, jusqua=None):
+        return sum(r.generer(jusqua) for r in cls.objects.filter(active=True).select_related("bien"))

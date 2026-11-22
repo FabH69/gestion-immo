@@ -114,6 +114,21 @@ def dossier_du_bien(bien_id, liste=None):
     return None
 
 
+def libelle_court(dossier):
+    """« 2072 · SCI ALFAB », « 2044 · Nom propre », « 2031 · LMNP », « Société · H-INVEST »."""
+    f = dossier["formulaire"]
+    return f"{'Société' if f == 'societe' else f} · {dossier['titre']}"
+
+
+def declaration_des_biens():
+    """{id du bien: dossier} pour la colonne « Déclaration » de la liste de toutes les factures."""
+    res = {}
+    for d in tous():
+        for pk in biens(d).values_list("pk", flat=True):
+            res.setdefault(pk, d)
+    return res
+
+
 def onglets(dossier, actif, annee):
     r = resume_liens(dossier, annee)
     liste = [("accueil", "Vue d'ensemble", r["url"]), ("factures", "Factures", r["lien_factures"]),

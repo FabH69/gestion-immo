@@ -237,13 +237,15 @@ def _menu_compta():
     prefixes = [r("compta_accueil") + "$", r("dossier_compta", args=["x"]).rsplit("x/", 1)[0], r("declarations"), r("recap_2044"),
                 r("annexe_2072"), r("compta_lmnp"), r("compta_societe"), r("biens_lmnp"), r("admin:patrimoine_chargelmnp_changelist")]
     prefixes += [f"{u}?dossier={d['code']}" for d in liste for u in (factures, importer)]
-    sous_saisie = [("Toutes les factures", factures), ("À classer", f"{factures}?a_codifier=oui"), ("Ajouter des factures", importer)]
+    recurrentes = r("admin:patrimoine_depenserecurrente_changelist")
+    sous_saisie = [("Toutes les factures", factures), ("À classer", f"{factures}?a_codifier=oui"), ("Ajouter des factures", importer),
+                   ("Dépenses récurrentes", recurrentes)]
     from patrimoine.views.compta import lots_conciergerie
 
     if lots_conciergerie().exists():
         sous_saisie.append(("Contrôle conciergerie", conciergerie))
     return [("dossiers", "Mes dossiers", r("compta_accueil"), prefixes, sous_dossiers + [("Toutes les déclarations", r("declarations"))]),
-            ("saisie", "Toutes les factures", factures, [factures, conciergerie], sous_saisie),
+            ("saisie", "Toutes les factures", factures, [factures, conciergerie, recurrentes], sous_saisie),
             ("evolution", "Évolution des dépenses", r("evolution_depenses"), [r("evolution_depenses")], []),
             ("regimes", "Réglages fiscaux", r("regimes_fiscaux"), [r("regimes_fiscaux")], [])]
 
