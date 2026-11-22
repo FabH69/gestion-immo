@@ -263,7 +263,7 @@ class LotAdmin(FicheMixin, admin.ModelAdmin):
     onglets = [
         ("general", "Général", [None, "Notes"], []),
         ("caracteristiques", "Caractéristiques", ["Caractéristiques (reprises dans le bail)", "Chaudière gaz", "Compteurs", "État des lieux"], []),
-        ("relocation", "Relocation et photos", ["Relocation et annonce"], ["PhotoInline"]),
+        ("relocation", "Location et photos", ["Location et annonce"], ["PhotoInline"]),
         ("baux", "Baux", [], ["BailInline"]),
         ("vente", "Vente", ["Vente"], []),
     ]
@@ -321,7 +321,7 @@ class LotAdmin(FicheMixin, admin.ModelAdmin):
                                                               "equipements", "annexes", "clause_particuliere"],
                                                    "description": "Le régime de copropriété, les équipements communs et la zone tendue se règlent sur la fiche du bien."}),
         ("Chaudière gaz", {"fields": [("chaudiere_gaz", "date_entretien_chaudiere")]}),
-        ("Relocation et annonce", {"fields": ["loyer_propose", ("classe_ges", "energie_annee"), ("energie_min", "energie_max"), "outils_relocation"]}),
+        ("Location et annonce", {"fields": ["loyer_propose", ("classe_ges", "energie_annee"), ("energie_min", "energie_max"), "outils_relocation"]}),
         ("État des lieux", {"fields": ["pieces"]}),
         ("Compteurs", {"fields": ["pdl"]}),
         ("Vente", {"fields": [("vendu", "date_vente")]}),
