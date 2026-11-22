@@ -8,7 +8,7 @@ from django.utils import timezone
 from django.utils.html import format_html
 
 from .. import compta
-from ..models import AnneeCloturee, AttestationPret, DeclarationFaite, PieceComptable, Bien, Pret
+from ..models import AnneeCloturee, AttestationPret, DeclarationFaite, PieceComptable, Bien, Pret, Proprietaire
 from .communs import euros_liste
 
 
@@ -210,6 +210,14 @@ def _regime(request):
     return valeur if valeur in compta.REGIMES else ""
 
 
+def _saisie_retenue(request):
+    """Dernier propriétaire (et bien) choisis dans la liste des factures, gardés en session pour l'ajout de factures.
+    ?proprietaire=tous sur la page d'ajout les ignore une fois (tous les biens)."""
+    if request.GET.get("proprietaire") == "tous":
+        return None, None
+    return Proprietaire.objects.filter(pk=request.session.get("saisie_proprietaire")).first(), request.session.get("saisie_bien")
+
+
 def _biens_comptables(regime=""):
     biens = Bien.objects.exclude(comptabilite="").select_related("proprietaire").order_by("proprietaire__nom", "nom")
     return biens.filter(comptabilite=regime) if regime else biens
@@ -331,10 +339,19 @@ class ImportFacturesForm(forms.Form):
                                          "Leurs données sont lues directement, sans ressaisie.",
                                widget=EntreeFichiersMultiples(attrs={"accept": ".pdf,.jpg,.jpeg,.png,.heic,.xml"}))
 
-    def __init__(self, *args, regime="", **kwargs):
+    def __init__(self, *args, regime="", proprietaire=None, bien_choisi=None, **kwargs):
         super().__init__(*args, **kwargs)
-        self.fields["bien"].queryset = _biens_comptables(regime)
+        biens = _biens_comptables(regime)
+        # dernier propriétaire choisi dans la liste des factures : seulement ses biens (tous s'il n'en a aucun ici)
+        if proprietaire and biens.filter(proprietaire=proprietaire).exists():
+            biens = biens.filter(proprietaire=proprietaire)
+        self.fields["bien"].queryset = biens
         self.fields["bien"].label_from_instance = lambda b: f"{b.proprietaire.nom} – {b.nom}"
+        ids = list(biens.values_list("pk", flat=True)[:2])
+        if bien_choisi in set(biens.values_list("pk", flat=True)):
+            self.fields["bien"].initial = bien_choisi
+        elif len(ids) == 1:
+            self.fields["bien"].initial = ids[0]
 
 
 class PieceComptableForm(forms.ModelForm):
@@ -539,7 +556,11 @@ class PieceComptableAdmin(admin.ModelAdmin):
         from .. import conciergerie
 
         regime = _regime(request) or request.POST.get("compta", "")
-        form = ImportFacturesForm(request.POST or None, request.FILES or None, regime=regime)
+        proprietaire, bien_choisi = _saisie_retenue(request)
+        if request.method == "POST":
+            proprietaire = None  # le bien envoyé est contrôlé parmi tous les biens
+        form = ImportFacturesForm(request.POST or None, request.FILES or None, regime=regime, proprietaire=proprietaire,
+                                  bien_choisi=bien_choisi)
         if request.method == "POST" and form.is_valid() and not request.FILES.getlist("fichiers"):
             form.add_error("fichiers", "Choisissez au moins une facture.")
         if request.method == "POST" and form.is_valid():
@@ -645,7 +666,9 @@ class PieceComptableAdmin(admin.ModelAdmin):
         return render(request, "admin/patrimoine/piececomptable/import.html",
                       {**self.admin_site.each_context(request), "form": form, "opts": self.model._meta, "regime": regime,
                        "libelle_regime": compta.libelle(regime) if regime else "", "title": "Ajouter des factures",
-                       "par_rubrique": regime in compta.PAR_RUBRIQUE,
+                       "par_rubrique": regime in compta.PAR_RUBRIQUE, "proprietaire_retenu": proprietaire,
+                       "lien_tous_les_biens": reverse("admin:patrimoine_piececomptable_import") + "?" + "&".join(
+                           x for x in (f"compta={regime}" if regime else "", "proprietaire=tous") if x),
                        "lien_factures": reverse("admin:patrimoine_piececomptable_changelist") + (f"?compta={regime}" if regime else "")})
 
     actions = ["valider_preremplies"]
@@ -811,10 +834,30 @@ class PieceComptableAdmin(admin.ModelAdmin):
     def get_queryset(self, request):
         return super().get_queryset(request).select_related("bien", "piece_mere")
 
+    def get_changeform_initial_data(self, request):
+        """Nouvelle facture : le bien choisi dans la liste, ou le seul bien du dernier propriétaire choisi."""
+        initial = super().get_changeform_initial_data(request)
+        if "bien" not in initial:
+            proprietaire, bien_choisi = _saisie_retenue(request)
+            biens = list(_biens_comptables().filter(proprietaire=proprietaire).values_list("pk", flat=True)) if proprietaire else []
+            if bien_choisi in biens:
+                initial["bien"] = bien_choisi
+            elif len(biens) == 1:
+                initial["bien"] = biens[0]
+        return initial
+
     def changelist_view(self, request, extra_context=None):
         self._fermees = AnneeCloturee.annees()  # une seule requête pour toutes les lignes
         self._declares = DeclarationFaite.verrous()
         regime = _regime(request)
+        # propriétaire et bien choisis dans les filtres : repris par « Ajouter des factures »
+        choisi = request.GET.get("bien__proprietaire__id__exact", "")
+        if choisi.isdigit():
+            if request.session.get("saisie_proprietaire") != int(choisi):
+                request.session.pop("saisie_bien", None)
+            request.session["saisie_proprietaire"] = int(choisi)
+        if request.GET.get("bien", "").isdigit():
+            request.session["saisie_bien"] = int(request.GET["bien"])
         lien_import = reverse("admin:patrimoine_piececomptable_import") + (f"?compta={regime}" if regime else "")
         extra_context = {**(extra_context or {}), "lien_2072": reverse("annexe_2072"), "lien_import": lien_import,
                          "regime": regime, "libelle_regime": compta.libelle(regime) if regime else "",
