@@ -5,12 +5,12 @@
       {% if g.titre %}<div class="menu-groupe">{{ g.titre }}</div>{% endif %}
       {% for l in g.liens %}
         <div class="menu-bloc{% if l.actif %} ouvert{% endif %}">
-        <a href="{{ l.url }}" class="menu-entree{% if l.actif %} actif{% endif %}">{{ l.icone }}<span>{{ l.libelle }}</span>{% if l.pastille %}<span class="menu-pastille{% if l.pastille_douce %} douce{% endif %}"{% if l.pastille_douce %} title="factures à codifier"{% endif %}>{{ l.pastille }}</span>{% endif %}</a>
+        <a href="{{ l.url }}" class="menu-entree{% if l.actif %} actif{% endif %}">{{ l.icone }}<span>{{ l.libelle }}</span>{% if l.pastille %}<span class="menu-pastille{% if l.pastille_douce %} douce{% endif %}"{% if l.pastille_titre %} title="{{ l.pastille_titre }}"{% endif %}>{{ l.pastille }}</span>{% endif %}</a>
         {% if l.sous %}<div class="menu-sous menu-sous-survol">{% for s in l.sous %}<a href="{{ s.url }}"{% if s.actif %} class="actif"{% endif %}>{{ s.libelle }}</a>{% endfor %}</div>{% endif %}
         </div>
-        {% if l.libelle == "Sites utiles" %}<div class="menu-sous menu-sites">{% for site in liens_utiles %}<a href="{{ site.url }}" target="_blank" rel="noopener">{{ site.nom }} ↗</a>{% endfor %}<a href="{% url 'admin:patrimoine_siteutile_add' %}" class="menu-ajout">+ Ajouter un site</a></div>{% endif %}
       {% endfor %}
     {% endfor %}
+    {% if sites_visibles %}<div class="menu-groupe">Sites utiles</div><div class="menu-sous menu-sites">{% for site in liens_utiles %}<a href="{{ site.url }}" target="_blank" rel="noopener">{{ site.nom }} ↗</a>{% endfor %}<a href="{% url 'admin:patrimoine_siteutile_add' %}" class="menu-ajout">+ Ajouter un site</a></div>{% endif %}
   </nav>
   {% if user.is_superuser and not mode_test %}<form method="post" action="{% url 'essai_entrer' %}" class="menu-mode-test">{% csrf_token %}<button type="submit" title="Ouvrir une base de test séparée, vierge, pour essayer sans toucher tes données">Mode test</button></form>{% endif %}
 <div class="menu-utilisateur">

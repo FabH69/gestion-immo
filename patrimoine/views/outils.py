@@ -303,3 +303,13 @@ def enregistrer_note(request):
     note.texte = request.POST.get("texte", "")[:20000]
     note.save()
     return JsonResponse({"ok": True, "heure": timezone.localtime(note.modifie_le).strftime("%H:%M")})
+
+
+@staff_member_required
+def toutes_les_tables(request):
+    """Paramètres › Toutes les tables : chaque table de l'application, rangée par module, pour y aller directement.
+    Comme l'accueil de l'administration : on ne voit que les tables que ses droits permettent d'ouvrir."""
+    apps = [{"nom": a["name"], "tables": sorted((m for m in a["models"] if m.get("admin_url")), key=lambda m: str(m["name"]).lower())}
+            for a in admin.site.get_app_list(request)]
+    return render(request, "patrimoine/toutes_les_tables.html", {
+        **admin.site.each_context(request), "title": "Toutes les tables", "apps": [a for a in apps if a["tables"]]})

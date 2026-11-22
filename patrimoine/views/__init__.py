@@ -70,6 +70,7 @@ from .outils import (  # noqa: F401
     tache_faite,
     telecharger_sauvegarde,
     tester_mail,
+    toutes_les_tables,
 )
 from .controles import controle_ignorer, controles  # noqa: F401
 from .depot import depot_bail  # noqa: F401

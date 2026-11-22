@@ -1195,6 +1195,30 @@ class MenusNovembreTests(TestCase):
         relocation = page.split("Relocation</div>")[1]
         self.assertLess(relocation.index("<span>Annonces</span>"), relocation.index("<span>Candidatures</span>"))
 
+    def test_menu_refondu(self):
+        menu = self.client.get("/admin/").content.decode().split('id="barre-laterale"')[1].split("</aside>")[0]
+        for groupe in ("Argent</div>", "Investir</div>", "Sites utiles</div>"):
+            self.assertIn(groupe, menu)
+        for ancien in ("Finances</div>", "Outils</div>", "<span>États</span>", "<span>Modèles</span>", "<span>Import Excel</span>"):
+            self.assertNotIn(ancien, menu)
+        self.assertIn("<span>Simulations</span>", menu)
+        self.assertIn("<span>Plus-value</span>", menu)
+        parametres = menu.split("<span>Paramètres</span>")[1].split("Sites utiles</div>")[0]
+        for lien in ("Modèles location", "Sites utiles", "Import Excel", "Contrôles", "Balles", "Sauvegardes", "Mails (Gmail)",
+                     "Utilisateurs", "Toutes les tables"):
+            self.assertIn(lien, parametres)
+        self.assertLess(menu.index("Investir</div>"), menu.index("<span>Paramètres</span>"))  # Paramètres tout en bas
+
+    def test_menu_parametres_reste_allume(self):
+        for url in ("/reglages/tables/", "/admin/patrimoine/modeledocument/", "/controles/", "/outils/import-excel/"):
+            menu = self.client.get(url).content.decode().split('id="barre-laterale"')[1].split("</aside>")[0]
+            self.assertIn("<span>Paramètres</span>", menu.split('menu-entree actif')[1].split("</a>")[0], url)
+
+    def test_toutes_les_tables(self):
+        page = self.client.get("/reglages/tables/").content.decode()
+        for table in ("/admin/patrimoine/bien/", "/admin/patrimoine/piececomptable/", "/admin/auth/user/"):
+            self.assertIn(table, page)
+
     def test_a_faire_hors_du_menu(self):
         menu = lambda url: self.client.get(url).content.decode().split('id="barre-laterale"')[1].split("</aside>")[0]
         self.assertNotIn("<span>À faire</span>", menu("/admin/"))
@@ -1949,7 +1973,25 @@ class DroitsTests(TestCase):
         self.assertContains(r, "Créer une quittance")
         self.assertNotContains(r, "Revenus fonciers")  # pas d'accès à la comptabilité
         self.assertNotContains(r, "Capital restant dû")
-        self.assertNotContains(r, "Paramètres")
+        menu = r.content.decode().split('id="barre-laterale"')[1].split("</aside>")[0]
+        parametres = menu.split("<span>Paramètres</span>")[1]  # visible : l'import Excel suit le droit « Biens »
+        self.assertIn("Import Excel", parametres)
+        for reserve in ("Sauvegardes", "Mails (Gmail)", "Utilisateurs", "Modèles location", "Balles"):
+            self.assertNotIn(reserve, parametres)
+
+    def test_menu_parametres_vide_masque(self):
+        from . import droits
+
+        droits.appliquer(self.user, {"loyers": droits.MODIFICATION})
+        menu = self.client.get("/admin/").content.decode().split('id="barre-laterale"')[1].split("</aside>")[0]
+        self.assertIn("Toutes les tables", menu)  # seul lien sans droit particulier : la liste suit les droits
+        self.assertNotIn("Sites utiles", menu)
+
+    def test_toutes_les_tables_suit_les_droits(self):
+        page = self.client.get("/reglages/tables/").content.decode()
+        self.assertIn("Toutes les tables", page)
+        self.assertIn("/admin/patrimoine/bien/", page)
+        self.assertNotIn("/admin/patrimoine/piececomptable/", page)  # pas de droit sur la comptabilité
 
     def test_ecran_utilisateurs(self):
         from django.contrib.auth.models import User
