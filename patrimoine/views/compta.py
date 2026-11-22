@@ -185,6 +185,8 @@ def declarations(request):
     if request.method == "POST":
         annee = int(request.POST.get("annee") or annee)
         retour = reverse("declarations") + f"?annee={annee}"
+        if request.POST.get("retour", "").startswith("/comptabilite/"):
+            retour = request.POST["retour"]  # case cochée depuis la page d'un dossier : on y revient
         if request.POST.get("action") == "decocher":
             d = get_object_or_404(DeclarationFaite, pk=request.POST.get("declaration"), active=True)
             decl.decocher(d)
@@ -210,3 +212,58 @@ def declarations(request):
                 "historique": DeclarationFaite.objects.exclude(annee=annee).filter(active=True).select_related("proprietaire")[:12]}
     return render(request, "patrimoine/declarations.html",
                   {**admin.site.each_context(request), **contexte, "title": f"Déclarations – revenus {annee}"})
+
+
+@staff_member_required
+def compta_accueil(request):
+    """Comptabilité › Mes dossiers : une carte par dossier, ce qui reste à faire et les dernières factures importées."""
+    from .. import droits, dossiers
+    from ..models import DeclarationFaite
+
+    annee = annee_fiscale(request)
+    acces = None if request.user.is_superuser else droits.niveaux(request.user)
+    liste = dossiers.tous()
+    cartes = [dossiers.resume(d, annee, acces) for d in liste]
+    ids_dossiers = {pk for d in liste for pk in dossiers.biens(d).values_list("pk", flat=True)}
+    a_saisir = compta.a_codifier().select_related("bien").order_by("-pk")
+    dossier_par_bien = {}
+    for d in liste:
+        for pk in dossiers.biens(d).values_list("pk", flat=True):
+            dossier_par_bien.setdefault(pk, d)
+    recentes = []
+    for p in a_saisir[:8]:
+        d = dossier_par_bien.get(p.bien_id)
+        lien = reverse("admin:patrimoine_piececomptable_change", args=[p.pk])
+        recentes.append({"piece": p, "dossier": d, "lien": lien + (f"?_changelist_filters=dossier%3D{d['code']}" if d else "")})
+    factures = reverse("admin:patrimoine_piececomptable_changelist")
+    manquantes = sum(1 for c in cartes for e in c["etapes"] if e["libelle"] == "Emprunts" and e["etat"] == "ko")
+    contexte = {
+        "annee": annee, "annees": _annees(), "cartes": cartes, "recentes": recentes,
+        "nb_a_saisir": a_saisir.count(), "lien_a_saisir": f"{factures}?a_codifier=oui",
+        "nb_hors_dossier": a_saisir.exclude(bien_id__in=ids_dossiers).count(), "attestations_manquantes": manquantes,
+        "carte_attestation": next((c for c in cartes for e in c["etapes"] if e["libelle"] == "Emprunts" and e["etat"] == "ko"), None),
+        "declarees": DeclarationFaite.objects.filter(annee=annee - 1, active=True).select_related("proprietaire"),
+        "lien_import": reverse("admin:patrimoine_piececomptable_import"),
+    }
+    return render(request, "patrimoine/compta_accueil.html",
+                  {**admin.site.each_context(request), **contexte, "title": "Mes dossiers comptables"})
+
+
+@staff_member_required
+def dossier_compta(request, code):
+    """Saisie d'un seul dossier : ses factures et ses biens, l'aperçu de sa déclaration, la case « Déclaration effectuée »."""
+    from .. import droits, dossiers
+
+    dossier = dossiers.trouver(code)
+    if dossier is None:
+        raise Http404
+    annee = annee_fiscale(request)
+    acces = None if request.user.is_superuser else droits.niveaux(request.user)
+    r = dossiers.resume(dossier, annee, acces)
+    contexte = {"annee": annee, "annees": _annees(), "d": r, "dossiers": dossiers.tous(), "aujourdhui": timezone.localdate(),
+                "pieces": dossiers.pieces(dossier, annee).order_by("-date_paiement", "-date", "-pk")[:15],
+                "nb_pieces": dossiers.pieces(dossier, annee).count(), "biens_dossier": dossiers.biens(dossier, annee),
+                "onglets": dossiers.onglets(dossier, "accueil", annee), "libelle_regime": dossier["titre"],
+                "retour": request.get_full_path()}
+    return render(request, "patrimoine/dossier_compta.html",
+                  {**admin.site.each_context(request), **contexte, "title": f"{dossier['titre']} · comptabilité {annee}"})

@@ -2354,7 +2354,7 @@ class ComptaEtConciergerieTests(TestCase):
         PieceComptable.objects.create(bien=self.bien, libelle="Sans rubrique", montant=Decimal("10"), date=date(2026, 1, 1))
         page = self.client.get("/comptabilite/lmnp/?annee=2026").content.decode()
         self.assertIn("Comptabilité LMNP", page)
-        self.assertIn('class="menu-entree actif"', page.split("Déclarations</span>")[0].rsplit("<a", 1)[1])
+        self.assertIn('class="menu-entree actif"', page.split("Mes dossiers</span>")[0].rsplit("<a", 1)[1])
         self.assertIn("Réglages fiscaux", page)
         self.assertIn("Commission", page)
         self.assertIn("1 facture à classer", page)
@@ -3744,15 +3744,17 @@ class DeclarationsTests(TestCase):
 
     def test_menu_en_trois_entrees(self):
         page = self.client.get("/admin/").content.decode()
-        for texte in ("Déclarations</span>", "Saisie</span>", "Réglages fiscaux</span>"):
+        for texte in ("Mes dossiers</span>", "Toutes les factures</span>", "Réglages fiscaux</span>"):
             self.assertIn(texte, page)
-        self.assertLess(page.index("Saisie</span>"), page.index("Déclarations</span>"))  # Saisie au-dessus
-        for ancien in ("Revenus fonciers</span>", "Régimes fiscaux</span>", "LMNP</span>"):
+        self.assertLess(page.index("Mes dossiers</span>"), page.index("Toutes les factures</span>"))
+        for ancien in ("Revenus fonciers</span>", "Régimes fiscaux</span>", "Déclarations</span>", "Saisie</span>"):
             self.assertNotIn(ancien, page)
         factures = self.client.get("/admin/patrimoine/piececomptable/").content.decode()
-        self.assertIn('class="menu-entree actif"', factures.split("Saisie</span>")[0].rsplit("<a", 1)[1])
-        recap = self.client.get("/comptabilite/2044/").content.decode()
-        self.assertIn('class="menu-entree actif"', recap.split("Déclarations</span>")[0].rsplit("<a", 1)[1])
+        self.assertIn('class="menu-entree actif"', factures.split("Toutes les factures</span>")[0].rsplit("<a", 1)[1])
+        for url in ("/comptabilite/2044/", "/comptabilite/", f"/comptabilite/dossier/2072-{self.sci.pk}/",
+                    f"/admin/patrimoine/piececomptable/?dossier=2072-{self.sci.pk}"):
+            page = self.client.get(url).content.decode()
+            self.assertIn('class="menu-entree actif"', page.split("Mes dossiers</span>")[0].rsplit("<a", 1)[1], url)
 
     def test_annee_choisie_une_fois(self):
         self.client.get("/comptabilite/declarations/?annee=2024")
@@ -3830,3 +3832,60 @@ class SaisieFenetreSelectionTests(TestCase):
         self.assertTrue(PieceComptable.objects.filter(pk=self.piece.pk).exists())
         self.client.post("/admin/patrimoine/piececomptable/", {"action": "delete_selected", "post": "yes", "_selected_action": [self.piece.pk]})
         self.assertFalse(PieceComptable.objects.filter(pk=self.piece.pk).exists())
+
+
+class DossiersComptablesTests(TestCase):
+    """Comptabilité par dossier (PR n° 13) : accueil « Mes dossiers », saisie limitée à un dossier, aperçu de sa déclaration."""
+
+    def setUp(self):
+        from .models import PieceComptable
+
+        self.client.force_login(User.objects.create_superuser("admin", "a@example.com", "x"))
+        moi = Proprietaire.objects.create(nom="Fabien", type=Proprietaire.Type.NOM_PROPRE)
+        self.alfab = Proprietaire.objects.create(nom="SCI ALFAB", type=Proprietaire.Type.SCI_IR)
+        self.tata = Proprietaire.objects.create(nom="SCI TATA", type=Proprietaire.Type.SCI_IR)
+        commun = {"adresse": "1 rue", "code_postal": "69000", "ville": "Lyon", "comptabilite": "foncier"}
+        Bien.objects.create(proprietaire=moi, nom="Pollionnay", regime_fiscal="nu", **commun)
+        self.a = Bien.objects.create(proprietaire=self.alfab, nom="Immeuble A", regime_fiscal="sci_ir", **commun)
+        self.t = Bien.objects.create(proprietaire=self.tata, nom="Immeuble T", regime_fiscal="sci_ir", **commun)
+        PieceComptable.objects.create(bien=self.a, date=date(2025, 3, 1), fournisseur="Plombier ALFAB", libelle="Fuite",
+                                      montant=Decimal("120"), ligne="9")
+        PieceComptable.objects.create(bien=self.a, date=date(2025, 4, 1), libelle="Importée ALFAB", montant=Decimal("10"))
+        PieceComptable.objects.create(bien=self.t, date=date(2025, 3, 1), fournisseur="Peintre TATA", libelle="Peinture",
+                                      montant=Decimal("80"), ligne="9")
+        self.code = f"2072-{self.alfab.pk}"
+
+    def test_accueil_une_carte_par_dossier(self):
+        page = self.client.get("/comptabilite/?annee=2025").content.decode()
+        for texte in ("Mes dossiers comptables", "Nom propre", "SCI ALFAB", "SCI TATA", "1 à saisir", "À jour",
+                      "1 facture importée", "Importée ALFAB", f"/comptabilite/dossier/{self.code}/", "Voir la 2072"):
+            self.assertIn(texte, page)
+
+    def test_dossier_ne_montre_que_ses_factures(self):
+        page = self.client.get(f"/comptabilite/dossier/{self.code}/?annee=2025").content.decode()
+        self.assertIn("Plombier ALFAB", page)
+        self.assertNotIn("Peintre TATA", page)
+        self.assertIn("R5 · Revenu net", page)  # aperçu de la 2072
+        self.assertIn("Déclaration effectuée le", page)
+        self.assertEqual(self.client.get("/comptabilite/dossier/2072-999/").status_code, 404)
+        liste = self.client.get(f"/admin/patrimoine/piececomptable/?dossier={self.code}&annee=2025").content.decode()
+        self.assertIn("Factures · SCI ALFAB", liste)
+        self.assertIn("Fuite", liste)
+        self.assertNotIn("Peinture", liste)
+        self.assertIn(f"/admin/patrimoine/piececomptable/import/?dossier={self.code}", liste)
+
+    def test_ajout_dans_le_dossier(self):
+        page = self.client.get(f"/admin/patrimoine/piececomptable/import/?dossier={self.code}").content.decode()
+        self.assertIn(f'<option value="{self.a.pk}" selected>', page)  # seul bien du dossier, déjà choisi
+        self.assertNotIn("Immeuble T", page)
+        self.assertIn("Biens du dossier <b>SCI ALFAB</b>", page)
+
+    def test_cocher_depuis_le_dossier_y_revient(self):
+        from .models import DeclarationFaite
+
+        retour = f"/comptabilite/dossier/{self.code}/?annee=2025"
+        r = self.client.post("/comptabilite/declarations/", {"action": "cocher", "annee": "2025", "formulaire": "2072",
+                                                            "proprietaire": self.alfab.pk, "date": "2026-05-15", "retour": retour})
+        self.assertRedirects(r, retour, fetch_redirect_response=False)
+        self.assertTrue(DeclarationFaite.objects.filter(proprietaire=self.alfab, annee=2025, active=True).exists())
+        self.assertContains(self.client.get(retour), "Déclarée le 15/05/2026")

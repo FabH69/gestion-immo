@@ -113,6 +113,7 @@ ICONES = {
     "eclair": '<path d="M13 2 4 14h7l-1 8 9-12h-7z"/>',
     "chaudiere": '<path d="M12 3c2 3 5 5 5 9a5 5 0 0 1-10 0c0-2 1-3.5 2-4.5 0 2 1 3 2 3 0-3-1-5 1-7.5z"/>',
     "declarations": '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M8 15l2.5 2.5L16 12"/>',
+    "dossiers": '<path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>',
     "saisie": '<path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/>',
     "facture": '<rect x="4" y="2" width="16" height="20" rx="2"/><path d="M8 7h8M8 11h8M8 15h5"/>',
     "booking": '<rect x="3" y="4" width="18" height="17" rx="2"/><path d="M8 2v4M16 2v4M3 10h18"/>',
@@ -206,36 +207,27 @@ def _menu():
 
 
 def _menu_compta():
-    """Trois entrées : Déclarations (une carte par cerfa et les pages de chaque formulaire), Saisie (factures, à classer,
-    ajout, contrôle de la conciergerie) et Réglages fiscaux (régime de chaque bien). Un sous-lien peut exiger un autre module."""
+    """Mes dossiers (accueil : une carte par dossier ; un sous-lien par dossier ; les pages des déclarations y sont
+    rattachées), Toutes les factures (saisie de tous les dossiers mélangés) et Réglages fiscaux."""
     from django.urls import reverse as r
 
-    from patrimoine import compta
+    from patrimoine import dossiers
 
     factures = r("admin:patrimoine_piececomptable_changelist")
+    importer = r("admin:patrimoine_piececomptable_import")
     conciergerie = r("conciergerie_ajouter")
-    utilises = compta.regimes_utilises()
-    sous_decl, prefixes_decl = [], [r("declarations")]
-    if "foncier" in utilises or compta.biens_2044().exists() or compta.biens_2072().exists():
-        if compta.biens_2044().exists():
-            sous_decl.append(("Récapitulatif 2044", r("recap_2044")))
-        if compta.biens_2072().exists():
-            sous_decl.append(("Annexe 2072 (SCI)", r("annexe_2072")))
-    prefixes_decl += [r("recap_2044"), r("annexe_2072")]
-    if "lmnp" in utilises:
-        sous_decl += [("Récapitulatif LMNP", r("compta_lmnp")), ("Bilan LMNP (2031)", r("biens_lmnp"), "etats"),
-                      ("Charges et amortissements", r("admin:patrimoine_chargelmnp_changelist"), "etats")]
-    if "societe" in utilises:
-        sous_decl.append((f"Récapitulatif {compta.libelle('societe')}", r("compta_societe")))
-    prefixes_decl += [r("compta_lmnp"), r("compta_societe"), r("biens_lmnp"), r("admin:patrimoine_chargelmnp_changelist")]
-    sous_saisie = [("Toutes les factures", factures), ("À classer", f"{factures}?a_codifier=oui"),
-                   ("Ajouter des factures", r("admin:patrimoine_piececomptable_import"))]
+    liste = dossiers.tous()
+    sous_dossiers = [(d["titre"], r("dossier_compta", args=[d["code"]])) for d in liste]
+    prefixes = [r("compta_accueil") + "$", r("dossier_compta", args=["x"]).rsplit("x/", 1)[0], r("declarations"), r("recap_2044"),
+                r("annexe_2072"), r("compta_lmnp"), r("compta_societe"), r("biens_lmnp"), r("admin:patrimoine_chargelmnp_changelist")]
+    prefixes += [f"{u}?dossier={d['code']}" for d in liste for u in (factures, importer)]
+    sous_saisie = [("Toutes les factures", factures), ("À classer", f"{factures}?a_codifier=oui"), ("Ajouter des factures", importer)]
     from patrimoine.views.compta import lots_conciergerie
 
     if lots_conciergerie().exists():
         sous_saisie.append(("Contrôle conciergerie", conciergerie))
-    return [("saisie", "Saisie", factures, [factures, conciergerie], sous_saisie),
-            ("declarations", "Déclarations", r("declarations"), prefixes_decl, sous_decl),
+    return [("dossiers", "Mes dossiers", r("compta_accueil"), prefixes, sous_dossiers + [("Toutes les déclarations", r("declarations"))]),
+            ("saisie", "Toutes les factures", factures, [factures, conciergerie], sous_saisie),
             ("regimes", "Réglages fiscaux", r("regimes_fiscaux"), [r("regimes_fiscaux")], [])]
 
 
@@ -291,7 +283,7 @@ def menu_lateral(context):
     module_du_lien = {"biens": "biens", "locataires": "locataires", "baux": "baux", "loyers": "loyers",
                       "candidatures": "relocation", "annonces": "relocation", "cles": "relocation", "lcd": "lcd",
                       "encaissements": "finances", "prets": "finances", "etats": "etats",
-                      "declarations": "compta", "saisie": "compta", "regimes": "compta",
+                      "dossiers": "compta", "saisie": "compta", "regimes": "compta",
                       "rappels": "outils"}
     groupes, actif_trouve = [], False
     for titre, liens in _menu():
@@ -301,8 +293,8 @@ def menu_lateral(context):
                 continue
             actif = any(_correspond(p, chemin, params) for p in prefixes)
             pastille = pastilles.get(libelle)
-            if ico == "saisie":
-                pastille = compta.a_codifier().count()  # factures à classer
+            if ico == "dossiers":
+                pastille = compta.a_codifier().count()  # factures importées pas encore saisies
             if ico == "regimes":
                 from patrimoine import regimes
 
@@ -320,8 +312,8 @@ def menu_lateral(context):
 
                     pastille = controles.nombre_a_traiter(user)  # contrôles qui ont au moins une ligne
             lignes.append({"icone": icone(ico), "libelle": libelle, "url": url, "actif": actif and not actif_trouve,
-                           "pastille": pastille, "pastille_douce": ico in ("saisie", "reglages"),
-                           "pastille_titre": "factures à classer" if ico == "saisie" else "contrôles à regarder" if ico == "reglages" else "",
+                           "pastille": pastille, "pastille_douce": ico in ("dossiers", "reglages"),
+                           "pastille_titre": "factures à saisir" if ico == "dossiers" else "contrôles à regarder" if ico == "reglages" else "",
                            "sous": sous_liens})
             actif_trouve |= actif
         if lignes:
