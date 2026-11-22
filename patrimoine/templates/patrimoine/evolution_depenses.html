@@ -1,0 +1,102 @@
+{% extends "admin/base_site.html" %}
+{% block extrastyle %}{{ block.super }}<style>{% include "patrimoine/_style_dossiers.css" %}
+.filtres-ev { display: flex; flex-wrap: wrap; gap: 10px 14px; align-items: flex-end; margin: 0 0 16px; padding: 12px 14px; border: 1px solid var(--border-color); border-radius: 12px; background: var(--darkened-bg); }
+.filtres-ev label { display: flex; flex-direction: column; gap: 3px; font-size: .78rem; color: var(--body-quiet-color); font-weight: 600; }
+.filtres-ev select { min-width: 150px; max-width: 240px; }
+.filtres-ev .annees-ev { display: flex; gap: 6px; align-items: center; }
+.tuiles-ev { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 12px; margin: 0 0 16px; }
+.tuile-ev { border: 1px solid var(--border-color); border-radius: 12px; padding: 12px 14px; background: var(--body-bg); }
+.tuile-ev span { display: block; font-size: .78rem; color: var(--body-quiet-color); }
+.tuile-ev b { display: block; font-size: 1.35rem; margin-top: 4px; }
+.tuile-ev small { font-size: .8rem; color: var(--body-quiet-color); }
+.hausse { color: var(--rouge) !important; } .baisse { color: var(--ok) !important; } .stable { color: var(--body-quiet-color) !important; }
+table.tab-ev { width: 100%; border-collapse: collapse; font-size: .88rem; }
+table.tab-ev th { font-size: .72rem; letter-spacing: .04em; text-transform: uppercase; color: var(--body-quiet-color); padding: 6px 8px; border-bottom: 1px solid var(--border-color); background: none; text-align: right; white-space: nowrap; }
+table.tab-ev th:first-child { text-align: left; }
+table.tab-ev td { padding: 8px; border-bottom: 1px solid var(--hairline-color); text-align: right; white-space: nowrap; }
+table.tab-ev td:first-child { text-align: left; white-space: normal; }
+table.tab-ev td.ecart, table.tab-ev th.ecart { background: var(--darkened-bg); }
+table.tab-ev tr.total-ev td { font-weight: 700; border-top: 2px solid var(--border-color); }
+table.tab-ev tr.hors-ev td { color: var(--body-quiet-color); font-style: italic; }
+.note-ev { font-size: .8rem; color: var(--body-quiet-color); margin: 8px 0 0; }
+@media (max-width: 767px) {
+  .filtres-ev select { min-width: 0; width: 100%; max-width: none; }
+  .filtres-ev label { flex: 1 1 140px; }
+  .filtres-ev .annees-ev select { width: auto; min-width: 86px; flex: 1; }
+  table.tab-ev .ancienne, table.tab-ev .pct { display: none; }
+  table.tab-ev td, table.tab-ev th { padding: 7px 4px; }
+}
+</style>{% endblock %}
+{% block content_title %}{% endblock %}
+{% block breadcrumbs %}<div class="breadcrumbs"><a href="{% url 'admin:index' %}">Accueil</a> › <a href="{% url 'compta_accueil' %}">Comptabilité</a> › Évolution des dépenses</div>{% endblock %}
+{% block content %}
+<div class="titre-liste titre-compta"><h1>Évolution des dépenses</h1></div>
+
+<form method="get" class="filtres-ev" aria-label="Filtres">
+  <label>Dossier<select name="dossier" onchange="this.form.proprietaire.value='';this.form.bien.value='';this.form.submit()">
+    <option value="">Tous les dossiers</option>
+    {% for d in dossiers %}<option value="{{ d.code }}"{% if d.code == dossier.code %} selected{% endif %}>{{ d.titre }} · {{ d.cerfa }}</option>{% endfor %}
+  </select></label>
+  <label>Propriétaire<select name="proprietaire" onchange="this.form.bien.value='';this.form.submit()">
+    <option value="">Tous</option>
+    {% for p in proprietaires %}<option value="{{ p.pk }}"{% if p == proprietaire %} selected{% endif %}>{{ p.nom }}</option>{% endfor %}
+  </select></label>
+  <label>Bien<select name="bien" onchange="this.form.submit()">
+    <option value="">Tous les biens</option>
+    {% for b in biens_choix %}<option value="{{ b.pk }}"{% if b == bien %} selected{% endif %}>{{ b.nom }}</option>{% endfor %}
+  </select></label>
+  <label>Années<span class="annees-ev">
+    <select name="debut" onchange="this.form.submit()" aria-label="De">{% for a in choix_annees %}<option{% if a == debut %} selected{% endif %}>{{ a }}</option>{% endfor %}</select>
+    à
+    <select name="fin" onchange="this.form.submit()" aria-label="À">{% for a in choix_annees %}<option{% if a == fin %} selected{% endif %}>{{ a }}</option>{% endfor %}</select>
+  </span></label>
+  <noscript><button type="submit" class="button">Afficher</button></noscript>
+</form>
+
+{% if not biens %}<p>Aucun bien dans ce périmètre : renseignez le régime fiscal des biens dans les <a href="{% url 'regimes_fiscaux' %}">Réglages fiscaux</a>.</p>
+{% elif not lignes %}<p>Aucune dépense saisie sur {{ annees.0 }} à {{ fin }} pour ce périmètre.</p>
+{% else %}
+{% with derniere=annees|last %}
+<div class="tuiles-ev">
+  <div class="tuile-ev"><span>Dépenses {{ derniere }}{% if annee_partielle == derniere %} (jusqu'à {{ periode_partielle }}){% endif %}</span><b>{{ totaux|last|floatformat:"0g" }} €</b>
+    {% if ecart_total %}<small class="{{ ecart_total.sens }}">{% if ecart_total.montant > 0 %}+{% endif %}{{ ecart_total.montant|floatformat:"0g" }} €{% if ecart_total.pct is not None %} ({% if ecart_total.pct > 0 %}+{% endif %}{{ ecart_total.pct|floatformat:"0" }} %){% endif %} par rapport à {{ derniere|add:"-1" }}</small>{% endif %}</div>
+  <div class="tuile-ev"><span>Moyenne annuelle {{ annees.0 }}–{{ derniere }}</span><b>{{ moyenne|floatformat:"0g" }} €</b><small>{{ biens|length }} bien{{ biens|length|pluralize }}</small></div>
+  {% if plus_forte_hausse %}<div class="tuile-ev"><span>Plus forte hausse</span><b class="hausse">+{{ plus_forte_hausse.ecart.montant|floatformat:"0g" }} €</b><small>{{ plus_forte_hausse.libelle }}</small></div>{% endif %}
+  {% if plus_forte_baisse %}<div class="tuile-ev"><span>Plus forte baisse</span><b class="baisse">{{ plus_forte_baisse.ecart.montant|floatformat:"0g" }} €</b><small>{{ plus_forte_baisse.libelle }}</small></div>{% endif %}
+</div>
+
+<section class="bloc-d">
+  <h2>Détail par nature{% if annees|length > 1 %} · écart {{ derniere|add:"-1" }} → {{ derniere }}{% endif %}</h2>
+  {% include "patrimoine/_barre_deplier.html" %}
+  {% include "patrimoine/_lignes_depliables.html" %}
+  <div style="overflow-x:auto">
+  <table class="tab-ev depliable">
+    <thead><tr><th>Nature</th>
+      {% for a in annees %}<th{% if not forloop.revcounter <= 2 %} class="ancienne"{% endif %}>{{ a }}{% if a == annee_partielle %}*{% endif %}</th>{% endfor %}
+      {% if annees|length > 1 %}<th class="ecart">Écart</th><th class="ecart pct">%</th>{% endif %}</tr></thead>
+    {% for l in lignes %}
+    <tbody class="{% if l.detail|length > 1 %}a-detail{% endif %}">
+      <tr class="principale"><td>{% if l.detail|length > 1 %}<button type="button" class="deplier" aria-expanded="false" aria-label="Détail par bien">▸</button>{% endif %}{{ l.libelle }}{% if l.detail|length > 1 %}<span class="nb">{{ l.detail|length }}</span>{% endif %}</td>
+        {% for v in l.valeurs %}<td{% if not forloop.revcounter <= 2 %} class="ancienne"{% endif %}>{{ v|floatformat:"0g" }} €</td>{% endfor %}
+        {% if l.ecart %}<td class="ecart {{ l.ecart.sens }}">{% if l.ecart.montant > 0 %}+{% endif %}{{ l.ecart.montant|floatformat:"0g" }} €</td>
+        <td class="ecart pct {{ l.ecart.sens }}">{% if l.ecart.pct is None %}nouveau{% else %}{% if l.ecart.pct > 0 %}+{% endif %}{{ l.ecart.pct|floatformat:"0" }} %{% endif %}</td>{% endif %}</tr>
+      {% if l.detail|length > 1 %}{% for d in l.detail %}<tr class="sous"><td style="padding-left:34px">{{ d.bien.nom }}</td>
+        {% for v in d.valeurs %}<td{% if not forloop.revcounter <= 2 %} class="ancienne"{% endif %}>{{ v|floatformat:"0g" }} €</td>{% endfor %}
+        {% if d.ecart %}<td class="ecart {{ d.ecart.sens }}">{% if d.ecart.montant > 0 %}+{% endif %}{{ d.ecart.montant|floatformat:"0g" }} €</td>
+        <td class="ecart pct {{ d.ecart.sens }}">{% if d.ecart.pct is None %}{% if d.ecart.montant %}nouveau{% endif %}{% else %}{% if d.ecart.pct > 0 %}+{% endif %}{{ d.ecart.pct|floatformat:"0" }} %{% endif %}</td>{% endif %}</tr>{% endfor %}{% endif %}
+    </tbody>
+    {% endfor %}
+    <tbody>
+      <tr class="total-ev"><td>Total des dépenses</td>{% for t in totaux %}<td{% if not forloop.revcounter <= 2 %} class="ancienne"{% endif %}>{{ t|floatformat:"0g" }} €</td>{% endfor %}
+        {% if ecart_total %}<td class="ecart {{ ecart_total.sens }}">{% if ecart_total.montant > 0 %}+{% endif %}{{ ecart_total.montant|floatformat:"0g" }} €</td>
+        <td class="ecart pct {{ ecart_total.sens }}">{% if ecart_total.pct is not None %}{% if ecart_total.pct > 0 %}+{% endif %}{{ ecart_total.pct|floatformat:"0" }} %{% endif %}</td>{% endif %}</tr>
+      {% if hors %}<tr class="hors-ev"><td>Hors charges (capital des prêts, non déductible)</td>{% for v in hors %}<td{% if not forloop.revcounter <= 2 %} class="ancienne"{% endif %}>{{ v|floatformat:"0g" }} €</td>{% endfor %}{% if annees|length > 1 %}<td class="ecart"></td><td class="ecart pct"></td>{% endif %}</tr>{% endif %}
+    </tbody>
+  </table>
+  </div>
+  {% if annee_partielle %}<p class="note-ev">* {{ annee_partielle }} : année en cours, dépenses de janvier à {{ periode_partielle }} seulement.</p>{% endif %}
+  <p class="note-ev">Montants des déclarations : année de paiement de chaque facture, forfait de 20 € par local, intérêts des prêts d'après l'attestation ou l'échéancier. Sur téléphone, seules les deux dernières années sont affichées.</p>
+</section>
+{% endwith %}
+{% endif %}
+{% endblock %}

@@ -129,6 +129,7 @@ ICONES = {
     "declarations": '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M8 15l2.5 2.5L16 12"/>',
     "dossiers": '<path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>',
     "saisie": '<path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/>',
+    "evolution": '<path d="M4 20V10M10 20V6M16 20v-8M22 20H2"/><path d="m3 7 6-4 6 5 6-4"/>',
     "facture": '<rect x="4" y="2" width="16" height="20" rx="2"/><path d="M8 7h8M8 11h8M8 15h5"/>',
     "booking": '<rect x="3" y="4" width="18" height="17" rx="2"/><path d="M8 2v4M16 2v4M3 10h18"/>',
     "banque": '<path d="M3 10 12 4l9 6M5 10v8M9.5 10v8M14.5 10v8M19 10v8M3 21h18"/>',
@@ -222,7 +223,8 @@ def _menu():
 
 def _menu_compta():
     """Mes dossiers (accueil : une carte par dossier ; un sous-lien par dossier ; les pages des déclarations y sont
-    rattachées), Toutes les factures (saisie de tous les dossiers mélangés) et Réglages fiscaux."""
+    rattachées), Toutes les factures (saisie de tous les dossiers mélangés), Évolution des dépenses (plusieurs années)
+    et Réglages fiscaux."""
     from django.urls import reverse as r
 
     from patrimoine import dossiers
@@ -242,6 +244,7 @@ def _menu_compta():
         sous_saisie.append(("Contrôle conciergerie", conciergerie))
     return [("dossiers", "Mes dossiers", r("compta_accueil"), prefixes, sous_dossiers + [("Toutes les déclarations", r("declarations"))]),
             ("saisie", "Toutes les factures", factures, [factures, conciergerie], sous_saisie),
+            ("evolution", "Évolution des dépenses", r("evolution_depenses"), [r("evolution_depenses")], []),
             ("regimes", "Réglages fiscaux", r("regimes_fiscaux"), [r("regimes_fiscaux")], [])]
 
 
@@ -297,7 +300,7 @@ def menu_lateral(context):
     module_du_lien = {"biens": "biens", "locataires": "locataires", "baux": "baux", "loyers": "loyers",
                       "candidatures": "relocation", "annonces": "relocation", "cles": "relocation", "lcd": "lcd",
                       "encaissements": "finances", "prets": "finances", "etats": "etats",
-                      "dossiers": "compta", "saisie": "compta", "regimes": "compta",
+                      "dossiers": "compta", "saisie": "compta", "evolution": "compta", "regimes": "compta",
                       "rappels": "outils"}
     groupes, actif_trouve = [], False
     for titre, liens in _menu():
