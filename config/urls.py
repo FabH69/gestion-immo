@@ -55,6 +55,7 @@ urlpatterns = [
     path("taches/<int:pk>/faite/", views.tache_faite, name="tache_faite"),
     path("notes/enregistrer/", views.enregistrer_note, name="enregistrer_note"),
     path("annonces/<int:pk>/annonce.pdf", views.annonce_pdf, name="annonce_pdf"),
+    path("comptabilite/declarations/", views.declarations, name="declarations"),
     path("comptabilite/2072/", views.annexe_2072, name="annexe_2072"),
     path("comptabilite/2044/", views.recap_2044, name="recap_2044"),
     path("comptabilite/regimes-fiscaux/", views.regimes_fiscaux, name="regimes_fiscaux"),

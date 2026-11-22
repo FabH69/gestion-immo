@@ -608,6 +608,7 @@ a.ligne-carte:hover { background: var(--selected-bg); text-decoration: none; }
 .bandeau-compta.orange { background: var(--orange-c); color: var(--orange); }
 .bandeau-compta.rouge { background: var(--rouge-c); color: var(--rouge); }
 .bandeau-compta.vert { background: var(--ok-c); color: var(--ok); }
+.bandeau-compta.info { background: var(--selected-bg); color: var(--body-fg); }
 .bandeau-compta a { color: inherit; text-decoration: underline; font-weight: 600; }
 table.controle-conciergerie tr.etat-alerte td { background: var(--rouge-c); }
 table.controle-conciergerie td.sejour { white-space: nowrap; }

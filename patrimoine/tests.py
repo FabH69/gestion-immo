@@ -544,7 +544,7 @@ class RappelsEtRevisionTests(TestCase):
             self.assertEqual(r.status_code, 302)
             self.assertEqual(PieceComptable.objects.filter(ligne="9", montant=150).count(), 1)
             self.assertEqual(sum(1 for p in PieceComptable.objects.all() if p.a_codifier), 1)
-            self.assertContains(self.client.get("/admin/patrimoine/piececomptable/"), "À codifier (1)")
+            self.assertContains(self.client.get("/admin/patrimoine/piececomptable/"), "À classer (1)")
 
     def test_lecture_automatique_facture_pdf(self):
         import io
@@ -2354,10 +2354,10 @@ class ComptaEtConciergerieTests(TestCase):
         PieceComptable.objects.create(bien=self.bien, libelle="Sans rubrique", montant=Decimal("10"), date=date(2026, 1, 1))
         page = self.client.get("/comptabilite/lmnp/?annee=2026").content.decode()
         self.assertIn("Comptabilité LMNP", page)
-        self.assertIn('class="menu-entree actif"', page.split("LMNP</span>")[0].rsplit("<a", 1)[1])
-        self.assertIn("Revenus fonciers", page)
+        self.assertIn('class="menu-entree actif"', page.split("Déclarations</span>")[0].rsplit("<a", 1)[1])
+        self.assertIn("Réglages fiscaux", page)
         self.assertIn("Commission", page)
-        self.assertIn("1 facture à codifier", page)
+        self.assertIn("1 facture à classer", page)
         self.assertIn("Contrôle conciergerie", page)
         mensuel = self.client.get("/comptabilite/lmnp/?annee=2026&vue=mois").content.decode()
         self.assertIn("sept.", mensuel)
@@ -3300,8 +3300,10 @@ class FacturesAnneePaiementEtClotureTests(TestCase):
         from .models import AnneeCloturee, PieceComptable
 
         liste = "/admin/patrimoine/piececomptable/?compta=foncier&annee=2025"
-        self.assertContains(self.client.get(liste), "Année 2025 ouverte")
-        self.client.post("/admin/patrimoine/piececomptable/cloture/2025/", {"verrouiller": "1", "retour": liste})
+        # une année ouverte renvoie vers « Déclaration effectuée le … » ; les années clôturées avant la refonte restent verrouillées
+        self.assertContains(self.client.get(liste), "Déclaration effectuée le")
+        self.assertNotContains(self.client.get(liste), "Année 2025 ouverte")
+        AnneeCloturee.objects.create(annee=2025)
         self.assertTrue(AnneeCloturee.est_cloturee(2025))
         self.assertContains(self.client.get(liste), "Année 2025 clôturée")
         # fiche en lecture seule, suppression et scission refusées
@@ -3336,7 +3338,7 @@ class RetoursNovembreTests(TestCase):
     def test_menu_parametres_et_ordre_biens(self):
         page = self.client.get("/admin/").content.decode()
         self.assertIn("Paramètres", page)
-        self.assertNotIn("Réglages", page)
+        self.assertNotIn("Réglages</span>", page)
         self.assertLess(page.index("Propriétaires"), page.index(">Lots<"))
         self.assertLess(page.index(">Lots<"), page.index("Syndics"))
 
@@ -3553,7 +3555,7 @@ class RegimesFiscauxTests(TestCase):
         for texte in ("Régimes fiscaux – revenus 2025", "Pollionnay", "Déclaration 2044", "Déclaration 2072", "à vérifier",
                       "Les seuils surveillés"):
             self.assertIn(texte, page)
-        self.assertIn("Régimes fiscaux", self.client.get("/admin/").content.decode())
+        self.assertIn("Réglages fiscaux", self.client.get("/admin/").content.decode())
 
     def test_fiche_du_bien_refuse_un_regime_incoherent(self):
         from .admin.biens import BienForm
@@ -3605,3 +3607,83 @@ class ListeBauxSansPeriodeTests(TestCase):
     def test_loyers_gardent_leur_periode(self):
         r = self.client.get(reverse("admin:patrimoine_echeance_changelist"))
         self.assertContains(r, "navigation-periode")
+
+
+class DeclarationsTests(TestCase):
+    """Comptabilité refondue (PR 42) : page Déclarations (une carte par cerfa), « Déclaration effectuée le … » qui verrouille
+    la saisie de ce cerfa seulement, menu en trois entrées et année fiscale choisie une fois."""
+
+    def setUp(self):
+        from .models import PieceComptable, Pret
+
+        self.client.force_login(User.objects.create_superuser("admin", "a@example.com", "x"))
+        moi = Proprietaire.objects.create(nom="Fabien", type=Proprietaire.Type.NOM_PROPRE)
+        self.sci = Proprietaire.objects.create(nom="SCI ALFAB", type=Proprietaire.Type.SCI_IR)
+        self.autre_sci = Proprietaire.objects.create(nom="SCI TATA", type=Proprietaire.Type.SCI_IR)
+        commun = {"adresse": "1 rue", "code_postal": "69000", "ville": "Lyon", "comptabilite": "foncier"}
+        self.pollionnay = Bien.objects.create(proprietaire=moi, nom="Pollionnay", regime_fiscal="nu", **commun)
+        self.immeuble = Bien.objects.create(proprietaire=self.sci, nom="Immeuble A", regime_fiscal="sci_ir", **commun)
+        self.tata = Bien.objects.create(proprietaire=self.autre_sci, nom="Immeuble T", regime_fiscal="sci_ir", **commun)
+        self.facture = PieceComptable.objects.create(bien=self.immeuble, date=date(2025, 3, 1), fournisseur="Plombier",
+                                                     libelle="Fuite", montant=Decimal("120"), ligne="9")
+        self.facture_tata = PieceComptable.objects.create(bien=self.tata, date=date(2025, 3, 1), libelle="Peinture",
+                                                          montant=Decimal("80"), ligne="9")
+        PieceComptable.objects.create(bien=self.immeuble, date=date(2025, 4, 1), libelle="Sans ligne", montant=Decimal("10"))
+        self.pret = Pret.objects.create(proprietaire=self.sci, bien=self.immeuble, banque="B", montant=Decimal("100000"),
+                                        taux=Decimal("2"), duree_mois=120, date_premiere_echeance=date(2024, 1, 1))
+
+    def test_une_carte_par_cerfa(self):
+        page = self.client.get("/comptabilite/declarations/?annee=2025").content.decode()
+        for texte in ("Déclarations – revenus 2025", "Nom propre", "SCI ALFAB", "SCI TATA", "2044", "2072",
+                      "1 à classer", "1 attestation manquante", "À terminer", "Prête", "Déclaration effectuée le"):
+            self.assertIn(texte, page)
+        self.assertIn(f"/comptabilite/2072/?sci={self.sci.pk}&amp;annee=2025", page)
+
+    def test_declaration_verrouille_seulement_son_cerfa(self):
+        from django.core.exceptions import ValidationError
+
+        from .models import AttestationPret, DeclarationFaite
+
+        r = self.client.post("/comptabilite/declarations/", {"action": "cocher", "annee": "2025", "formulaire": "2072",
+                                                            "proprietaire": self.sci.pk, "date": "2026-05-15"})
+        self.assertRedirects(r, "/comptabilite/declarations/?annee=2025", fetch_redirect_response=False)
+        d = DeclarationFaite.objects.get()
+        self.assertEqual(str(d), "2072 SCI ALFAB 2025 déclarée le 15/05/2026")
+        self.assertContains(self.client.get("/comptabilite/declarations/?annee=2025"), "Déclarée le 15/05/2026")
+        # facture de la SCI déclarée : verrouillée (fiche, enregistrement) ; l'autre SCI reste modifiable
+        self.facture.montant = Decimal("999")
+        with self.assertRaises(ValidationError):
+            self.facture.full_clean()
+        self.assertContains(self.client.get(f"/admin/patrimoine/piececomptable/{self.facture.pk}/change/"), "2072 · SCI ALFAB 2025 déclarée le 15/05/2026")
+        self.facture_tata.montant = Decimal("90")
+        self.facture_tata.full_clean()
+        # pas de nouvelle attestation de prêt pour l'année déclarée
+        with self.assertRaises(ValidationError):
+            AttestationPret(pret=self.pret, annee=2025, interets=Decimal("1500")).full_clean()
+        # décocher (rectificative) rouvre la saisie et garde l'historique
+        self.client.post("/comptabilite/declarations/", {"action": "decocher", "annee": "2025", "declaration": d.pk})
+        d.refresh_from_db()
+        self.assertFalse(d.active)
+        self.assertIsNotNone(d.decochee_le)
+        self.facture.refresh_from_db()
+        self.facture.montant = Decimal("999")
+        self.facture.full_clean()
+        AttestationPret(pret=self.pret, annee=2025, interets=Decimal("1500")).full_clean()
+        self.assertContains(self.client.get("/comptabilite/declarations/?annee=2025"), "décochée le")
+
+    def test_menu_en_trois_entrees(self):
+        page = self.client.get("/admin/").content.decode()
+        for texte in ("Déclarations</span>", "Saisie</span>", "Réglages fiscaux</span>"):
+            self.assertIn(texte, page)
+        for ancien in ("Revenus fonciers</span>", "Régimes fiscaux</span>", "LMNP</span>"):
+            self.assertNotIn(ancien, page)
+        factures = self.client.get("/admin/patrimoine/piececomptable/").content.decode()
+        self.assertIn('class="menu-entree actif"', factures.split("Saisie</span>")[0].rsplit("<a", 1)[1])
+        recap = self.client.get("/comptabilite/2044/").content.decode()
+        self.assertIn('class="menu-entree actif"', recap.split("Déclarations</span>")[0].rsplit("<a", 1)[1])
+
+    def test_annee_choisie_une_fois(self):
+        self.client.get("/comptabilite/declarations/?annee=2024")
+        self.assertContains(self.client.get("/comptabilite/2044/"), "revenus 2024")
+        self.assertContains(self.client.get("/comptabilite/regimes-fiscaux/"), "revenus 2024")
+        self.assertContains(self.client.get("/comptabilite/2072/"), "revenus 2024")

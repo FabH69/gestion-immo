@@ -247,6 +247,24 @@ class AttestationPret(models.Model):
     def __str__(self):
         return f"{self.pret} – attestation {self.annee}"
 
+    def declaration_qui_verrouille(self):
+        """Cerfa déclaré (case « Déclaration effectuée » cochée) qui utilise les intérêts de ce prêt pour cette année."""
+        bien_id = self.pret.bien_id if self.pret_id else None
+        return DeclarationFaite.verrous().get(self.annee, {}).get(bien_id) if bien_id and self.annee else None
+
+    def clean(self):
+        from django.core.exceptions import ValidationError
+
+        super().clean()
+        avant = AttestationPret.objects.filter(pk=self.pk).first() if self.pk else None
+        if avant and (avant.annee, avant.interets, avant.assurance) == (self.annee, self.interets, self.assurance):
+            return  # rien ne change
+        for a in (avant, self):
+            d = a.declaration_qui_verrouille() if a else None
+            if d:
+                raise ValidationError(f"{d.libelle_court} {d.annee} déclarée le {d.date_declaration:%d/%m/%Y} : l'attestation "
+                                      f"{a.annee} ne peut plus changer. Décochez « Déclaration effectuée » sur la page Déclarations.")
+
 
 class AnneeCloturee(models.Model):
     """Année comptable clôturée : ses factures ne peuvent plus être ajoutées, modifiées ni supprimées (jusqu'au déverrouillage).
@@ -270,6 +288,65 @@ class AnneeCloturee(models.Model):
     @classmethod
     def est_cloturee(cls, annee):
         return bool(annee) and cls.objects.filter(annee=annee).exists()
+
+
+class DeclarationFaite(models.Model):
+    """« Déclaration effectuée le … » d'un cerfa pour une année : la saisie qui l'alimente (factures des biens concernés,
+    attestations de leurs prêts) est verrouillée tant que la case reste cochée. Décocher garde la ligne dans l'historique."""
+
+    class Formulaire(models.TextChoices):
+        F2044 = "2044", "2044 (revenus fonciers en nom propre)"
+        F2072 = "2072", "2072 (SCI à l'IR)"
+        F2031 = "2031", "2031 et 2033 (LMNP)"
+        SOCIETE = "societe", "Société (récapitulatif)"
+
+    annee = models.PositiveSmallIntegerField("année des revenus")
+    formulaire = models.CharField(max_length=10, choices=Formulaire.choices)
+    proprietaire = models.ForeignKey(Proprietaire, on_delete=models.CASCADE, null=True, blank=True,
+                                     help_text="SCI ou société déclarante (2072, société) ; vide pour la 2044 et le LMNP")
+    date_declaration = models.DateField("déclaration effectuée le")
+    active = models.BooleanField("verrouille la saisie", default=True)
+    cochee_le = models.DateTimeField(auto_now_add=True)
+    decochee_le = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        verbose_name = "déclaration effectuée"
+        verbose_name_plural = "déclarations effectuées"
+        ordering = ["-annee", "formulaire", "-cochee_le"]
+
+    def __str__(self):
+        qui = f" {self.proprietaire}" if self.proprietaire_id else ""
+        return f"{self.get_formulaire_display().split(' (')[0]}{qui} {self.annee} déclarée le {self.date_declaration:%d/%m/%Y}"
+
+    @property
+    def libelle_court(self):
+        qui = f" · {self.proprietaire.nom}" if self.proprietaire_id else ""
+        return f"{self.get_formulaire_display().split(' (')[0]}{qui}"
+
+    def biens(self):
+        return biens_du_formulaire(self.formulaire, self.proprietaire_id)
+
+    @classmethod
+    def verrous(cls):
+        """{année: {id de bien: déclaration}} pour les déclarations cochées (une requête par formulaire déclaré)."""
+        res = {}
+        for d in cls.objects.filter(active=True).select_related("proprietaire"):
+            for pk in d.biens().values_list("pk", flat=True):
+                res.setdefault(d.annee, {})[pk] = d
+        return res
+
+
+def biens_du_formulaire(formulaire, proprietaire_id=None):
+    """Biens dont la saisie alimente ce cerfa."""
+    if formulaire == "2044":
+        return Bien.objects.filter(regime_fiscal="nu").exclude(option_fiscale="micro")
+    if formulaire == "2072":
+        return Bien.objects.filter(regime_fiscal="sci_ir", proprietaire_id=proprietaire_id)
+    if formulaire == "2031":
+        return Bien.objects.filter(comptabilite="lmnp")
+    if formulaire == "societe":
+        return Bien.objects.filter(comptabilite="societe", proprietaire_id=proprietaire_id)
+    return Bien.objects.none()
 
 
 def _chemin_facture(instance, nom):
@@ -355,7 +432,7 @@ class PieceComptable(models.Model):
 
     def __str__(self):
         if self.a_codifier:
-            return f"À codifier – {self.libelle or self.fichier.name.rsplit('/', 1)[-1]}"
+            return f"À classer – {self.libelle or self.fichier.name.rsplit('/', 1)[-1]}"
         return f"{self.date:%d/%m/%Y} – {self.fournisseur or self.libelle} – {self.montant} €"
 
     def save(self, *args, **kwargs):
@@ -372,21 +449,44 @@ class PieceComptable(models.Model):
         from django.core.exceptions import ValidationError
 
         super().clean()
-        fermees = AnneeCloturee.annees()
-        if not fermees:
+        fermees, declares = AnneeCloturee.annees(), DeclarationFaite.verrous()
+        if not fermees and not declares:
             return
         avant = PieceComptable.objects.filter(pk=self.pk).select_related("bien").first() if self.pk else None
-        if avant and avant.est_verrouillee(fermees):
-            raise ValidationError(f"L'année {avant.annee} est clôturée : cette facture ne peut plus être modifiée. "
-                                  f"Pour la corriger, déverrouillez d'abord l'année {avant.annee} dans la liste des factures.")
-        if self.annee in fermees and not self.a_codifier:
-            raise ValidationError(f"L'année {self.annee} est clôturée : on ne peut plus y ajouter de facture. Si cette facture a été "
-                                  f"payée plus tard, indiquez sa date de paiement ; sinon, déverrouillez l'année {self.annee}.")
+        motif = avant.motif_verrou(fermees, declares) if avant else None
+        if motif:
+            raise ValidationError(f"{motif} : cette facture ne peut plus être modifiée. {avant.comment_deverrouiller(fermees, declares)}")
+        motif = self.motif_verrou(fermees, declares)
+        if motif:
+            raise ValidationError(f"{motif} : on ne peut plus y ajouter de facture. Si cette facture a été payée plus tard, "
+                                  f"indiquez sa date de paiement. {self.comment_deverrouiller(fermees, declares)}")
 
-    def est_verrouillee(self, fermees=None):
-        """Vrai si la facture est comptée dans une année clôturée."""
+    def declaration_qui_verrouille(self, declares=None):
+        declares = DeclarationFaite.verrous() if declares is None else declares
+        return declares.get(self.annee, {}).get(self.bien_id) if self.bien_id else None
+
+    def motif_verrou(self, fermees=None, declares=None):
+        """Pourquoi la facture est en lecture seule (année clôturée, ou cerfa déclaré), ou None.
+        Une facture « à codifier » (pas encore comptée) reste modifiable."""
+        if self.a_codifier:
+            return None
         fermees = AnneeCloturee.annees() if fermees is None else fermees
-        return self.annee in fermees and not self.a_codifier
+        if self.annee in fermees:
+            return f"L'année {self.annee} est clôturée"
+        d = self.declaration_qui_verrouille(declares)
+        if d:
+            return f"{d.libelle_court} {d.annee} déclarée le {d.date_declaration:%d/%m/%Y}"
+        return None
+
+    def comment_deverrouiller(self, fermees=None, declares=None):
+        fermees = AnneeCloturee.annees() if fermees is None else fermees
+        if self.annee in fermees:
+            return f"Pour la corriger, déverrouillez d'abord l'année {self.annee} dans la liste des factures."
+        return "Pour la corriger, décochez « Déclaration effectuée » sur la page Comptabilité › Déclarations."
+
+    def est_verrouillee(self, fermees=None, declares=None):
+        """Vrai si la facture est comptée dans une année clôturée ou dans un cerfa déclaré."""
+        return self.motif_verrou(fermees, declares) is not None
 
     @staticmethod
     def calculer_empreinte(fichier):

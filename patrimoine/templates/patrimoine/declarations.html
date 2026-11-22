@@ -1,0 +1,83 @@
+{% extends "admin/base_site.html" %}
+{% load tableau_bord %}
+{% block extrastyle %}{{ block.super }}<style>
+.cartes-decl { display: grid; grid-template-columns: repeat(auto-fill, minmax(290px, 1fr)); gap: 16px; margin: 0 0 20px; }
+.carte-decl { background: var(--body-bg); border: 1px solid var(--border-color); border-radius: 14px; padding: 16px 18px; display: flex; flex-direction: column; }
+.carte-decl.verrouillee { background: var(--darkened-bg); }
+.carte-decl .entete { display: flex; justify-content: space-between; align-items: flex-start; gap: 8px; }
+.carte-decl .qui { font-weight: 700; }
+.carte-decl .petit { font-size: .85rem; color: var(--body-quiet-color); }
+.carte-decl .cerfa { font-size: 1.35rem; font-weight: 700; margin: 10px 0 6px; }
+.carte-decl ul.etapes { list-style: none; margin: 0; padding: 0; }
+.carte-decl ul.etapes li { list-style: none; display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 7px 0; border-top: 1px solid var(--hairline-color); font-size: .9rem; }
+.pill-decl { display: inline-block; border-radius: 999px; padding: 2px 10px; font-size: .78rem; font-weight: 600; white-space: nowrap; text-decoration: none; }
+a.pill-decl:hover { text-decoration: underline; }
+.pill-decl.ok { background: var(--ok-c); color: var(--ok) !important; }
+.pill-decl.todo { background: var(--orange-c); color: var(--orange) !important; }
+.pill-decl.ko { background: var(--rouge-c); color: var(--rouge) !important; }
+.pill-decl.lock { background: var(--selected-bg); color: var(--secondary) !important; }
+.pill-decl.info { background: var(--darkened-bg); color: var(--body-fg) !important; border: 1px solid var(--border-color); }
+.carte-decl .actions { margin-top: auto; padding-top: 12px; display: flex; flex-direction: column; gap: 10px; }
+.carte-decl form.declarer { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 10px; border-radius: 10px; background: var(--darkened-bg); font-size: .88rem; }
+.carte-decl form.declarer input[type=date] { font: inherit; padding: 4px 6px; }
+.carte-decl form button { cursor: pointer; }
+.carte-decl details { font-size: .82rem; color: var(--body-quiet-color); }
+.carte-decl details li { list-style: none; }
+.carte-decl details ul { margin: 4px 0 0; padding: 0; }
+.historique-decl { list-style: none; margin: 0; padding: 0; }
+.historique-decl li { list-style: none; padding: 5px 0; border-top: 1px solid var(--hairline-color); }
+</style>{% endblock %}
+{% block content_title %}{% endblock %}
+{% block breadcrumbs %}<div class="breadcrumbs"><a href="{% url 'admin:index' %}">Accueil</a> › Comptabilité › Déclarations</div>{% endblock %}
+{% block content %}
+<div class="titre-liste titre-compta"><h1>Déclarations – revenus {{ annee }}</h1></div>
+<div class="barre-compta">{% boutons_annees annees annee "civil" %}</div>
+<p class="aide-compta">Une carte par cerfa. Les étapes se cochent seules à partir de la <a href="{{ lien_saisie }}">saisie</a>. Quand la déclaration est faite aux impôts, cochez « Déclaration effectuée le … » : la saisie de ce cerfa pour {{ annee }} (factures des biens concernés, attestations de leurs prêts) est verrouillée. Décochez en cas de déclaration rectificative. L'année choisie ici est reprise par toutes les pages de comptabilité.</p>
+
+{% if cartes %}
+<div class="cartes-decl">
+  {% for c in cartes %}
+  <section class="carte-decl{% if c.declaree %} verrouillee{% endif %}" aria-label="{{ c.cerfa }} {{ c.titre }}">
+    <div class="entete">
+      <div><div class="qui">{{ c.titre }}</div><div class="petit">{{ c.sous_titre }} · {{ c.nb_biens }} bien{{ c.nb_biens|pluralize }}</div></div>
+      <span class="pill-decl {{ c.statut.0 }}">{{ c.statut.1 }}</span>
+    </div>
+    <div class="cerfa">{{ c.cerfa }}</div>
+    <ul class="etapes">
+      {% for e in c.etapes %}<li><span>{{ forloop.counter }}. {{ e.libelle }}</span>{% if e.url %}<a href="{{ e.url }}" class="pill-decl {{ e.etat }}">{{ e.texte }}</a>{% else %}<span class="pill-decl {{ e.etat }}">{{ e.texte }}</span>{% endif %}</li>{% endfor %}
+    </ul>
+    <div class="actions">
+      <a href="{{ c.lien }}" class="button{% if c.pret_a_declarer %} default{% endif %}" style="text-align:center">{{ c.libelle_lien }}</a>
+      {% if c.declaree %}
+      <form method="post" class="declarer">{% csrf_token %}
+        <input type="hidden" name="action" value="decocher"><input type="hidden" name="annee" value="{{ annee }}"><input type="hidden" name="declaration" value="{{ c.declaree.pk }}">
+        <label><input type="checkbox" checked onchange="if(confirm('Décocher rouvre la saisie de ce cerfa (déclaration rectificative). Continuer ?'))this.form.submit();else this.checked=true"> Déclaration effectuée le {{ c.declaree.date_declaration|date:"d/m/Y" }}</label>
+        <noscript><button type="submit">Décocher</button></noscript>
+      </form>
+      {% else %}
+      <form method="post" class="declarer">{% csrf_token %}
+        <input type="hidden" name="action" value="cocher"><input type="hidden" name="annee" value="{{ annee }}"><input type="hidden" name="formulaire" value="{{ c.formulaire }}"><input type="hidden" name="proprietaire" value="{{ c.proprietaire.pk|default:'' }}">
+        <label for="date-{{ forloop.counter }}">Déclaration effectuée le</label>
+        <input type="date" id="date-{{ forloop.counter }}" name="date" value="{{ aujourdhui|date:'Y-m-d' }}" required>
+        <button type="submit" class="button">Cocher</button>
+      </form>
+      {% endif %}
+      <details><summary>Biens et historique</summary>
+        <ul>{% for b in c.biens %}<li>{{ b }}</li>{% endfor %}</ul>
+        {% if c.historique %}<ul>{% for d in c.historique %}<li>Déclarée le {{ d.date_declaration|date:"d/m/Y" }} (cochée le {{ d.cochee_le|date:"d/m/Y" }}){% if d.decochee_le %}, décochée le {{ d.decochee_le|date:"d/m/Y" }}{% endif %}</li>{% endfor %}</ul>{% endif %}
+      </details>
+    </div>
+  </section>
+  {% endfor %}
+</div>
+{% else %}
+<p>Aucun bien n'a encore de régime fiscal. Renseignez-le dans la fiche de chaque bien, ou ouvrez les <a href="{% url 'regimes_fiscaux' %}">Réglages fiscaux</a>.</p>
+{% endif %}
+
+{% if historique %}
+<section class="module carte-compta">
+  <h2>Déclarations des autres années</h2>
+  <ul class="historique-decl">{% for d in historique %}<li><a href="?annee={{ d.annee }}">{{ d.annee }}</a> · {{ d.libelle_court }} : déclarée le {{ d.date_declaration|date:"d/m/Y" }}</li>{% endfor %}</ul>
+</section>
+{% endif %}
+{% endblock %}
