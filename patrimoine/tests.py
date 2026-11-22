@@ -3619,6 +3619,23 @@ class RegimesFiscauxTests(TestCase):
         d2072 = next(d for d in dossiers.tous() if d["code"] == f"2072-{self.sci.pk}")
         self.assertEqual(dossiers.resume(d2072, 2025)["charges"], Decimal("210"))  # 300 − 50 − 40
 
+    def test_loyers_encaisses_mois_par_mois_dans_le_detail(self):
+        from .models import Bail, Echeance, Locataire, Lot, Paiement
+
+        a = self._bien(self.sci, "Vaugneray")
+        lot = Lot.objects.create(bien=a, designation="Apt 1er", type="appartement")
+        bail = Bail.objects.create(lot=lot, type=Bail.Type.NU, date_debut=date(2024, 1, 1), loyer_hc=600, charges=50)
+        bail.locataires.add(Locataire.objects.create(nom="DUPONT", prenom="Jean", civilite="M."))
+        for mois, jour in ((3, 4), (1, 5), (2, 3)):  # créés dans le désordre
+            e = Echeance.objects.create(bail=bail, periode=date(2025, mois, 1), loyer_hc=600, charges=50,
+                                        date_exigibilite=date(2025, mois, 1))
+            Paiement.objects.create(echeance=e, date=date(2025, mois, jour), montant=Decimal("650"))
+        page = self.client.get(f"/comptabilite/2072/?sci={self.sci.pk}&annee=2025").content.decode()
+        # une sous-ligne par loyer, avec le mois et le locataire, du 1er janvier au 31 décembre, montant hors charges
+        self.assertRegex(page, r"(?s)▸</button>1</td>.*?05/01/2025 · loyer de janvier 2025 · M. Jean DUPONT \(Apt 1er\).*?600,00"
+                               r".*?03/02/2025 · loyer de février 2025.*?04/03/2025 · loyer de mars 2025")
+        self.assertRegex(page, r"(?s)>1</td>.*?<td class=\"montant\">1 800\xa0€</td>")
+
     def _donnees_fiche(self, url):
         """Données POST d'une fiche d'admin telle qu'affichée (champs et formulaires en ligne)."""
         ctx = self.client.get(url).context
