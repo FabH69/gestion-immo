@@ -1,26 +1,53 @@
-{% extends "admin/change_form.html" %}
+{% extends "admin/change_form.html" %}{% load static %}
 {% block breadcrumbs %}
 <div class="breadcrumbs"><a href="{% url 'admin:index' %}">Accueil</a> › Comptabilité{% if libelle_regime %} › {{ libelle_regime }}{% endif %} › <a href="{{ lien_factures }}">Factures</a> › {% if add %}{{ title }}{% else %}{{ original|truncatewords:"18" }}{% endif %}</div>
 {% endblock %}
 {% block form_top %}{% if annee_verrouillee %}<p class="errornote" style="background:#fdecea">🔒 {{ motif_verrou }} : cette facture est en lecture seule. Pour la modifier, {% if par_declaration %}<a href="{{ lien_annee }}">décochez « Déclaration effectuée » sur la page Déclarations</a>{% else %}<a href="{{ lien_annee }}">déverrouillez l'année {{ annee_verrouillee }}</a> (interrupteur en haut de la liste){% endif %}.</p>{% endif %}
 {% if fichier_origine %}<details class="module facture-origine" open>
   <summary>Facture d'origine · <a href="{{ fichier_origine.url }}" target="_blank" rel="noopener">ouvrir {% if fichier_origine.genre == "image" %}la photo{% elif fichier_origine.genre == "pdf" %}le PDF{% else %}le fichier{% endif %} dans un nouvel onglet</a></summary>
-  {% if fichier_origine.genre == "pdf" %}<iframe src="{{ fichier_origine.url }}#view=FitH" title="Facture d'origine : {{ fichier_origine.nom }}" loading="lazy"></iframe>
+  {% if fichier_origine.genre == "pdf" %}<div class="pages-pdf" data-url="{{ fichier_origine.url }}" role="img" aria-label="Facture d'origine : {{ fichier_origine.nom }}"><p class="attente">Chargement de la facture…</p></div>
   {% elif fichier_origine.genre == "image" %}<img src="{{ fichier_origine.url }}" alt="Facture d'origine : {{ fichier_origine.nom }}">
   {% else %}<p class="help">{{ fichier_origine.nom }} (facture électronique, à ouvrir avec le lien ci-dessus).</p>{% endif %}
 </details>
 <style>
   .facture-origine { padding: 10px 14px; margin-bottom: 14px; }
   .facture-origine summary { cursor: pointer; font-weight: 600; }
-  .facture-origine iframe { width: 100%; height: 55vh; border: 1px solid var(--hairline-color, #ddd); border-radius: 8px; margin-top: 10px; background: #fff; }
+  .facture-origine .pages-pdf { height: 55vh; overflow: auto; border: 1px solid var(--hairline-color, #ddd); border-radius: 8px; margin-top: 10px; background: #f3f3f3; padding: 8px; }
+  .facture-origine .pages-pdf canvas { display: block; width: 100%; height: auto; margin: 0 auto 8px; background: #fff; box-shadow: 0 1px 3px rgba(0,0,0,.15); }
+  .facture-origine .attente { padding: 40px 0; text-align: center; color: #666; }
   .facture-origine img { max-width: 100%; max-height: 70vh; margin-top: 10px; border-radius: 8px; }
   /* écran large : la facture à droite, la fiche à gauche, pour corriger en la lisant */
   @media (min-width: 1600px) {
     .facture-origine { float: right; width: 40%; margin: 0 0 14px 16px; position: sticky; top: 12px; }
-    .facture-origine iframe { height: calc(100vh - 120px); }
+    .facture-origine .pages-pdf { height: calc(100vh - 120px); }
   }
-  @media (max-width: 767px) { .facture-origine iframe { height: 60vh; } }
-</style>{% endif %}{{ block.super }}{% endblock %}
+  @media (max-width: 767px) { .facture-origine .pages-pdf { height: 60vh; } }
+</style>
+{% if fichier_origine.genre == "pdf" %}<script src="{% static 'patrimoine/pdfjs/pdf.min.js' %}"></script>
+<script>
+(function () {
+  // Les pages sont dessinées par pdf.js : l'aperçu marche quel que soit le lecteur PDF du navigateur
+  // (Chrome réglé sur « Télécharger les PDF » n'affiche sinon qu'un bouton Ouvrir).
+  var cible = document.querySelector(".facture-origine .pages-pdf");
+  function indisponible() { cible.innerHTML = '<p class="attente">Aperçu indisponible : ouvrez le PDF avec le lien ci-dessus.</p>'; }
+  if (!cible) return;
+  if (!window.pdfjsLib) return indisponible();
+  pdfjsLib.GlobalWorkerOptions.workerSrc = "{% static 'patrimoine/pdfjs/pdf.worker.min.js' %}";
+  pdfjsLib.getDocument({url: cible.dataset.url, withCredentials: true}).promise.then(function (doc) {
+    cible.innerHTML = "";
+    var largeur = Math.max(300, cible.clientWidth - 16), suite = Promise.resolve();
+    for (var i = 1; i <= doc.numPages; i++) (function (i) {
+      suite = suite.then(function () { return doc.getPage(i); }).then(function (page) {
+        var v1 = page.getViewport({scale: 1}), vue = page.getViewport({scale: largeur / v1.width * (window.devicePixelRatio || 1)});
+        var toile = document.createElement("canvas");
+        toile.width = vue.width; toile.height = vue.height; cible.appendChild(toile);
+        return page.render({canvasContext: toile.getContext("2d"), viewport: vue}).promise;
+      });
+    })(i);
+    suite.catch(indisponible);
+  }).catch(indisponible);
+})();
+</script>{% endif %}{% endif %}{{ block.super }}{% endblock %}
 {% block object-tools-items %}{% if original and not annee_verrouillee %}<li><a href="{% url 'admin:patrimoine_piececomptable_scinder' original.pk %}">{% if original.piece_mere_id or original.parts.exists %}Modifier la répartition{% else %}Scinder la facture{% endif %}</a></li>{% endif %}{{ block.super }}{% endblock %}
 {% block admin_change_form_document_ready %}{{ block.super }}
 {{ regimes_des_biens|json_script:"regimes-des-biens" }}
