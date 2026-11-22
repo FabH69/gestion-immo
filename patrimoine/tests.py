@@ -3636,6 +3636,34 @@ class RegimesFiscauxTests(TestCase):
                                r".*?03/02/2025 · loyer de février 2025.*?04/03/2025 · loyer de mars 2025")
         self.assertRegex(page, r"(?s)>1</td>.*?<td class=\"montant\">1 800\xa0€</td>")
 
+    def test_fiche_facture_montre_le_pdf_d_origine(self):
+        import tempfile
+
+        from django.core.files.uploadedfile import SimpleUploadedFile
+        from django.test import override_settings
+
+        from .models import PieceComptable
+
+        a = self._bien(self.sci, "Vaugneray")
+        with tempfile.TemporaryDirectory() as prive, override_settings(PRIVE_ROOT=prive):
+            p = PieceComptable.objects.create(bien=a, date=date(2025, 1, 10), fournisseur="Foncia", libelle="Appel", ligne="13",
+                                              montant=Decimal("100"), fichier=SimpleUploadedFile("appel.pdf", b"%PDF-1.4 test"))
+            retour = f"/comptabilite/2072/?sci={self.sci.pk}&annee=2025"
+            fiche = self.client.get(f"/admin/patrimoine/piececomptable/{p.pk}/change/?next={retour}").content.decode()
+            self.assertIn("Facture d'origine", fiche)
+            self.assertIn(f'<iframe src="{p.fichier.url}#view=FitH"', fiche)
+            # le fichier s'affiche dans le cadre (même adresse) et en ligne, pas en téléchargement
+            r = self.client.get(p.fichier.url)
+            self.assertEqual(r.status_code, 200)
+            self.assertEqual(r.get("X-Frame-Options"), "SAMEORIGIN")
+            self.assertNotIn("attachment", r.get("Content-Disposition", ""))
+            # une part d'une facture scindée montre le PDF de la pièce mère ; sans fichier, pas de cadre
+            part = PieceComptable.objects.create(bien=a, date=date(2025, 1, 10), libelle="Part", ligne="13",
+                                                 montant=Decimal("40"), piece_mere=p)
+            self.assertIn(p.fichier.url, self.client.get(f"/admin/patrimoine/piececomptable/{part.pk}/change/").content.decode())
+            sans = PieceComptable.objects.create(bien=a, date=date(2025, 1, 10), libelle="Sans", ligne="13", montant=Decimal("5"))
+            self.assertNotIn("Facture d'origine", self.client.get(f"/admin/patrimoine/piececomptable/{sans.pk}/change/").content.decode())
+
     def _donnees_fiche(self, url):
         """Données POST d'une fiche d'admin telle qu'affichée (champs et formulaires en ligne)."""
         ctx = self.client.get(url).context
