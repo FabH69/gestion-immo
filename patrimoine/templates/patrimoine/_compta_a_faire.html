@@ -1,8 +1,8 @@
-{% load tableau_bord %}{% if lignes %}<div class="module carte compta-a-faire">
+{% load tableau_bord %}{% if visible %}<div class="module carte compta-a-faire">
   <h2>Comptabilité à faire<a class="lien-carte" href="{% url 'compta_accueil' %}">Ouvrir la comptabilité</a></h2>
   {% for l in lignes %}<a class="ligne-carte" href="{% if l.retour %}{% avec_retour l.url %}{% else %}{{ l.url }}{% endif %}">
     <span class="lc-texte"><b>{{ l.titre }}</b><small>{{ l.detail }}</small></span>
     <span class="pill orange">{{ l.texte }}</span>
-  </a>{% endfor %}
-  <p class="aide-bloc">Revenus {{ annee }}. Le bloc disparaît quand tout est saisi.</p>
+  </a>{% empty %}<p class="carte-vide"><span class="pill ok">À jour</span> Rien à faire : toutes les factures importées sont saisies.</p>{% endfor %}
+  {% if lignes %}<p class="aide-bloc">Factures à saisir de tous les dossiers ; attestations d'emprunt de {{ annee }}.</p>{% endif %}
 </div>{% endif %}

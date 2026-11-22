@@ -4155,8 +4155,10 @@ class BlocComptaAccueilTests(TestCase):
             self.client.get(f"/comptabilite/?annee={annee}")  # l'année fiscale est gardée en session
         return self.client.get("/admin/").content.decode()
 
-    def test_masque_quand_tout_est_a_jour(self):
-        self.assertNotIn("Comptabilité à faire", self._accueil(timezone.localdate().year))
+    def test_a_jour_quand_rien_a_faire(self):
+        page = self._accueil(timezone.localdate().year)
+        self.assertIn("Comptabilité à faire", page)
+        self.assertIn("Rien à faire", page)
 
     def test_factures_a_saisir_renvoient_au_dossier(self):
         from .models import PieceComptable
@@ -4190,9 +4192,9 @@ class BlocComptaAccueilTests(TestCase):
         self.assertIn("1 attestation manquante", page)
         self.assertIn(reverse("admin:patrimoine_pret_change", args=[p.pk]) + "?next=", page)
         DeclarationFaite.objects.create(annee=annee, formulaire="2072", proprietaire=self.alfab, date_declaration=date(annee + 1, 5, 15))
-        self.assertNotIn("Comptabilité à faire", self._accueil())
+        self.assertNotIn("attestation manquante", self._accueil())
         # année en cours : les attestations n'arrivent qu'en janvier, pas de rappel
-        self.assertNotIn("Comptabilité à faire", self._accueil(annee + 1))
+        self.assertNotIn("attestation manquante", self._accueil(annee + 1))
 
     def test_cache_sans_droit_compta(self):
         from . import droits
