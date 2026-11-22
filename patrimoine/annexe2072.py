@@ -113,10 +113,13 @@ def sous_lignes(colonnes, code, annee):
             for libelle, montant, piece in c["detail"].get(cle, []):
                 pret = next((p for nom, p in prets.items() if libelle.startswith(nom)), None)
                 declare = pret.montants_declares(annee) if pret else None
-                sous.append({"libelle": f"Prêt {pret.banque} {pret.reference}" if pret else libelle, "piece": piece,
+                # avoir saisi en négatif sur la ligne 14 : la ligne le retranche en positif (cerfa), le détail garde le signe saisi
+                saisi = piece.montant if piece and piece.montant is not None and piece.montant != montant else None
+                sous.append({"libelle": f"Prêt {pret.banque} {pret.reference}" if pret else libelle, "piece": piece, "saisi": saisi, "retenu": montant,
                              "bien": c["bien"], "pret": pret, "declare": declare, "renovation": cle == "9b" and code == "9",
                              "estimation": bool(declare and declare["source"] == "estimation"),
-                             "montants": [montant if j == i else None for j in range(len(colonnes))], "total": montant})
+                             "montants": [(saisi if saisi is not None else montant) if j == i else None for j in range(len(colonnes))],
+                             "total": saisi if saisi is not None else montant})
     return sous
 
 

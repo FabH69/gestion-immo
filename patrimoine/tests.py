@@ -3528,6 +3528,18 @@ class RegimesFiscauxTests(TestCase):
         pdf = self.client.get(f"/comptabilite/2072/?sci={self.sci.pk}&annee=2025&format=pdf")
         self.assertEqual(pdf.status_code, 200)
 
+    def test_avoir_negatif_ligne_14_garde_son_signe_dans_le_detail(self):
+        from .models import PieceComptable
+
+        a = self._bien(self.sci, "Vaugneray")
+        PieceComptable.objects.create(bien=a, date=date(2025, 9, 17), fournisseur="Foncia", libelle="Régul", montant=Decimal("-81.81"), ligne="14")
+        PieceComptable.objects.create(bien=a, date=date(2025, 3, 1), fournisseur="Foncia", libelle="Appel T1", montant=Decimal("500"), ligne="13")
+        page = self.client.get(f"/comptabilite/2072/?sci={self.sci.pk}&annee=2025").content.decode()
+        # le détail montre le montant saisi (−81,81 €) et explique qu'il est retranché ; la ligne 14 reste positive (cerfa)
+        self.assertRegex(page, r"(?s)▸</button>14</td>.*?Foncia – Régul</a>.*?avoir saisi en négatif : 81,81\xa0€ à retrancher.*?−81,81\xa0€")
+        self.assertRegex(page, r"(?s)>14</td>.*?<td class=\"montant\">82\xa0€</td>")
+        self.assertRegex(page, r"(?s)>16</td>.*?<td class=\"montant\">418\xa0€</td>")  # 500 − 82
+
     def _donnees_fiche(self, url):
         """Données POST d'une fiche d'admin telle qu'affichée (champs et formulaires en ligne)."""
         ctx = self.client.get(url).context
