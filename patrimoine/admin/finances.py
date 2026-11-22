@@ -936,6 +936,13 @@ class PieceComptableAdmin(admin.ModelAdmin):
                          "lien_factures": reverse("admin:patrimoine_piececomptable_changelist") + (f"?compta={regime}" if regime else "")}
         piece = PieceComptable.objects.filter(pk=object_id).select_related("bien").first() if object_id and str(object_id).isdigit() else None
         motif = piece.motif_verrou() if piece else None
+        # facture d'origine (PDF ou photo) affichée à côté de la fiche ; une part scindée montre celle de la pièce mère
+        origine = piece.piece_mere if piece and not piece.fichier and piece.piece_mere_id else piece
+        if origine and origine.fichier:
+            extension = origine.fichier.name.lower().rsplit(".", 1)[-1]
+            extra_context["fichier_origine"] = {"url": origine.fichier.url, "nom": origine.fichier.name.rsplit("/", 1)[-1],
+                                                "genre": "image" if extension in ("jpg", "jpeg", "png") else
+                                                "pdf" if extension == "pdf" else "autre"}
         if motif:
             d = piece.declaration_qui_verrouille()
             extra_context.update({"annee_verrouillee": piece.annee, "motif_verrou": motif,

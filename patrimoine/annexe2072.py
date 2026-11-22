@@ -47,6 +47,40 @@ def _annee_q(annee):
     return Q(date_paiement__year=annee) | Q(date_paiement__isnull=True, date__year=annee)
 
 
+MOIS_LONGS = ["janvier", "février", "mars", "avril", "mai", "juin", "juillet", "août", "septembre", "octobre", "novembre",
+              "décembre"]
+
+
+def loyers_par_mois(bien, annee):
+    """Loyers HC encaissés dans l'année, un par paiement (ou par mois repris d'un ancien suivi), du 1er janvier au
+    31 décembre : [(« 05/01/2025 · loyer de janvier 2025 · M. Jean DUPONT (Apt 1er) », montant HC)]. Même répartition
+    HC / charges que l'état des loyers encaissés (au prorata de l'échéance réglée)."""
+    from decimal import ROUND_HALF_UP
+
+    from .models import EncaissementHistorique, Paiement
+
+    lignes = []
+    paiements = Paiement.objects.filter(date__year=annee, echeance__bail__lot__bien=bien) \
+        .select_related("echeance__bail__lot").prefetch_related("echeance__bail__locataires")
+    deja = set()
+    for p in paiements:
+        e = p.echeance
+        hc = (p.montant * e.loyer_hc / e.total).quantize(Decimal("0.01"), ROUND_HALF_UP) if e.total else p.montant
+        noms = ", ".join(str(l) for l in e.bail.locataires.all()) or "locataire"
+        lignes.append((p.date, f"{p.date:%d/%m/%Y} · loyer de {MOIS_LONGS[e.periode.month - 1]} {e.periode.year} · {noms} "
+                                f"({e.bail.lot.designation})", hc))
+        deja.add((e.bail.lot_id, p.date.month))
+    for h in EncaissementHistorique.objects.filter(mois__year=annee, lot__bien=bien).select_related("lot"):
+        if (h.lot_id, h.mois.month) in deja:
+            continue
+        bail = h.lot.baux.filter(date_debut__lte=h.mois).order_by("-date_debut").first()
+        noms = ", ".join(str(l) for l in bail.locataires.all()) if bail else ""
+        lignes.append((h.mois, f"{MOIS_LONGS[h.mois.month - 1].capitalize()} {h.mois.year} · {noms or 'suivi repris'} "
+                               f"({h.lot.designation}, suivi repris)", h.montant - h.charges))
+    lignes.sort(key=lambda x: x[0])
+    return [(libelle, montant) for _, libelle, montant in lignes]
+
+
 def colonne(bien, annee):
     """Montants de l'annexe pour un immeuble et une année, avec le détail des sources."""
     from .etats import loyers_encaisses
@@ -61,7 +95,11 @@ def colonne(bien, annee):
             if b["bien"].pk == bien.pk:
                 v["1"] += b["sous_total"]["loyers_hc"]
     if v["1"]:
-        detail["1"].append(("Loyers hors charges encaissés (paiements de l'année)", v["1"], None))
+        lignes = loyers_par_mois(bien, annee)
+        if sum((m for _, m in lignes), ZERO) == v["1"]:
+            detail["1"] += [(libelle, montant, None) for libelle, montant in lignes]
+        else:  # par sécurité : une seule ligne si le détail ne retombe pas sur le total
+            detail["1"].append(("Loyers hors charges encaissés (paiements de l'année)", v["1"], None))
 
     # factures codées
     for p in PieceComptable.objects.filter(_annee_q(annee), bien=bien).order_by("date"):

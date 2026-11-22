@@ -47,8 +47,8 @@ select.choix-annee { height: 34px !important; border-radius: 999px; padding: 0 1
       {% for r in b.recettes %}<tr><td>{{ r.libelle }}</td><td class="src">{{ r.source }}</td><td class="m">{{ r.montant|floatformat:"2g" }} €</td></tr>{% empty %}<tr><td colspan="3" class="aide">Aucune recette enregistrée.</td></tr>{% endfor %}
       <tr class="total"><td colspan="2">Total des recettes</td><td class="m">{{ b.total_recettes|floatformat:"2g" }} €</td></tr>
       <tr class="titre"><td colspan="3">Charges déductibles</td></tr>
-      {% for c in b.charges %}<tr><td>{{ c.libelle }}</td><td class="src">{{ c.source }}</td><td class="m">− {{ c.montant|floatformat:"2g" }} €</td></tr>{% empty %}<tr><td colspan="3" class="aide">Aucune charge enregistrée.</td></tr>{% endfor %}
-      <tr class="total"><td colspan="2">Total des charges</td><td class="m">− {{ b.total_charges|floatformat:"2g" }} €</td></tr>
+      {% for c in b.charges %}<tr><td>{{ c.libelle }}</td><td class="src">{{ c.source }}</td><td class="m">{{ c.montant|signe_retranche }} €</td></tr>{% empty %}<tr><td colspan="3" class="aide">Aucune charge enregistrée.</td></tr>{% endfor %}
+      <tr class="total"><td colspan="2">Total des charges</td><td class="m">{{ b.total_charges|signe_retranche }} €</td></tr>
       <tr class="fort"><td colspan="2">Résultat avant amortissements</td><td class="m {% if b.resultat < 0 %}neg{% endif %}">{{ b.resultat|floatformat:"2g" }} €</td></tr>
       <tr><td colspan="2">Amortissements de l'année{% if b.amort_reporte %} (dont {{ b.amort_reporte|floatformat:"2g" }} € reportés){% endif %}</td><td class="m">{% if b.amortissements %}− {{ b.amort_deduit|floatformat:"2g" }} €{% else %}<a href="{% url 'admin:patrimoine_chargelmnp_add' %}?lot={{ b.lot.pk }}&annee={{ annee }}&categorie=amortissement">à saisir</a>{% endif %}</td></tr>
       <tr class="fort"><td colspan="2">Résultat fiscal (régime réel)</td><td class="m {% if b.resultat_fiscal < 0 %}neg{% endif %}">{{ b.resultat_fiscal|floatformat:"2g" }} €</td></tr>
@@ -67,7 +67,7 @@ select.choix-annee { height: 34px !important; border-radius: 999px; padding: 0 1
   <h2>{% if lot_choisi %}Total {{ lot_choisi.bien.nom }} {{ annee }}{% else %}Total LMNP {{ annee }}{% endif %}</h2>
   <table class="bilan">
     <tr><td>Recettes</td><td class="m">{{ total.total_recettes|floatformat:"2g" }} €</td></tr>
-    <tr><td>Charges</td><td class="m">− {{ total.total_charges|floatformat:"2g" }} €</td></tr>
+    <tr><td>Charges</td><td class="m">{{ total.total_charges|signe_retranche }} €</td></tr>
     <tr><td>Amortissements déduits</td><td class="m">− {{ total.amort_deduit|floatformat:"2g" }} €</td></tr>
     <tr class="fort"><td>Résultat fiscal (régime réel)</td><td class="m {% if total.resultat_fiscal < 0 %}neg{% endif %}">{{ total.resultat_fiscal|floatformat:"2g" }} €</td></tr>
     <tr><td class="aide">Micro-BIC (pour comparer)</td><td class="m aide">{{ total.micro_imposable|floatformat:"0g" }} € imposables</td></tr>
