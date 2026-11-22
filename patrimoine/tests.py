@@ -1286,6 +1286,40 @@ class LmnpTests(TestCase):
         self.assertIn("Résultat fiscal", page)
         self.assertIn("Taxe foncière", page)
 
+    def test_factures_lmnp_dans_le_bilan_2031_et_l_apercu_du_dossier(self):
+        from . import dossiers
+        from .lmnp import bilan_lot
+        from .models import ChargeLMNP, PieceComptable
+
+        bien = self.lot.bien
+        bien.regime_fiscal = "lmnp"
+        bien.save()
+        self.assertEqual(bien.comptabilite, "lmnp")
+        for montant in ("200", "-50"):
+            PieceComptable.objects.create(bien=bien, date=date(2026, 3, 5), fournisseur="EDF", libelle="Électricité",
+                                          montant=Decimal(montant), rubrique="electricite")
+        PieceComptable.objects.create(bien=bien, date=date(2026, 3, 5), fournisseur="Banque", libelle="Capital",
+                                      montant=Decimal("900"), rubrique="pret")
+        ChargeLMNP.objects.create(lot=self.lot, annee=2026, categorie="taxe_fonciere", montant=400)
+        b = bilan_lot(self.lot, 2026)
+        charges = {c["libelle"]: c["montant"] for c in b["charges"]}
+        # les factures saisies du dossier LMNP comptent (avoir déduit), pas le capital remboursé ; la charge LMNP saisie aussi
+        self.assertEqual(charges["Électricité"], Decimal("150"))
+        self.assertEqual(charges["Taxe foncière"], Decimal("400"))
+        self.assertNotIn("Rbt prêt (capital)", charges)
+        self.assertEqual(b["total_charges"], Decimal("550"))
+        d = next(x for x in dossiers.tous() if x["code"] == "2031")
+        apercu = dict((l, m) for l, m, _ in dossiers.resume(d, 2026)["apercu"])
+        self.assertEqual(apercu["Charges"], Decimal("550"))
+        self.assertIn("Électricité", self.client.get("/lmnp/?annee=2026").content.decode())
+
+    def test_charge_negative_affichee_en_plus(self):
+        from .models import ChargeLMNP
+        ChargeLMNP.objects.create(lot=self.lot, annee=2026, categorie="assurance", montant=Decimal("-30"))
+        page = self.client.get("/lmnp/?annee=2026").content.decode()
+        self.assertIn("+ 30,00 €", page)
+        self.assertNotIn("− -30", page)
+
     def test_historique_repris_avant_les_baux(self):
         from .lmnp import bilan_lot
         from .models import EncaissementHistorique

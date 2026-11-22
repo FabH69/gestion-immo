@@ -633,3 +633,16 @@ def page_d_origine(context):
 
     request = context.get("request")
     return (_page_d_origine(request) if request is not None else None) or ""
+
+
+@register.filter
+def signe_retranche(valeur):
+    """Montant retranché affiché avec son signe : 371,03 → « − 371,03 », un avoir de −30 → « + 30,00 »."""
+    from decimal import Decimal
+
+    from django.template.defaultfilters import floatformat
+
+    if valeur is None:
+        return ""
+    v = Decimal(valeur)
+    return ("+ " if v < 0 else "− ") + floatformat(abs(v), "2g")
