@@ -20,9 +20,9 @@ table.regimes .pastille-regime.a-verifier { background: #fff4e0; color: #5c3a00;
 .legende-seuils td, .legende-seuils th { text-align: left !important; white-space: normal !important; }
 </style>{% endblock %}
 {% block content_title %}{% endblock %}
-{% block breadcrumbs %}<div class="breadcrumbs"><a href="{% url 'admin:index' %}">Accueil</a> › Comptabilité › Régimes fiscaux</div>{% endblock %}
+{% block breadcrumbs %}<div class="breadcrumbs"><a href="{% url 'admin:index' %}">Accueil</a> › Comptabilité › Réglages fiscaux</div>{% endblock %}
 {% block content %}
-<div class="titre-liste titre-compta"><h1>Régimes fiscaux – revenus {{ annee }}</h1></div>
+<div class="titre-liste titre-compta"><h1>Réglages fiscaux : régime de chaque bien – revenus {{ annee }}</h1></div>
 <div class="barre-compta">{% boutons_annees annees annee "civil" %}</div>
 <p class="aide-compta">Un régime par bien : il choisit la comptabilité, les écrans et le formulaire à remplir. Pour le changer, ouvrez la fiche du bien (champ « Régime fiscal » et « micro ou réel »). La courte durée est un meublé : choisissez LMNP ou LMP sur le bien, puis réglez le lot en courte durée (classé ou non).{% if en_cours %} <b>Année en cours : montants arrêtés à aujourd'hui.</b>{% endif %}</p>
 

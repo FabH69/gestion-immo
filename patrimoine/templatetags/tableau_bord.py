@@ -112,6 +112,8 @@ ICONES = {
     "depot": '<path d="M12 3 4 6v6c0 5 3.5 8 8 9 4.5-1 8-4 8-9V6z"/>',
     "eclair": '<path d="M13 2 4 14h7l-1 8 9-12h-7z"/>',
     "chaudiere": '<path d="M12 3c2 3 5 5 5 9a5 5 0 0 1-10 0c0-2 1-3.5 2-4.5 0 2 1 3 2 3 0-3-1-5 1-7.5z"/>',
+    "declarations": '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M8 15l2.5 2.5L16 12"/>',
+    "saisie": '<path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/>',
     "facture": '<rect x="4" y="2" width="16" height="20" rx="2"/><path d="M8 7h8M8 11h8M8 15h5"/>',
     "booking": '<rect x="3" y="4" width="18" height="17" rx="2"/><path d="M8 2v4M16 2v4M3 10h18"/>',
     "banque": '<path d="M3 10 12 4l9 6M5 10v8M9.5 10v8M14.5 10v8M19 10v8M3 21h18"/>',
@@ -204,34 +206,37 @@ def _menu():
 
 
 def _menu_compta():
-    """Une entrée par comptabilité utilisée : revenus fonciers (SCI et nom propre), LMNP, société (H-INVEST).
-    Une page de factures appartient à l'entrée de son paramètre ?compta=… ; un sous-lien peut exiger un autre module."""
+    """Trois entrées : Déclarations (une carte par cerfa et les pages de chaque formulaire), Saisie (factures, à classer,
+    ajout, contrôle de la conciergerie) et Réglages fiscaux (régime de chaque bien). Un sous-lien peut exiger un autre module."""
     from django.urls import reverse as r
 
     from patrimoine import compta
 
     factures = r("admin:patrimoine_piececomptable_changelist")
     conciergerie = r("conciergerie_ajouter")
-    entrees = [("regimes", "Régimes fiscaux", r("regimes_fiscaux"), [r("regimes_fiscaux")], [])]
-    for regime in compta.regimes_utilises():
-        f = f"{factures}?compta={regime}"
-        if regime == "foncier":
-            sous = [("Factures", f)]
-            if compta.biens_2072().exists():
-                sous.append(("Annexe 2072 (SCI)", r("annexe_2072")))
-            if compta.biens_2044().exists():
-                sous.append(("Récapitulatif 2044", r("recap_2044")))
-            entrees.append(("foncier", "Revenus fonciers", f, [f, r("annexe_2072"), r("recap_2044")], sous))
-        else:
-            recap = r(f"compta_{regime}")
-            sous = [("Récapitulatif", recap), ("Factures", f)]
-            prefixes = [recap, f, f"{conciergerie}?compta={regime}"]
-            if regime == "lmnp":
-                sous += [("Bilan LMNP (2031)", r("biens_lmnp"), "etats"),
-                         ("Charges et amortissements", r("admin:patrimoine_chargelmnp_changelist"), "etats")]
-                prefixes += [r("biens_lmnp"), r("admin:patrimoine_chargelmnp_changelist")]
-            entrees.append((regime, compta.libelle(regime), recap, prefixes, sous))
-    return entrees
+    utilises = compta.regimes_utilises()
+    sous_decl, prefixes_decl = [], [r("declarations")]
+    if "foncier" in utilises or compta.biens_2044().exists() or compta.biens_2072().exists():
+        if compta.biens_2044().exists():
+            sous_decl.append(("Récapitulatif 2044", r("recap_2044")))
+        if compta.biens_2072().exists():
+            sous_decl.append(("Annexe 2072 (SCI)", r("annexe_2072")))
+    prefixes_decl += [r("recap_2044"), r("annexe_2072")]
+    if "lmnp" in utilises:
+        sous_decl += [("Récapitulatif LMNP", r("compta_lmnp")), ("Bilan LMNP (2031)", r("biens_lmnp"), "etats"),
+                      ("Charges et amortissements", r("admin:patrimoine_chargelmnp_changelist"), "etats")]
+    if "societe" in utilises:
+        sous_decl.append((f"Récapitulatif {compta.libelle('societe')}", r("compta_societe")))
+    prefixes_decl += [r("compta_lmnp"), r("compta_societe"), r("biens_lmnp"), r("admin:patrimoine_chargelmnp_changelist")]
+    sous_saisie = [("Toutes les factures", factures), ("À classer", f"{factures}?a_codifier=oui"),
+                   ("Ajouter des factures", r("admin:patrimoine_piececomptable_import"))]
+    from patrimoine.views.compta import lots_conciergerie
+
+    if lots_conciergerie().exists():
+        sous_saisie.append(("Contrôle conciergerie", conciergerie))
+    return [("declarations", "Déclarations", r("declarations"), prefixes_decl, sous_decl),
+            ("saisie", "Saisie", factures, [factures, conciergerie], sous_saisie),
+            ("regimes", "Réglages fiscaux", r("regimes_fiscaux"), [r("regimes_fiscaux")], [])]
 
 
 def _parametres_de_la_page(request):
@@ -286,7 +291,7 @@ def menu_lateral(context):
     module_du_lien = {"biens": "biens", "locataires": "locataires", "baux": "baux", "loyers": "loyers",
                       "candidatures": "relocation", "annonces": "relocation", "cles": "relocation", "lcd": "lcd",
                       "encaissements": "finances", "prets": "finances", "etats": "etats",
-                      "foncier": "compta", "lmnp": "compta", "societe": "compta", "regimes": "compta",
+                      "declarations": "compta", "saisie": "compta", "regimes": "compta",
                       "rappels": "outils"}
     groupes, actif_trouve = [], False
     for titre, liens in _menu():
@@ -296,8 +301,8 @@ def menu_lateral(context):
                 continue
             actif = any(_correspond(p, chemin, params) for p in prefixes)
             pastille = pastilles.get(libelle)
-            if ico in compta.REGIMES:
-                pastille = compta.a_codifier(ico).count()  # factures à codifier de cette comptabilité
+            if ico == "saisie":
+                pastille = compta.a_codifier().count()  # factures à classer
             if ico == "regimes":
                 from patrimoine import regimes
 
@@ -315,8 +320,8 @@ def menu_lateral(context):
 
                     pastille = controles.nombre_a_traiter(user)  # contrôles qui ont au moins une ligne
             lignes.append({"icone": icone(ico), "libelle": libelle, "url": url, "actif": actif and not actif_trouve,
-                           "pastille": pastille, "pastille_douce": ico in compta.REGIMES or ico == "reglages",
-                           "pastille_titre": "factures à codifier" if ico in compta.REGIMES else "contrôles à regarder" if ico == "reglages" else "",
+                           "pastille": pastille, "pastille_douce": ico in ("saisie", "reglages"),
+                           "pastille_titre": "factures à classer" if ico == "saisie" else "contrôles à regarder" if ico == "reglages" else "",
                            "sous": sous_liens})
             actif_trouve |= actif
         if lignes:

@@ -8,12 +8,23 @@ from django.utils import timezone
 from django.utils.html import format_html
 
 from .. import compta
-from ..models import AnneeCloturee, AttestationPret, PieceComptable, Bien, Pret
+from ..models import AnneeCloturee, AttestationPret, DeclarationFaite, PieceComptable, Bien, Pret
 from .communs import euros_liste
+
+
+class AttestationsFormSet(forms.BaseInlineFormSet):
+    def clean(self):
+        super().clean()
+        for f in self.deleted_forms:
+            d = f.instance.declaration_qui_verrouille() if f.instance.pk else None
+            if d:
+                raise forms.ValidationError(f"{d.libelle_court} {d.annee} déclarée le {d.date_declaration:%d/%m/%Y} : l'attestation "
+                                            f"{f.instance.annee} ne peut pas être supprimée. Décochez d'abord « Déclaration effectuée ».")
 
 
 class AttestationPretInline(admin.TabularInline):
     model = AttestationPret
+    formset = AttestationsFormSet
     extra = 0
     fields = ["annee", "interets", "assurance"]
     verbose_name = "attestation annuelle de la banque"
@@ -141,6 +152,15 @@ class PretAdmin(admin.ModelAdmin):
             "title": f"Tableau d'amortissement de la banque – {pret}", "opts": self.model._meta})
 
 
+def filtre_verrouillees(qs, fermees=None):
+    """Pièces du queryset comptées dans une année clôturée ou dans un cerfa déclaré."""
+    fermees = AnneeCloturee.annees() if fermees is None else fermees
+    q = Q(date_paiement__year__in=fermees) | Q(date_paiement__isnull=True, date__year__in=fermees)
+    for annee, biens in DeclarationFaite.verrous().items():
+        q |= Q(bien_id__in=list(biens)) & (Q(date_paiement__year=annee) | Q(date_paiement__isnull=True, date__year=annee))
+    return qs.filter(q)
+
+
 def lien_annee(piece):
     """Liste des factures de l'année (de paiement) où se trouve la pièce, dans son entrée de comptabilité."""
     regime = piece.bien.comptabilite if piece.bien_id else ""
@@ -246,7 +266,7 @@ class ACodifierFilter(admin.SimpleListFilter):
 
     def lookups(self, request, model_admin):
         nombre = compta.a_codifier(_regime(request) or None).count()
-        return [("oui", f"À codifier ({nombre})" if nombre else "À codifier"), ("non", "Codifiées")]
+        return [("oui", f"À classer ({nombre})" if nombre else "À classer"), ("non", "Classées")]
 
     def queryset(self, request, queryset):
         if self.value() == "oui":
@@ -453,8 +473,7 @@ class PieceComptableAdmin(admin.ModelAdmin):
             from django.core.exceptions import PermissionDenied
             raise PermissionDenied
         if mere.est_verrouillee():
-            messages.error(request, f"L'année {mere.annee} est clôturée : cette facture ne peut plus être répartie. "
-                                    f"Déverrouillez l'année {mere.annee} dans la liste des factures si besoin.")
+            messages.error(request, f"{mere.motif_verrou()} : cette facture ne peut plus être répartie. {mere.comment_deverrouiller()}")
             return redirect(lien_annee(mere))
         existantes = mere.facture_complete
         total = sum((p.montant or Decimal(0) for p in existantes), Decimal(0))
@@ -604,11 +623,10 @@ class PieceComptableAdmin(admin.ModelAdmin):
             for d in doublons:
                 messages.warning(request, format_html("Facture déjà présente, non importée. {}", d))
             fermees = AnneeCloturee.annees()
-            if fermees:
-                bloquees = PieceComptable.objects.filter(pk__in=nouvelles).filter(
-                    Q(date_paiement__year__in=fermees) | Q(date_paiement__isnull=True, date__year__in=fermees))
+            if fermees or DeclarationFaite.objects.filter(active=True).exists():
+                bloquees = filtre_verrouillees(PieceComptable.objects.filter(pk__in=nouvelles), fermees)
                 for p in bloquees:
-                    messages.warning(request, f"« {p.libelle} » est datée du {p.date:%d/%m/%Y}, une année clôturée ({p.annee}) : "
+                    messages.warning(request, f"« {p.libelle} » est datée du {p.date:%d/%m/%Y}, dans une saisie verrouillée ({p.annee}, année clôturée ou déclaration effectuée) : "
                                               "indiquez sa date de paiement si elle a été payée plus tard, sinon elle ne pourra pas "
                                               f"être enregistrée tant que {p.annee} reste verrouillée.")
             anciennes = PieceComptable.objects.filter(pk__in=nouvelles, date_paiement__isnull=True,
@@ -660,8 +678,8 @@ class PieceComptableAdmin(admin.ModelAdmin):
     def valider_preremplies(self, request, queryset):
         fermees = AnneeCloturee.annees()
         a_valider = queryset.filter(preremplie=True)
-        if fermees:
-            bloquees = a_valider.filter(Q(date_paiement__year__in=fermees) | Q(date_paiement__isnull=True, date__year__in=fermees))
+        if fermees or DeclarationFaite.objects.filter(active=True).exists():
+            bloquees = filtre_verrouillees(a_valider, fermees)
             if bloquees.exists():
                 messages.warning(request, f"{bloquees.count()} pièce(s) d'une année clôturée non validée(s) : indiquez leur date de "
                                           "paiement si elles ont été payées plus tard, ou déverrouillez l'année.")
@@ -701,10 +719,11 @@ class PieceComptableAdmin(admin.ModelAdmin):
         return super().has_delete_permission(request, obj)
 
     def delete_queryset(self, request, queryset):
-        fermees = AnneeCloturee.annees()
-        bloquees = [p.pk for p in queryset.select_related("bien") if p.est_verrouillee(fermees)] if fermees else []
+        fermees, declares = AnneeCloturee.annees(), DeclarationFaite.verrous()
+        bloquees = [p.pk for p in queryset.select_related("bien") if p.est_verrouillee(fermees, declares)]
         if bloquees:
-            messages.warning(request, f"{len(bloquees)} facture(s) d'une année clôturée conservée(s) : déverrouillez l'année pour les supprimer.")
+            messages.warning(request, f"{len(bloquees)} facture(s) verrouillée(s) conservée(s) (année clôturée ou déclaration "
+                                      "effectuée) : déverrouillez-les pour les supprimer.")
         super().delete_queryset(request, queryset.exclude(pk__in=bloquees))
 
     def cloture_view(self, request, annee):
@@ -735,7 +754,7 @@ class PieceComptableAdmin(admin.ModelAdmin):
 
     @admin.display(description="facture du", ordering="date")
     def date_affichee(self, obj):
-        return obj.date.strftime("%d/%m/%Y") if obj.date else format_html('<span class="pill orange">à codifier</span>')
+        return obj.date.strftime("%d/%m/%Y") if obj.date else format_html('<span class="pill orange">à classer</span>')
 
     @admin.display(description="payée le", ordering="date_paiement")
     def payee_le(self, obj):
@@ -770,8 +789,9 @@ class PieceComptableAdmin(admin.ModelAdmin):
     @admin.display(description="répartir")
     def scinder(self, obj):
         """Lien vers l'écran de scission (aussi depuis l'onglet « À codifier », où les lignes ne s'ouvrent pas)."""
-        if obj.est_verrouillee(getattr(self, "_fermees", None)):
-            return format_html('<span title="Année {} clôturée">🔒</span>', obj.annee)
+        motif = obj.motif_verrou(getattr(self, "_fermees", None), getattr(self, "_declares", None))
+        if motif:
+            return format_html('<span title="{}">🔒</span>', motif)
         scindee = obj.piece_mere_id or obj.parts.exists()
         return format_html('<a href="{}" class="button" style="white-space:nowrap">{}</a>',
                            reverse("admin:patrimoine_piececomptable_scinder", args=[obj.pk]),
@@ -793,6 +813,7 @@ class PieceComptableAdmin(admin.ModelAdmin):
 
     def changelist_view(self, request, extra_context=None):
         self._fermees = AnneeCloturee.annees()  # une seule requête pour toutes les lignes
+        self._declares = DeclarationFaite.verrous()
         regime = _regime(request)
         lien_import = reverse("admin:patrimoine_piececomptable_import") + (f"?compta={regime}" if regime else "")
         extra_context = {**(extra_context or {}), "lien_2072": reverse("annexe_2072"), "lien_import": lien_import,
@@ -820,6 +841,10 @@ class PieceComptableAdmin(admin.ModelAdmin):
                          "libelle_regime": compta.libelle(regime) if regime else "",
                          "lien_factures": reverse("admin:patrimoine_piececomptable_changelist") + (f"?compta={regime}" if regime else "")}
         piece = PieceComptable.objects.filter(pk=object_id).select_related("bien").first() if object_id and str(object_id).isdigit() else None
-        if piece and piece.est_verrouillee():
-            extra_context.update({"annee_verrouillee": piece.annee, "lien_annee": lien_annee(piece)})
+        motif = piece.motif_verrou() if piece else None
+        if motif:
+            d = piece.declaration_qui_verrouille()
+            extra_context.update({"annee_verrouillee": piece.annee, "motif_verrou": motif,
+                                  "lien_annee": reverse("declarations") + f"?annee={piece.annee}" if d else lien_annee(piece),
+                                  "par_declaration": bool(d)})
         return super().changeform_view(request, object_id, form_url, extra_context)
