@@ -127,3 +127,31 @@ def resume_liens(dossier, annee):
             "lien_factures": f"{factures}?dossier={dossier['code']}&annee={annee}",
             "lien_a_saisir": f"{factures}?dossier={dossier['code']}&a_codifier=oui",
             "lien_import": f"{reverse('admin:patrimoine_piececomptable_import')}?dossier={dossier['code']}"}
+
+
+def a_faire(annee):
+    """Tableau de bord, bloc « Comptabilité à faire » : une ligne par dossier qui a des factures à saisir, les factures sur
+    un bien sans dossier et, pour une année terminée pas encore déclarée, les attestations d'emprunt manquantes.
+    Liste vide quand tout est à jour (le bloc ne s'affiche pas)."""
+    from django.utils import timezone
+
+    lignes, ids_dossiers = [], set()
+    liste = tous()
+    for d in liste:
+        ids_dossiers.update(biens(d).values_list("pk", flat=True))
+        n = a_saisir(d).count()
+        if n:
+            lignes.append({"titre": d["titre"], "detail": f"{d['sous_titre']} · {d['cerfa']}",
+                           "texte": f"{n} facture{'s' if n > 1 else ''} à saisir", "url": resume_liens(d, annee)["lien_a_saisir"]})
+    hors = compta.a_codifier().exclude(bien_id__in=ids_dossiers).count()
+    if hors:
+        lignes.append({"titre": "Bien hors dossier", "detail": "Régime fiscal à vérifier dans les Réglages fiscaux",
+                       "texte": f"{hors} facture{'s' if hors > 1 else ''}", "url": reverse("regimes_fiscaux")})
+    if annee < timezone.localdate().year:
+        for d in liste:
+            c = declarations.carte(d["formulaire"], d["proprietaire"], d["titre"], d["sous_titre"], d["cerfa"], annee)
+            emprunts = next((e for e in c["etapes"] if e["libelle"] == "Emprunts"), None)
+            if not c["declaree"] and emprunts and emprunts["etat"] == "ko":
+                lignes.append({"titre": d["titre"], "detail": f"Prêts {annee} · {d['cerfa']}",
+                               "texte": emprunts["texte"], "url": emprunts["url"], "retour": True})
+    return lignes

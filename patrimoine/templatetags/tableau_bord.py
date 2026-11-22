@@ -41,6 +41,20 @@ def bloc_taches_changement(context, par_changement=6):
             "modifiable": (context.get("droits") or {}).get("relocation") == "modification"}
 
 
+@register.inclusion_tag("patrimoine/_compta_a_faire.html", takes_context=True)
+def bloc_compta(context):
+    """Accueil : ce qui reste à faire en comptabilité (factures à saisir par dossier…), avec un lien vers le dossier.
+    Rien n'est affiché sans le droit Comptabilité ou quand tout est à jour."""
+    from patrimoine import dossiers
+    from patrimoine.declarations import annee_fiscale
+
+    request = context.get("request")
+    if not (context.get("droits") or {}).get("compta") or request is None:
+        return {"lignes": []}
+    annee = annee_fiscale(request)
+    return {"lignes": dossiers.a_faire(annee), "annee": annee, "request": request}
+
+
 @register.filter
 def libelle_ajouter(nom):
     """« Ajouter une annonce » plutôt que « Ajouter annonce »."""
@@ -636,3 +650,16 @@ def page_d_origine(context):
 
     request = context.get("request")
     return (_page_d_origine(request) if request is not None else None) or ""
+
+
+@register.filter
+def signe_retranche(valeur):
+    """Montant retranché affiché avec son signe : 371,03 → « − 371,03 », un avoir de −30 → « + 30,00 »."""
+    from decimal import Decimal
+
+    from django.template.defaultfilters import floatformat
+
+    if valeur is None:
+        return ""
+    v = Decimal(valeur)
+    return ("+ " if v < 0 else "− ") + floatformat(abs(v), "2g")

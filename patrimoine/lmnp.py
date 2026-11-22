@@ -47,6 +47,15 @@ def bilan_lot(lot, annee):
             if provisions:
                 recettes.append(_ligne("Charges refacturées au locataire" + (" (mois restants)" if historiques else ""), provisions, "Selon les baux"))
 
+    seul_lot = lot.bien.comptabilite == "lmnp" and not lot.bien.lots.exclude(pk=lot.pk).filter(
+        pk__in=lots_lmnp().values("pk")).exists()
+    if seul_lot:
+        # bien suivi en comptabilité LMNP : mêmes charges que le récapitulatif LMNP (factures saisies, charges LMNP,
+        # réservations, prêts, estimation des charges mensuelles), sans le capital remboursé qui n'est pas une charge
+        charges = _charges_du_recapitulatif(lot.bien, annee)
+        manuelles = list(ChargeLMNP.objects.filter(lot=lot, annee=annee, categorie=ChargeLMNP.Categorie.AMORTISSEMENT))
+        return _resultat(lot, recettes, charges, manuelles)
+
     interets = assurance = ZERO
     for pret in lot.bien.prets.all():
         for e in pret.echeancier():
@@ -62,6 +71,30 @@ def bilan_lot(lot, annee):
     for c in manuelles:
         if c.categorie != ChargeLMNP.Categorie.AMORTISSEMENT:
             charges.append(_ligne(c.get_categorie_display() + (f" ({c.libelle})" if c.libelle else ""), c.montant, "Saisie"))
+    return _resultat(lot, recettes, charges, manuelles)
+
+
+SOURCES = {"F": "Factures et charges saisies", "R": "Réservations et frais de gestion", "P": "Prêts",
+           "E": "Estimation (charges mensuelles)"}
+
+
+def _charges_du_recapitulatif(bien, annee):
+    from .compta import detail_bien
+    from .models import PieceComptable
+
+    d = detail_bien(bien, annee, 12)
+    charges = []
+    for _, rubriques in PieceComptable.RUBRIQUES:
+        for code, nom in rubriques:
+            if code == "pret" or code not in d:
+                continue
+            cases = d[code].values()
+            sources = sorted(set().union(*(c["sources"] for c in cases)))
+            charges.append(_ligne(nom, sum((c["montant"] for c in cases), ZERO), ", ".join(SOURCES[x] for x in sources)))
+    return charges
+
+
+def _resultat(lot, recettes, charges, manuelles):
     charges = [c for c in charges if c["montant"]]
     amortissements = sum((c.montant for c in manuelles if c.categorie == ChargeLMNP.Categorie.AMORTISSEMENT), ZERO)
 

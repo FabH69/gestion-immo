@@ -1286,6 +1286,40 @@ class LmnpTests(TestCase):
         self.assertIn("Résultat fiscal", page)
         self.assertIn("Taxe foncière", page)
 
+    def test_factures_lmnp_dans_le_bilan_2031_et_l_apercu_du_dossier(self):
+        from . import dossiers
+        from .lmnp import bilan_lot
+        from .models import ChargeLMNP, PieceComptable
+
+        bien = self.lot.bien
+        bien.regime_fiscal = "lmnp"
+        bien.save()
+        self.assertEqual(bien.comptabilite, "lmnp")
+        for montant in ("200", "-50"):
+            PieceComptable.objects.create(bien=bien, date=date(2026, 3, 5), fournisseur="EDF", libelle="Électricité",
+                                          montant=Decimal(montant), rubrique="electricite")
+        PieceComptable.objects.create(bien=bien, date=date(2026, 3, 5), fournisseur="Banque", libelle="Capital",
+                                      montant=Decimal("900"), rubrique="pret")
+        ChargeLMNP.objects.create(lot=self.lot, annee=2026, categorie="taxe_fonciere", montant=400)
+        b = bilan_lot(self.lot, 2026)
+        charges = {c["libelle"]: c["montant"] for c in b["charges"]}
+        # les factures saisies du dossier LMNP comptent (avoir déduit), pas le capital remboursé ; la charge LMNP saisie aussi
+        self.assertEqual(charges["Électricité"], Decimal("150"))
+        self.assertEqual(charges["Taxe foncière"], Decimal("400"))
+        self.assertNotIn("Rbt prêt (capital)", charges)
+        self.assertEqual(b["total_charges"], Decimal("550"))
+        d = next(x for x in dossiers.tous() if x["code"] == "2031")
+        apercu = dict((l, m) for l, m, _ in dossiers.resume(d, 2026)["apercu"])
+        self.assertEqual(apercu["Charges"], Decimal("550"))
+        self.assertIn("Électricité", self.client.get("/lmnp/?annee=2026").content.decode())
+
+    def test_charge_negative_affichee_en_plus(self):
+        from .models import ChargeLMNP
+        ChargeLMNP.objects.create(lot=self.lot, annee=2026, categorie="assurance", montant=Decimal("-30"))
+        page = self.client.get("/lmnp/?annee=2026").content.decode()
+        self.assertIn("+ 30,00 €", page)
+        self.assertNotIn("− -30", page)
+
     def test_historique_repris_avant_les_baux(self):
         from .lmnp import bilan_lot
         from .models import EncaissementHistorique
@@ -3585,6 +3619,51 @@ class RegimesFiscauxTests(TestCase):
         d2072 = next(d for d in dossiers.tous() if d["code"] == f"2072-{self.sci.pk}")
         self.assertEqual(dossiers.resume(d2072, 2025)["charges"], Decimal("210"))  # 300 − 50 − 40
 
+    def test_loyers_encaisses_mois_par_mois_dans_le_detail(self):
+        from .models import Bail, Echeance, Locataire, Lot, Paiement
+
+        a = self._bien(self.sci, "Vaugneray")
+        lot = Lot.objects.create(bien=a, designation="Apt 1er", type="appartement")
+        bail = Bail.objects.create(lot=lot, type=Bail.Type.NU, date_debut=date(2024, 1, 1), loyer_hc=600, charges=50)
+        bail.locataires.add(Locataire.objects.create(nom="DUPONT", prenom="Jean", civilite="M."))
+        for mois, jour in ((3, 4), (1, 5), (2, 3)):  # créés dans le désordre
+            e = Echeance.objects.create(bail=bail, periode=date(2025, mois, 1), loyer_hc=600, charges=50,
+                                        date_exigibilite=date(2025, mois, 1))
+            Paiement.objects.create(echeance=e, date=date(2025, mois, jour), montant=Decimal("650"))
+        page = self.client.get(f"/comptabilite/2072/?sci={self.sci.pk}&annee=2025").content.decode()
+        # une sous-ligne par loyer, avec le mois et le locataire, du 1er janvier au 31 décembre, montant hors charges
+        self.assertRegex(page, r"(?s)▸</button>1</td>.*?05/01/2025 · loyer de janvier 2025 · M. Jean DUPONT \(Apt 1er\).*?600,00"
+                               r".*?03/02/2025 · loyer de février 2025.*?04/03/2025 · loyer de mars 2025")
+        self.assertRegex(page, r"(?s)>1</td>.*?<td class=\"montant\">1 800\xa0€</td>")
+
+    def test_fiche_facture_montre_le_pdf_d_origine(self):
+        import tempfile
+
+        from django.core.files.uploadedfile import SimpleUploadedFile
+        from django.test import override_settings
+
+        from .models import PieceComptable
+
+        a = self._bien(self.sci, "Vaugneray")
+        with tempfile.TemporaryDirectory() as prive, override_settings(PRIVE_ROOT=prive):
+            p = PieceComptable.objects.create(bien=a, date=date(2025, 1, 10), fournisseur="Foncia", libelle="Appel", ligne="13",
+                                              montant=Decimal("100"), fichier=SimpleUploadedFile("appel.pdf", b"%PDF-1.4 test"))
+            retour = f"/comptabilite/2072/?sci={self.sci.pk}&annee=2025"
+            fiche = self.client.get(f"/admin/patrimoine/piececomptable/{p.pk}/change/?next={retour}").content.decode()
+            self.assertIn("Facture d'origine", fiche)
+            self.assertIn(f'<iframe src="{p.fichier.url}#view=FitH"', fiche)
+            # le fichier s'affiche dans le cadre (même adresse) et en ligne, pas en téléchargement
+            r = self.client.get(p.fichier.url)
+            self.assertEqual(r.status_code, 200)
+            self.assertEqual(r.get("X-Frame-Options"), "SAMEORIGIN")
+            self.assertNotIn("attachment", r.get("Content-Disposition", ""))
+            # une part d'une facture scindée montre le PDF de la pièce mère ; sans fichier, pas de cadre
+            part = PieceComptable.objects.create(bien=a, date=date(2025, 1, 10), libelle="Part", ligne="13",
+                                                 montant=Decimal("40"), piece_mere=p)
+            self.assertIn(p.fichier.url, self.client.get(f"/admin/patrimoine/piececomptable/{part.pk}/change/").content.decode())
+            sans = PieceComptable.objects.create(bien=a, date=date(2025, 1, 10), libelle="Sans", ligne="13", montant=Decimal("5"))
+            self.assertNotIn("Facture d'origine", self.client.get(f"/admin/patrimoine/piececomptable/{sans.pk}/change/").content.decode())
+
     def _donnees_fiche(self, url):
         """Données POST d'une fiche d'admin telle qu'affichée (champs et formulaires en ligne)."""
         ctx = self.client.get(url).context
@@ -4040,3 +4119,69 @@ class EvolutionDepensesTests(TestCase):
         page = self.client.get(reverse("evolution_depenses")).content.decode()
         self.assertIn(f"<option selected>{t - 4}</option>", page)
         self.assertIn(f"<option selected>{t - 1}</option>", page)
+
+
+class BlocComptaAccueilTests(TestCase):
+    """Tableau de bord : bloc « Comptabilité à faire » avec un lien vers le dossier concerné, masqué quand tout est à jour."""
+
+    def setUp(self):
+        self.admin = User.objects.create_superuser("admin", "a@example.com", "x")
+        self.client.force_login(self.admin)
+        self.alfab = Proprietaire.objects.create(nom="SCI ALFAB", type=Proprietaire.Type.SCI_IR)
+        self.bien = Bien.objects.create(proprietaire=self.alfab, nom="Immeuble A", regime_fiscal="sci_ir", adresse="1 rue",
+                                        code_postal="69000", ville="Lyon", comptabilite="foncier")
+        self.code = f"2072-{self.alfab.pk}"
+
+    def _accueil(self, annee=None):
+        if annee:
+            self.client.get(f"/comptabilite/?annee={annee}")  # l'année fiscale est gardée en session
+        return self.client.get("/admin/").content.decode()
+
+    def test_masque_quand_tout_est_a_jour(self):
+        self.assertNotIn("Comptabilité à faire", self._accueil(timezone.localdate().year))
+
+    def test_factures_a_saisir_renvoient_au_dossier(self):
+        from .models import PieceComptable
+
+        PieceComptable.objects.create(bien=self.bien, date=date(2025, 4, 1), libelle="Importée", montant=Decimal("10"))
+        PieceComptable.objects.create(bien=self.bien, libelle="Pas encore lue")
+        page = self._accueil(timezone.localdate().year)
+        self.assertIn("Comptabilité à faire", page)
+        self.assertIn("2 factures à saisir", page)
+        self.assertIn(f"dossier={self.code}&amp;a_codifier=oui", page)
+        self.assertIn(reverse("compta_accueil"), page)
+
+    def test_bien_sans_dossier(self):
+        from .models import PieceComptable
+
+        moi = Proprietaire.objects.create(nom="Fabien", type=Proprietaire.Type.NOM_PROPRE)
+        sans = Bien.objects.create(proprietaire=moi, nom="Garage", regime_fiscal="nu", option_fiscale="micro", adresse="2 rue",
+                                   code_postal="69000", ville="Lyon")
+        PieceComptable.objects.create(bien=sans, libelle="Importée")
+        page = self._accueil(timezone.localdate().year)
+        self.assertIn("Bien hors dossier", page)
+        self.assertIn(reverse("regimes_fiscaux"), page)
+
+    def test_attestation_manquante_annee_terminee_non_declaree(self):
+        from .models import DeclarationFaite, Pret
+
+        annee = timezone.localdate().year - 1
+        p = Pret.objects.create(proprietaire=self.alfab, bien=self.bien, banque="B", type="in_fine", montant=Decimal("100000"),
+                                taux=Decimal("2.4"), duree_mois=120, date_premiere_echeance=date(annee, 1, 1))
+        page = self._accueil(annee)
+        self.assertIn("1 attestation manquante", page)
+        self.assertIn(reverse("admin:patrimoine_pret_change", args=[p.pk]) + "?next=", page)
+        DeclarationFaite.objects.create(annee=annee, formulaire="2072", proprietaire=self.alfab, date_declaration=date(annee + 1, 5, 15))
+        self.assertNotIn("Comptabilité à faire", self._accueil())
+        # année en cours : les attestations n'arrivent qu'en janvier, pas de rappel
+        self.assertNotIn("Comptabilité à faire", self._accueil(annee + 1))
+
+    def test_cache_sans_droit_compta(self):
+        from . import droits
+        from .models import PieceComptable
+
+        PieceComptable.objects.create(bien=self.bien, libelle="Importée")
+        user = User.objects.create_user("aide", password="x", is_staff=True)
+        droits.appliquer(user, {"loyers": droits.MODIFICATION})
+        self.client.force_login(user)
+        self.assertNotIn("Comptabilité à faire", self.client.get("/admin/").content.decode())
