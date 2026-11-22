@@ -101,6 +101,25 @@ def colonne(bien, annee):
     return {"bien": bien, "valeurs": dict(v), "detail": dict(detail)}
 
 
+def sous_lignes(colonnes, code, annee):
+    """Éléments qui composent une ligne (factures, loyers, forfait, prêts), un par sous-ligne dépliable, avec le montant
+    dans la colonne de son immeuble. La ligne 9 reprend aussi les travaux 9 bis, qu'elle inclut."""
+    from .models import Pret
+
+    sous = []
+    for i, c in enumerate(colonnes):
+        prets = {f"{p.banque} {p.reference}": p for p in Pret.objects.filter(bien=c["bien"])} if code == "17" else {}
+        for cle in (["9", "9b"] if code == "9" else [code]):
+            for libelle, montant, piece in c["detail"].get(cle, []):
+                pret = next((p for nom, p in prets.items() if libelle.startswith(nom)), None)
+                declare = pret.montants_declares(annee) if pret else None
+                sous.append({"libelle": f"Prêt {pret.banque} {pret.reference}" if pret else libelle, "piece": piece,
+                             "bien": c["bien"], "pret": pret, "declare": declare, "renovation": cle == "9b" and code == "9",
+                             "estimation": bool(declare and declare["source"] == "estimation"),
+                             "montants": [montant if j == i else None for j in range(len(colonnes))], "total": montant})
+    return sous
+
+
 LIGNES_SAISIES = ["1", "2", "3", "4", "6", "7", "8", "9", "9b", "10", "11", "12", "13", "14", "15", "17", "19", "20"]
 
 
@@ -132,6 +151,7 @@ def annexe(biens, annee):
         cols = colonnes[i:i + 6]
         vides = 6 - len(cols)
         lignes = [{"code": code, "numero": "9 bis" if code == "9b" else code, "libelle": libelle, "genre": genre,
+                   "detail": sous_lignes(cols, code, annee) if genre not in ("total", "titre") else [],
                    "montants": [c["valeurs"].get(code, ZERO) for c in cols]} for code, libelle, genre in LIGNES]
         pages.append({"colonnes": cols, "lignes": lignes, "vides": range(vides)})
     somme = lambda *codes: sum((c["valeurs"].get(k, ZERO) * signe for c in colonnes for k, signe in codes), ZERO)

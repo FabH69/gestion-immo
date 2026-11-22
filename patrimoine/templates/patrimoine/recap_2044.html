@@ -10,11 +10,11 @@
 <div class="barre-compta">{% boutons_annees annees annee "civil" %}</div>
 <p class="aide-compta">Biens en nom propre déclarés en revenus fonciers, à reporter sur la déclaration 2044 des revenus {{ annee }}. Loyers, forfait de 20 € par local, intérêts et assurance des prêts sont calculés ; le reste vient des factures codées, dans l'année de leur paiement. Faites valider par votre comptable avant de déclarer.</p>
 {% if colonnes %}
-<div class="barre-2044"><button type="button" class="button" data-tout="1">Tout déplier</button> <button type="button" class="button" data-tout="0">Tout replier</button></div>
-<section class="module etat-scroll tableau-compta recap-2044{% if colonnes|length > 1 %} multi{% endif %}">
+{% include "patrimoine/_barre_deplier.html" %}
+<section class="module etat-scroll tableau-compta recap-2044 depliable{% if colonnes|length > 1 %} multi{% endif %}">
   <table class="etat">
     <thead><tr><th class="libelle">Ligne</th><th class="libelle">Libellé</th>{% for c in colonnes %}<th class="col-bien">{{ c.bien.nom }}</th>{% endfor %}{% if colonnes|length > 1 %}<th>Total</th>{% endif %}</tr></thead>
-    {% for l in lignes %}<tbody class="ligne-2044{% if l.detail %} a-detail{% endif %}">
+    {% for l in lignes %}<tbody class="{% if l.detail %}a-detail{% endif %}">
       <tr class="{% if l.genre == "total" %}st{% else %}principale{% endif %}">
         <td class="libelle num">{% if l.detail %}<button type="button" class="deplier" aria-expanded="false" aria-label="Voir le détail de la ligne {{ l.numero }}">▸</button>{% endif %}{{ l.numero }}</td>
         <td class="libelle">{{ l.libelle }}{% if l.detail %} <span class="nb">{{ l.detail|length }}</span>{% endif %}</td>
@@ -22,64 +22,28 @@
       </tr>
       {% for d in l.detail %}<tr class="sous">
         <td></td>
-        <td class="libelle">{% if d.piece %}<a href="{% url 'admin:patrimoine_piececomptable_change' d.piece.pk %}">{{ d.libelle }}</a>{% else %}{{ d.libelle }}{% endif %}{% if colonnes|length > 1 %}<span class="bien-tag">{{ d.bien.nom }}</span>{% endif %}{% if d.cumul %} <span class="cumul">intérêts {{ d.cumul.interets|euros:2 }} · assurance {{ d.cumul.assurance|euros:2 }}</span>{% endif %}{% if d.renovation %} <span class="badge">rénovation énergétique</span>{% endif %}
-          {% if d.estimation %}<div class="estimation"><span class="badge badge-estim">estimation</span> calculé avec le taux et la durée du prêt, sans tableau de la banque. <a href="{% url 'admin:patrimoine_pret_tableau' d.pret.pk %}">Importer le tableau d'amortissement</a></div>{% endif %}</td>
+        <td class="libelle">{% include "patrimoine/_sous_ligne_libelle.html" with avec_bien=colonnes|length|add:"-1" %}</td>
         {% for m in d.montants %}<td class="col-bien">{% if m is not None %}{{ m|euros:2 }}{% endif %}</td>{% endfor %}{% if colonnes|length > 1 %}<td>{{ d.total|euros:2 }}</td>{% endif %}
       </tr>{% endfor %}
     </tbody>{% endfor %}
   </table>
 </section>
+{% include "patrimoine/_lignes_depliables.html" %}
 <style>
-  .barre-2044 { margin: 0 0 8px; display: flex; gap: 6px; justify-content: flex-end; }
   .recap-2044 td.libelle { white-space: normal; }
   .recap-2044 table.etat td.num { white-space: nowrap; width: 3.5em; min-width: 0; }
-  .recap-2044 button.deplier { border: 0; background: none; cursor: pointer; padding: 0 4px 0 0; font-size: 1em; color: var(--link-fg, #1f5a5c); transition: transform .15s; display: inline-block; }
-  .recap-2044 tbody.ouvert button.deplier { transform: rotate(90deg); }
-  .recap-2044 tbody.a-detail tr.principale { cursor: pointer; }
-  .recap-2044 tbody.a-detail tr.principale:hover td { background: var(--selected-row, #f5f9fb); }
-  .recap-2044 tbody.ouvert tr.principale td { font-weight: 600; border-bottom-color: transparent; }
-  .recap-2044 tr.sous { display: none; }
-  .recap-2044 tbody.ouvert tr.sous { display: table-row; }
-  .recap-2044 tr.sous td { font-size: .9em; color: var(--body-quiet-color, #555); background: var(--darkened-bg, #fafbfc); border-bottom: 1px dotted #e3e3e3; }
+  .recap-2044 tbody.ouvert tr.principale td { border-bottom-color: transparent; }
+  .recap-2044 tr.sous td { border-bottom: 1px dotted #e3e3e3; }
   .recap-2044 tr.sous td.libelle { padding-left: 18px; }
   .recap-2044 tbody.ouvert tr.sous:last-child td { border-bottom: 1px solid #cfd8dc; }
-  .recap-2044 .nb { font-size: .75em; background: #e3ecf1; color: #264b5d; border-radius: 9px; padding: 0 6px; margin-left: 4px; font-weight: normal; }
-  .recap-2044 .badge { font-size: .75em; border-radius: 3px; padding: 0 5px; background: #e6f2e6; color: #2e6b2e; white-space: nowrap; }
-  .recap-2044 .badge-estim { background: #fff1d6; color: #8a5a00; }
-  .recap-2044 .cumul { color: var(--body-quiet-color, #777); margin-left: 6px; }
-  .recap-2044 .estimation { margin-top: 3px; font-size: .92em; color: #8a5a00; }
-  .recap-2044 .bien-tag { display: none; }
   @media (max-width: 767px) {
-    .barre-2044 { justify-content: flex-start; }
     .recap-2044.multi .col-bien { display: none; }
     .recap-2044 .bien-tag { display: block; font-size: .85em; color: #264b5d; font-weight: 600; }
-    .recap-2044 .cumul { display: block; margin-left: 0; }
-    .recap-2044 table.etat th, .recap-2044 table.etat td { white-space: normal; }
+    .recap-2044 table.etat th, .recap-2044 table.etat td { white-space: normal; padding: 8px 6px; }
     .recap-2044 table.etat td.libelle { min-width: 0; }
-    .recap-2044 table.etat td, .recap-2044 table.etat th { padding: 8px 6px; }
     .recap-2044 table.etat td.num { width: 3em; padding-right: 0; }
     .recap-2044 tr.sous td.libelle { padding-left: 6px; }
-    .recap-2044 tr.sous td:empty:first-child { padding: 0; }
   }
 </style>
-<script>
-(function () {
-  var table = document.querySelector(".recap-2044");
-  function basculer(tb, ouvrir) {
-    tb.classList.toggle("ouvert", ouvrir);
-    var b = tb.querySelector("button.deplier"); if (b) b.setAttribute("aria-expanded", ouvrir ? "true" : "false");
-  }
-  table.addEventListener("click", function (e) {
-    if (e.target.closest("a")) return;
-    var tr = e.target.closest("tr.principale"), tb = tr && tr.parentNode;
-    if (tb && tb.classList.contains("a-detail")) basculer(tb, !tb.classList.contains("ouvert"));
-  });
-  document.querySelectorAll(".barre-2044 [data-tout]").forEach(function (b) {
-    b.addEventListener("click", function () {
-      table.querySelectorAll("tbody.a-detail").forEach(function (tb) { basculer(tb, b.dataset.tout === "1"); });
-    });
-  });
-})();
-</script>
 {% else %}<p>Aucun bien en nom propre n'est déclaré en revenus fonciers.</p>{% endif %}
 {% endblock %}

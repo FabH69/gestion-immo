@@ -275,26 +275,10 @@ def choix_lignes_2044():
 
 
 def recap_2044(annee):
-    from .annexe2072 import colonne
-    from .models import Pret
+    from .annexe2072 import colonne, sous_lignes
 
     colonnes = [colonne(b, annee) for b in biens_2044().filter(Q(vendu=False) | Q(date_vente__year__gte=annee)).order_by("nom")]
-    lignes = []
-    for n, l, code, g in LIGNES_2044:
-        sous = []
-        if g != "total":
-            for i, c in enumerate(colonnes):
-                prets = {f"{p.banque} {p.reference}": p for p in Pret.objects.filter(bien=c["bien"])} if code == "17" else {}
-                for cle in ([code, "9b"] if code == "9" else [code]):
-                    for libelle, montant, piece in c["detail"].get(cle, []):
-                        pret = next((p for nom, p in prets.items() if libelle.startswith(nom)), None)
-                        cumul = pret.cumul_annee(annee) if pret else None
-                        if pret:
-                            libelle = f"Prêt {pret.banque} {pret.reference}"
-                        sous.append({"libelle": libelle, "cumul": cumul, "bien": c["bien"], "piece": piece, "renovation": cle == "9b",
-                                     "estimation": bool(pret and not pret.lignes.exists()), "pret": pret,
-                                     "montants": [montant if j == i else None for j in range(len(colonnes))], "total": montant})
-        lignes.append({"numero": n, "libelle": l, "genre": g, "detail": sous,
-                       "montants": [c["valeurs"].get(code, ZERO) for c in colonnes],
-                       "total": sum((c["valeurs"].get(code, ZERO) for c in colonnes), ZERO)})
+    lignes = [{"numero": n, "libelle": l, "genre": g, "detail": sous_lignes(colonnes, code, annee) if g != "total" else [],
+               "montants": [c["valeurs"].get(code, ZERO) for c in colonnes],
+               "total": sum((c["valeurs"].get(code, ZERO) for c in colonnes), ZERO)} for n, l, code, g in LIGNES_2044]
     return {"colonnes": colonnes, "lignes": lignes}

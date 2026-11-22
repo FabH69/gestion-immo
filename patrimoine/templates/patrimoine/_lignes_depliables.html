@@ -1,0 +1,42 @@
+<style>
+  .barre-deplier { margin: 0 0 8px; display: flex; gap: 6px; justify-content: flex-end; }
+  .depliable button.deplier { border: 0; background: none; cursor: pointer; padding: 0 4px 0 0; font-size: 1em; color: var(--link-fg, #1f5a5c); transition: transform .15s; display: inline-block; }
+  .depliable tbody.ouvert button.deplier { transform: rotate(90deg); }
+  .depliable tbody.a-detail tr.principale { cursor: pointer; }
+  .depliable tbody.a-detail tr.principale:hover td { background: var(--selected-row, #f5f9fb); }
+  .depliable tbody.ouvert tr.principale td { font-weight: 600; }
+  .depliable tr.sous { display: none; }
+  .depliable tbody.ouvert tr.sous { display: table-row; }
+  .depliable tr.sous td { font-size: .9em; color: var(--body-quiet-color, #555); background: var(--darkened-bg, #fafbfc); }
+  .depliable .nb { font-size: .75em; background: #e3ecf1; color: #264b5d; border-radius: 9px; padding: 0 6px; margin-left: 4px; font-weight: normal; font-style: normal; }
+  .depliable .badge { font-size: .75em; border-radius: 3px; padding: 0 5px; background: #e6f2e6; color: #2e6b2e; white-space: nowrap; }
+  .depliable .badge-estim { background: #fff1d6; color: #8a5a00; }
+  .depliable .cumul { color: var(--body-quiet-color, #777); margin-left: 6px; }
+  .depliable .estimation { margin-top: 3px; font-size: .92em; color: #8a5a00; }
+  .depliable .bien-tag { display: none; }
+  @media print { .barre-deplier { display: none; } }
+  @media (max-width: 767px) {
+    .barre-deplier { justify-content: flex-start; }
+    .depliable .cumul { display: block; margin-left: 0; }
+  }
+</style>
+<script>
+document.addEventListener("DOMContentLoaded", function () {
+  function basculer(tb, ouvrir) {
+    tb.classList.toggle("ouvert", ouvrir);
+    var b = tb.querySelector("button.deplier"); if (b) b.setAttribute("aria-expanded", ouvrir ? "true" : "false");
+  }
+  document.querySelectorAll(".depliable").forEach(function (zone) {
+    zone.addEventListener("click", function (e) {
+      if (e.target.closest("a")) return;
+      var tr = e.target.closest("tr.principale"), tb = tr && tr.parentNode;
+      if (tb && tb.classList.contains("a-detail")) basculer(tb, !tb.classList.contains("ouvert"));
+    });
+  });
+  document.querySelectorAll(".barre-deplier [data-tout]").forEach(function (b) {
+    b.addEventListener("click", function () {
+      document.querySelectorAll(".depliable tbody.a-detail").forEach(function (tb) { basculer(tb, b.dataset.tout === "1"); });
+    });
+  });
+});
+</script>
