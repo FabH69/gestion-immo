@@ -239,6 +239,10 @@ class BienAdmin(admin.ModelAdmin):
             # case décochée : on annule ce que la vente du bien avait fait (sans toucher aux lots vendus à part)
             lots = obj.lots.filter(date_vente=avant["date_vente"]) if avant["date_vente"] else obj.lots.filter(date_vente__isnull=True)
             lots.update(vendu=False, date_vente=None)
+        from ..rappels import rappel_import_lcd
+
+        for lot in obj.lots.all():
+            rappel_import_lcd(lot)  # bien vendu : arrête le rappel mensuel d'import courte durée
         if not obj.vendu:
             from ..rappels import rappel_cfe
 
@@ -335,6 +339,10 @@ class LotAdmin(FicheMixin, admin.ModelAdmin):
         if obj.date_vente:
             obj.vendu = True
         super().save_model(request, obj, form, change)
+        from ..rappels import rappel_import_lcd
+
+        if rappel_import_lcd(obj):
+            messages.info(request, "Rappel mensuel ajouté : importer les réservations du mois précédent le 5 de chaque mois.")
 
     @admin.display(description="locataire")
     def locataire_actuel(self, obj):
