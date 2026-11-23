@@ -41,8 +41,8 @@ class RappelAdmin(admin.ModelAdmin):
     list_editable = ["important", "actif", "dans_agenda", "fait"]
     list_filter = ["important", "dans_agenda", "fait", "bien__proprietaire"]
     # l'heure (facultative) sur la même ligne que la date, pour noter un rendez-vous
-    fields = ["titre", ("date", "heure"), "periodicite", "categorie", "bien", ("important", "prevenir_jours"), ("actif", "dans_agenda"), "fait", "notes",
-              "agenda"]
+    fields = ["titre", ("date", "heure"), "periodicite", "categorie", "bien", ("important", "prevenir_jours"), ("actif", "dans_agenda"),
+              ("fait", "fait_le"), "notes", "agenda"]
     readonly_fields = ["agenda"]
 
     def get_fields(self, request, obj=None):

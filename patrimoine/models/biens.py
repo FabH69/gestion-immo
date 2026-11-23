@@ -103,6 +103,11 @@ class Bien(models.Model):
     vendu = models.BooleanField("bien vendu", default=False)
     date_vente = models.DateField("date de vente", null=True, blank=True)
 
+    @property
+    def est_maison(self):
+        """Résidence principale hors comptabilité locative : ses dépenses sont suivies dans « Ma maison »."""
+        return self.residence_principale and not self.comptabilite
+
     class Comptabilite(models.TextChoices):
         FONCIER = "foncier", "Revenus fonciers (2072 ou 2044)"
         LMNP = "lmnp", "LMNP (rubriques)"
