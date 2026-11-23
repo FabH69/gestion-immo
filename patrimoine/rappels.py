@@ -30,6 +30,43 @@ def rappel_cfe(bien, aujourdhui=None):
               "date limite de paiement le 15 décembre. Une fois payée, ajoutez la facture en rubrique « Impôts et taxes (CFE) ».")
 
 
+TITRE_IMPORT_LCD = "Importer les réservations du mois précédent (Airbnb, Booking)"
+JOUR_IMPORT_LCD = 5  # J+5 : le 5 de chaque mois, pour le mois qui vient de se terminer
+
+
+def _titre_import_lcd(lot):
+    return f"{TITRE_IMPORT_LCD} – {lot}"
+
+
+def rappel_import_lcd(lot, aujourdhui=None):
+    """Lot en courte durée : rappel mensuel le 5 « Importer les réservations du mois précédent » (créé s'il manque).
+
+    Le lot quitte la courte durée ou est vendu : le rappel existant est arrêté (décoché « actif »), puis repris s'il y revient.
+    Renvoie le rappel créé, sinon None."""
+    from datetime import date
+
+    from django.utils import timezone
+
+    titre = _titre_import_lcd(lot)
+    existants = Rappel.objects.filter(bien=lot.bien, titre=titre)
+    en_lcd = lot.exploitation == "courte" and not lot.vendu and not lot.bien.vendu
+    if not en_lcd:
+        existants.filter(actif=True).update(actif=False)
+        return None
+    if existants.exists():
+        existants.filter(actif=False).update(actif=True)
+        return None
+    aujourdhui = aujourdhui or timezone.localdate()
+    echeance = date(aujourdhui.year, aujourdhui.month, JOUR_IMPORT_LCD)
+    if echeance < aujourdhui:
+        echeance = _ajouter_mois(echeance, 1)
+    return Rappel.objects.create(
+        titre=titre, date=echeance, categorie=Rappel.Categorie.ADMINISTRATIF, bien=lot.bien,
+        periodicite=Rappel.Periodicite.MENSUEL, prevenir_jours=0, dans_agenda=True,
+        notes="Téléchargez les exports Airbnb et Booking du mois qui vient de se terminer, puis importez-les dans "
+              "Courte durée › Suivi mensuel (choisir le logement, bouton d'import). Cochez « fait » : le rappel passe au 5 du mois suivant.")
+
+
 def _anniversaire_recent(depart, aujourdhui):
     """Échéance annuelle à partir d'une date : la plus récente passée (pas une date d'il y a dix ans), ou la prochaine."""
     echeance = _ajouter_mois(depart, 12)

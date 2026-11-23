@@ -27,7 +27,9 @@ MOIS = ["janvier", "février", "mars", "avril", "mai", "juin", "juillet", "août
 MOIS_COURTS = ["janv.", "févr.", "mars", "avr.", "mai", "juin", "juil.", "août", "sept.", "oct.", "nov.", "déc."]
 
 # factures à codifier : la codification attendue dépend du régime du bien
-_RUBRIQUE = Q(bien__comptabilite__in=PAR_RUBRIQUE)
+# maison (résidence principale hors comptabilité locative) : catégories de dépenses, en dehors des déclarations
+MAISON = Q(bien__residence_principale=True, bien__comptabilite="")
+_RUBRIQUE = Q(bien__comptabilite__in=PAR_RUBRIQUE) | MAISON
 MANQUE = (Q(preremplie=True) | Q(montant__isnull=True) | Q(date__isnull=True)
           | (_RUBRIQUE & Q(rubrique="")) | (~_RUBRIQUE & Q(ligne="")))
 
@@ -62,19 +64,20 @@ def code_du_fournisseur(fournisseur, par_rubrique):
         return {}
     champ = "rubrique" if par_rubrique else "ligne"
     qs = PieceComptable.objects.filter(fournisseur__iexact=fournisseur, preremplie=False).exclude(**{champ: ""})
+    qs = qs.exclude(MAISON)  # les catégories de la maison ne valent pas pour la comptabilité locative
     qs = qs.filter(_RUBRIQUE) if par_rubrique else qs.exclude(_RUBRIQUE)
     valeur = qs.order_by("-pk").values_list(champ, flat=True).first()
     return {champ: valeur} if valeur else {}
 
 
 def a_codifier(regime=None):
-    qs = PieceComptable.objects.filter(MANQUE)
+    qs = PieceComptable.objects.filter(MANQUE).exclude(MAISON)  # la maison reste hors de la comptabilité
     return qs.filter(bien__comptabilite=regime) if regime else qs
 
 
 def a_saisir(regime=None):
     """Pièces importées que la lecture automatique n'a pas pu lire (montant ou date manquants) : à compléter à la main."""
-    qs = PieceComptable.objects.filter(preremplie=False).filter(Q(montant__isnull=True) | Q(date__isnull=True))
+    qs = PieceComptable.objects.filter(preremplie=False).filter(Q(montant__isnull=True) | Q(date__isnull=True)).exclude(MAISON)
     return qs.filter(bien__comptabilite=regime) if regime else qs
 
 
@@ -250,6 +253,7 @@ def recapitulatif(regime, annee, bien_choisi=None, par_mois=False):
 
 
 NOTES = {"pret": "part capital des mensualités (non déductible)",
+         "immobilisation": "achats à amortir (non déductibles : seule la dotation de l'année compte)",
          "interets_pret": "charge déductible (bilan 2031 / 2033)",
          "commission": "plateformes et conciergerie"}
 
@@ -297,4 +301,11 @@ def recap_2044(annee):
                "total": sum((c["valeurs"].get(code, ZERO) for c in colonnes), ZERO)} for n, l, code, g in LIGNES_2044]
     from .annexe2072 import baux_au_forfait
 
+    from .annexe2072 import arrondis, euro_le_plus_proche
+
+    for l in lignes:
+        l["arrondis"] = arrondis(l["detail"], len(colonnes)) if l["detail"] else None
+        if l["arrondis"] and len(colonnes) > 1:
+            exact = sum((d["total"] for d in l["detail"]), ZERO)
+            l["arrondi_total"] = (exact, euro_le_plus_proche(exact)) if exact != euro_le_plus_proche(exact) else None
     return {"colonnes": colonnes, "lignes": lignes, "baux_forfait": baux_au_forfait([c["bien"] for c in colonnes], annee)}

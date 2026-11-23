@@ -30,6 +30,10 @@ class Proprietaire(models.Model):
                   "(page Annexe 2072).")
     notes = models.TextField(blank=True)
 
+    ordre_galerie = models.PositiveIntegerField(
+        "ordre dans la galerie des biens", default=0, editable=False,
+        help_text="Position de la colonne du propriétaire en vue galerie, réglée par glisser-déposer")
+
     class Meta:
         verbose_name = "propriétaire"
         ordering = ["nom"]
@@ -37,9 +41,28 @@ class Proprietaire(models.Model):
     def __str__(self):
         return self.nom
 
+    def save(self, *args, **kwargs):
+        super().save(*args, **kwargs)
+        # une SCI à l'IR (ou à l'IS) impose son régime à tous ses biens : on les réaligne quand son type change
+        aligner_biens_sur_proprietaire(self)
+
     @property
     def adresse_complete(self):
         return "\n".join(filter(None, [self.adresse, f"{self.code_postal} {self.ville}".strip()]))
+
+
+def aligner_biens_sur_proprietaire(proprietaire):
+    """Réenregistre les biens dont le régime ou l'option ne suit pas celui imposé par leur SCI. Renvoie leur nombre."""
+    regime = Bien.REGIME_DU_PROPRIETAIRE.get(proprietaire.type)
+    if not regime:
+        return 0
+    biens = proprietaire.biens.exclude(regime_fiscal=regime, option_fiscale=Bien.OptionFiscale.REEL, regime_a_verifier=False)
+    n = 0
+    for bien in biens:
+        bien.proprietaire = proprietaire
+        bien.save()
+        n += 1
+    return n
 
 
 class Syndic(models.Model):
@@ -62,6 +85,10 @@ class Syndic(models.Model):
 
     def __str__(self):
         return f"{self.nom} ({self.ville})" if self.ville else self.nom
+
+
+def _chemin_photo_bien(instance, nom):
+    return f"photos/biens/{nom}"
 
 
 class Bien(models.Model):
@@ -103,6 +130,11 @@ class Bien(models.Model):
     vendu = models.BooleanField("bien vendu", default=False)
     date_vente = models.DateField("date de vente", null=True, blank=True)
 
+    @property
+    def est_maison(self):
+        """Résidence principale hors comptabilité locative : ses dépenses sont suivies dans « Ma maison »."""
+        return self.residence_principale and not self.comptabilite
+
     class Comptabilite(models.TextChoices):
         FONCIER = "foncier", "Revenus fonciers (2072 ou 2044)"
         LMNP = "lmnp", "LMNP (rubriques)"
@@ -131,6 +163,9 @@ class Bien(models.Model):
     COMPTA_DU_REGIME = {"nu": "foncier", "sci_ir": "foncier", "lmnp": "lmnp", "lmp": "lmnp", "societe_ir": "societe",
                         "societe_is": "societe", "non_loue": ""}
     REGIMES_MICRO_POSSIBLE = ("nu", "lmnp", "lmp")
+    # régime imposé par le type du propriétaire : les biens d'une SCI à l'IR suivent la SCI (revenus fonciers, réel, 2072),
+    # ceux d'une SCI à l'IS sont à l'IS ; pas de choix bien par bien
+    REGIME_DU_PROPRIETAIRE = {"sci_ir": "sci_ir", "sci_is": "societe_is"}
 
     regime_fiscal = models.CharField(
         "régime fiscal", max_length=12, choices=RegimeFiscal.choices, blank=True,
@@ -144,9 +179,16 @@ class Bien(models.Model):
         "régime à vérifier", default=False, editable=False,
         help_text="Régime déduit automatiquement de l'ancienne comptabilité : à confirmer en enregistrant la fiche du bien.")
     notes = models.TextField(blank=True)
+    photo = models.ImageField("photo du bien", upload_to=_chemin_photo_bien, blank=True,
+                              help_text="Affichée sur la carte du bien en vue galerie. Sans photo, la galerie reprend la "
+                                        "photo principale d'un de ses lots.")
 
     EQUIPEMENTS_COMMUNS = ["gardiennage", "ascenseur", "chauffage_collectif", "antenne_tv", "vide_ordures", "interphone",
                            "espaces_verts", "eau_chaude_collective", "local_velos", "fibre"]
+
+    ordre_galerie = models.PositiveIntegerField(
+        "ordre dans la galerie", default=0, editable=False,
+        help_text="Position du bien dans la colonne de son propriétaire en vue galerie, réglée par glisser-déposer")
 
     class Meta:
         ordering = ["proprietaire__nom", "nom"]
@@ -157,6 +199,12 @@ class Bien(models.Model):
 
     def __str__(self):
         return f"{self.nom} ({self.ville})"
+
+    def regime_impose(self):
+        """Régime fixé par le propriétaire (SCI à l'IR ou à l'IS), sinon chaîne vide."""
+        if not self.proprietaire_id:
+            return ""
+        return self.REGIME_DU_PROPRIETAIRE.get(self.proprietaire.type, "")
 
     def regime_deduit(self):
         """Régime qui correspond à l'ancienne « comptabilité » du bien et au type de son propriétaire."""
@@ -186,11 +234,16 @@ class Bien(models.Model):
             self.regime_fiscal = ""
         if not self.regime_fiscal:
             self.regime_fiscal = self.regime_deduit()
+        impose = self.regime_impose()
+        if impose:
+            self.regime_fiscal = impose
+            self.regime_a_verifier = False  # aucun doute possible : c'est le régime de la SCI
         self.comptabilite = self.COMPTA_DU_REGIME[self.regime_fiscal]
         if self.regime_fiscal not in self.REGIMES_MICRO_POSSIBLE:
             self.option_fiscale = self.OptionFiscale.REEL
         if kwargs.get("update_fields") is not None:
-            kwargs["update_fields"] = set(kwargs["update_fields"]) | {"regime_fiscal", "comptabilite", "option_fiscale"}
+            kwargs["update_fields"] = set(kwargs["update_fields"]) | {"regime_fiscal", "comptabilite", "option_fiscale",
+                                                                      "regime_a_verifier"}
         super().save(*args, **kwargs)
         self._charge = {"regime_fiscal": self.regime_fiscal, "comptabilite": self.comptabilite}
 
@@ -204,6 +257,17 @@ class Bien(models.Model):
     @property
     def micro(self):
         return self.option_fiscale == self.OptionFiscale.MICRO and self.regime_fiscal in self.REGIMES_MICRO_POSSIBLE
+
+    @property
+    def photo_carte(self):
+        """URL de la photo de la carte en galerie : celle du bien, sinon la photo principale du premier lot qui en a une."""
+        if self.photo:
+            return self.photo.url
+        for lot in self.lots.all():
+            photos = list(lot.photos.all())
+            if photos:
+                return photos[0].image.url
+        return ""
 
     @property
     def meuble_fiscal(self):

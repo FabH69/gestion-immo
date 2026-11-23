@@ -1,0 +1,17 @@
+<p class="petit-d">{% if t.source == "saisie" %}Montants au 31/12/{{ t.ref }} repris de votre dernière déclaration.{% elif t.source == "calcul" %}Montants calculés par l'appli{% if t.ref %} à partir de votre saisie au 31/12/{{ t.ref }}{% else %} à partir de vos données des années précédentes{% endif %} : vérifiez-les avec votre dernier avis d'impôt et corrigez-les si besoin.{% else %}Aucun déficit antérieur connu.{% endif %}</p>
+<div class="dr-defilement"><table class="dr-2044">
+  <thead><tr><th>Année d'origine</th>{% if nature == "lmnp" %}<th>Case</th>{% else %}<th></th>{% endif %}<th>A · non imputé au 31/12/{{ annee|add:"-1" }}</th><th>B · imputé en {{ annee }}</th><th>C · reste à reporter au 31/12/{{ annee }}</th></tr></thead>
+  <tbody>
+    {% for l in t.lignes %}<tr{% if l.origine == annee %} class="fort"{% endif %}><td class="n">{{ l.origine }}</td><td>{% if l.case %}<span class="dr-case">{{ l.case }}</span>{% elif l.origine == annee %}<span class="petit-d">déficit de l'année</span>{% endif %}</td>
+      <td class="m">{% if l.a %}{{ l.a|floatformat:"0g" }} €{% else %}–{% endif %}</td><td class="m">{% if l.b %}{{ l.b|floatformat:"0g" }} €{% else %}–{% endif %}</td>
+      <td class="m">{% if l.c %}{{ l.c|floatformat:"0g" }} €{% if l.perime %} <span class="pill-d ko">perdu après {{ annee }}</span>{% endif %}{% else %}–{% endif %}</td></tr>{% endfor %}
+    <tr class="fort vers"><td class="n">Total</td><td>{% if nature == "foncier" %}ligne 451 → 4BD{% endif %}</td><td class="t">{{ t.total_a|floatformat:"0g" }} €</td><td class="t">{{ t.total_b|floatformat:"0g" }} €</td><td class="t">{{ t.total_c|floatformat:"0g" }} €</td></tr>
+  </tbody></table></div>
+<details class="dr-details"><summary>Corriger avec ma dernière déclaration (montants restant au 31/12/{{ annee|add:"-1" }})</summary>
+  <p class="petit-d">Recopiez {% if nature == "foncier" %}la colonne C du tableau des déficits de votre 2044 {{ annee|add:"-1" }} (ou la ligne « déficits fonciers restant à reporter » de votre avis d'impôt){% else %}les déficits LMNP restant à reporter de votre avis d'impôt ou de votre 2042-C-PRO {{ annee|add:"-1" }}{% endif %}. Laissez vide une année sans déficit. Les années suivantes seront calculées à partir de ces montants.</p>
+  <form method="post" class="dr-saisie">{% csrf_token %}
+    <input type="hidden" name="nature" value="{{ nature }}"><input type="hidden" name="annee" value="{{ annee }}">
+    {% for l in t.lignes %}{% if l.origine < annee %}<label>Déficit {{ l.origine }}<input type="text" inputmode="decimal" name="montant_{{ l.origine }}" value="{% if l.a %}{{ l.a|floatformat:0 }}{% endif %}"></label>{% endif %}{% endfor %}
+    <div class="bouton"><button type="submit" class="button default">Enregistrer</button></div>
+  </form>
+</details>

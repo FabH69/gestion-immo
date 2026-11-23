@@ -1,4 +1,5 @@
 """Écrans des propriétaires, syndics, biens et lots."""
+import json
 from decimal import Decimal
 
 from django import forms
@@ -139,10 +140,23 @@ class BienForm(forms.ModelForm):
         super().__init__(*args, **kwargs)
         if "regime_fiscal" in self.fields:
             self.fields["regime_fiscal"].required = True
+        if "proprietaire" in self.fields:
+            # pour la fiche : les SCI dont le régime s'impose aux biens (le script verrouille régime et option)
+            imposes = {str(p.pk): Bien.REGIME_DU_PROPRIETAIRE[p.type]
+                       for p in Proprietaire.objects.filter(type__in=list(Bien.REGIME_DU_PROPRIETAIRE))}
+            widget = self.fields["proprietaire"].widget
+            getattr(widget, "widget", widget).attrs["data-regimes-imposes"] = json.dumps(imposes)  # sous l'enveloppe « + »
 
     def clean(self):
         donnees = super().clean()
         regime, proprio = donnees.get("regime_fiscal"), donnees.get("proprietaire")
+        impose = Bien.REGIME_DU_PROPRIETAIRE.get(proprio.type) if proprio else None
+        if impose:
+            # SCI à l'IR (ou à l'IS) : le bien prend le régime de la SCI, au réel, quel que soit le choix affiché
+            regime = donnees["regime_fiscal"] = impose
+            donnees["option_fiscale"] = Bien.OptionFiscale.REEL
+            for champ in ("regime_fiscal", "option_fiscale"):
+                self.errors.pop(champ, None)
         if regime in Bien.REGIMES_MICRO_POSSIBLE:
             pass
         elif donnees.get("option_fiscale") == Bien.OptionFiscale.MICRO and regime:
@@ -159,8 +173,11 @@ class BienForm(forms.ModelForm):
 @admin.register(Bien)
 class BienAdmin(admin.ModelAdmin):
     form = BienForm
-    list_display = ["nom", "ville", "proprietaire", "regime", "syndic", "nb_lots", "loyers_mois", "rendement"]
+    list_display = ["nom_bien", "ville", "proprietaire", "regime", "syndic", "nb_lots", "loyers_mois", "rendement"]
     list_filter = [VenduFilter, "proprietaire", "regime_fiscal"]
+
+    class Media:
+        js = ["patrimoine/regime_impose.js"]
 
     @admin.display(description="régime fiscal", ordering="regime_fiscal")
     def regime(self, obj):
@@ -173,7 +190,7 @@ class BienAdmin(admin.ModelAdmin):
         """Colonnes de vente seulement quand on regarde les biens vendus (sinon des croix rouges partout)."""
         vente = request.GET.get("vente") or "non"
         if vente == "oui":
-            return ["nom", "ville", "proprietaire", "nb_lots", "date_vente"]
+            return ["nom_bien", "ville", "proprietaire", "nb_lots", "date_vente"]
         if vente == "tous":
             return self.list_display + ["vendu", "date_vente"]
         return self.list_display
@@ -181,17 +198,31 @@ class BienAdmin(admin.ModelAdmin):
     def get_queryset(self, request):
         from django.db.models import Prefetch
         return super().get_queryset(request).select_related("proprietaire", "syndic").prefetch_related(
-            "lots", Prefetch("lots__baux", queryset=Bail.objects.filter(actif=True), to_attr="baux_actifs"))
+            "lots", "lots__photos", Prefetch("lots__baux", queryset=Bail.objects.filter(actif=True), to_attr="baux_actifs"))
 
     def _loyers_hc(self, obj):
         return sum((b.loyer_hc or 0 for lot in obj.lots.all() for b in lot.baux_actifs), Decimal(0))
 
-    @admin.display(description="loyers HC / mois")
+    def _loyers_cc(self, obj):
+        """Loyers charges comprises des baux actifs : ce que les locataires versent chaque mois."""
+        return sum(((b.loyer_hc or 0) + (b.charges or 0) for lot in obj.lots.all() for b in lot.baux_actifs), Decimal(0))
+
+    @staticmethod
+    def _nb_courte_duree(obj):
+        return sum(1 for lot in obj.lots.all() if lot.exploitation == "courte" and not lot.vendu)
+
+    @admin.display(description="nom", ordering="nom")
+    def nom_bien(self, obj):
+        if self._nb_courte_duree(obj):
+            return format_html('{} <span class="pill bleu">Courte durée</span>', obj.nom)
+        return obj.nom
+
+    @admin.display(description="loyers CC / mois")
     def loyers_mois(self, obj):
-        total = self._loyers_hc(obj)
+        total = self._loyers_cc(obj)
         return f"{total:,.0f} €".replace(",", " ") if total else "–"
 
-    @admin.display(description="rendement brut")
+    @admin.display(description="rendement brut (HC)")
     def rendement(self, obj):
         total = self._loyers_hc(obj)
         if not total or not obj.prix_acquisition:
@@ -199,8 +230,84 @@ class BienAdmin(admin.ModelAdmin):
         return f"{total * 12 / obj.prix_acquisition * 100:.1f} %".replace(".", ",")
     search_fields = ["nom", "adresse", "ville"]
     inlines = [LotInline]
+    readonly_fields = ["apercu_photo"]
+
+    @admin.display(description="aperçu")
+    def apercu_photo(self, obj):
+        if obj and obj.photo:
+            return format_html('<img src="{}" alt="" style="max-height:140px;max-width:100%;border-radius:8px">', obj.photo.url)
+        return "Aucune photo"
+
+    VUES = ("liste", "galerie")
+
+    def get_urls(self):
+        from django.urls import path
+
+        return [path("ordre-galerie/", self.admin_site.admin_view(self.ordre_galerie_view), name="patrimoine_bien_ordre_galerie")] + super().get_urls()
+
+    def ordre_galerie_view(self, request):
+        """Enregistre l'ordre de la galerie réglé par glisser-déposer : colonnes propriétaires (POST quoi=proprietaire&ids=3,1,2)
+        ou biens d'une colonne (quoi=bien)."""
+        from django.http import HttpResponseNotAllowed, JsonResponse
+
+        if request.method != "POST":
+            return HttpResponseNotAllowed(["POST"])
+        if not self.has_view_or_change_permission(request):
+            return JsonResponse({"ok": False}, status=403)
+        ids = [int(i) for i in request.POST.get("ids", "").split(",") if i.strip().isdigit()]
+        modele = Bien if request.POST.get("quoi") == "bien" else Proprietaire
+        for rang, pk in enumerate(ids, start=1):
+            modele.objects.filter(pk=pk).update(ordre_galerie=rang)
+        return JsonResponse({"ok": True})
+
+    def changelist_view(self, request, extra_context=None):
+        """Bascule liste / galerie : ?vue=galerie est retenue pour la session, puis retirée des paramètres de la liste
+        (l'admin refuse les paramètres qu'il ne connaît pas)."""
+        if "vue" in request.GET:
+            if request.GET["vue"] in self.VUES:
+                request.session["biens_vue"] = request.GET["vue"]
+            get = request.GET.copy()
+            del get["vue"]
+            request.GET = get
+            request.META["QUERY_STRING"] = get.urlencode()
+        vue = request.session.get("biens_vue", "liste")
+        liens = {}
+        for v in self.VUES:
+            get = request.GET.copy()
+            get["vue"] = v
+            liens[f"url_{v}"] = "?" + get.urlencode()
+        reponse = super().changelist_view(request, {**(extra_context or {}), "vue": vue, **liens})
+        if vue == "galerie" and hasattr(reponse, "context_data") and "cl" in reponse.context_data:
+            reponse.context_data["galerie"] = self._galerie(reponse.context_data["cl"].result_list)
+        return reponse
+
+    def _galerie(self, biens):
+        """Une colonne par propriétaire (ordre réglé par glisser-déposer, sinon alphabétique), chacune avec les cartes de ses biens."""
+        blocs = {}
+        for bien in sorted(biens, key=lambda b: (b.proprietaire.ordre_galerie or 10**6, b.proprietaire.nom.lower(),
+                                            b.ordre_galerie or 10**6, b.nom.lower())):
+            lots = [lot for lot in bien.lots.all()]
+            courte = self._nb_courte_duree(bien)
+            # un logement en courte durée n'a pas de bail mais n'est pas vacant
+            loues = sum(1 for lot in lots if lot.baux_actifs or (lot.exploitation == "courte" and not lot.vendu))
+            loyers = self._loyers_cc(bien)
+            bloc = blocs.setdefault(bien.proprietaire_id, {"proprietaire": bien.proprietaire, "cartes": [], "loyers": Decimal(0)})
+            bloc["loyers"] += loyers
+            bloc["cartes"].append({
+                "bien": bien, "photo": bien.photo_carte, "nb_lots": len(lots), "loues": loues,
+                "courte": courte, "que_courte": bool(lots) and courte == len(lots),
+                "occupation": "vide" if not loues else ("partiel" if loues < len(lots) else "plein"),
+                "loyers": loyers, "rendement": self.rendement(bien),
+                "regime": self.regime(bien),
+            })
+        for bloc in blocs.values():
+            mots = bloc["proprietaire"].nom.replace("-", " ").split() or ["?"]
+            bloc["initiales"] = (mots[0][0] + (mots[-1][0] if len(mots) > 1 else "")).upper()
+            bloc["teinte"] = bloc["proprietaire"].pk % 6  # couleur stable quand on déplace les colonnes
+        return list(blocs.values())
     fieldsets = [
         (None, {"fields": ["proprietaire", "nom", "adresse", ("code_postal", "ville"), "syndic", ("date_acquisition", "prix_acquisition")]}),
+        ("Photo", {"fields": [("apercu_photo", "photo")]}),
         ("Régime fiscal", {"fields": [("regime_fiscal", "option_fiscale")],
                            "description": format_html(
                                "Choisit la comptabilité du bien, ses écrans et le formulaire à remplir : <b>2044</b> (location nue), "
@@ -239,6 +346,10 @@ class BienAdmin(admin.ModelAdmin):
             # case décochée : on annule ce que la vente du bien avait fait (sans toucher aux lots vendus à part)
             lots = obj.lots.filter(date_vente=avant["date_vente"]) if avant["date_vente"] else obj.lots.filter(date_vente__isnull=True)
             lots.update(vendu=False, date_vente=None)
+        from ..rappels import rappel_import_lcd
+
+        for lot in obj.lots.all():
+            rappel_import_lcd(lot)  # bien vendu : arrête le rappel mensuel d'import courte durée
         if not obj.vendu:
             from ..rappels import rappel_cfe
 
@@ -263,7 +374,7 @@ class LotAdmin(FicheMixin, admin.ModelAdmin):
     onglets = [
         ("general", "Général", [None, "Notes"], []),
         ("caracteristiques", "Caractéristiques", ["Caractéristiques (reprises dans le bail)", "Chaudière gaz", "Compteurs", "État des lieux"], []),
-        ("relocation", "Relocation et photos", ["Relocation et annonce"], ["PhotoInline"]),
+        ("relocation", "Location et photos", ["Location et annonce"], ["PhotoInline"]),
         ("baux", "Baux", [], ["BailInline"]),
         ("vente", "Vente", ["Vente"], []),
     ]
@@ -321,7 +432,7 @@ class LotAdmin(FicheMixin, admin.ModelAdmin):
                                                               "equipements", "annexes", "clause_particuliere"],
                                                    "description": "Le régime de copropriété, les équipements communs et la zone tendue se règlent sur la fiche du bien."}),
         ("Chaudière gaz", {"fields": [("chaudiere_gaz", "date_entretien_chaudiere")]}),
-        ("Relocation et annonce", {"fields": ["loyer_propose", ("classe_ges", "energie_annee"), ("energie_min", "energie_max"), "outils_relocation"]}),
+        ("Location et annonce", {"fields": ["loyer_propose", ("classe_ges", "energie_annee"), ("energie_min", "energie_max"), "outils_relocation"]}),
         ("État des lieux", {"fields": ["pieces"]}),
         ("Compteurs", {"fields": ["pdl"]}),
         ("Vente", {"fields": [("vendu", "date_vente")]}),
@@ -335,6 +446,10 @@ class LotAdmin(FicheMixin, admin.ModelAdmin):
         if obj.date_vente:
             obj.vendu = True
         super().save_model(request, obj, form, change)
+        from ..rappels import rappel_import_lcd
+
+        if rappel_import_lcd(obj):
+            messages.info(request, "Rappel mensuel ajouté : importer les réservations du mois précédent le 5 de chaque mois.")
 
     @admin.display(description="locataire")
     def locataire_actuel(self, obj):

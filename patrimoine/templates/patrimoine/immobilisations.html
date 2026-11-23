@@ -1,0 +1,75 @@
+{% extends "admin/base_site.html" %}
+{% load tableau_bord %}
+{% block extrastyle %}{{ block.super }}<style>{% include "patrimoine/_style_dossiers.css" %}{% include "patrimoine/_style_amortissements.css" %}</style>{% endblock %}
+{% block content_title %}{% endblock %}
+{% block breadcrumbs %}<div class="breadcrumbs"><a href="{% url 'admin:index' %}">Accueil</a> › <a href="{% url 'compta_accueil' %}">Comptabilité</a> › <a href="{% url 'dossier_compta' d.code %}">{{ d.titre }}</a> › Immobilisations</div>{% endblock %}
+{% block content %}
+<div class="titre-liste titre-compta"><h1>{{ d.titre }}</h1>
+  {% if dossiers|length > 1 %}<label class="petit-d">Changer de dossier
+    <select class="choix-dossier-d" onchange="if(this.value)window.location.href=this.value">{% for x in dossiers %}<option value="{% url 'immobilisations' x.code %}"{% if x.code == d.code %} selected{% endif %}>{{ x.titre }} ({{ x.cerfa }})</option>{% endfor %}</select></label>{% endif %}
+  <ul class="object-tools"><li><a href="{{ lien_ajouter }}" class="addlink">Ajouter une immobilisation</a></li>
+    <li><a href="{% url 'reprise_immobilisations' d.code %}">Reprendre l'existant</a></li>
+    <li><a href="{% url 'decomposer_bien' d.code %}">Décomposer le prix d'un bien</a></li></ul></div>
+<p class="petit-d">{{ d.sous_titre }} · {{ d.cerfa }} · {% for b in biens_dossier %}{{ b.nom }}{% if not forloop.last %}, {% endif %}{% endfor %}</p>
+<div class="barre-compta">{% boutons_annees annees annee "civil" %}</div>
+{% include "patrimoine/_onglets_compta.html" %}
+
+{% if douteuses or charges_douteuses %}
+<div class="alerte-a" id="a-verifier">⚠️ <b>{{ nb_douteuses }} dépense{{ nb_douteuses|pluralize }} {{ annee }} de plus de {{ seuil|floatformat:0 }} € classée{{ nb_douteuses|pluralize }} en charges.</b>
+  Un meuble, un équipement ou des travaux d'amélioration s'amortissent ; une réparation reste une charge. Ouvrez chaque facture et choisissez :
+  {% for p in douteuses %}<a href="{% url 'admin:patrimoine_piececomptable_change' p.pk %}?next={{ retour|urlencode }}">{{ p.fournisseur|default:p.libelle|default:"Facture"|truncatechars:30 }} · {{ p.montant|floatformat:"0g" }} €</a>{% if not forloop.last or charges_douteuses %}, {% endif %}{% endfor %}{% for c in charges_douteuses %}<a href="{% url 'admin:patrimoine_chargelmnp_change' c.pk %}?next={{ retour|urlencode }}">{{ c.get_categorie_display }}{% if c.libelle %} ({{ c.libelle|truncatechars:24 }}){% endif %} · {{ c.montant|floatformat:"0g" }} €</a>{% if not forloop.last %}, {% endif %}{% endfor %}.</div>{% endif %}
+
+<div class="kpi-a">
+  <div><span>Valeur d'origine</span><b>{{ total.valeur|floatformat:"0g" }} €</b></div>
+  <div><span>Amortis avant {{ annee }}</span><b>{{ total.anterieurs|floatformat:"0g" }} €</b></div>
+  <div><span>Dotation {{ annee }}</span><b>{{ total.dotation|floatformat:"0g" }} €</b></div>
+  <div><span>Valeur restante fin {{ annee }}</span><b>{{ total.vnc|floatformat:"0g" }} €</b></div>
+</div>
+
+<section class="bloc-d" style="margin-bottom:16px">
+  <h2>Registre des immobilisations ({{ lignes|length }})</h2>
+  {% if lignes %}
+  <div class="defile-a table-large"><table class="liste-d"><thead><tr><th>Immobilisation</th><th>Bien</th><th>Catégorie</th><th>Mise en service</th><th>Durée</th><th style="text-align:right">Valeur</th><th style="text-align:right">Amortis avant {{ annee }}</th><th style="text-align:right">Dotation {{ annee }}</th><th style="text-align:right">Reste</th></tr></thead><tbody>
+  {% for l in lignes %}<tr{% if l.sortie or l.immo.date_sortie %} class="sortie"{% endif %}>
+    <td><a href="{% url 'admin:patrimoine_immobilisation_change' l.immo.pk %}?next={{ retour|urlencode }}">{{ l.immo.designation }}</a>
+      {% if l.immo.piece_id %}<a class="tag-a" href="{% url 'admin:patrimoine_piececomptable_change' l.immo.piece_id %}?next={{ retour|urlencode }}" title="Ouvrir la facture">📎 facture</a>{% elif l.immo.origine == "reprise" %}<span class="tag-a">reprise</span>{% elif l.immo.origine == "decomposition" %}<span class="tag-a">décomposition</span>{% endif %}
+      {% if l.immo.date_sortie %}<span class="tag-a">sortie le {{ l.immo.date_sortie|date:"d/m/Y" }}</span>{% endif %}</td>
+    <td>{{ l.immo.bien.nom }}{% if l.immo.lot %} · {{ l.immo.lot.designation }}{% endif %}</td><td>{{ l.immo.get_categorie_display|truncatechars:28 }}</td><td>{{ l.immo.mise_en_service|date:"d/m/Y" }}</td>
+    <td>{% if l.immo.duree %}{{ l.immo.duree }} ans{% else %}non amorti{% endif %}</td>
+    <td class="m">{{ l.valeur|floatformat:"2g" }} €</td><td class="m">{{ l.anterieurs|floatformat:"2g" }} €</td><td class="m"><b>{{ l.dotation|floatformat:"2g" }} €</b></td><td class="m">{{ l.vnc|floatformat:"2g" }} €</td></tr>{% endfor %}
+  <tr class="tot"><td colspan="5">Total</td><td class="m">{{ total.valeur|floatformat:"2g" }} €</td><td class="m">{{ total.anterieurs|floatformat:"2g" }} €</td><td class="m">{{ total.dotation|floatformat:"2g" }} €</td><td class="m">{{ total.vnc|floatformat:"2g" }} €</td></tr>
+  </tbody></table></div>
+  <div class="cartes-a">{% for l in lignes %}<div class="c"><div class="l"><a href="{% url 'admin:patrimoine_immobilisation_change' l.immo.pk %}?next={{ retour|urlencode }}"><b>{{ l.immo.designation }}</b></a><span>{{ l.valeur|floatformat:"0g" }} €</span></div>
+    <div class="l petit-d"><span>{{ l.immo.bien.nom }} · {{ l.immo.get_categorie_display|truncatechars:24 }} · {% if l.immo.duree %}{{ l.immo.duree }} ans{% else %}non amorti{% endif %} · {{ l.immo.mise_en_service|date:"m/Y" }}</span></div>
+    <div class="l"><span>Dotation {{ annee }}</span><b>{{ l.dotation|floatformat:"2g" }} €</b></div><div class="l petit-d"><span>Reste fin {{ annee }}</span><span>{{ l.vnc|floatformat:"2g" }} €</span></div></div>{% endfor %}
+    <div class="c"><div class="l"><b>Total des dotations {{ annee }}</b><b>{{ total.dotation|floatformat:"2g" }} €</b></div></div></div>
+  <p class="petit-d">Linéaire, au prorata la première année (année de 360 jours). Le terrain ne s'amortit pas.</p>
+  {% else %}
+  <p>Aucune immobilisation en {{ annee }}. Pour commencer :</p>
+  <ul><li><a href="{% url 'reprise_immobilisations' d.code %}">reprenez le tableau des immobilisations de votre comptable</a>,</li>
+    <li>ou <a href="{% url 'decomposer_bien' d.code %}">décomposez le prix d'achat d'un bien</a> (terrain, gros œuvre, agencements…),</li>
+    <li>puis, pour chaque achat de plus de {{ seuil|floatformat:0 }} €, choisissez « Immobilisation (à amortir) » sur la facture.</li></ul>
+  {% endif %}
+</section>
+
+<section class="bloc-d" style="max-width:640px">
+  {% if lmnp %}
+  <h2>Ce qui va dans la 2031 · {{ annee }}</h2>
+  <div class="apercu-d">
+    <div><span>Résultat avant amortissements</span><b>{{ lmnp.resultat|floatformat:"2g" }} €</b></div>
+    <div><span>Dotations du registre</span><b>{{ lmnp.dotations|floatformat:"2g" }} €</b></div>
+    {% if saisis_main %}<div><span>Amortissements saisis à la main (charges LMNP)</span><b>{{ saisis_main|floatformat:"2g" }} €</b></div>{% endif %}
+    <div><span>Reports des années passées</span><b>{{ lmnp.report_debut|floatformat:"2g" }} €</b></div>
+    <div class="fort"><span>Amortissements déduits</span><b>{{ lmnp.amort_deduit|floatformat:"2g" }} €</b></div>
+    <div class="fort"><span>Reste à reporter sur {{ annee|add:1 }}</span><b>{{ lmnp.amort_reporte|floatformat:"2g" }} €</b></div>
+    <div><span>Résultat fiscal</span><b>{{ lmnp.resultat_fiscal|floatformat:"2g" }} €</b></div>
+  </div>
+  <p class="petit-d" style="margin-top:10px">En LMNP, l'amortissement ne peut pas créer de déficit : la part non déduite se garde et se déduit les années suivantes, sans limite de durée.{% if saisis_main %} Les amortissements saisis à la main dans les charges LMNP s'ajoutent au registre : supprimez-les une fois les immobilisations reprises, pour ne pas les compter deux fois.{% endif %}</p>
+  {% else %}
+  <h2>Dotations aux amortissements · {{ annee }}</h2>
+  <div class="apercu-d"><div class="fort"><span>Dotations de l'année (déductibles)</span><b>{{ total.dotation|floatformat:"2g" }} €</b></div></div>
+  <p class="petit-d" style="margin-top:10px">Une société déduit toute la dotation de l'année (tableau 2033-C ou 2054 / 2055 de la liasse).</p>
+  {% endif %}
+  <p class="boutons-a"><a class="button" href="?annee={{ annee }}&format=pdf" target="_blank">Tableau des amortissements (PDF, pour le comptable)</a></p>
+</section>
+{% endblock %}

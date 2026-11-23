@@ -75,16 +75,28 @@ def apercu(dossier, annee, bien=None):
     if f == "2031":
         from . import lmnp
 
-        blocs = lmnp.bilan(annee)["blocs"]
+        b = lmnp.bilan(annee)
+        blocs, t = b["blocs"], b["total"]
         if bien:
-            blocs = [b for b in blocs if b["lot"].bien_id == bien.pk]
-        t = {k: sum((b[k] for b in blocs), ZERO) for k in ("total_recettes", "total_charges", "resultat", "amort_deduit", "resultat_fiscal")}
-        return [("Recettes", t["total_recettes"], False), ("Charges", t["total_charges"], False),
-                ("Résultat avant amortissements", t["resultat"], False), ("Amortissements déduits", t["amort_deduit"], False),
-                ("Résultat fiscal", t["resultat_fiscal"], True)], t["resultat_fiscal"]
+            blocs = [x for x in blocs if x["lot"].bien_id == bien.pk]
+            t = {k: sum((x[k] for x in blocs), ZERO) for k in ("total_recettes", "total_charges", "resultat", "amortissements",
+                                                               "amort_deduit", "resultat_fiscal")}
+        lignes = [("Recettes", t["total_recettes"], False), ("Charges", t["total_charges"], False),
+                  ("Résultat avant amortissements", t["resultat"], False), ("Amortissements de l'année", t["amortissements"], False)]
+        if t.get("report_debut"):
+            lignes.append(("Amortissements reportés des années passées", t["report_debut"], False))
+        return lignes + [("Amortissements déduits", t["amort_deduit"], False),
+                         ("Résultat fiscal", t["resultat_fiscal"], True)], t["resultat_fiscal"]
+    from .amortissements import dotations_biens
+
     recap = compta.recapitulatif("societe", annee, bien)
-    lignes = [(g["titre"] or "Autres charges", sum((l["total"] for l in g["lignes"]), ZERO), False) for g in recap["groupes"]]
-    return lignes + [("Total des charges", recap["total"], True)], None
+    lignes = [(g["titre"] or "Autres charges", sum((l["total"] for l in g["lignes"]), ZERO), False) for g in recap["groupes"]
+              if g["titre"] != "Immobilisations"]
+    total = sum((l[1] for l in lignes), ZERO)
+    dot = dotations_biens([bien] if bien else biens(dossier, annee), annee)
+    if dot:
+        lignes.append(("Dotations aux amortissements", dot, False))
+    return lignes + [("Total des charges", total + dot, True)], None
 
 
 def charges_saisies(qs):
@@ -129,10 +141,17 @@ def declaration_des_biens():
     return res
 
 
+def amortissable(dossier):
+    """LMNP et sociétés : leurs achats s'amortissent (pas les revenus fonciers, 2044 et 2072)."""
+    return dossier["formulaire"] in ("2031", "societe")
+
+
 def onglets(dossier, actif, annee):
     r = resume_liens(dossier, annee)
     liste = [("accueil", "Vue d'ensemble", r["url"]), ("factures", "Factures", r["lien_factures"]),
              ("a_saisir", "À saisir", r["lien_a_saisir"]), ("ajouter", "Ajouter des factures", r["lien_import"])]
+    if amortissable(dossier):
+        liste.append(("immobilisations", "Immobilisations", reverse("immobilisations", args=[dossier["code"]]) + f"?annee={annee}"))
     return [{"code": c, "libelle": l, "url": u, "compte": None, "actif": c == actif} for c, l, u in liste]
 
 

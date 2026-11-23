@@ -1,0 +1,9 @@
+{% load tableau_bord %}<details class="dr-imm"><summary>{{ i.bien.nom }} <span class="chiffres">recettes {{ i.recettes|euros }} · charges {{ i.charges|euros }} · intérêts {{ i.interets|euros }} · résultat {{ i.resultat|euros }}</span></summary><div>
+  <table class="dr-t"><thead><tr><th>Ligne {{ ligne_cerfa }}</th><th>Libellé et pièces</th><th class="m">Montant</th></tr></thead><tbody>
+    {% for l in i.lignes %}
+    <tr><td class="n">{{ l.numero }}</td><td>{{ l.libelle|truncatechars:110 }}{% if l.signe %}<span class="formule">à retrancher</span>{% endif %}</td><td class="m"><b>{{ l.montant|euros:2 }}</b></td></tr>
+    {% for d in l.pieces %}<tr class="piece"><td></td><td>{% include "patrimoine/_sous_ligne_libelle.html" with d=d ancre="" avec_bien=False %}</td><td class="m">{{ d.total|euros:2 }}</td></tr>{% endfor %}
+    {% empty %}<tr><td colspan="3" class="petit-d">Aucun montant pour cet immeuble.</td></tr>{% endfor %}
+    <tr class="fort"><td class="n">{{ i.numeros.resultat }}</td><td>Résultat de l'immeuble<span class="formule">recettes ({{ i.numeros.recettes }}) − charges ({{ i.numeros.charges }}) − intérêts ({{ i.numeros.interets }})</span></td><td class="m">{{ i.resultat|euros:2 }}</td></tr>
+  </tbody></table>
+</div></details>

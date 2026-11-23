@@ -1,0 +1,129 @@
+{% extends "admin/base_site.html" %}
+{% block extrastyle %}{{ block.super }}<style>{% include "patrimoine/_style_dossiers.css" %}
+.tuiles-ev { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 12px; margin: 0 0 16px; }
+.tuile-ev { border: 1px solid var(--border-color); border-radius: 12px; padding: 12px 14px; background: var(--body-bg); }
+.tuile-ev span { display: block; font-size: .78rem; color: var(--body-quiet-color); }
+.tuile-ev b { display: block; font-size: 1.35rem; margin-top: 4px; }
+.tuile-ev b.moyen { font-size: 1.05rem; }
+.tuile-ev small, .tuile-ev a { font-size: .8rem; }
+.tuile-ev small { color: var(--body-quiet-color); }
+.hausse { color: var(--rouge) !important; } .baisse { color: var(--ok) !important; } .stable { color: var(--body-quiet-color) !important; }
+.boutons-m { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 16px; }
+.boutons-m .button { padding: 8px 14px; }
+.choix-maison { margin: 0 0 14px; }
+table.tab-ev { width: 100%; border-collapse: collapse; font-size: .88rem; }
+table.tab-ev th { font-size: .72rem; letter-spacing: .04em; text-transform: uppercase; color: var(--body-quiet-color); padding: 6px 8px; border-bottom: 1px solid var(--border-color); background: none; text-align: right; white-space: nowrap; }
+table.tab-ev th:first-child { text-align: left; }
+table.tab-ev td { padding: 8px; border-bottom: 1px solid var(--hairline-color); text-align: right; white-space: nowrap; }
+table.tab-ev td:first-child { text-align: left; white-space: normal; }
+table.tab-ev td.ecart, table.tab-ev th.ecart { background: var(--darkened-bg); }
+table.tab-ev tr.total-ev td { font-weight: 700; border-top: 2px solid var(--border-color); }
+.note-ev { font-size: .8rem; color: var(--body-quiet-color); margin: 8px 0 0; }
+.rec-m { font-size: .72rem; margin-left: 6px; }
+.bloc-d.bas { margin-top: 16px; }
+.ent-m .l { display: flex; justify-content: space-between; align-items: center; gap: 10px; padding: 10px 0; border-top: 1px solid var(--hairline-color); }
+.ent-m .l:first-child { border-top: 0; }
+.ent-m .t { font-weight: 600; } .ent-m .t a { color: inherit; }
+.ent-m .d { font-size: .8rem; color: var(--body-quiet-color); }
+.ent-m .a { display: flex; flex-direction: column; align-items: flex-end; gap: 4px; }
+.ent-m .a form { margin: 0; }
+.ent-m .a .button { padding: 3px 10px; font-size: .78rem; }
+.sugg-m { margin-top: 10px; padding-top: 10px; border-top: 1px dashed var(--border-color); font-size: .82rem; }
+.sugg-m .pill-d { margin: 3px 2px; }
+@media (max-width: 767px) {
+  table.tab-ev .ancienne, table.tab-ev .pct { display: none; }
+  table.tab-ev td, table.tab-ev th { padding: 7px 4px; }
+  .cache-tel { display: none; }
+}
+</style>{% endblock %}
+{% block content_title %}{% endblock %}
+{% block breadcrumbs %}<div class="breadcrumbs"><a href="{% url 'admin:index' %}">Accueil</a> › Ma maison</div>{% endblock %}
+{% block content %}
+<div class="titre-liste titre-compta"><h1>Ma maison{% if bien %} <span class="petit-d" style="font-weight:400">· {{ bien.nom }}{% if bien.ville %}, {{ bien.ville }}{% endif %}</span>{% endif %}</h1></div>
+
+{% if not bien %}
+<section class="bloc-d">
+  <h2>Aucune maison suivie pour l'instant</h2>
+  <p>Ouvrez la fiche de votre résidence principale dans <a href="{% url 'admin:patrimoine_bien_changelist' %}">Biens et lots</a>,
+    cochez <b>« résidence principale »</b> et choisissez le régime fiscal <b>« Non loué »</b>. Elle apparaîtra ici, avec ses dépenses
+    (électricité, taxe foncière, entretien…) et ses entretiens à prévoir.</p>
+  <p class="note-ev">Pas encore créée ? <a href="{% url 'admin:patrimoine_bien_add' %}">Ajouter le bien</a>.</p>
+</section>
+{% else %}
+
+{% if maisons|length > 1 %}<form method="get" class="choix-maison"><select name="bien" class="choix-dossier-d" onchange="this.form.submit()" aria-label="Maison">
+  {% for b in maisons %}<option value="{{ b.pk }}"{% if b == bien %} selected{% endif %}>{{ b.nom }}</option>{% endfor %}
+</select><noscript><button class="button">Afficher</button></noscript></form>{% endif %}
+
+<div class="tuiles-ev">
+  <div class="tuile-ev"><span>Dépenses {{ annees|last }} ({{ periode }})</span><b>{{ en_cours|floatformat:"0g" }} €</b>
+    {% if ecart_periode %}<small class="{{ ecart_periode.sens }}">{% if ecart_periode.pct is not None %}{% if ecart_periode.pct > 0 %}+{% endif %}{{ ecart_periode.pct }} %{% else %}{% if ecart_periode.montant > 0 %}+{% endif %}{{ ecart_periode.montant|floatformat:"0g" }} €{% endif %} par rapport à la même période {{ annees|last|add:"-1" }}</small>
+    {% else %}<small>pas de dépense sur la même période {{ annees|last|add:"-1" }}</small>{% endif %}</div>
+  <div class="tuile-ev"><span>Moyenne par mois en {{ annees|last }}</span><b>{{ moyenne_mois|floatformat:"0g" }} €</b><small>hors prêt</small></div>
+  <div class="tuile-ev"><span>Prêt de la maison</span>
+    {% if prets %}<b>{{ mensualites|floatformat:"0g" }} €<small> /mois</small></b><a href="{% url 'etat_endettement' %}">Capital restant dû {{ capital_restant|floatformat:"0g" }} € ›</a>
+    {% else %}<b class="moyen">Aucun prêt en cours</b><a href="{% url 'admin:patrimoine_pret_add' %}?bien={{ bien.pk }}&amp;next={{ liens.retour|urlencode }}">Ajouter le prêt ›</a>{% endif %}</div>
+  <div class="tuile-ev"><span>Prochain entretien</span>
+    {% with e=entretiens.0 %}{% if e %}<b class="moyen">{{ e.rappel.titre }}</b><small class="{% if e.etat == 'ko' %}hausse{% elif e.etat == 'ok' %}stable{% endif %}">{% if e.etat == "ok" %}le {{ e.rappel.date|date:"d/m/Y" }}{% else %}{{ e.etat_texte|lower }}{% endif %}</small>
+    {% else %}<b class="moyen">Aucun</b><small>ajoutez vos entretiens ci-dessous</small>{% endif %}{% endwith %}</div>
+</div>
+
+<div class="boutons-m">
+  <a class="button default" href="{{ liens.ajouter_facture }}">＋ Ajouter une facture</a>
+  <a class="button" href="{{ liens.ajouter_recurrente }}">↻ Dépense récurrente</a>
+  <a class="button" href="{{ liens.ajouter_entretien }}">🔧 Entretien à rappeler</a>
+</div>
+
+<div class="deux-col-d">
+<section class="bloc-d large" id="depenses">
+  <h2>Dépenses par catégorie · écart {{ annees.1 }} → {{ annees.2 }}</h2>
+  {% if lignes %}
+  <div style="overflow-x:auto">
+  <table class="tab-ev">
+    <thead><tr><th>Catégorie</th>{% for a in annees %}<th{% if forloop.counter <= 2 %} class="ancienne"{% endif %}>{{ a }}{% if forloop.last %}*{% endif %}</th>{% endfor %}<th class="ecart">Écart</th><th class="ecart pct">%</th></tr></thead>
+    <tbody>
+    {% for l in lignes %}<tr><td><a href="{{ liens.factures }}&amp;rubrique={{ l.code }}">{{ l.libelle }}</a>{% if l.recurrente %}<span class="pill-d info rec-m" title="Alimentée par une dépense récurrente">↻</span>{% endif %}</td>
+      {% for v in l.valeurs %}<td{% if forloop.counter <= 2 %} class="ancienne"{% endif %}>{{ v|floatformat:"0g" }} €</td>{% endfor %}
+      <td class="ecart {{ l.ecart.sens }}">{% if l.ecart.montant > 0 %}+{% endif %}{{ l.ecart.montant|floatformat:"0g" }} €</td>
+      <td class="ecart pct {{ l.ecart.sens }}">{% if l.ecart.pct is None %}{% if l.ecart.montant %}nouveau{% endif %}{% else %}{% if l.ecart.pct > 0 %}+{% endif %}{{ l.ecart.pct }} %{% endif %}</td></tr>{% endfor %}
+    <tr class="total-ev"><td>Total</td>{% for t in totaux %}<td{% if forloop.counter <= 2 %} class="ancienne"{% endif %}>{{ t|floatformat:"0g" }} €</td>{% endfor %}
+      <td class="ecart {{ ecart_total.sens }}">{% if ecart_total.montant > 0 %}+{% endif %}{{ ecart_total.montant|floatformat:"0g" }} €</td>
+      <td class="ecart pct {{ ecart_total.sens }}">{% if ecart_total.pct is not None %}{% if ecart_total.pct > 0 %}+{% endif %}{{ ecart_total.pct }} %{% endif %}</td></tr>
+    </tbody>
+  </table>
+  </div>
+  <p class="note-ev">* {{ annees|last }} : année en cours. Année d'une facture = année de son paiement (sinon sa date). Ces dépenses restent hors comptabilité locative : elles n'entrent dans aucune déclaration. Le prêt est suivi dans « Prêts et endettement ».</p>
+  {% else %}
+  <p>Aucune dépense enregistrée depuis {{ annees.0 }}. Ajoutez une facture (PDF ou photo), ou une dépense récurrente pour une mensualité (électricité, taxe foncière, assurance) : ses factures se créeront toutes seules.</p>
+  {% endif %}
+</section>
+
+<section class="bloc-d etroit" id="entretiens">
+  <h2>Entretiens à prévoir</h2>
+  {% if entretiens %}<div class="ent-m">
+  {% for e in entretiens %}<div class="l"><div><div class="t"><a href="{% url 'admin:patrimoine_rappel_change' e.rappel.pk %}?next={{ liens.retour|urlencode }}">{{ e.rappel.titre }}</a></div>
+      <div class="d">{{ e.rappel.get_periodicite_display }} · dernier : {% if e.dernier %}{{ e.dernier|date:"d/m/Y" }}{% if e.cout %} ({{ e.cout|floatformat:"0g" }} €){% endif %}{% else %}—{% endif %}{% if e.rappel.dans_agenda %} · 📅{% endif %}</div></div>
+    <div class="a"><span class="pill-d {{ e.etat }}">{{ e.etat_texte }}</span>
+      {% if e.a_faire %}<form method="post" action="{% url 'maison_entretien_fait' e.rappel.pk %}">{% csrf_token %}<button class="button" type="submit" title="Noter fait aujourd'hui, puis ajouter la facture">✓ Fait</button></form>{% endif %}</div></div>{% endfor %}
+  </div>{% else %}<p class="petit-d">Aucun entretien suivi. Choisissez ci-dessous ceux de votre maison : chacun devient un rappel (mail 7 jours avant, 📅 agenda).</p>{% endif %}
+  {% if suggestions %}<div class="sugg-m">Ajouter en un clic :
+    {% for s in suggestions %}<a class="pill-d mute" href="{{ s.url }}" title="{{ s.periodicite }}{% if s.obligatoire %} · obligatoire{% endif %}{% if s.precision %} · {{ s.precision }}{% endif %}">＋ {{ s.titre }}</a>{% endfor %}
+  </div>{% endif %}
+  <p class="note-ev">« ✓ Fait » (à 30 jours de l'échéance ou en retard) note l'entretien fait aujourd'hui, décale le rappel à la prochaine échéance et ouvre sa facture pré-remplie (catégorie Entretien).</p>
+</section>
+</div>
+
+<section class="bloc-d bas" id="factures">
+  <h2>Dernières factures</h2>
+  {% if dernieres %}<table class="liste-d">
+    <thead><tr><th>Date</th><th>Fournisseur</th><th class="cache-tel">Objet</th><th class="cache-tel">Catégorie</th><th style="text-align:right">Montant</th></tr></thead>
+    <tbody>{% for f in dernieres %}<tr><td><a href="{% url 'admin:patrimoine_piececomptable_change' f.pk %}?next={{ liens.retour|urlencode }}">{{ f.date_paiement|default:f.date|date:"d/m/Y" }}</a></td>
+      <td>{{ f.fournisseur|default:"–" }}{% if f.recurrence_id %} <span class="pill-d info rec-m">↻ récurrente</span>{% endif %}</td>
+      <td class="cache-tel">{{ f.libelle }}</td><td class="cache-tel">{% if f.rubrique %}{{ f.rubrique_libelle }}{% else %}<span class="pill-d todo">sans catégorie</span>{% endif %}</td>
+      <td class="m">{{ f.montant|floatformat:"0g" }} €</td></tr>{% endfor %}</tbody>
+  </table>
+  <p class="note-ev"><a href="{{ liens.factures }}">Toutes les factures de la maison ({{ nb_factures }}) ›</a> · <a href="{{ liens.recurrentes }}">Dépenses récurrentes ›</a></p>
+  {% else %}<p class="petit-d">Aucune facture pour l'instant.</p>{% endif %}
+</section>
+{% endif %}
+{% endblock %}

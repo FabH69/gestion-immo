@@ -1,0 +1,60 @@
+{% extends "admin/patrimoine/change_list.html" %}
+{% load static tableau_bord %}
+{% block extrastyle %}{{ block.super }}<link rel="stylesheet" href="{% static 'patrimoine/galerie.css' %}">{% endblock %}
+{% block object-tools-items %}
+  {{ block.super }}
+  <li class="bascule-vue" role="group" aria-label="Présentation">
+    <a href="{{ url_liste }}" class="{% if vue != 'galerie' %}actif{% endif %}" title="Vue liste">{% icone "liste" 16 %}<span>Liste</span></a>
+    <a href="{{ url_galerie }}" class="{% if vue == 'galerie' %}actif{% endif %}" title="Vue galerie par propriétaire">{% icone "galerie" 16 %}<span>Galerie</span></a>
+  </li>
+{% endblock %}
+{% block result_list %}{% if vue == "galerie" %}
+<div class="galerie-biens" data-ordre-url="{% url 'admin:patrimoine_bien_ordre_galerie' %}">
+  {% for bloc in galerie %}
+  <section class="bloc-proprio" data-proprio="{{ bloc.proprietaire.pk }}">
+    <header draggable="true" title="Glisser pour déplacer la colonne">
+      <span class="avatar-proprio teinte-{{ bloc.teinte }}">{{ bloc.initiales }}</span>
+      <div class="titre-proprio">
+        <a href="{% url 'admin:patrimoine_proprietaire_change' bloc.proprietaire.pk %}"><strong>{{ bloc.proprietaire.nom }}</strong></a>
+        <span>{{ bloc.proprietaire.get_type_display }} · {{ bloc.cartes|length }} bien{{ bloc.cartes|length|pluralize }}{% if bloc.loyers %} · {{ bloc.loyers|floatformat:"0g" }} € CC / mois{% endif %}</span>
+      </div>
+      <span class="deplacer-colonne">
+        <button type="button" class="col-avant" title="Déplacer avant" aria-label="Déplacer la colonne avant">‹</button>
+        <button type="button" class="col-apres" title="Déplacer après" aria-label="Déplacer la colonne après">›</button>
+      </span>
+    </header>
+    <div class="cartes-biens">
+      {% for c in bloc.cartes %}
+      <div class="place-carte" data-bien="{{ c.bien.pk }}">
+      <span class="deplacer-bien">
+        <button type="button" class="bien-avant" title="Monter" aria-label="Monter le bien">‹</button>
+        <button type="button" class="bien-apres" title="Descendre" aria-label="Descendre le bien">›</button>
+      </span>
+      <a class="carte-bien" href="{% url 'admin:patrimoine_bien_change' c.bien.pk %}" title="Glisser pour changer l'ordre des biens">
+        <div class="photo-bien{% if not c.photo %} sans-photo{% endif %}">
+          {% if c.photo %}<img src="{{ c.photo }}" alt="" loading="lazy">{% else %}{% icone "biens" 34 %}<span>Ajouter une photo</span>{% endif %}
+          <span class="pill regime">{{ c.regime }}</span>
+          {% if c.bien.vendu %}<span class="pill gris vendu">Vendu</span>{% endif %}
+        </div>
+        <div class="corps-carte">
+          <strong>{{ c.bien.nom }}</strong>
+          <span class="regime-tel">{{ c.regime }}</span>
+          <span class="adresse">{{ c.bien.adresse }}, {{ c.bien.code_postal }} {{ c.bien.ville }}</span>
+          <div class="chiffres-carte">
+            {% if c.courte %}<span class="pill bleu">Courte durée{% if c.courte > 1 %} · {{ c.courte }} lots{% endif %}</span>{% endif %}
+            {% if not c.nb_lots %}<span class="pill gris">Aucun lot</span>{% elif c.que_courte %}{% elif c.occupation == "vide" %}<span class="pill gris">Vacant{% if c.nb_lots > 1 %} ({{ c.nb_lots }} lots){% endif %}</span>{% elif c.occupation == "plein" %}<span class="pill ok">Loué{% if c.nb_lots > 1 %} · {{ c.nb_lots }}/{{ c.nb_lots }} lots{% endif %}</span>{% else %}<span class="pill orange">{{ c.loues }}/{{ c.nb_lots }} lots loués</span>{% endif %}
+            {% if c.loyers %}<span class="montant">{{ c.loyers|floatformat:"0g" }} €<small> CC / mois</small></span>{% endif %}
+          </div>
+          {% if c.rendement != "–" %}<span class="rendement">Rendement brut {{ c.rendement }}</span>{% endif %}
+        </div>
+      </a>
+      </div>
+      {% endfor %}
+    </div>
+  </section>
+  {% empty %}
+  <p class="galerie-vide">Aucun bien ne correspond à ces filtres.</p>
+  {% endfor %}
+</div>
+<script src="{% static 'patrimoine/galerie_ordre.js' %}"></script>
+{% else %}{{ block.super }}{% endif %}{% endblock %}

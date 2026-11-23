@@ -1,0 +1,86 @@
+/* Biens : bascule liste / galerie et vue galerie par propriétaire */
+.object-tools li.bascule-vue { display: inline-flex; margin-left: 10px; padding: 3px; gap: 2px; border: 1px solid var(--border-color);
+  border-radius: 22px; background: var(--body-bg); vertical-align: middle; }
+.object-tools li.bascule-vue a { display: inline-flex; align-items: center; gap: 6px; padding: 7px 14px; line-height: 1.2; border-radius: 18px;
+  background: transparent !important; color: var(--body-quiet-color) !important; font-weight: 500; font-size: .85rem; }
+.object-tools li.bascule-vue a:hover { color: var(--body-fg) !important; }
+.object-tools li.bascule-vue a.actif { background: var(--primary) !important; color: var(--primary-fg) !important; }
+
+/* une colonne par propriétaire, côte à côte (retour à la ligne s'il y en a beaucoup : pas de défilement horizontal,
+   qui empêcherait l'en-tête de rester figé) */
+.galerie-biens { display: flex; flex-direction: row; flex-wrap: wrap; align-items: flex-start; gap: 16px; padding: 4px 0 10px; }
+.bloc-proprio { flex: 1 1 260px; min-width: 240px; max-width: 360px; background: var(--darkened-bg); border: 1px solid var(--hairline-color); border-radius: var(--radius); padding: 16px 18px 18px; }
+/* l'admin coupe le débordement de la liste, ce qui empêcherait l'en-tête de rester figé au défilement de la page */
+#changelist:has(.galerie-biens), #changelist:has(.galerie-biens) .changelist-form-container { overflow: visible; }
+/* en-tête figé sous la barre du haut pendant le défilement ; on le glisse pour déplacer la colonne */
+.bloc-proprio header { display: flex; align-items: center; gap: 12px; margin: -16px -18px 14px; padding: 14px 18px 10px;
+  position: sticky; top: var(--haut-barre, 66px); z-index: 5; background: var(--darkened-bg); border-radius: var(--radius) var(--radius) 0 0;
+  cursor: grab; }
+.bloc-proprio header:active { cursor: grabbing; }
+.bloc-proprio.en-deplacement { opacity: .45; }
+.bloc-proprio.cible { outline: 2px dashed var(--primary); outline-offset: 3px; }
+.deplacer-colonne { margin-left: auto; display: inline-flex; gap: 2px; flex: 0 0 auto; }
+.deplacer-colonne button { border: 1px solid var(--border-color); background: var(--body-bg); color: var(--body-quiet-color); border-radius: 8px;
+  width: 26px; height: 26px; padding: 0; font-size: 1.05rem; line-height: 1; cursor: pointer; }
+.deplacer-colonne button:hover { color: var(--primary); border-color: var(--primary); }
+.bloc-proprio:first-child .col-avant, .bloc-proprio:last-of-type .col-apres { visibility: hidden; }
+/* biens : flèches en haut à droite de la carte (au survol sur ordinateur), la carte se glisse aussi */
+.place-carte { position: relative; display: flex; flex-direction: column; }
+.place-carte > a.carte-bien { flex: 1; }
+.place-carte.en-deplacement { opacity: .45; }
+.place-carte.cible { outline: 2px dashed var(--primary); outline-offset: 3px; border-radius: var(--radius); }
+.deplacer-bien { position: absolute; top: 8px; right: 8px; z-index: 2; display: inline-flex; flex-direction: column; gap: 2px;
+  opacity: 0; transition: opacity .12s ease; }
+.place-carte:hover .deplacer-bien, .deplacer-bien:focus-within { opacity: 1; }
+.deplacer-bien button { border: 1px solid var(--border-color); background: rgba(255, 255, 255, .92); color: #24585c; border-radius: 8px;
+  width: 26px; height: 22px; padding: 0; font-size: 1rem; line-height: 1; cursor: pointer; transform: rotate(90deg); }
+.deplacer-bien button:hover { border-color: var(--primary); }
+.place-carte:first-child .bien-avant, .place-carte:last-child .bien-apres { visibility: hidden; }
+.avatar-proprio { flex: 0 0 auto; width: 40px; height: 40px; border-radius: 10px; display: grid; place-items: center;
+  background: var(--primary); color: var(--primary-fg); font-weight: 700; letter-spacing: .5px; }
+.avatar-proprio.teinte-1 { background: #b7791f; } .avatar-proprio.teinte-2 { background: #4c6ef5; }
+.avatar-proprio.teinte-3 { background: #9c4f96; } .avatar-proprio.teinte-4 { background: #2f855a; } .avatar-proprio.teinte-5 { background: #c05621; }
+.titre-proprio { display: flex; flex-direction: column; line-height: 1.3; }
+.titre-proprio a { color: var(--body-loud-color); font-size: 1.05rem; }
+.titre-proprio span { color: var(--body-quiet-color); font-size: .85rem; }
+
+.cartes-biens { display: grid; grid-template-columns: 1fr; gap: 14px; }
+a.carte-bien { display: flex; flex-direction: column; background: var(--body-bg); border: 1px solid var(--border-color); border-radius: var(--radius);
+  overflow: hidden; color: var(--body-fg) !important; box-shadow: var(--shadow); transition: transform .12s ease, box-shadow .12s ease; }
+a.carte-bien:hover { text-decoration: none; transform: translateY(-2px); box-shadow: 0 6px 18px rgba(16, 24, 40, .12); }
+.photo-bien { position: relative; aspect-ratio: 16 / 10; background: var(--selected-bg); }
+.photo-bien img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.photo-bien.sans-photo { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; color: var(--primary);
+  background: linear-gradient(135deg, var(--selected-bg), var(--darkened-bg)); }
+.photo-bien.sans-photo span { font-size: .8rem; color: var(--body-quiet-color); }
+.photo-bien .pill { position: absolute; top: 10px; }
+.photo-bien .pill.regime { left: 10px; background: rgba(255, 255, 255, .92); color: #24585c; }
+.photo-bien .pill.vendu { right: 44px; }  /* laisse la place aux flèches de déplacement */
+.corps-carte { display: flex; flex-direction: column; gap: 4px; padding: 12px 14px 14px; }
+.corps-carte strong { font-size: 1rem; color: var(--body-loud-color); }
+.corps-carte .adresse { color: var(--body-quiet-color); font-size: .85rem; }
+.chiffres-carte { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 8px; flex-wrap: wrap; }
+.chiffres-carte .montant { font-weight: 700; font-variant-numeric: tabular-nums; }
+.chiffres-carte .montant small { font-weight: 400; color: var(--body-quiet-color); }
+.corps-carte .rendement { font-size: .8rem; color: var(--body-quiet-color); }
+.corps-carte .regime-tel { display: none; font-size: .78rem; color: var(--primary); font-weight: 600; }
+.galerie-vide { color: var(--body-quiet-color); padding: 20px; }
+
+@media (max-width: 767px) {
+  .object-tools li.bascule-vue { margin: 8px 0 0; }
+  .galerie-biens { flex-direction: column; flex-wrap: nowrap; align-items: stretch; }
+  .bloc-proprio { flex: none; max-width: none; min-width: 0; padding: 12px; }
+  .bloc-proprio header { margin: -12px -12px 12px; padding: 10px 12px 8px; top: var(--haut-barre-tel, 56px); }
+  .deplacer-colonne button { transform: rotate(90deg); }
+  .deplacer-bien { opacity: 1; top: 6px; right: 6px; }  /* pas de survol sur téléphone */  /* colonnes empilées : ‹ › deviennent haut / bas */
+  .cartes-biens { grid-template-columns: 1fr; gap: 10px; }
+  /* carte compacte : photo à gauche, texte à droite */
+  a.carte-bien { flex-direction: row; }
+  .photo-bien { flex: 0 0 104px; aspect-ratio: auto; min-height: 112px; }
+  .photo-bien.sans-photo span { font-size: .7rem; text-align: center; padding: 0 6px; }
+  .photo-bien .pill.regime { display: none; }
+  .photo-bien .pill.vendu { top: 6px; right: 6px; }
+  .corps-carte { padding: 10px 12px; min-width: 0; }
+  .corps-carte .regime-tel { display: inline; }
+  .chiffres-carte { margin-top: 4px; }
+}

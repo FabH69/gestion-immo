@@ -1,0 +1,147 @@
+{% extends "admin/base_site.html" %}
+{% load tableau_bord %}
+{% block extrastyle %}{{ block.super }}<style>{% include "patrimoine/_style_dossiers.css" %}
+.dr-case { display: inline-block; min-width: 3.2em; text-align: center; font-weight: 700; font-size: .9rem; padding: 2px 8px; border-radius: 8px; background: var(--selected-bg); color: var(--secondary); text-decoration: none; }
+a.dr-case:hover { text-decoration: underline; }
+.dr-sommaire { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 0 0 18px; }
+.dr-bloc { margin: 0 0 18px; scroll-margin-top: 70px; }
+.dr-bloc h2 .sous { font-weight: 400; color: var(--body-quiet-color); font-size: .85rem; }
+.dr-bloc h3 { margin: 16px 0 6px; font-size: .92rem; }
+.dr-etape { display: inline-block; width: 1.6em; height: 1.6em; line-height: 1.6em; text-align: center; border-radius: 50%; background: var(--secondary); color: #fff; font-size: .8rem; margin-right: 6px; }
+table.dr-t { width: 100%; border-collapse: collapse; font-size: .86rem; }
+table.dr-t th, table.dr-t td { padding: 6px 8px; border-bottom: 1px solid var(--hairline-color); vertical-align: top; text-align: left; }
+table.dr-t th { font-size: .72rem; letter-spacing: .04em; text-transform: uppercase; color: var(--body-quiet-color); background: none; }
+table.dr-t td.n { white-space: nowrap; font-weight: 700; width: 4.5em; }
+table.dr-t td.m, table.dr-t th.m { text-align: right; white-space: nowrap; }
+table.dr-t tr.fort td { font-weight: 700; background: var(--darkened-bg); }
+table.dr-t tr.vers td { background: var(--ok-c); }
+table.dr-t tr.piece td { font-size: .82rem; color: var(--body-quiet-color); border-bottom: 1px dashed var(--hairline-color); }
+table.dr-t tr.piece td:first-child { padding-left: 22px; }
+.formule { display: block; font-size: .78rem; color: var(--body-quiet-color); font-weight: 400; }
+details.dr-imm { border: 1px solid var(--border-color); border-radius: 10px; margin: 8px 0; background: var(--body-bg); }
+details.dr-imm > summary { cursor: pointer; padding: 10px 12px; display: flex; flex-wrap: wrap; gap: 6px 16px; justify-content: space-between; font-weight: 600; }
+details.dr-imm > summary span.chiffres { font-weight: 400; font-size: .85rem; color: var(--body-quiet-color); }
+details.dr-imm[open] > summary { border-bottom: 1px solid var(--hairline-color); }
+details.dr-imm > div { padding: 4px 8px 10px; overflow-x: auto; }
+.badge, .bien-tag, .cumul { font-size: .75rem; margin-left: 6px; }
+.badge { border-radius: 999px; padding: 1px 8px; background: var(--darkened-bg); border: 1px solid var(--border-color); }
+.badge-estim { background: var(--orange-c); color: var(--orange); border-color: transparent; }
+.cumul { color: var(--body-quiet-color); }
+.estimation { font-size: .78rem; margin-top: 3px; }
+.dr-calcul { font-size: .9rem; line-height: 1.8; margin: 0; padding-left: 18px; }
+</style>{% endblock %}
+{% block content_title %}{% endblock %}
+{% block breadcrumbs %}<div class="breadcrumbs"><a href="{% url 'admin:index' %}">Accueil</a> › <a href="{% url 'compta_accueil' %}">Comptabilité</a> › <a href="{% url 'declaration_revenus' %}?annee={{ annee }}">Ma déclaration de revenus</a> › Détail des montants</div>{% endblock %}
+{% block content %}
+<div class="titre-liste titre-compta"><h1>Détail des montants – revenus {{ annee }}</h1>
+  <ul class="object-tools"><li><a href="{% url 'declaration_revenus' %}?annee={{ annee }}">Retour aux cases</a></li></ul></div>
+<div class="barre-compta">{% boutons_annees annees annee "civil" %}</div>
+<p class="aide-compta">Pour chaque case : le calcul, les lignes de la 2044 ou de la 2072 qui la composent, puis les pièces de chaque ligne (loyers encaissés, factures, forfait par local, intérêts des prêts). Cliquez sur une facture pour l'ouvrir ; « Enregistrer » vous ramène ici.</p>
+<nav class="dr-sommaire" aria-label="Cases">{% for c in cases_foncier %}<a class="dr-case" href="#{{ c.ancre }}">{{ c.code }}</a>{% endfor %}{% for c in cases_lmnp %}<a class="dr-case" href="#{{ c.ancre }}">{{ c.code }}</a>{% endfor %}</nav>
+
+{% if scis or directs %}
+<section class="bloc-d dr-bloc" id="foncier-resultat" aria-label="Revenus fonciers">
+  <h2>Revenus fonciers · cases {% for c in cases_foncier %}{% if c.ancre == "foncier-resultat" %}{{ c.code }} {% endif %}{% endfor %}<span class="sous">(une 2044 pour tout le foyer)</span></h2>
+
+  {% if scis %}
+  <h3><span class="dr-etape">1</span>Vos parts de SCI (rubrique 110)</h3>
+  {% for s in scis %}
+  <p><b>{{ s.sci.nom }}</b> · votre part : {{ s.pourcentage|floatformat:"-2" }} % (fiche du propriétaire) · <a href="{% url 'annexe_2072' %}?sci={{ s.sci.pk }}&annee={{ annee }}">voir la 2072</a></p>
+  <table class="dr-t"><thead><tr><th>Ligne 2044</th><th>Origine</th><th class="m">Montant de la SCI</th><th class="m">Votre part</th></tr></thead><tbody>
+    {% for l in s.lignes_parts %}<tr><td class="n">{{ l.ligne }}</td><td>{{ l.libelle }}<span class="formule">ligne {{ l.r }} de la 2072 × {{ s.pourcentage|floatformat:"-2" }} %, arrondi à l'euro</span></td><td class="m">{{ l.montant_sci|euros }}</td><td class="m">{{ l.part|euros }}</td></tr>{% endfor %}
+    <tr><td class="n">112 bis</td><td>dont travaux de rénovation énergétique<span class="formule">lignes 9 bis de la 2072 × {{ s.pourcentage|floatformat:"-2" }} %</span></td><td></td><td class="m">{{ s.112bis|euros }}</td></tr>
+    <tr class="fort"><td class="n">114</td><td>Bénéfice ou déficit<span class="formule">111 − 112 − 113</span></td><td></td><td class="m">{{ s.114|euros }}</td></tr>
+  </tbody></table>
+  <p class="petit-d">D'où viennent les lignes R1, R3, R4 de la 2072 : immeuble par immeuble ci-dessous (R1 = lignes 5, R3 = lignes 16, R4 = lignes 17).</p>
+  {% for i in s.immeubles %}{% include "patrimoine/_detail_immeuble.html" with i=i ligne_cerfa="2072" %}{% endfor %}
+  {% endfor %}
+  {% endif %}
+
+  {% if directs %}
+  <h3><span class="dr-etape">{% if scis %}2{% else %}1{% endif %}</span>Immeubles en direct (rubrique 200)</h3>
+  {% for i in directs %}{% include "patrimoine/_detail_immeuble.html" with i=i ligne_cerfa="2044" %}{% endfor %}
+  {% endif %}
+
+  <h3><span class="dr-etape">{% if scis and directs %}3{% else %}2{% endif %}</span>Calcul des cases</h3>
+  {% with l=foncier.lignes c=foncier.cases %}
+  <ol class="dr-calcul">
+    <li>Ligne 420 = case D (vos SCI, {{ c.D|euros }}) + case I (immeubles en direct, {{ c.I|euros }}) = <b>{{ l.420|euros }}</b></li>
+    {% if l.420 >= 0 %}
+    <li>Bénéfice : il va tel quel en <b>case 4BA = {{ foncier.4BA|euros }}</b>. Les impôts y imputent eux-mêmes vos déficits antérieurs (case 4BD).</li>
+    {% else %}
+    <li>Revenus bruts (431) = A + E + H = {{ l.431|euros }} ; intérêts (432) = C + G = {{ l.432|euros }} ; autres charges (433) = B + F = {{ l.433|euros }} ; dont rénovation énergétique (434) = J + K = {{ l.434|euros }}</li>
+    <li>Limite sur le revenu global : 10 700 € + ligne 434, au plus 21 400 € = <b>{{ foncier.plafond|euros }}</b></li>
+    {% if foncier.cas == "interets" %}
+    <li>Les intérêts ({{ l.432|euros }}) dépassent les revenus ({{ l.431|euros }}) : seules les autres charges s'imputent sur le revenu global, dans la limite. Ligne 436 = <b>case 4BC = {{ l.436|euros }}</b></li>
+    <li>Le reste : charges au-delà de la limite ({{ l.437|euros }}) + intérêts non couverts ({{ l.438|euros }}) = ligne 439 = <b>case 4BB = {{ l.439|euros }}</b>, reportable sur vos revenus fonciers des 10 années suivantes.</li>
+    {% else %}
+    <li>Les intérêts ne dépassent pas les revenus : le déficit ({{ l.420|euros }}) s'impute sur le revenu global dans la limite. Ligne 441 = <b>case 4BC = {{ l.441|euros }}</b></li>
+    <li>Le reste, ligne 442 = <b>case 4BB = {{ l.442|euros }}</b>, reportable sur vos revenus fonciers des 10 années suivantes.</li>
+    {% endif %}
+    {% endif %}
+  </ol>
+  {% endwith %}
+</section>
+{% endif %}
+
+{% if micro_detail %}
+<section class="bloc-d dr-bloc" id="micro-foncier" aria-label="Micro-foncier">
+  <h2>Micro-foncier · case 4BE <span class="sous">(loyers encaissés en {{ annee }})</span></h2>
+  {% for m in micro_detail %}
+  <details class="dr-imm" open><summary>{{ m.bien.nom }} <span class="chiffres">{{ m.recettes|euros }}</span></summary><div>
+    <table class="dr-t"><tbody>{% for libelle, montant in m.loyers %}<tr class="piece"><td>{{ libelle }}</td><td class="m">{{ montant|euros:2 }}</td></tr>{% empty %}<tr><td class="petit-d">Aucun loyer encaissé.</td></tr>{% endfor %}</tbody></table>
+  </div></details>
+  {% endfor %}
+  <p><b>Total → 4BE = {{ micro.total|euros }}</b></p>
+</section>
+{% endif %}
+
+<section class="bloc-d dr-bloc" id="deficits-foncier" aria-label="Déficits fonciers">
+  <h2>Déficits fonciers antérieurs · case 4BD <span class="sous">({{ deficits_fonciers.total_a|euros }} au 31/12/{{ annee|add:"-1" }})</span></h2>
+  {% include "patrimoine/_detail_historique.html" with h=historique_foncier nature="foncier" %}
+</section>
+
+{% if lots %}
+<section class="bloc-d dr-bloc" id="lmnp" aria-label="Location meublée">
+  <h2>Location meublée · case {% if lmnp.resultat >= 0 %}5NA{% else %}5NY{% endif %} <span class="sous">(bilan LMNP, lot par lot)</span></h2>
+  {% for b in lots %}{% if not b.micro %}
+  <details class="dr-imm" open><summary>{{ b.lot.bien.nom }} · {{ b.lot.designation }} <span class="chiffres">résultat avant amortissements {{ b.resultat|euros }}</span></summary><div>
+    <table class="dr-t"><thead><tr><th>Élément</th><th>D'où ça vient</th><th class="m">Montant</th></tr></thead><tbody>
+      {% for r in b.recettes %}<tr><td>{{ r.libelle }}</td><td class="petit-d">{{ r.source }}</td><td class="m">{{ r.montant|euros:2 }}</td></tr>{% endfor %}
+      <tr class="fort"><td>Recettes</td><td></td><td class="m">{{ b.total_recettes|euros:2 }}</td></tr>
+      {% for c in b.charges %}<tr><td>{{ c.libelle }}</td><td class="petit-d">{{ c.source }}</td><td class="m">− {{ c.montant|euros:2 }}</td></tr>{% endfor %}
+      <tr class="fort"><td>Résultat avant amortissements</td><td></td><td class="m">{{ b.resultat|euros:2 }}</td></tr>
+      {% if b.amortissements %}<tr><td>Amortissements de l'année</td><td class="petit-d">Immobilisations du lot</td><td class="m">{{ b.amortissements|euros:2 }}</td></tr>{% endif %}
+    </tbody></table>
+  </div></details>
+  {% endif %}{% endfor %}
+  {% if lmnp.reel %}
+  <h3>Tous les meublés au réel (une seule 2031)</h3>
+  <table class="dr-t"><tbody>
+    <tr><td>Résultat avant amortissements</td><td class="m">{{ lmnp.avant_amortissements|euros }}</td></tr>
+    <tr><td>Amortissements de l'année</td><td class="m">{{ lmnp.amortissements|euros }}</td></tr>
+    <tr><td>Amortissements non déduits les années passées (report)</td><td class="m">{{ lmnp.report_anterieur|euros }}</td></tr>
+    <tr><td>Amortissements déduits<span class="formule">au plus le résultat avant amortissements : ils ne créent pas de déficit</span></td><td class="m">− {{ lmnp.amort_deduit|euros }}</td></tr>
+    <tr><td>Amortissements reportés à l'an prochain<span class="formule">sans limite de durée, pas de case sur la 2042-C-PRO</span></td><td class="m">{{ lmnp.amort_reporte|euros }}</td></tr>
+    <tr class="fort vers"><td>Résultat fiscal → {% if lmnp.resultat >= 0 %}case 5NA{% else %}case 5NY{% endif %}</td><td class="m">{{ lmnp.resultat|euros }}</td></tr>
+  </tbody></table>
+  {% endif %}
+</section>
+{% if lmnp.detail_micro %}
+<section class="bloc-d dr-bloc" id="lmnp-micro" aria-label="Micro-BIC">
+  <h2>Micro-BIC · cases 5NG, 5NH, 5NI <span class="sous">(recettes brutes, sans abattement)</span></h2>
+  {% for b in lots %}{% if b.micro %}
+  <details class="dr-imm" open><summary>{{ b.lot.bien.nom }} · {{ b.lot.designation }} <span class="chiffres">{{ b.total_recettes|euros }}</span></summary><div>
+    <table class="dr-t"><tbody>{% for r in b.recettes %}<tr><td>{{ r.libelle }}</td><td class="petit-d">{{ r.source }}</td><td class="m">{{ r.montant|euros:2 }}</td></tr>{% endfor %}</tbody></table>
+  </div></details>
+  {% endif %}{% endfor %}
+  <p class="petit-d">5NG : meublés de tourisme classés · 5NH : meublés de tourisme non classés · 5NI : autres locations meublées.</p>
+</section>
+{% endif %}
+{% endif %}
+
+<section class="bloc-d dr-bloc" id="deficits-lmnp" aria-label="Déficits LMNP">
+  <h2>Déficits LMNP antérieurs · cases 5GA à 5GJ <span class="sous">({{ deficits_lmnp.total_a|euros }} au 31/12/{{ annee|add:"-1" }})</span></h2>
+  {% include "patrimoine/_detail_historique.html" with h=historique_lmnp nature="lmnp" %}
+</section>
+{% endblock %}

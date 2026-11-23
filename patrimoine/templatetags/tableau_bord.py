@@ -95,6 +95,7 @@ def sites_utiles():
 # --- Menu latéral -------------------------------------------------------------------------------------------
 # Icônes au trait (style Lucide), dessinées en SVG pour rester nettes à toutes les tailles.
 ICONES = {
+    "maison": '<path d="M3 11 12 4l9 7"/><path d="M5 9.8V20h14V9.8"/><path d="M16 6.5V4h2v4"/><path d="M9.5 20v-5h5v5"/>',
     "accueil": '<path d="M3 10.5 12 3l9 7.5"/><path d="M5 9.5V21h14V9.5"/><path d="M10 21v-6h4v6"/>',
     "loyers": '<rect x="2" y="6" width="20" height="12" rx="2"/><circle cx="12" cy="12" r="2.5"/><path d="M6 12h.01M18 12h.01"/>',
     "baux": '<path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><path d="M14 3v6h6M8 13h8M8 17h5"/>',
@@ -118,6 +119,8 @@ ICONES = {
     "liens": '<path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>',
     "balles": '<circle cx="12" cy="12" r="9"/><path d="M5.6 5.6a9 9 0 0 1 0 12.8M18.4 5.6a9 9 0 0 0 0 12.8"/>',
     "menu": '<path d="M4 6h16M4 12h16M4 18h16"/>',
+    "liste": '<path d="M8 6h13M8 12h13M8 18h13"/><circle cx="3.5" cy="6" r="1"/><circle cx="3.5" cy="12" r="1"/><circle cx="3.5" cy="18" r="1"/>',
+    "galerie": '<rect x="3" y="3" width="7.5" height="7.5" rx="1.5"/><rect x="13.5" y="3" width="7.5" height="7.5" rx="1.5"/><rect x="3" y="13.5" width="7.5" height="7.5" rx="1.5"/><rect x="13.5" y="13.5" width="7.5" height="7.5" rx="1.5"/>',
     "controles": '<path d="M12 3 4 6v6c0 5 3.5 8 8 9 4.5-1 8-4 8-9V6z"/><path d="m9 12 2 2 4-4"/>',
     "irl": '<path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/>',
     "surface": '<rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h6V3M15 21v-6h6"/>',
@@ -180,7 +183,7 @@ def _menu():
              [("Virements reçus", a("versement")), ("Relances d'impayés", r("relances_impayes")), ("Révisions de loyer", a("revisionloyer")),
               ("Dépôts de garantie", a("mouvementdepot"))]),
         ]),
-        ("Relocation", [
+        ("Location", [
             ("annonces", "Annonces", a("annonce"), [a("annonce")], []),
             ("candidatures", "Candidatures", a("candidature"), [a("candidature")], []),
             ("cles", "Changements de locataire", a("changementlocataire"), [a("changementlocataire")], []),
@@ -194,6 +197,7 @@ def _menu():
             ("encaissements", "Encaissements", r("suivi_encaissements"), [r("suivi_encaissements"), r("etat_loyers_encaisses")],
              [("État des loyers encaissés", r("etat_loyers_encaisses"), "etats")]),
             ("prets", "Prêts et endettement", a("pret"), [a("pret"), r("etat_endettement")], []),
+            ("maison", "Ma maison", r("ma_maison"), [r("ma_maison")], []),
         ]),
         ("Comptabilité", _menu_compta()),
         ("Investir", [
@@ -234,7 +238,7 @@ def _menu_compta():
     conciergerie = r("conciergerie_ajouter")
     liste = dossiers.tous()
     sous_dossiers = [(d["titre"], r("dossier_compta", args=[d["code"]])) for d in liste]
-    prefixes = [r("compta_accueil") + "$", r("dossier_compta", args=["x"]).rsplit("x/", 1)[0], r("declarations"), r("recap_2044"),
+    prefixes = [r("compta_accueil") + "$", r("dossier_compta", args=["x"]).rsplit("x/", 1)[0], r("declarations"), r("declaration_revenus"), r("recap_2044"),
                 r("annexe_2072"), r("compta_lmnp"), r("compta_societe"), r("biens_lmnp"), r("admin:patrimoine_chargelmnp_changelist")]
     prefixes += [f"{u}?dossier={d['code']}" for d in liste for u in (factures, importer)]
     recurrentes = r("admin:patrimoine_depenserecurrente_changelist")
@@ -244,7 +248,7 @@ def _menu_compta():
 
     if lots_conciergerie().exists():
         sous_saisie.append(("Contrôle conciergerie", conciergerie))
-    return [("dossiers", "Mes dossiers", r("compta_accueil"), prefixes, sous_dossiers + [("Toutes les déclarations", r("declarations"))]),
+    return [("dossiers", "Mes dossiers", r("compta_accueil"), prefixes, sous_dossiers + [("Toutes les déclarations", r("declarations")), ("Ma déclaration de revenus", r("declaration_revenus"))]),
             ("saisie", "Toutes les factures", factures, [factures, conciergerie, recurrentes], sous_saisie),
             ("evolution", "Évolution des dépenses", r("evolution_depenses"), [r("evolution_depenses")], []),
             ("regimes", "Réglages fiscaux", r("regimes_fiscaux"), [r("regimes_fiscaux")], [])]
@@ -301,7 +305,7 @@ def menu_lateral(context):
     acces = droits.niveaux(user) if user is not None and user.is_authenticated else {}
     module_du_lien = {"biens": "biens", "locataires": "locataires", "baux": "baux", "loyers": "loyers",
                       "candidatures": "relocation", "annonces": "relocation", "cles": "relocation", "lcd": "lcd",
-                      "encaissements": "finances", "prets": "finances", "etats": "etats",
+                      "encaissements": "finances", "prets": "finances", "maison": "finances", "etats": "etats",
                       "dossiers": "compta", "saisie": "compta", "evolution": "compta", "regimes": "compta",
                       "rappels": "outils"}
     groupes, actif_trouve = [], False

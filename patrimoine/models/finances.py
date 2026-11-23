@@ -90,6 +90,26 @@ class Pret(models.Model):
             return (self.montant / self.duree_mois).quantize(Decimal("0.01"))
         return (self.montant * t / (1 - (1 + t) ** -self.duree_mois)).quantize(Decimal("0.01"))
 
+    @property
+    def assurance_appliquee(self):
+        """Phrase qui dit d'où vient l'assurance de l'échéancier : tableau de la banque, % du capital restant dû,
+        montant fixe ou aucune."""
+        def e(v):
+            return f"{v:,.2f}".replace(",", "\u202f").replace(".", ",")
+
+        banque = self.lignes_banque()
+        if banque:
+            courante = self._echeance_courante()
+            if courante and courante["assurance"]:
+                return (f"celle du tableau de la banque ({e(courante['assurance'])} €/mois) : retirez le tableau de la banque "
+                        "pour recalculer à partir des conditions")
+            return "aucune (tableau de la banque)"
+        if self.taux_assurance and self.type == self.Type.AMORTISSABLE:
+            return f"{e(self.taux_assurance)} % du capital restant dû, incluse dans l'échéance"
+        if self.assurance_mensuelle:
+            return f"montant fixe de {e(self.assurance_mensuelle)} €/mois (mettez 0 dans « assurance mensuelle » pour un prêt sans assurance)"
+        return "aucune"
+
     def lignes_banque(self):
         """Tableau d'amortissement remis par la banque, s'il a été importé (sinon liste vide)."""
         if not self.pk:
@@ -336,6 +356,31 @@ class DeclarationFaite(models.Model):
         return res
 
 
+class DeficitReporte(models.Model):
+    """Déficit encore à reporter, repris de la dernière déclaration (2044 ligne 450 colonne C, 2042-C-PRO cases 5GA à 5GJ) :
+    montant restant au 31 décembre de l'année « au_31_12 », par année d'origine. Les années suivantes se calculent
+    ensuite dans l'aide à la déclaration (bénéfices imputés sur les déficits les plus anciens, nouveaux déficits ajoutés)."""
+
+    class Nature(models.TextChoices):
+        FONCIER = "foncier", "Déficit foncier (2044, case 4BD)"
+        LMNP = "lmnp", "Déficit LMNP (2042-C-PRO, cases 5GA à 5GJ)"
+
+    nature = models.CharField(max_length=10, choices=Nature.choices)
+    au_31_12 = models.PositiveSmallIntegerField("restant au 31/12 de")
+    annee_origine = models.PositiveSmallIntegerField("année d'origine du déficit")
+    montant = models.DecimalField("montant restant à reporter (€)", max_digits=12, decimal_places=2)
+    saisi_le = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = "déficit à reporter"
+        verbose_name_plural = "déficits à reporter"
+        ordering = ["nature", "-au_31_12", "annee_origine"]
+        constraints = [models.UniqueConstraint(fields=["nature", "au_31_12", "annee_origine"], name="deficit_unique_par_annee")]
+
+    def __str__(self):
+        return f"{self.get_nature_display().split(' (')[0]} {self.annee_origine} : {self.montant} € restant au 31/12/{self.au_31_12}"
+
+
 def biens_du_formulaire(formulaire, proprietaire_id=None):
     """Biens dont la saisie alimente ce cerfa."""
     if formulaire == "2044":
@@ -355,6 +400,18 @@ def _chemin_facture(instance, nom):
     from django.utils import timezone
 
     return f"factures/{(instance.date or timezone.localdate()):%Y}/{secrets.token_hex(6)}-{nom}"
+
+
+def verifier_rubrique(objet):
+    """Maison : une catégorie de la maison ; LMNP ou société : une rubrique du récapitulatif (pas une catégorie de la maison)."""
+    from django.core.exceptions import ValidationError
+
+    if not objet.bien_id or not objet.rubrique:
+        return
+    if objet.bien.est_maison and objet.rubrique not in PieceComptable.LIBELLES_MAISON:
+        raise ValidationError({"rubrique": "Choisissez une catégorie de la maison (électricité, taxe foncière, entretien…)."})
+    if not objet.bien.est_maison and objet.rubrique not in PieceComptable.LIBELLES_RUBRIQUES:
+        raise ValidationError({"rubrique": "Cette catégorie est réservée à la maison : choisissez une rubrique du récapitulatif."})
 
 
 class PieceComptable(models.Model):
@@ -388,8 +445,18 @@ class PieceComptable(models.Model):
         ("Prêt", [("pret", "Rbt prêt (capital)"), ("interets_pret", "Intérêts d'emprunt"),
                   ("assurance_pret", "Assurance et frais de prêt")]),
         ("Autre", [("autre", "Autre")]),
+        ("Immobilisations", [("immobilisation", "Immobilisation (à amortir)")]),
     ]
     LIBELLES_RUBRIQUES = {code: libelle for _, rubriques in RUBRIQUES for code, libelle in rubriques}
+
+    # catégories des dépenses de la maison (résidence principale, hors comptabilité locative) : page « Ma maison »
+    RUBRIQUES_MAISON = [("electricite", "Électricité"), ("chauffage", "Chauffage (gaz, fioul, bois)"), ("eau", "Eau et assainissement"),
+                        ("taxe_fonciere", "Taxe foncière"), ("assurance_hab", "Assurance habitation"),
+                        ("internet", "Internet et téléphone"), ("entretien", "Entretien"), ("travaux", "Travaux"), ("autre", "Autre")]
+    LIBELLES_MAISON = dict(RUBRIQUES_MAISON)
+    CHOIX_RUBRIQUES = [(g, r) for g, r in RUBRIQUES] + [
+        ("Maison", [("chauffage", "Chauffage (gaz, fioul, bois)"), ("assurance_hab", "Assurance habitation"),
+                    ("internet", "Internet et téléphone"), ("entretien", "Entretien"), ("travaux", "Travaux")])]  # les autres existent déjà
 
     bien = models.ForeignKey(Bien, on_delete=models.PROTECT, related_name="pieces_comptables")
     date = models.DateField("date de la facture", null=True, blank=True)
@@ -408,8 +475,8 @@ class PieceComptable(models.Model):
                                            help_text="Format de la facture électronique importée (vide : PDF, photo ou saisie)")
     ligne = models.CharField("ligne de l'annexe 2072", max_length=4, choices=Ligne.choices, blank=True,
                              help_text="Vide = pièce importée pas encore codifiée (ignorée par l'annexe 2072)")
-    rubrique = models.CharField(max_length=15, choices=[(g, r) for g, r in RUBRIQUES], blank=True,
-                                help_text="Biens en LMNP ou en société : rubrique du récapitulatif")
+    rubrique = models.CharField(max_length=15, choices=CHOIX_RUBRIQUES, blank=True,
+                                help_text="Biens en LMNP ou en société : rubrique du récapitulatif ; maison : catégorie de la dépense")
     mois_concerne = models.DateField("mois de la prestation", null=True, blank=True,
                                      help_text="Pour une facture qui couvre un autre mois que sa date (ex. conciergerie de septembre "
                                                "facturée en octobre) : place le montant dans le bon mois du récapitulatif")
@@ -420,6 +487,8 @@ class PieceComptable(models.Model):
     fichier = models.FileField("facture (PDF, photo ou XML)", upload_to=_chemin_facture, storage=stockage_prive, blank=True,
                                validators=[FileExtensionValidator(["pdf", "jpg", "jpeg", "png", "heic", "xml"])])
     notes = models.TextField(blank=True)
+    charge_confirmee = models.BooleanField("c'est bien une charge (pas une immobilisation)", default=False,
+                                           help_text="Plus de 500 € mais réparation ou entretien : plus d'alerte « à amortir ? »")
     recurrence = models.ForeignKey("DepenseRecurrente", null=True, blank=True, on_delete=models.SET_NULL, related_name="pieces",
                                    editable=False, verbose_name="dépense récurrente",
                                    help_text="Créée automatiquement par cette dépense récurrente")
@@ -452,6 +521,7 @@ class PieceComptable(models.Model):
         from django.core.exceptions import ValidationError
 
         super().clean()
+        verifier_rubrique(self)
         fermees, declares = AnneeCloturee.annees(), DeclarationFaite.verrous()
         if not fermees and not declares:
             return
@@ -471,7 +541,7 @@ class PieceComptable(models.Model):
     def motif_verrou(self, fermees=None, declares=None):
         """Pourquoi la facture est en lecture seule (année clôturée, ou cerfa déclaré), ou None.
         Une facture « à codifier » (pas encore comptée) reste modifiable."""
-        if self.a_codifier:
+        if self.a_codifier or self.est_maison:  # la maison n'entre dans aucune déclaration : jamais verrouillée
             return None
         fermees = AnneeCloturee.annees() if fermees is None else fermees
         if self.annee in fermees:
@@ -505,7 +575,18 @@ class PieceComptable(models.Model):
     @property
     def par_rubrique(self):
         """Vrai si la pièce se code en rubrique (bien en LMNP ou en société), faux en revenus fonciers (ligne 2072)."""
-        return bool(self.bien_id) and self.bien.comptabilite in ("lmnp", "societe")
+        return bool(self.bien_id) and (self.bien.comptabilite in ("lmnp", "societe") or self.bien.est_maison)
+
+    @property
+    def est_maison(self):
+        return bool(self.bien_id) and self.bien.est_maison
+
+    @property
+    def rubrique_libelle(self):
+        """Libellé de la rubrique (catégorie de la maison pour la résidence principale)."""
+        if self.est_maison:
+            return self.LIBELLES_MAISON.get(self.rubrique, self.rubrique)
+        return self.get_rubrique_display()
 
     @property
     def codification(self):
@@ -553,8 +634,8 @@ class DepenseRecurrente(models.Model):
     montant = models.DecimalField("montant TTC (€)", max_digits=10, decimal_places=2)
     ligne = models.CharField("ligne de l'annexe 2072", max_length=4, choices=PieceComptable.Ligne.choices, blank=True,
                              help_text="Revenus fonciers (SCI, nom propre)")
-    rubrique = models.CharField(max_length=15, choices=[(g, r) for g, r in PieceComptable.RUBRIQUES], blank=True,
-                                help_text="Biens en LMNP ou en société")
+    rubrique = models.CharField(max_length=15, choices=PieceComptable.CHOIX_RUBRIQUES, blank=True,
+                                help_text="Biens en LMNP ou en société ; catégorie pour la maison")
     frequence = models.CharField("fréquence", max_length=15, choices=Frequence.choices, default=Frequence.MENSUELLE)
     premiere_echeance = models.DateField("1re échéance", help_text="Date de la première facture ; les suivantes tombent le même jour")
     fin = models.DateField("dernière échéance", null=True, blank=True, help_text="Vide : sans fin (jusqu'à ce que la dépense soit arrêtée)")
@@ -573,9 +654,12 @@ class DepenseRecurrente(models.Model):
         from django.core.exceptions import ValidationError
 
         if self.bien_id:
-            par_rubrique = self.bien.comptabilite in ("lmnp", "societe")
+            par_rubrique = self.bien.comptabilite in ("lmnp", "societe") or self.bien.est_maison
+            if self.bien.est_maison and not self.rubrique:
+                raise ValidationError({"rubrique": "Choisissez la catégorie de la dépense (maison)."})
             if par_rubrique and not self.rubrique:
                 raise ValidationError({"rubrique": "Choisissez la rubrique (bien en LMNP ou en société)."})
+            verifier_rubrique(self)
             if not par_rubrique and not self.ligne:
                 raise ValidationError({"ligne": "Choisissez la ligne de l'annexe 2072."})
         if self.fin and self.premiere_echeance and self.fin < self.premiere_echeance:

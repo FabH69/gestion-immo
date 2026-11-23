@@ -135,7 +135,7 @@ def colonne(bien, annee):
     nb_locaux = bien.lots.filter(Q(vendu=False) | Q(date_vente__year__gte=annee)).count()
     if nb_locaux:
         v["7"] = FORFAIT_PAR_LOCAL * nb_locaux
-        detail["7"].append((f"Forfait 20 € × {nb_locaux} local{'aux' if nb_locaux > 1 else ''}", v["7"], None))
+        detail["7"].append((f"Forfait 20 € × {nb_locaux} {'locaux' if nb_locaux > 1 else 'local'}", v["7"], None))
 
     # ligne 17 : intérêts et assurance des prêts rattachés au bien
     for pret in Pret.objects.filter(bien=bien):
@@ -169,14 +169,22 @@ def sous_lignes(colonnes, code, annee):
             for libelle, montant, piece in c["detail"].get(cle, []):
                 pret = next((p for nom, p in prets.items() if libelle.startswith(nom)), None)
                 declare = pret.montants_declares(annee) if pret else None
-                # avoir saisi en négatif sur la ligne 14 : la ligne le retranche en positif (cerfa), le détail garde le signe saisi
+                # avoir saisi en négatif sur la ligne 14 : la ligne le retranche en positif (cerfa) ; le détail montre le même
+                # montant que la ligne, pour que la somme du détail donne le total, et rappelle le signe saisi dans un badge
                 saisi = piece.montant if piece and piece.montant is not None and piece.montant != montant else None
                 sous.append({"libelle": f"Prêt {pret.banque} {pret.reference}" if pret else libelle, "piece": piece, "saisi": saisi, "retenu": montant,
                              "bien": c["bien"], "pret": pret, "declare": declare, "renovation": cle == "9b" and code == "9",
                              "estimation": bool(declare and declare["source"] == "estimation"),
-                             "montants": [(saisi if saisi is not None else montant) if j == i else None for j in range(len(colonnes))],
-                             "total": saisi if saisi is not None else montant})
+                             "montants": [montant if j == i else None for j in range(len(colonnes))], "total": montant})
     return sous
+
+
+def arrondis(detail, nb_colonnes):
+    """Sous-ligne « somme du détail » quand, dans une colonne, les centimes du détail sont arrondis à l'euro sur la
+    ligne du formulaire (ex. 81,81 € → 82 €) : liste (somme exacte, arrondi) par colonne, None si rien à expliquer."""
+    sommes = [sum((d["montants"][i] for d in detail if d["montants"][i] is not None), ZERO) for i in range(nb_colonnes)]
+    notes = [(s, euro_le_plus_proche(s)) if s != euro_le_plus_proche(s) else None for s in sommes]
+    return notes if any(notes) else None
 
 
 LIGNES_SAISIES = ["1", "2", "3", "4", "6", "7", "8", "9", "9b", "10", "11", "12", "13", "14", "15", "17", "19", "20"]
@@ -212,6 +220,8 @@ def annexe(biens, annee):
         lignes = [{"code": code, "numero": "9 bis" if code == "9b" else code, "libelle": libelle, "genre": genre,
                    "detail": sous_lignes(cols, code, annee) if genre not in ("total", "titre") else [],
                    "montants": [c["valeurs"].get(code, ZERO) for c in cols]} for code, libelle, genre in LIGNES]
+        for l in lignes:
+            l["arrondis"] = arrondis(l["detail"], len(cols)) if l["detail"] else None
         pages.append({"colonnes": cols, "lignes": lignes, "vides": range(vides)})
     somme = lambda *codes: sum((c["valeurs"].get(k, ZERO) * signe for c in colonnes for k, signe in codes), ZERO)
     resultat = [  # cadre I de la 2072-S-SD

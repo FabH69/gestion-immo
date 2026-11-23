@@ -26,6 +26,10 @@
         <td class="libelle">{% include "patrimoine/_sous_ligne_libelle.html" with avec_bien=colonnes|length|add:"-1" ancre="ligne-"|add:l.code %}</td>
         {% for m in d.montants %}<td class="col-bien">{% if m is not None %}{{ m|euros:2 }}{% endif %}</td>{% endfor %}{% if colonnes|length > 1 %}<td>{{ d.total|euros:2 }}</td>{% endif %}
       </tr>{% endfor %}
+      {% if l.arrondis %}<tr class="sous arrondi">
+        <td></td><td class="libelle">Somme du détail, arrondie à l'euro le plus proche</td>
+        {% for a in l.arrondis %}<td class="col-bien">{% if a %}{{ a.0|euros:2 }} → {{ a.1|euros }}{% endif %}</td>{% endfor %}{% if colonnes|length > 1 %}<td>{% if l.arrondi_total %}{{ l.arrondi_total.0|euros:2 }} → {{ l.arrondi_total.1|euros }}{% endif %}</td>{% endif %}
+      </tr>{% endif %}
     </tbody>{% endfor %}
   </table>
 </section>
