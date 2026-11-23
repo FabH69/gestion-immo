@@ -1,6 +1,6 @@
 """Les biens d'une SCI à l'IR prennent le régime de la SCI (revenus fonciers, réel) ; ceux d'une SCI à l'IS passent à l'IS.
 
-Numérotée 0076 pour passer après 0075_immobilisations (PR 70) : la dépendance sera rebranchée sur 0075 à sa fusion.
+Passe après 0075_immobilisations (PR 70).
 """
 from django.db import migrations
 
@@ -17,7 +17,7 @@ def aligner(apps, schema_editor):
 class Migration(migrations.Migration):
 
     dependencies = [
-        ("patrimoine", "0074_deficits_reportes"),
+        ("patrimoine", "0075_immobilisations"),
     ]
 
     operations = [
