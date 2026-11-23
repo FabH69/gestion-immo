@@ -2629,6 +2629,48 @@ class TableauxBanqueEtRappelsTests(TestCase):
                                       comptabilite="foncier")
         self.assertIsNone(rappel_cfe(foncier))
 
+    def test_rappel_import_lcd_le_5_du_mois(self):
+        from .rappels import a_faire, rappel_import_lcd
+
+        lot = Lot.objects.create(bien=self.bien, designation="Studio", exploitation="courte")
+        r = rappel_import_lcd(lot, date(2026, 11, 23))
+        self.assertEqual((r.date, r.periodicite, r.prevenir_jours, r.dans_agenda, r.bien), (date(2026, 12, 5), "mensuel", 0, True, self.bien))
+        self.assertIn("Chasselay – Studio", r.titre)
+        self.assertEqual(rappel_import_lcd(lot, date(2026, 12, 3)), None)  # pas de doublon
+        self.assertEqual(rappel_import_lcd(Lot.objects.create(bien=self.bien, designation="T2"), date(2026, 12, 3)), None)  # location classique
+        self.assertEqual(rappel_import_lcd(Lot.objects.create(bien=self.bien, designation="T3", exploitation="courte"),
+                                           date(2026, 12, 5)).date, date(2026, 12, 5))  # le 5 même : ce jour-là
+        self.assertTrue(any(i["titre"] == r.titre for i in a_faire(date(2026, 12, 1))))
+        r.marquer_fait()
+        r.refresh_from_db()
+        self.assertEqual(r.date, date(2027, 1, 5))  # coché : 5 du mois suivant
+        lot.exploitation = "longue"
+        lot.save()
+        rappel_import_lcd(lot)
+        r.refresh_from_db()
+        self.assertFalse(r.actif)  # le lot quitte la courte durée : rappel arrêté
+        lot.exploitation = "courte"
+        lot.save()
+        rappel_import_lcd(lot)
+        r.refresh_from_db()
+        self.assertTrue(r.actif)
+
+    def test_rappel_import_lcd_depuis_la_fiche_lot(self):
+        lot = Lot.objects.create(bien=self.bien, designation="Studio")
+        from .admin.biens import LotAdmin
+        from django.contrib.admin.sites import site
+        from django.contrib.messages.storage.fallback import FallbackStorage
+        from django.test import RequestFactory
+
+        requete = RequestFactory().post("/")
+        requete.user = User.objects.get(username="admin")
+        requete.session = {}
+        requete._messages = FallbackStorage(requete)
+        lot.exploitation = "courte"
+        LotAdmin(Lot, site).save_model(requete, lot, None, True)
+        self.assertTrue(Rappel.objects.filter(bien=self.bien, titre__startswith="Importer les réservations", actif=True).exists())
+        self.assertIn("le 5 de chaque mois", " ".join(str(m) for m in requete._messages))
+
     def test_rubrique_impots_et_taxes(self):
         from .compta import rubrique_de_charge
         from .models import PieceComptable
