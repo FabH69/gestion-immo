@@ -95,9 +95,17 @@ def carte(formulaire, proprietaire, titre, sous_titre, cerfa, annee, acces=None)
                    if manquantes else "Attestations reçues" if prets else "Aucun prêt"),
          "url": reverse("admin:patrimoine_pret_change", args=[manquantes[0].pk]) if manquantes else ""},
     ]
-    if formulaire == "2031" and (acces is None or acces.get("etats")):
-        etapes.append({"libelle": "Amortissements", "etat": "info", "texte": "Charges et amortissements",
-                       "url": reverse("admin:patrimoine_chargelmnp_changelist")})
+    if formulaire in ("2031", "societe") and (acces is None or acces.get("etats")):
+        from . import amortissements
+        from .dossiers import code_de
+
+        douteuses = amortissements.a_verifier(ids, annee).count()
+        dot = amortissements.dotations_biens(ids, annee)
+        etapes.append({"libelle": "Amortissements", "etat": "todo" if douteuses else "info",
+                       "texte": (f"{douteuses} facture{'s' if douteuses > 1 else ''} de plus de 500 € à vérifier" if douteuses
+                                 else f"Dotations {annee} : {dot:,.2f} €".replace(",", " ").replace(".", ",") if dot
+                                 else "Aucune immobilisation"),
+                       "url": reverse("immobilisations", args=[code_de(formulaire, proprietaire)]) + f"?annee={annee}"})
 
     historique = list(DeclarationFaite.objects.filter(annee=annee, formulaire=formulaire, proprietaire_id=pid))
     declaree = next((d for d in historique if d.active), None)

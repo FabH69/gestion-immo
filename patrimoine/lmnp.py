@@ -100,7 +100,7 @@ def bilan_lot(lot, annee):
         # réservations, prêts, estimation des charges mensuelles), sans le capital remboursé qui n'est pas une charge
         charges = _charges_du_recapitulatif(lot.bien, annee)
         manuelles = list(ChargeLMNP.objects.filter(lot=lot, annee=annee, categorie=ChargeLMNP.Categorie.AMORTISSEMENT))
-        return _resultat(lot, recettes, charges, manuelles)
+        return _resultat(lot, recettes, charges, manuelles, _dotations(lot, annee))
 
     interets = assurance = ZERO
     for pret in lot.bien.prets.all():
@@ -117,7 +117,14 @@ def bilan_lot(lot, annee):
     for c in manuelles:
         if c.categorie != ChargeLMNP.Categorie.AMORTISSEMENT:
             charges.append(_ligne(c.get_categorie_display() + (f" ({c.libelle})" if c.libelle else ""), c.montant, "Saisie"))
-    return _resultat(lot, recettes, charges, manuelles)
+    return _resultat(lot, recettes, charges, manuelles, _dotations(lot, annee))
+
+
+def _dotations(lot, annee):
+    """Dotations de l'année des immobilisations du lot (registre des immobilisations)."""
+    from .amortissements import dotations_lot
+
+    return dotations_lot(lot, annee, list(lots_lmnp().filter(bien=lot.bien)))
 
 
 SOURCES = {"F": "Factures et charges saisies", "R": "Réservations et frais de gestion", "P": "Prêts",
@@ -132,7 +139,7 @@ def _charges_du_recapitulatif(bien, annee):
     charges = []
     for _, rubriques in PieceComptable.RUBRIQUES:
         for code, nom in rubriques:
-            if code == "pret" or code not in d:
+            if code in ("pret", "immobilisation") or code not in d:  # capital remboursé et achats à amortir : pas des charges
                 continue
             cases = d[code].values()
             sources = sorted(set().union(*(c["sources"] for c in cases)))
@@ -140,9 +147,11 @@ def _charges_du_recapitulatif(bien, annee):
     return charges
 
 
-def _resultat(lot, recettes, charges, manuelles):
+def _resultat(lot, recettes, charges, manuelles, dotations=ZERO):
     charges = [c for c in charges if c["montant"]]
-    amortissements = sum((c.montant for c in manuelles if c.categorie == ChargeLMNP.Categorie.AMORTISSEMENT), ZERO)
+    # amortissements : total saisi à la main (ancien mode, selon le comptable) + dotations du registre des immobilisations
+    saisis = sum((c.montant for c in manuelles if c.categorie == ChargeLMNP.Categorie.AMORTISSEMENT), ZERO)
+    amortissements = saisis + dotations
 
     total_recettes = sum((r["montant"] for r in recettes), ZERO)
     total_charges = sum((c["montant"] for c in charges), ZERO)
@@ -152,7 +161,7 @@ def _resultat(lot, recettes, charges, manuelles):
     # courte durée : 30 % si le meublé de tourisme n'est pas classé, 50 % s'il l'est (comme le meublé classique)
     abattement = ABATTEMENT_MICRO["courte" if lot.exploitation == "courte" and not lot.tourisme_classe else "longue"]
     return {
-        "lot": lot, "recettes": recettes, "charges": charges, "total_recettes": total_recettes, "total_charges": total_charges,
+        "lot": lot, "amort_saisis": saisis, "dotations": dotations, "recettes": recettes, "charges": charges, "total_recettes": total_recettes, "total_charges": total_charges,
         "resultat": resultat, "amortissements": amortissements, "amort_deduit": amort_deduit, "amort_reporte": amortissements - amort_deduit,
         "resultat_fiscal": resultat - amort_deduit, "abattement_micro": abattement,
         "micro_imposable": (total_recettes * (100 - abattement) / 100).quantize(Decimal("1")),
@@ -173,5 +182,20 @@ def bilan(annee, lot_id=None):
     if lot_id:
         lots = lots.filter(pk=lot_id)
     blocs = [bilan_lot(l, annee) for l in lots]
-    total = {k: sum((b[k] for b in blocs), ZERO) for k in ("total_recettes", "total_charges", "resultat", "amortissements", "amort_deduit", "amort_reporte", "resultat_fiscal", "micro_imposable")}
+    total = _totaux(blocs)
+    if not lot_id:
+        # la 2031 couvre tous les meublés ensemble : les amortissements se déduisent dans la limite du résultat de l'ensemble,
+        # le reste (et celui des années passées) se reporte sans limite de durée
+        from .amortissements import report_lmnp
+
+        total["report_debut"] = report_lmnp(annee, lambda y: _totaux([bilan_lot(l, y) for l in lots_lmnp()]))
+        disponible = total["amortissements"] + total["report_debut"]
+        total["amort_deduit"] = min(disponible, max(total["resultat"], ZERO))
+        total["amort_reporte"] = disponible - total["amort_deduit"]
+        total["resultat_fiscal"] = total["resultat"] - total["amort_deduit"]
     return {"blocs": blocs, "total": total}
+
+
+def _totaux(blocs):
+    return {k: sum((b[k] for b in blocs), ZERO) for k in ("total_recettes", "total_charges", "resultat", "amortissements", "amort_deduit",
+                                                          "amort_reporte", "resultat_fiscal", "micro_imposable", "dotations")}
