@@ -5004,8 +5004,8 @@ class DeclarationRevenusTests(TestCase):
         t = dr.aide(2025)
         par_annee = {l["origine"]: l for l in t["deficits_fonciers"]["lignes"]}
         self.assertEqual(t["deficits_fonciers"]["total_a"], 4400)
-        self.assertIn({"code": "4BD", "libelle": "Déficits antérieurs non encore imputés", "montant": Decimal("4400"),
-                       "origine": "2044 ligne 451", "formulaire": "2042"}, t["cases_foncier"])
+        case = next(c for c in t["cases_foncier"] if c["code"] == "4BD")
+        self.assertEqual((case["montant"], case["origine"], case["ancre"]), (Decimal("4400"), "2044 ligne 451", "deficits-foncier"))
         self.assertEqual((par_annee[2015]["b"], par_annee[2016]["b"], par_annee[2020]["b"]), (400, 1000, 1100))
         self.assertEqual(par_annee[2020]["c"], 1900)
         # année suivante : calculée à partir de la saisie au 31/12/2024 (2015 et 2016 épuisés)
@@ -5054,3 +5054,20 @@ class DeclarationRevenusTests(TestCase):
         self.assertEqual(DeficitReporte.objects.get().montant, Decimal("1250.50"))
         self.assertIn("/comptabilite/ma-declaration-de-revenus/", self.client.get("/admin/").content.decode())
         self.assertContains(self.client.get("/comptabilite/declarations/?annee=2025"), "Ma déclaration de revenus (cases 2042)")
+
+    def test_detail_des_montants(self):
+        from . import declaration_revenus as dr
+
+        dr.enregistrer_stock("foncier", 2023, {2020: Decimal("900")})
+        page = self.client.get("/comptabilite/ma-declaration-de-revenus/detail/?annee=2025").content.decode()
+        for texte in ("Détail des montants – revenus 2025", 'id="foncier-resultat"', 'id="deficits-foncier"',
+                      "ligne R1 de la 2072 × 50 %", "Taxe foncière", "Chaudière", "rénovation énergétique",
+                      "Forfait 20 € × 2 locaux", "Pollionnay", "Gestion", "case 4BC = 720",
+                      "montants restant au 31/12/2023", "<b>2024</b> (calculé par l'appli)"):
+            self.assertIn(texte, page)
+        # chaque case de la page principale mène à son détail
+        principale = self.client.get("/comptabilite/ma-declaration-de-revenus/?annee=2025").content.decode()
+        self.assertIn("/comptabilite/ma-declaration-de-revenus/detail/?annee=2025#foncier-resultat", principale)
+        self.assertIn("Détail des montants", principale)
+        h = dr.historique_deficits("foncier", 2025)
+        self.assertEqual((h["ref"], h["depart"], [e["annee"] for e in h["etapes"]]), (2023, [(2020, Decimal("900"))], [2024]))

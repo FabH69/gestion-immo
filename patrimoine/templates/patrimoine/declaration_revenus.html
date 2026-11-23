@@ -37,7 +37,7 @@ details.dr-details > summary { cursor: pointer; font-weight: 600; margin-top: 10
 {% block breadcrumbs %}<div class="breadcrumbs"><a href="{% url 'admin:index' %}">Accueil</a> › <a href="{% url 'compta_accueil' %}">Comptabilité</a> › Ma déclaration de revenus</div>{% endblock %}
 {% block content %}
 <div class="titre-liste titre-compta"><h1>Ma déclaration de revenus {{ annee }}</h1>
-  <ul class="object-tools"><li><a href="{% url 'declarations' %}">Toutes les déclarations</a></li></ul></div>
+  <ul class="object-tools"><li><a href="{% url 'declaration_revenus_detail' %}?annee={{ annee }}" class="default">Détail des montants</a></li><li><a href="{% url 'declarations' %}">Toutes les déclarations</a></li></ul></div>
 <div class="barre-compta">{% boutons_annees annees annee "civil" %}</div>
 <p class="aide-compta">Les cases à recopier sur impots.gouv.fr (déclaration 2042 et annexe 2042-C-PRO), calculées à partir de la 2044 du nom propre, des 2072 de vos SCI (votre part) et du bilan LMNP. Chaque montant indique la ligne d'où il vient. Vérifiez les annexes avant de valider votre déclaration : les montants suivent votre saisie.</p>
 {% for a in alertes %}<div class="dr-alerte" role="alert">{{ a }}</div>{% endfor %}
@@ -47,7 +47,7 @@ details.dr-details > summary { cursor: pointer; font-weight: 600; margin-top: 10
     <h2>Déclaration 2042 · revenus fonciers <span class="sous">(rubrique 4)</span></h2>
     {% if cases_foncier %}
     <table class="liste-d"><tbody>
-      {% for c in cases_foncier %}<tr><td><span class="dr-case">{{ c.code }}</span></td><td>{{ c.libelle }}<div class="petit-d">{{ c.origine }}</div></td>
+      {% for c in cases_foncier %}<tr><td><span class="dr-case">{{ c.code }}</span></td><td>{{ c.libelle }}<div class="petit-d">{{ c.origine }} · <a href="{% url 'declaration_revenus_detail' %}?annee={{ annee }}#{{ c.ancre }}">détail</a></div></td>
         <td class="montant-dr">{{ c.montant|floatformat:"0g" }} €<button type="button" class="copier-dr" data-montant="{{ c.montant|floatformat:0 }}" aria-label="Copier {{ c.code }}">Copier</button></td></tr>{% endfor %}
     </tbody></table>
     <p class="petit-d">Cochez aussi la case 4BZ si vous déposez une 2044 spéciale (immeubles à régime particulier) : l'appli ne la gère pas.</p>
@@ -57,7 +57,7 @@ details.dr-details > summary { cursor: pointer; font-weight: 600; margin-top: 10
     <h2>Annexe 2042-C-PRO · location meublée <span class="sous">(locations meublées non professionnelles)</span></h2>
     {% if cases_lmnp %}
     <table class="liste-d"><tbody>
-      {% for c in cases_lmnp %}<tr><td><span class="dr-case">{{ c.code }}</span></td><td>{{ c.libelle }}<div class="petit-d">{{ c.origine }}</div></td>
+      {% for c in cases_lmnp %}<tr><td><span class="dr-case">{{ c.code }}</span></td><td>{{ c.libelle }}<div class="petit-d">{{ c.origine }} · <a href="{% url 'declaration_revenus_detail' %}?annee={{ annee }}#{{ c.ancre }}">détail</a></div></td>
         <td class="montant-dr">{{ c.montant|floatformat:"0g" }} €<button type="button" class="copier-dr" data-montant="{{ c.montant|floatformat:0 }}" aria-label="Copier {{ c.code }}">Copier</button></td></tr>{% endfor %}
     </tbody></table>
     <p class="petit-d">Cases du déclarant 1. Si le meublé est au nom du déclarant 2, utilisez la colonne suivante (5OA, 5OY, 5OG, 5OH, 5OI).</p>

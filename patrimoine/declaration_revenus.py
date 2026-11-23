@@ -135,6 +135,7 @@ def lmnp(annee):
     resultat = euros(t("resultat") - deduit)
     return {"reel": reel, "recettes": euros(t("total_recettes")), "charges": euros(t("total_charges")),
             "amort_deduit": euros(deduit), "amort_reporte": euros(disponible - deduit), "resultat": resultat,
+            "avant_amortissements": euros(t("resultat")), "amortissements": euros(t("amortissements")), "report_anterieur": euros(report),
             "5NA": max(resultat, ZERO), "5NY": max(-resultat, ZERO), "micro": micro, "detail_micro": detail_micro}
 
 
@@ -176,27 +177,40 @@ def _imputer(stock, benefice, annee):
 
 def stock_au_debut(nature, annee):
     """Déficits non encore imputés au 31/12/(année − 1), par année d'origine, encore reportables en « année » :
-    ({origine: montant}, source). source : « saisie » (repris de la déclaration au 31/12/année−1), « calcul » (roulé
-    depuis une saisie plus ancienne ou depuis la première année de données de l'appli), « aucun »."""
+    ({origine: montant}, source, année de la saisie). source : « saisie » (repris de la déclaration au 31/12/année−1),
+    « calcul » (roulé depuis une saisie plus ancienne ou depuis la première année de données de l'appli), « aucun »."""
+    r = historique_deficits(nature, annee)
+    return r["stock"], r["source"], r["ref"]
+
+
+def historique_deficits(nature, annee):
+    """Comment le stock de déficits au 31/12/(année − 1) a été obtenu : la saisie de départ, puis une étape par année
+    calculée (bénéfice imputé sur les plus anciens, nouveau déficit ajouté, déficits périmés)."""
     from .models import DeficitReporte
 
     ref = DeficitReporte.objects.filter(nature=nature, au_31_12__lt=annee).order_by("-au_31_12").values_list("au_31_12", flat=True).first()
+    depart_saisi = {}
     if ref is not None:
         stock = {d.annee_origine: d.montant for d in DeficitReporte.objects.filter(nature=nature, au_31_12=ref)}
+        depart_saisi = dict(stock)
         depart, source = ref + 1, "saisie" if ref == annee - 1 else "calcul"
     else:
         premiere = _premiere_annee_de_donnees()
         if premiere is None or premiere >= annee:
-            return {}, "aucun", None
+            return {"stock": {}, "source": "aucun", "ref": None, "depart": {}, "etapes": []}
         stock, depart, source = {}, max(premiere, annee - DUREE_REPORT), "calcul"
+    etapes = []
     for a in range(depart, annee):
         benefice, deficit = _resultat_de_l_annee(nature, a)
-        _imputer(stock, benefice, a)
+        imputes = _imputer(stock, benefice, a)
         if deficit:
             stock[a] = stock.get(a, ZERO) + deficit
+        perimes = {o: m for o, m in stock.items() if o < a + 1 - DUREE_REPORT and m > 0}
         stock = {o: m for o, m in stock.items() if o >= a + 1 - DUREE_REPORT and m > 0}
+        etapes.append({"annee": a, "benefice": benefice, "imputes": sorted(imputes.items()), "deficit": deficit,
+                       "perimes": sorted(perimes.items()), "reste": sum(stock.values(), ZERO)})
     stock = {o: m for o, m in stock.items() if o >= annee - DUREE_REPORT and m > 0}
-    return stock, source, ref
+    return {"stock": stock, "source": source, "ref": ref, "depart": sorted(depart_saisi.items()), "etapes": etapes}
 
 
 def tableau_deficits(nature, annee, benefice, nouveau):
@@ -229,7 +243,8 @@ def enregistrer_stock(nature, au_31_12, montants):
 
 # --- la page ---------------------------------------------------------------------------------------------------------
 def _case(code, libelle, montant, origine, formulaire="2042"):
-    return {"code": code, "libelle": libelle, "montant": montant, "origine": origine, "formulaire": formulaire}
+    return {"code": code, "libelle": libelle, "montant": montant, "origine": origine, "formulaire": formulaire,
+            "ancre": ancre(code)}
 
 
 def aide(annee):
@@ -282,3 +297,69 @@ def aide(annee):
         alertes.append("Une SCI a un % de détention à 0 : renseignez la part du foyer dans la fiche du propriétaire.")
     return {"annee": annee, "foncier": foncier, "micro": micro, "lmnp": meuble, "deficits_fonciers": deficits_fonciers,
             "deficits_lmnp": deficits_lmnp, "cases_foncier": cases_foncier, "cases_lmnp": cases_lmnp, "alertes": alertes}
+
+
+# --- écran « Détail des montants » -----------------------------------------------------------------------------------
+ANCRES = {"4BA": "foncier-resultat", "4BB": "foncier-resultat", "4BC": "foncier-resultat", "4BD": "deficits-foncier",
+          "4BE": "micro-foncier", "5NA": "lmnp", "5NY": "lmnp", "5NG": "lmnp-micro", "5NH": "lmnp-micro", "5NI": "lmnp-micro"}
+
+
+def ancre(code):
+    return ANCRES.get(code, "deficits-lmnp" if code.startswith("5G") else "")
+
+
+def _numeros_2044():
+    from . import compta
+
+    n = {code: numero for numero, _, code, _ in compta.LIGNES_2044 if numero}
+    n.update({"4": "214", "9b": "224 bis"})
+    return n
+
+
+def detail_immeuble(bien, annee, en_2044=False):
+    """Lignes non nulles d'un immeuble (numéros de la 2044 ou de la 2072), chacune avec les pièces qui la composent :
+    loyers encaissés, factures, forfait de 20 € par local, intérêts des prêts."""
+    from . import annexe2072
+
+    c = annexe2072.colonne(bien, annee)
+    v = c["valeurs"]
+    numeros = _numeros_2044() if en_2044 else {}
+    lignes = []
+    for code, libelle, genre in annexe2072.LIGNES:
+        if genre in ("total", "titre") or code == "9b" or not v.get(code):
+            continue
+        lignes.append({"numero": numeros.get(code, code), "libelle": libelle, "montant": v[code],
+                       "pieces": annexe2072.sous_lignes([c], code, annee), "signe": "−" if code == "14" else ""})
+    return {"bien": bien, "lignes": lignes, "recettes": v.get("5", ZERO), "charges": v.get("16", ZERO),
+            "interets": v.get("17", ZERO), "resultat": v.get("18", ZERO),
+            "numeros": {"recettes": "215", "charges": "240", "interets": "250", "resultat": "261"} if en_2044 else
+                       {"recettes": "5", "charges": "16", "interets": "17", "resultat": "18"}}
+
+
+def detail(annee):
+    """Tout ce qui compose les cases de « Ma déclaration de revenus », de la case jusqu'à la pièce."""
+    from . import annexe2072, lmnp as bilan_lmnp
+
+    base = aide(annee)
+    foncier = base["foncier"]
+    scis = []
+    for col in foncier["sci"]:
+        biens = col["sci"].biens.filter(regime_fiscal="sci_ir").filter(Q(vendu=False) | Q(date_vente__year__gte=annee)).order_by("nom")
+        cadre = {code: montant for code, _, _, montant in col["cadre_i"]}
+        parts = [("111", "Revenus bruts", "R1"), ("112", "Frais et charges (sauf intérêts)", "R3"), ("113", "Intérêts d'emprunt", "R4")]
+        scis.append({**col, "immeubles": [detail_immeuble(b, annee) for b in biens],
+                     "lignes_parts": [{"ligne": l, "libelle": lib, "r": r, "montant_sci": cadre[r], "part": col[l]} for l, lib, r in parts]})
+    directs = [detail_immeuble(c["bien"], annee, en_2044=True) for c in foncier["direct"]]
+
+    micro = []
+    for m in base["micro"]["biens"]:
+        micro.append({**m, "loyers": annexe2072.loyers_par_mois(m["bien"], annee)})
+
+    lots = []
+    for lot in bilan_lmnp.lots_lmnp():
+        b = bilan_lmnp.bilan_lot(lot, annee)
+        if b["total_recettes"] or b["total_charges"] or b["amortissements"]:
+            lots.append({**b, "micro": lot.bien.micro})
+    return {**base, "scis": scis, "directs": directs, "micro_detail": micro, "lots": lots,
+            "historique_foncier": historique_deficits("foncier", annee),
+            "historique_lmnp": historique_deficits("lmnp", annee)}

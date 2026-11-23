@@ -40,7 +40,7 @@ MODULES = [
      ["suivi_encaissements", "etat_endettement", "document_amortissement", "ma_maison", "maison_entretien_fait"], ["maison_entretien_fait"]),
     ("compta", "Comptabilité (revenus fonciers, LMNP, société)", ["patrimoine.piececomptable", "patrimoine.declarationfaite", "patrimoine.depenserecurrente",
                                                          "patrimoine.deficitreporte", "patrimoine.immobilisation", "patrimoine.reportamortissements"],
-     ["compta_accueil", "dossier_compta", "immobilisations", "reprise_immobilisations", "decomposer_bien", "declarations", "declaration_revenus", "annexe_2072", "recap_2044", "regimes_fiscaux", "compta_lmnp", "compta_societe", "conciergerie_ajouter", "controle_conciergerie",
+     ["compta_accueil", "dossier_compta", "immobilisations", "reprise_immobilisations", "decomposer_bien", "declarations", "declaration_revenus", "declaration_revenus_detail", "annexe_2072", "recap_2044", "regimes_fiscaux", "compta_lmnp", "compta_societe", "conciergerie_ajouter", "controle_conciergerie",
       "admin:patrimoine_piececomptable_import"], ["admin:patrimoine_piececomptable_import", "reprise_immobilisations", "decomposer_bien"]),
     ("etats", "États, bilan LMNP et plus-value", ["patrimoine.chargelmnp"],
      ["etat_loyers_encaisses", "etat_loyers_detail", "biens_lmnp", "plus_value"], []),

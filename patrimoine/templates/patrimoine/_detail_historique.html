@@ -1,0 +1,17 @@
+{% load tableau_bord %}{% if h.source == "aucun" %}<p class="petit-d">Aucun déficit antérieur : ni saisie de votre dernière déclaration, ni année précédente dans l'appli.</p>
+{% else %}
+<ol class="dr-calcul">
+  {% if h.ref %}<li>Départ : montants restant au 31/12/{{ h.ref }} saisis d'après votre déclaration{% if h.depart %} ({% for o, m in h.depart %}{{ o }} : {{ m|euros }}{% if not forloop.last %} · {% endif %}{% endfor %}){% else %} (aucun){% endif %}.
+    <a href="{% url 'declaration_revenus' %}?annee={{ annee }}#deficits-{{ nature }}">Corriger</a></li>
+  {% else %}<li>Départ : aucune saisie de votre déclaration ; l'appli part de vos données des années précédentes, sans déficit antérieur.</li>{% endif %}
+  {% for e in h.etapes %}<li><b>{{ e.annee }}</b> (calculé par l'appli) :
+    {% if e.benefice %}bénéfice de {{ e.benefice|euros }}{% if e.imputes %}, imputé sur {% for o, m in e.imputes %}{{ o }} ({{ m|euros }}){% if not forloop.last %}, {% endif %}{% endfor %}{% else %}, aucun déficit à imputer{% endif %}{% elif e.deficit %}nouveau déficit de {{ e.deficit|euros }}{% else %}ni bénéfice ni déficit{% endif %}{% if e.perimes %} ; perdu après 10 ans : {% for o, m in e.perimes %}{{ o }} ({{ m|euros }}){% endfor %}{% endif %}.
+    Reste au 31/12/{{ e.annee }} : {{ e.reste|euros }}.</li>{% endfor %}
+</ol>
+<table class="dr-t"><thead><tr><th>Année d'origine</th>{% if nature == "lmnp" %}<th>Case</th>{% endif %}<th class="m">Non imputé au 31/12/{{ annee|add:"-1" }}</th></tr></thead><tbody>
+  {% if nature == "lmnp" %}{% for l in deficits_lmnp.lignes %}{% if l.a %}<tr><td class="n">{{ l.origine }}</td><td><span class="dr-case">{{ l.case }}</span></td><td class="m">{{ l.a|euros }}</td></tr>{% endif %}{% endfor %}
+  <tr class="fort"><td>Total</td><td></td><td class="m">{{ deficits_lmnp.total_a|euros }}</td></tr>
+  {% else %}{% for l in deficits_fonciers.lignes %}{% if l.a %}<tr><td class="n">{{ l.origine }}</td><td class="m">{{ l.a|euros }}</td></tr>{% endif %}{% endfor %}
+  <tr class="fort vers"><td style="white-space:nowrap">Total → ligne 451 → case 4BD</td><td class="m">{{ deficits_fonciers.total_a|euros }}</td></tr>{% endif %}
+</tbody></table>
+{% endif %}
