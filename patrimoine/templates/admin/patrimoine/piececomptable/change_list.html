@@ -81,6 +81,7 @@ document.addEventListener("click", function (e) {  // un clic ailleurs referme l
 #fenetre-selection .fenetre-compte { font-weight: 600; margin-right: 4px; }
 #fenetre-selection .fenetre-boutons { display: inline-flex; flex-wrap: wrap; gap: 8px; }
 #fenetre-selection .button { cursor: pointer; height: auto; padding: 8px 14px; border-radius: 10px; border: 1px solid var(--border-color); background: var(--body-bg); color: var(--primary); font-weight: 600; }
+#fenetre-selection a.button { display: inline-block; text-decoration: none; line-height: normal; }
 #fenetre-selection .button.principal { background: var(--primary); color: #fff; border-color: var(--primary); }
 #fenetre-selection .button.danger { color: var(--rouge, #c8463d); border-color: var(--rouge, #c8463d); }
 #fenetre-selection .button:disabled { opacity: .45; cursor: not-allowed; }
@@ -161,6 +162,19 @@ document.addEventListener("click", function (e) {  // un clic ailleurs referme l
     if (/^Supprimer/.test(texte)) return "Supprimer";
     return texte;
   }
+  // Une seule facture cochée : « Modifier la facture » ouvre sa fiche ; « Enregistrer » ramène à cette liste (?next=),
+  // avec ses filtres et sa page. Facture d'une année verrouillée (🔒) : la fiche s'ouvre en lecture seule.
+  var LIEN_FICHE = "{% url 'admin:patrimoine_piececomptable_change' 999999999 %}";
+  function boutonModifier(coche) {
+    var tr = coche.closest("tr"), verrou = tr && Array.prototype.find.call(tr.querySelectorAll("span[title]"), function (s) { return s.textContent.trim() === "🔒"; });
+    var lien = document.createElement("a");
+    lien.className = "button principal modifier-facture";
+    lien.href = LIEN_FICHE.replace("999999999", encodeURIComponent(coche.value)) + "?next=" + encodeURIComponent(location.pathname + location.search);
+    lien.textContent = verrou ? "🔒 Voir la facture" : "Modifier la facture";
+    lien.title = verrou ? verrou.title + " : la fiche s'ouvre en lecture seule." : "Ouvrir la fiche de cette facture";
+    lien.addEventListener("click", function (e) { e.stopPropagation(); });
+    return lien;
+  }
   function majFenetre() {
     var form = document.getElementById("changelist-form"), fenetre = document.getElementById("fenetre-selection");
     var boutons = form && form.querySelector(".actions-boutons");
@@ -170,6 +184,7 @@ document.addEventListener("click", function (e) {  // un clic ailleurs referme l
     var n = coches.length, liste = fenetre.querySelector(".fenetre-boutons");
     fenetre.querySelector(".fenetre-compte").textContent = n + " ligne" + (n > 1 ? "s" : "") + " sélectionnée" + (n > 1 ? "s" : "");
     liste.innerHTML = "";
+    if (n === 1) liste.appendChild(boutonModifier(coches[0]));
     boutons.querySelectorAll("button").forEach(function (b) {
       var c = document.createElement("button");
       c.type = "button"; c.className = b.className; c.textContent = libelleCourt(b.textContent); c.disabled = b.disabled; c.title = b.title || b.textContent;

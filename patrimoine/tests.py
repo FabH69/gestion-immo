@@ -4315,6 +4315,37 @@ class SaisieFenetreSelectionTests(TestCase):
         self.client.post("/admin/patrimoine/piececomptable/", {"action": "delete_selected", "post": "yes", "_selected_action": [self.piece.pk]})
         self.assertFalse(PieceComptable.objects.filter(pk=self.piece.pk).exists())
 
+    _donnees_fiche = RegimesFiscauxTests._donnees_fiche
+
+    def test_une_facture_cochee_propose_modifier(self):
+        """Une seule facture cochée : « Modifier la facture » ouvre sa fiche, et « Enregistrer » ramène à la liste filtrée."""
+        from .models import PieceComptable
+
+        page = self.client.get("/admin/patrimoine/piececomptable/?compta=foncier&annee=2025").content.decode()
+        self.assertIn("Modifier la facture", page)
+        self.assertIn("🔒 Voir la facture", page)  # facture verrouillée : la fiche s'ouvre en lecture seule
+        self.assertIn('"/admin/patrimoine/piececomptable/999999999/change/"', page)
+        self.assertIn("if (n === 1) liste.appendChild(boutonModifier(coches[0]))", page)  # plusieurs cochées : actions groupées seules
+        # le lien construit par la fenêtre : la fiche, puis retour à la liste avec ses filtres
+        retour = "/admin/patrimoine/piececomptable/?compta=foncier&annee=2025"
+        lien = f"/admin/patrimoine/piececomptable/{self.piece.pk}/change/?next=" + retour.replace("/", "%2F").replace("?", "%3F").replace("&", "%26").replace("=", "%3D")
+        reponse = self.client.post(lien, {**self._donnees_fiche(lien), "libelle": "Facture plombier corrigée"})
+        self.assertEqual(reponse.status_code, 302)
+        self.assertEqual(reponse["Location"], retour)
+        self.assertEqual(PieceComptable.objects.get(pk=self.piece.pk).libelle, "Facture plombier corrigée")
+
+    def test_facture_verrouillee_reste_en_lecture_seule(self):
+        from .models import AnneeCloturee, PieceComptable
+
+        PieceComptable.objects.filter(pk=self.piece.pk).update(ligne="9")  # codifiée : comptée dans 2025, donc verrouillable
+        AnneeCloturee.objects.create(annee=2025)
+        page = self.client.get("/admin/patrimoine/piececomptable/?compta=foncier&annee=2025").content.decode()
+        self.assertIn('<span title="L&#x27;année 2025 est clôturée">🔒</span>', page.split(f'value="{self.piece.pk}"')[1].split("</tr>")[0])  # 🔒 sur la ligne : bouton « Voir »
+        lien = f"/admin/patrimoine/piececomptable/{self.piece.pk}/change/?next=%2Fadmin%2Fpatrimoine%2Fpiececomptable%2F"
+        self.assertContains(self.client.get(lien), "est clôturée")
+        self.client.post(lien, {"bien": self.piece.bien_id, "date": "2025-02-05", "libelle": "Modifiée", "montant": "999"})
+        self.assertEqual(PieceComptable.objects.get(pk=self.piece.pk).montant, Decimal("180"))
+
 
 class DossiersComptablesTests(TestCase):
     """Comptabilité par dossier (PR n° 13) : accueil « Mes dossiers », saisie limitée à un dossier, aperçu de sa déclaration."""
