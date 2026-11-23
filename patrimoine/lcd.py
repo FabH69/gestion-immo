@@ -50,12 +50,17 @@ def _montant(valeur):
         return Decimal(0)
 
 
-def _date(valeur, jour_en_premier=True):
+def _date(valeur, jour_en_premier=True, inverser_dates_excel=False):
     if valeur in (None, "", "-"):
         return None
     if isinstance(valeur, datetime):
-        return valeur.date()
+        valeur = valeur.date()
     if isinstance(valeur, date):
+        if inverser_dates_excel and valeur.day <= 12:
+            # Export américain (mois/jour) ouvert puis enregistré dans Excel en français : Excel a lu
+            # « 01/12/2025 » (12 janvier) comme le 1er décembre. Seules ces dates ambiguës deviennent de vraies
+            # dates, les autres (« 12/24/2025 ») restent du texte : on remet le jour et le mois à l'endroit.
+            return date(valeur.year, valeur.day, valeur.month)
         return valeur
     texte = str(valeur).strip()
     formats = ["%Y-%m-%d", "%Y-%m-%d %H:%M:%S", "%d %b %Y", "%d %B %Y", "%b %d, %Y"]
@@ -132,19 +137,31 @@ def importer(lot, fichier, nom, plateforme=None):
     if manquantes:
         raise ValueError(f"Colonnes introuvables : {', '.join(manquantes)}.")
     jour_en_premier = _ordre_des_dates(lignes, [col[c] for c in ("arrivee", "depart", "versement") if c in col])
+    # Dates du fichier écrites mois d'abord (vu dans le texte) : les dates qu'Excel a converties sont à remettre à l'endroit.
+    mois_en_premier_prouve = jour_en_premier is False
     if jour_en_premier is None:
         jour_en_premier = any(_norme(h) in ("date de debut", "date d'arrivee", "numero de reference") for h in entetes)
+
+    # Airbnb : un « Versement de résolution » (dédommagement versé par Airbnb pour un séjour) s'ajoute aux revenus
+    # de la réservation qui porte le même code, comme dans le tableau Excel de suivi.
+    resolutions = {}
+    if plateforme == PLATEFORMES.AIRBNB:
+        for ligne in lignes:
+            if "resolution" in _norme(ligne.get(col.get("type"))) and ligne.get(col["reference"]):
+                code = str(ligne.get(col["reference"])).strip()
+                resolutions[code] = resolutions.get(code, Decimal(0)) + _montant(ligne.get(col["brut"]))
 
     creees = mises_a_jour = ignorees = 0
     for ligne in lignes:
         get = lambda champ: ligne.get(col[champ]) if champ in col else None
         type_ligne = _norme(get("type"))
         if plateforme == PLATEFORMES.AIRBNB and type_ligne and not type_ligne.startswith(("reservation", "réservation")):
-            ignorees += 1  # versements, ajustements, frais de résolution : pas des séjours
+            # versements, ajustements : pas des séjours (une résolution est reprise avec sa réservation)
+            ignorees += "resolution" not in type_ligne
             continue
         reference = str(get("reference") or "").strip()
-        arrivee = _date(get("arrivee"), jour_en_premier)
-        depart = _date(get("depart"), jour_en_premier)
+        arrivee = _date(get("arrivee"), jour_en_premier, mois_en_premier_prouve)
+        depart = _date(get("depart"), jour_en_premier, mois_en_premier_prouve)
         if not depart and arrivee and get("nuits"):
             depart = arrivee + timedelta(days=int(_montant(get("nuits"))))
         if not reference or not arrivee or not depart:
@@ -155,9 +172,12 @@ def importer(lot, fichier, nom, plateforme=None):
             "lot": lot, "voyageur": str(get("voyageur") or "").strip()[:150], "arrivee": arrivee, "depart": depart,
             "montant_brut": _montant(get("brut")), "commission": _montant(get("commission")),
             "frais_service": _montant(get("frais")), "taxe_sejour": _montant(get("taxe")),
-            "date_versement": _date(get("versement"), jour_en_premier),
-            "annulee": "cancel" in statut or "annul" in statut,
+            "date_versement": _date(get("versement"), jour_en_premier, mois_en_premier_prouve),
         }
+        valeurs["montant_brut"] += resolutions.pop(reference, Decimal(0))
+        # Booking : une réservation « Annulée » mais facturée (annulation non remboursable) a bien été payée :
+        # elle reste dans les revenus. Seule une annulation sans montant est écartée.
+        valeurs["annulee"] = ("cancel" in statut or "annul" in statut) and not valeurs["montant_brut"]
         if plateforme == PLATEFORMES.AIRBNB and valeurs["commission"] >= valeurs["taxe_sejour"]:
             # Comme le tableau Excel de suivi : brut − commission − taxe de séjour = net versé.
             # Airbnb ne versant que « brut − frais de service », la taxe est retirée des frais de service.
@@ -165,6 +185,7 @@ def importer(lot, fichier, nom, plateforme=None):
         _, cree = ReservationLCD.objects.update_or_create(plateforme=plateforme, reference=reference, defaults=valeurs)
         creees += cree
         mises_a_jour += not cree
+    ignorees += len(resolutions)  # résolution dont la réservation n'est pas dans ce fichier
     return plateforme, creees, mises_a_jour, ignorees
 
 

@@ -181,7 +181,7 @@ class BienAdmin(admin.ModelAdmin):
     def get_queryset(self, request):
         from django.db.models import Prefetch
         return super().get_queryset(request).select_related("proprietaire", "syndic").prefetch_related(
-            "lots", Prefetch("lots__baux", queryset=Bail.objects.filter(actif=True), to_attr="baux_actifs"))
+            "lots", "lots__photos", Prefetch("lots__baux", queryset=Bail.objects.filter(actif=True), to_attr="baux_actifs"))
 
     def _loyers_hc(self, obj):
         return sum((b.loyer_hc or 0 for lot in obj.lots.all() for b in lot.baux_actifs), Decimal(0))
@@ -199,8 +199,60 @@ class BienAdmin(admin.ModelAdmin):
         return f"{total * 12 / obj.prix_acquisition * 100:.1f} %".replace(".", ",")
     search_fields = ["nom", "adresse", "ville"]
     inlines = [LotInline]
+    readonly_fields = ["apercu_photo"]
+
+    @admin.display(description="aperçu")
+    def apercu_photo(self, obj):
+        if obj and obj.photo:
+            return format_html('<img src="{}" alt="" style="max-height:140px;max-width:100%;border-radius:8px">', obj.photo.url)
+        return "Aucune photo"
+
+    VUES = ("liste", "galerie")
+
+    def changelist_view(self, request, extra_context=None):
+        """Bascule liste / galerie : ?vue=galerie est retenue pour la session, puis retirée des paramètres de la liste
+        (l'admin refuse les paramètres qu'il ne connaît pas)."""
+        if "vue" in request.GET:
+            if request.GET["vue"] in self.VUES:
+                request.session["biens_vue"] = request.GET["vue"]
+            get = request.GET.copy()
+            del get["vue"]
+            request.GET = get
+            request.META["QUERY_STRING"] = get.urlencode()
+        vue = request.session.get("biens_vue", "liste")
+        liens = {}
+        for v in self.VUES:
+            get = request.GET.copy()
+            get["vue"] = v
+            liens[f"url_{v}"] = "?" + get.urlencode()
+        reponse = super().changelist_view(request, {**(extra_context or {}), "vue": vue, **liens})
+        if vue == "galerie" and hasattr(reponse, "context_data") and "cl" in reponse.context_data:
+            reponse.context_data["galerie"] = self._galerie(reponse.context_data["cl"].result_list)
+        return reponse
+
+    def _galerie(self, biens):
+        """Blocs par propriétaire (ordre alphabétique), chacun avec les cartes de ses biens."""
+        blocs = {}
+        for bien in sorted(biens, key=lambda b: (b.proprietaire.nom.lower(), b.nom.lower())):
+            lots = [lot for lot in bien.lots.all()]
+            loues = sum(1 for lot in lots if lot.baux_actifs)
+            loyers = self._loyers_hc(bien)
+            bloc = blocs.setdefault(bien.proprietaire_id, {"proprietaire": bien.proprietaire, "cartes": [], "loyers": Decimal(0)})
+            bloc["loyers"] += loyers
+            bloc["cartes"].append({
+                "bien": bien, "photo": bien.photo_carte, "nb_lots": len(lots), "loues": loues,
+                "occupation": "vide" if not loues else ("partiel" if loues < len(lots) else "plein"),
+                "loyers": loyers, "rendement": self.rendement(bien),
+                "regime": self.regime(bien),
+            })
+        for i, bloc in enumerate(blocs.values()):
+            mots = bloc["proprietaire"].nom.replace("-", " ").split() or ["?"]
+            bloc["initiales"] = (mots[0][0] + (mots[-1][0] if len(mots) > 1 else "")).upper()
+            bloc["teinte"] = i % 6
+        return list(blocs.values())
     fieldsets = [
         (None, {"fields": ["proprietaire", "nom", "adresse", ("code_postal", "ville"), "syndic", ("date_acquisition", "prix_acquisition")]}),
+        ("Photo", {"fields": [("apercu_photo", "photo")]}),
         ("Régime fiscal", {"fields": [("regime_fiscal", "option_fiscale")],
                            "description": format_html(
                                "Choisit la comptabilité du bien, ses écrans et le formulaire à remplir : <b>2044</b> (location nue), "
@@ -239,6 +291,10 @@ class BienAdmin(admin.ModelAdmin):
             # case décochée : on annule ce que la vente du bien avait fait (sans toucher aux lots vendus à part)
             lots = obj.lots.filter(date_vente=avant["date_vente"]) if avant["date_vente"] else obj.lots.filter(date_vente__isnull=True)
             lots.update(vendu=False, date_vente=None)
+        from ..rappels import rappel_import_lcd
+
+        for lot in obj.lots.all():
+            rappel_import_lcd(lot)  # bien vendu : arrête le rappel mensuel d'import courte durée
         if not obj.vendu:
             from ..rappels import rappel_cfe
 
@@ -335,6 +391,10 @@ class LotAdmin(FicheMixin, admin.ModelAdmin):
         if obj.date_vente:
             obj.vendu = True
         super().save_model(request, obj, form, change)
+        from ..rappels import rappel_import_lcd
+
+        if rappel_import_lcd(obj):
+            messages.info(request, "Rappel mensuel ajouté : importer les réservations du mois précédent le 5 de chaque mois.")
 
     @admin.display(description="locataire")
     def locataire_actuel(self, obj):

@@ -64,6 +64,10 @@ class Syndic(models.Model):
         return f"{self.nom} ({self.ville})" if self.ville else self.nom
 
 
+def _chemin_photo_bien(instance, nom):
+    return f"photos/biens/{nom}"
+
+
 class Bien(models.Model):
     """Immeuble ou adresse physique, qui contient un ou plusieurs lots."""
 
@@ -144,6 +148,9 @@ class Bien(models.Model):
         "régime à vérifier", default=False, editable=False,
         help_text="Régime déduit automatiquement de l'ancienne comptabilité : à confirmer en enregistrant la fiche du bien.")
     notes = models.TextField(blank=True)
+    photo = models.ImageField("photo du bien", upload_to=_chemin_photo_bien, blank=True,
+                              help_text="Affichée sur la carte du bien en vue galerie. Sans photo, la galerie reprend la "
+                                        "photo principale d'un de ses lots.")
 
     EQUIPEMENTS_COMMUNS = ["gardiennage", "ascenseur", "chauffage_collectif", "antenne_tv", "vide_ordures", "interphone",
                            "espaces_verts", "eau_chaude_collective", "local_velos", "fibre"]
@@ -204,6 +211,17 @@ class Bien(models.Model):
     @property
     def micro(self):
         return self.option_fiscale == self.OptionFiscale.MICRO and self.regime_fiscal in self.REGIMES_MICRO_POSSIBLE
+
+    @property
+    def photo_carte(self):
+        """URL de la photo de la carte en galerie : celle du bien, sinon la photo principale du premier lot qui en a une."""
+        if self.photo:
+            return self.photo.url
+        for lot in self.lots.all():
+            photos = list(lot.photos.all())
+            if photos:
+                return photos[0].image.url
+        return ""
 
     @property
     def meuble_fiscal(self):
