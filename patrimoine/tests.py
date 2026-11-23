@@ -5146,3 +5146,41 @@ class DeclarationRevenusTests(TestCase):
         self.assertIn("Détail des montants", principale)
         h = dr.historique_deficits("foncier", 2025)
         self.assertEqual((h["ref"], h["depart"], [e["annee"] for e in h["etapes"]]), (2023, [(2020, Decimal("900"))], [2024]))
+
+
+class Lien2072DuBienTests(TestCase):
+    """Depuis le dossier d'un bien (filtre « Bien »), « Voir la 2072 » ne coche que ce bien ; les autres restent cochables."""
+
+    def setUp(self):
+        self.client.force_login(User.objects.create_superuser("admin", "a@example.com", "x"))
+        self.sci = Proprietaire.objects.create(nom="SCI ALFAB", type=Proprietaire.Type.SCI_IR)
+        commun = {"proprietaire": self.sci, "adresse": "1 rue", "code_postal": "69000", "ville": "Lyon",
+                  "comptabilite": "foncier", "regime_fiscal": "sci_ir"}
+        self.a = Bien.objects.create(nom="Immeuble A", **commun)
+        self.b = Bien.objects.create(nom="Immeuble B", **commun)
+        self.code = f"2072-{self.sci.pk}"
+
+    def _lien(self, url):
+        import re
+
+        page = self.client.get(url).content.decode()
+        return re.search(r'href="([^"]*/comptabilite/2072/[^"]*)" class="button default"', page).group(1).replace("&amp;", "&")
+
+    def test_lien_avec_le_bien_choisi(self):
+        lien = self._lien(f"/comptabilite/dossier/{self.code}/?annee=2025&bien={self.a.pk}")
+        self.assertIn(f"&bien={self.a.pk}", lien)
+        page = self.client.get(lien).content.decode()
+        self.assertIn(f'value="{self.a.pk}" checked', page)
+        self.assertIn(f'value="{self.b.pk}" onchange', page)  # pas cochée mais cochable
+
+    def test_tous_les_biens_sans_filtre(self):
+        lien = self._lien(f"/comptabilite/dossier/{self.code}/?annee=2025")
+        self.assertNotIn("bien=", lien)
+        page = self.client.get(lien).content.decode()
+        self.assertIn(f'value="{self.a.pk}" checked', page)
+        self.assertIn(f'value="{self.b.pk}" checked', page)
+
+    def test_reglages_fiscaux(self):
+        from .regimes import lien_page
+
+        self.assertIn(f"&bien={self.a.pk}", lien_page(self.a, 2025)[0])

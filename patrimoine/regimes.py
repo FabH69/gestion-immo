@@ -57,7 +57,7 @@ def lien_page(bien, annee):
     if r == "nu" and not bien.micro:
         return f"{reverse('recap_2044')}?annee={annee}", "Récapitulatif 2044"
     if r == "sci_ir":
-        return f"{reverse('annexe_2072')}?sci={bien.proprietaire_id}&annee={annee}", "Annexe 2072"
+        return f"{reverse('annexe_2072')}?sci={bien.proprietaire_id}&annee={annee}&bien={bien.pk}", "Annexe 2072"
     if r in ("lmnp", "lmp"):
         return f"{reverse('biens_lmnp')}?annee={annee}", "Bilan LMNP (2031)"
     if r in ("societe_ir", "societe_is"):

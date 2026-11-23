@@ -269,6 +269,8 @@ def dossier_compta(request, code):
     if bien:  # filtre « Bien » : factures et aperçu de ce bien seulement
         pieces = pieces.filter(bien=bien)
         r["apercu"], r["resultat"] = dossiers.apercu(dossier, annee, bien)
+        if dossier["formulaire"] == "2072":  # « Voir la 2072 » : seul ce bien coché, les autres restent cochables
+            r["lien"] += f"&bien={bien.pk}"
     url = reverse("dossier_compta", args=[code])
     contexte = {"annee": annee, "annees": _annees(), "d": r, "dossiers": dossiers.tous(), "aujourdhui": timezone.localdate(),
                 "pieces": pieces.order_by("-date_paiement", "-date", "-pk")[:15], "nb_pieces": pieces.count(),
