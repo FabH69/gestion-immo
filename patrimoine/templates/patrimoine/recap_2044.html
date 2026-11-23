@@ -21,7 +21,11 @@
         <td class="libelle">{{ l.libelle }}{% if l.detail %} <span class="nb">{{ l.detail|length }}</span>{% endif %}</td>
         {% for m in l.montants %}<td class="col-bien">{{ m|euros:0 }}</td>{% endfor %}{% if colonnes|length > 1 %}<td class="fort">{{ l.total|euros:0 }}</td>{% endif %}
       </tr>
-      {% for d in l.detail %}<tr class="sous">
+      {% for d in l.detail %}{% if d.groupe %}<tr class="sous groupe-lot">
+        <td></td>
+        <td class="libelle">{{ d.groupe.libelle }} <span class="nb">{{ d.groupe.nb }}</span>{% if colonnes|length > 1 %}<span class="bien-tag">{{ d.bien.nom }}</span>{% endif %}</td>
+        {% for m in d.groupe.montants %}<td class="col-bien">{% if m is not None %}{{ m|euros:2 }}{% endif %}</td>{% endfor %}{% if colonnes|length > 1 %}<td>{{ d.groupe.total|euros:2 }}</td>{% endif %}
+      </tr>{% endif %}<tr class="sous{% if d.lot %} dans-lot{% endif %}">
         <td></td>
         <td class="libelle">{% include "patrimoine/_sous_ligne_libelle.html" with avec_bien=colonnes|length|add:"-1" ancre="ligne-"|add:l.code %}</td>
         {% for m in d.montants %}<td class="col-bien">{% if m is not None %}{{ m|euros:2 }}{% endif %}</td>{% endfor %}{% if colonnes|length > 1 %}<td>{{ d.total|euros:2 }}</td>{% endif %}

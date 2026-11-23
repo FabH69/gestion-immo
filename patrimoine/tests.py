@@ -5220,3 +5220,66 @@ class Lien2072DuBienTests(TestCase):
         from .regimes import lien_page
 
         self.assertIn(f"&bien={self.a.pk}", lien_page(self.a, 2025)[0])
+
+
+class DetailParLotTests(TestCase):
+    """Détail dépliable des déclarations : un immeuble à plusieurs lots est rangé lot par lot (sous-titre + sous-total)."""
+
+    def setUp(self):
+        from .models import Lot
+
+        self.client.force_login(User.objects.create_superuser("admin", "a@a.fr", "x"))
+        self.sci = Proprietaire.objects.create(nom="SCI ALFAB", type=Proprietaire.Type.SCI_IR, pourcentage_detention=50)
+        self.foyer = Proprietaire.objects.create(nom="Foyer", type=Proprietaire.Type.NOM_PROPRE)
+        self.bien = Bien.objects.create(proprietaire=self.sci, nom="Saint Pierre", adresse="1 rue", code_postal="69000", ville="Lyon")
+        self.appart = Lot.objects.create(bien=self.bien, designation="Saint Pierre 2", type="appartement")
+        self.garage = Lot.objects.create(bien=self.bien, designation="Garage", type="garage")
+        self._loyers(self.appart, "700")
+        self._loyers(self.garage, "65")
+
+    def _loyers(self, lot, montant):
+        bail = Bail.objects.create(lot=lot, type=Bail.Type.NU, date_debut=date(2025, 1, 1), loyer_hc=Decimal(montant))
+        for mois in (1, 2, 3):
+            Echeance.generer_pour_mois(date(2025, mois, 1))
+            e = Echeance.objects.get(bail=bail, periode=date(2025, mois, 1))
+            Paiement.objects.create(echeance=e, date=date(2025, mois, 5 if lot == getattr(self, "appart", None) else 20), montant=e.total)
+        return bail
+
+    def test_sous_lignes_groupees_par_lot_avec_sous_total(self):
+        from . import annexe2072
+
+        c = annexe2072.colonne(self.bien, 2025)
+        d = annexe2072.sous_lignes([c], "1", 2025)
+        self.assertEqual(len(d), 6)
+        groupes = [x["groupe"] for x in d if "groupe" in x]
+        self.assertEqual([g["libelle"] for g in groupes], ["Garage", "Saint Pierre 2"])
+        self.assertEqual([g["total"] for g in groupes], [Decimal("195"), Decimal("2100")])
+        self.assertEqual([g["nb"] for g in groupes], [3, 3])
+        # dans chaque lot, les lignes restent par date ; la somme du détail ne change pas
+        self.assertEqual([x["lot"] for x in d], [self.garage] * 3 + [self.appart] * 3)
+        self.assertTrue(all("01/2025" in x["libelle"] for x in (d[0], d[3])))
+        self.assertEqual(sum(x["total"] for x in d), Decimal("2295"))
+        self.assertIsNone(annexe2072.arrondis(d, 1))
+
+    def test_un_seul_lot_pas_de_sous_titre(self):
+        from . import annexe2072
+        from .models import Lot
+
+        seul = Bien.objects.create(proprietaire=self.sci, nom="Vaugneray", adresse="1 rue", code_postal="69000", ville="V")
+        self._loyers(Lot.objects.create(bien=seul, designation="T3", type="appartement"), "800")
+        d = annexe2072.sous_lignes([annexe2072.colonne(seul, 2025)], "1", 2025)
+        self.assertEqual(len(d), 3)
+        self.assertFalse(any("groupe" in x for x in d))
+
+    def test_ecrans_2072_2044_et_detail_de_ma_declaration(self):
+        page = self.client.get(f"/comptabilite/2072/?sci={self.sci.pk}&annee=2025").content.decode()
+        self.assertRegex(page, r'(?s)▸</button>1</td>.*?groupe-lot.*?Garage <span class="nb">3</span>.*?195,00\xa0€'
+                               r'.*?dans-lot.*?\(Garage\).*?groupe-lot.*?Saint Pierre 2 <span class="nb">3</span>.*?2 100,00\xa0€')
+        # même chose sur la 2044 d'un immeuble en nom propre
+        self.bien.proprietaire = self.foyer
+        self.bien.regime_fiscal = "nu"
+        self.bien.save()
+        page = self.client.get("/comptabilite/2044/?annee=2025").content.decode()
+        self.assertRegex(page, r'(?s)▸</button>211</td>.*?groupe-lot.*?Garage <span class="nb">3</span>.*?Saint Pierre 2 <span class="nb">3</span>')
+        page = self.client.get("/comptabilite/ma-declaration-de-revenus/detail/?annee=2025").content.decode()
+        self.assertRegex(page, r'(?s)groupe-lot.*?Garage <span class="nb-lot">3</span>.*?195,00\xa0€.*?groupe-lot.*?Saint Pierre 2')

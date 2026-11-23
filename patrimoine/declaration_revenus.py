@@ -353,7 +353,7 @@ def detail(annee):
 
     micro = []
     for m in base["micro"]["biens"]:
-        micro.append({**m, "loyers": annexe2072.loyers_par_mois(m["bien"], annee)})
+        micro.append({**m, "loyers": annexe2072.grouper_par_lot(annexe2072.loyers_detailles(m["bien"], annee))})
 
     lots = []
     for lot in bilan_lmnp.lots_lmnp():

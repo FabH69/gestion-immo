@@ -17,6 +17,10 @@ table.dr-t tr.fort td { font-weight: 700; background: var(--darkened-bg); }
 table.dr-t tr.vers td { background: var(--ok-c); }
 table.dr-t tr.piece td { font-size: .82rem; color: var(--body-quiet-color); border-bottom: 1px dashed var(--hairline-color); }
 table.dr-t tr.piece td:first-child { padding-left: 22px; }
+table.dr-t tr.groupe-lot td { font-weight: 600; color: var(--body-fg); border-bottom: 1px solid var(--hairline-color); padding-top: 8px; }
+table.dr-t tr.dans-lot td:nth-child(2), #micro-foncier table.dr-t tr.dans-lot td:first-child { padding-left: 22px; }
+#micro-foncier table.dr-t tr.dans-lot td:first-child { padding-left: 36px; }
+table.dr-t .nb-lot { font-size: .75em; background: #e3ecf1; color: #264b5d; border-radius: 9px; padding: 0 6px; margin-left: 4px; font-weight: normal; }
 .formule { display: block; font-size: .78rem; color: var(--body-quiet-color); font-weight: 400; }
 details.dr-imm { border: 1px solid var(--border-color); border-radius: 10px; margin: 8px 0; background: var(--body-bg); }
 details.dr-imm > summary { cursor: pointer; padding: 10px 12px; display: flex; flex-wrap: wrap; gap: 6px 16px; justify-content: space-between; font-weight: 600; }
@@ -89,7 +93,7 @@ details.dr-imm > div { padding: 4px 8px 10px; overflow-x: auto; }
   <h2>Micro-foncier · case 4BE <span class="sous">(loyers encaissés en {{ annee }})</span></h2>
   {% for m in micro_detail %}
   <details class="dr-imm" open><summary>{{ m.bien.nom }} <span class="chiffres">{{ m.recettes|euros }}</span></summary><div>
-    <table class="dr-t"><tbody>{% for libelle, montant in m.loyers %}<tr class="piece"><td>{{ libelle }}</td><td class="m">{{ montant|euros:2 }}</td></tr>{% empty %}<tr><td class="petit-d">Aucun loyer encaissé.</td></tr>{% endfor %}</tbody></table>
+    <table class="dr-t"><tbody>{% for l in m.loyers %}{% if l.groupe %}<tr class="piece groupe-lot"><td>{{ l.groupe.libelle }} <span class="nb-lot">{{ l.groupe.nb }}</span></td><td class="m">{{ l.groupe.total|euros:2 }}</td></tr>{% endif %}<tr class="piece{% if l.lot and m.loyers.0.groupe %} dans-lot{% endif %}"><td>{{ l.libelle }}</td><td class="m">{{ l.montant|euros:2 }}</td></tr>{% empty %}<tr><td class="petit-d">Aucun loyer encaissé.</td></tr>{% endfor %}</tbody></table>
   </div></details>
   {% endfor %}
   <p><b>Total → 4BE = {{ micro.total|euros }}</b></p>

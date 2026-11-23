@@ -65,6 +65,11 @@ def loyers_par_mois(bien, annee):
     """Loyers encaissés dans l'année à déclarer en ligne 1, un par paiement (ou par mois repris d'un ancien suivi), du
     1er janvier au 31 décembre : [(« 05/01/2025 · loyer de janvier 2025 · M. Jean DUPONT (Apt 1er) · forfait de
     charges compris », montant retenu)]. Forfait de charges : charges comprises ; provisions : hors charges."""
+    return [(l["libelle"], l["montant"]) for l in loyers_detailles(bien, annee)]
+
+
+def loyers_detailles(bien, annee):
+    """Comme loyers_par_mois, avec le lot de chaque loyer : [{"date", "libelle", "montant", "lot"}], par date."""
     from .models import EncaissementHistorique, Paiement
 
     lignes = []
@@ -75,20 +80,40 @@ def loyers_par_mois(bien, annee):
         e = p.echeance
         part_charges = (p.montant * e.charges / e.total).quantize(Decimal("0.01"), ROUND_HALF_UP) if e.total else ZERO
         noms = ", ".join(str(l) for l in e.bail.locataires.all()) or "locataire"
-        lignes.append((p.date, f"{p.date:%d/%m/%Y} · loyer de {MOIS_LONGS[e.periode.month - 1]} {e.periode.year} · {noms} "
-                                f"({e.bail.lot.designation}){_precision(e.bail, part_charges)}",
-                       _retenu(p.montant, part_charges, e.bail)))
+        lignes.append({"date": p.date, "lot": e.bail.lot, "montant": _retenu(p.montant, part_charges, e.bail),
+                       "libelle": f"{p.date:%d/%m/%Y} · loyer de {MOIS_LONGS[e.periode.month - 1]} {e.periode.year} · {noms} "
+                                  f"({e.bail.lot.designation}){_precision(e.bail, part_charges)}"})
         deja.add((e.bail.lot_id, p.date.month))
     for h in EncaissementHistorique.objects.filter(mois__year=annee, lot__bien=bien).select_related("lot"):
         if (h.lot_id, h.mois.month) in deja:
             continue
         bail = h.lot.baux.filter(date_debut__lte=h.mois).order_by("-date_debut").first()
         noms = ", ".join(str(l) for l in bail.locataires.all()) if bail else ""
-        lignes.append((h.mois, f"{MOIS_LONGS[h.mois.month - 1].capitalize()} {h.mois.year} · {noms or 'suivi repris'} "
-                               f"({h.lot.designation}, suivi repris){_precision(bail, h.charges)}",
-                       _retenu(h.montant, h.charges, bail)))
-    lignes.sort(key=lambda x: x[0])
-    return [(libelle, montant) for _, libelle, montant in lignes]
+        lignes.append({"date": h.mois, "lot": h.lot, "montant": _retenu(h.montant, h.charges, bail),
+                       "libelle": f"{MOIS_LONGS[h.mois.month - 1].capitalize()} {h.mois.year} · {noms or 'suivi repris'} "
+                                  f"({h.lot.designation}, suivi repris){_precision(bail, h.charges)}"})
+    lignes.sort(key=lambda x: x["date"])
+    return lignes
+
+
+def grouper_par_lot(elements, montant=lambda e: e["montant"]):
+    """Quand les éléments d'un immeuble viennent de plusieurs lots, les range lot par lot (ordre des désignations,
+    puis par date dans chaque lot ; ceux sans lot à la fin) et marque le premier de chaque lot d'un « groupe » :
+    {"lot", "nb", "total"}, pour un sous-titre avec son sous-total. Un seul lot : la liste reste telle quelle."""
+    lots = {e["lot"].pk: e["lot"] for e in elements if e.get("lot") is not None}
+    if len(lots) < 2:
+        return elements
+    cle = lambda e: (1, "", 0) if e.get("lot") is None else (0, e["lot"].designation.lower(), e["lot"].pk)
+    ranges = sorted(elements, key=cle)  # tri stable : l'ordre des dates est gardé dans chaque lot
+    debut = None
+    for e in ranges:
+        if debut is None or cle(e) != cle(debut):
+            debut = e
+            e["groupe"] = {"lot": e.get("lot"), "nb": 0, "total": ZERO,
+                           "libelle": e["lot"].designation if e.get("lot") is not None else "Autres"}
+        debut["groupe"]["nb"] += 1
+        debut["groupe"]["total"] += montant(e)
+    return ranges
 
 
 def _precision(bail, charges):
@@ -114,10 +139,10 @@ def colonne(bien, annee):
     detail = defaultdict(list)
 
     # ligne 1 : loyers encaissés dans l'année (date de paiement), forfait de charges compris, provisions exclues
-    lignes = loyers_par_mois(bien, annee)
-    v["1"] = sum((m for _, m in lignes), ZERO)
+    lignes = loyers_detailles(bien, annee)
+    v["1"] = sum((l["montant"] for l in lignes), ZERO)
     if v["1"]:
-        detail["1"] += [(libelle, montant, None) for libelle, montant in lignes]
+        detail["1"] += [(l["libelle"], l["montant"], None, l["lot"]) for l in lignes]
 
     # factures codées
     for p in PieceComptable.objects.filter(_annee_q(annee), bien=bien).order_by("date"):
@@ -164,18 +189,26 @@ def sous_lignes(colonnes, code, annee):
 
     sous = []
     for i, c in enumerate(colonnes):
+        du_bien = []
         prets = {f"{p.banque} {p.reference}": p for p in Pret.objects.filter(bien=c["bien"])} if code == "17" else {}
         for cle in (["9", "9b"] if code == "9" else [code]):
-            for libelle, montant, piece in c["detail"].get(cle, []):
+            for libelle, montant, piece, *lot in c["detail"].get(cle, []):
                 pret = next((p for nom, p in prets.items() if libelle.startswith(nom)), None)
                 declare = pret.montants_declares(annee) if pret else None
                 # avoir saisi en négatif sur la ligne 14 : la ligne le retranche en positif (cerfa) ; le détail montre le même
                 # montant que la ligne, pour que la somme du détail donne le total, et rappelle le signe saisi dans un badge
                 saisi = piece.montant if piece and piece.montant is not None and piece.montant != montant else None
-                sous.append({"libelle": f"Prêt {pret.banque} {pret.reference}" if pret else libelle, "piece": piece, "saisi": saisi, "retenu": montant,
+                du_bien.append({"libelle": f"Prêt {pret.banque} {pret.reference}" if pret else libelle, "piece": piece, "saisi": saisi, "retenu": montant,
                              "bien": c["bien"], "pret": pret, "declare": declare, "renovation": cle == "9b" and code == "9",
                              "estimation": bool(declare and declare["source"] == "estimation"),
+                             "lot": lot[0] if lot else None,
                              "montants": [montant if j == i else None for j in range(len(colonnes))], "total": montant})
+        # plusieurs lots dans l'immeuble : sous-titre par lot avec son sous-total, puis ses lignes par date
+        du_bien = grouper_par_lot(du_bien, montant=lambda d: d["total"])
+        for d in du_bien:
+            if "groupe" in d:
+                d["groupe"]["montants"] = [d["groupe"]["total"] if j == i else None for j in range(len(colonnes))]
+        sous += du_bien
     return sous
 
 
