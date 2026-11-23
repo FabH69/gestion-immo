@@ -1,0 +1,173 @@
+{% extends "admin/base_site.html" %}
+{% load tableau_bord %}
+{% block extrastyle %}{{ block.super }}<style>{% include "patrimoine/_style_dossiers.css" %}
+.dr-cases { display: flex; flex-wrap: wrap; gap: 16px; margin: 0 0 18px; }
+.dr-cases > section { flex: 1 1 420px; min-width: 0; }
+.dr-case { display: inline-block; min-width: 3.6em; text-align: center; font-weight: 700; font-size: .95rem; padding: 3px 8px; border-radius: 8px; background: var(--selected-bg); color: var(--secondary); letter-spacing: .03em; }
+table.liste-d td.montant-dr { font-size: 1.05rem; font-weight: 700; text-align: right; white-space: nowrap; }
+.copier-dr { font: inherit; font-size: .75rem; margin-left: 6px; padding: 2px 8px; border-radius: 999px; border: 1px solid var(--border-color); background: var(--body-bg); color: var(--body-quiet-color); cursor: pointer; }
+.copier-dr.fait { color: var(--ok); border-color: var(--ok); }
+.dr-bloc { margin: 0 0 18px; }
+.dr-bloc h2 .sous { font-weight: 400; color: var(--body-quiet-color); font-size: .85rem; }
+.dr-bloc h3 { margin: 16px 0 6px; font-size: .9rem; }
+table.dr-2044 { width: 100%; border-collapse: collapse; font-size: .86rem; }
+table.dr-2044 th, table.dr-2044 td { padding: 6px 8px; border-bottom: 1px solid var(--hairline-color); vertical-align: top; }
+table.dr-2044 th { font-size: .72rem; letter-spacing: .04em; text-transform: uppercase; color: var(--body-quiet-color); text-align: right; background: none; }
+table.dr-2044 th:first-child, table.dr-2044 th:nth-child(2) { text-align: left; }
+table.dr-2044 td.n { white-space: nowrap; font-weight: 700; width: 4.5em; }
+table.dr-2044 td.m { text-align: right; white-space: nowrap; }
+table.dr-2044 td.t { text-align: right; white-space: nowrap; font-weight: 700; }
+table.dr-2044 tr.fort td { font-weight: 700; background: var(--darkened-bg); }
+table.dr-2044 tr.vers td { background: var(--ok-c); }
+table.dr-2044 .formule { display: block; font-size: .78rem; color: var(--body-quiet-color); font-weight: 400; }
+.dr-defilement { overflow-x: auto; }
+.dr-regles { margin: 0; padding-left: 18px; font-size: .86rem; }
+.dr-regles li { margin: 4px 0; }
+.dr-alerte { padding: 10px 14px; margin: 0 0 12px; border-radius: 12px; background: var(--rouge-c); color: var(--rouge); }
+form.dr-saisie { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 8px 14px; margin-top: 10px; }
+form.dr-saisie label { display: flex; flex-direction: column; font-size: .8rem; color: var(--body-quiet-color); gap: 3px; }
+form.dr-saisie input[type=text] { font: inherit; font-size: .9rem; padding: 5px 8px; text-align: right; }
+form.dr-saisie .bouton { grid-column: 1 / -1; }
+details.dr-details > summary { cursor: pointer; font-weight: 600; margin-top: 10px; }
+@media (max-width: 767px) { .cache-tel { display: none; } table.dr-2044 { font-size: .8rem; }
+  .dr-cases table.liste-d td { padding: 8px 4px; } .dr-case { min-width: 0; font-size: .85rem; padding: 2px 6px; }
+  .dr-cases td.montant-dr { font-size: .95rem; } .copier-dr { display: block; margin: 4px 0 0 auto; } }
+</style>{% endblock %}
+{% block content_title %}{% endblock %}
+{% block breadcrumbs %}<div class="breadcrumbs"><a href="{% url 'admin:index' %}">Accueil</a> › <a href="{% url 'compta_accueil' %}">Comptabilité</a> › Ma déclaration de revenus</div>{% endblock %}
+{% block content %}
+<div class="titre-liste titre-compta"><h1>Ma déclaration de revenus {{ annee }}</h1>
+  <ul class="object-tools"><li><a href="{% url 'declarations' %}">Toutes les déclarations</a></li></ul></div>
+<div class="barre-compta">{% boutons_annees annees annee "civil" %}</div>
+<p class="aide-compta">Les cases à recopier sur impots.gouv.fr (déclaration 2042 et annexe 2042-C-PRO), calculées à partir de la 2044 du nom propre, des 2072 de vos SCI (votre part) et du bilan LMNP. Chaque montant indique la ligne d'où il vient. Vérifiez les annexes avant de valider votre déclaration : les montants suivent votre saisie.</p>
+{% for a in alertes %}<div class="dr-alerte" role="alert">{{ a }}</div>{% endfor %}
+
+<div class="dr-cases">
+  <section class="bloc-d" aria-label="Cases de la 2042">
+    <h2>Déclaration 2042 · revenus fonciers <span class="sous">(rubrique 4)</span></h2>
+    {% if cases_foncier %}
+    <table class="liste-d"><tbody>
+      {% for c in cases_foncier %}<tr><td><span class="dr-case">{{ c.code }}</span></td><td>{{ c.libelle }}<div class="petit-d">{{ c.origine }}</div></td>
+        <td class="montant-dr">{{ c.montant|floatformat:"0g" }} €<button type="button" class="copier-dr" data-montant="{{ c.montant|floatformat:0 }}" aria-label="Copier {{ c.code }}">Copier</button></td></tr>{% endfor %}
+    </tbody></table>
+    <p class="petit-d">Cochez aussi la case 4BZ si vous déposez une 2044 spéciale (immeubles à régime particulier) : l'appli ne la gère pas.</p>
+    {% else %}<p class="petit-d">Aucun revenu foncier pour {{ annee }}.</p>{% endif %}
+  </section>
+  <section class="bloc-d" aria-label="Cases de la 2042-C-PRO">
+    <h2>Annexe 2042-C-PRO · location meublée <span class="sous">(locations meublées non professionnelles)</span></h2>
+    {% if cases_lmnp %}
+    <table class="liste-d"><tbody>
+      {% for c in cases_lmnp %}<tr><td><span class="dr-case">{{ c.code }}</span></td><td>{{ c.libelle }}<div class="petit-d">{{ c.origine }}</div></td>
+        <td class="montant-dr">{{ c.montant|floatformat:"0g" }} €<button type="button" class="copier-dr" data-montant="{{ c.montant|floatformat:0 }}" aria-label="Copier {{ c.code }}">Copier</button></td></tr>{% endfor %}
+    </tbody></table>
+    <p class="petit-d">Cases du déclarant 1. Si le meublé est au nom du déclarant 2, utilisez la colonne suivante (5OA, 5OY, 5OG, 5OH, 5OI).</p>
+    {% else %}<p class="petit-d">Aucune location meublée pour {{ annee }}.</p>{% endif %}
+  </section>
+</div>
+
+{% if foncier.sci or foncier.direct %}
+<section class="bloc-d dr-bloc" aria-label="Annexe 2044">
+  <h2>Annexe 2044 · ligne par ligne <span class="sous">(une seule 2044 pour le foyer : vos SCI et vos immeubles en direct)</span></h2>
+
+  {% if foncier.sci %}
+  <h3>Rubrique 110 · vos parts de SCI <span class="petit-d">(cadre I de chaque 2072 × votre % de détention)</span></h3>
+  <div class="dr-defilement"><table class="dr-2044">
+    <thead><tr><th>Ligne</th><th></th>{% for c in foncier.sci %}<th><a href="{% url 'annexe_2072' %}?sci={{ c.sci.pk }}&annee={{ annee }}">{{ c.sci.nom }}</a> ({{ c.pourcentage|floatformat:"-2" }} %)</th>{% endfor %}<th>Total</th></tr></thead>
+    <tbody>
+      <tr><td class="n">111</td><td>Revenus bruts<span class="formule">2072 ligne R1 × %</span></td>{% for c in foncier.sci %}<td class="m">{{ c.111|floatformat:"0g" }}</td>{% endfor %}<td class="t">A = {{ foncier.cases.A|floatformat:"0g" }}</td></tr>
+      <tr><td class="n">112</td><td>Frais et charges (sauf intérêts d'emprunt)<span class="formule">2072 ligne R3 × %</span></td>{% for c in foncier.sci %}<td class="m">{{ c.112|floatformat:"0g" }}</td>{% endfor %}<td class="t">B = {{ foncier.cases.B|floatformat:"0g" }}</td></tr>
+      <tr><td class="n">112 bis</td><td>dont travaux de rénovation énergétique<span class="formule">2072 lignes 9 bis × %</span></td>{% for c in foncier.sci %}<td class="m">{{ c.112bis|floatformat:"0g" }}</td>{% endfor %}<td class="t">J = {{ foncier.cases.J|floatformat:"0g" }}</td></tr>
+      <tr><td class="n">113</td><td>Intérêts d'emprunt<span class="formule">2072 ligne R4 × %</span></td>{% for c in foncier.sci %}<td class="m">{{ c.113|floatformat:"0g" }}</td>{% endfor %}<td class="t">C = {{ foncier.cases.C|floatformat:"0g" }}</td></tr>
+      <tr class="fort"><td class="n">114</td><td>Bénéfice ou déficit<span class="formule">111 − 112 − 113</span></td>{% for c in foncier.sci %}<td class="m">{{ c.114|floatformat:"0g" }}</td>{% endfor %}<td class="t">D = {{ foncier.cases.D|floatformat:"0g" }}</td></tr>
+    </tbody></table></div>
+  <p class="petit-d">Le nom et l'adresse de chaque SCI se recopient en tête de colonne. Les intérêts de la ligne 113 se détaillent aussi en rubrique 410.</p>
+  {% endif %}
+
+  {% if foncier.direct %}
+  <h3>Rubrique 200 · immeubles en direct <span class="petit-d">(<a href="{% url 'recap_2044' %}?annee={{ annee }}">détail ligne par ligne de la 2044</a>)</span></h3>
+  <div class="dr-defilement"><table class="dr-2044">
+    <thead><tr><th>Ligne</th><th></th>{% for c in foncier.direct %}<th class="cache-tel">{{ c.bien.nom }}</th>{% endfor %}<th>Total</th></tr></thead>
+    <tbody>
+      <tr><td class="n">215</td><td>Total des recettes</td>{% for c in foncier.direct %}<td class="m cache-tel">{{ c.215|floatformat:"0g" }}</td>{% endfor %}<td class="t">E = {{ foncier.cases.E|floatformat:"0g" }}</td></tr>
+      <tr><td class="n">224 bis</td><td>dont travaux de rénovation énergétique</td>{% for c in foncier.direct %}<td class="m cache-tel">{{ c.224bis|floatformat:"0g" }}</td>{% endfor %}<td class="t">K = {{ foncier.cases.K|floatformat:"0g" }}</td></tr>
+      <tr><td class="n">240</td><td>Total des frais et charges</td>{% for c in foncier.direct %}<td class="m cache-tel">{{ c.240|floatformat:"0g" }}</td>{% endfor %}<td class="t">F = {{ foncier.cases.F|floatformat:"0g" }}</td></tr>
+      <tr><td class="n">250</td><td>Intérêts d'emprunt</td>{% for c in foncier.direct %}<td class="m cache-tel">{{ c.250|floatformat:"0g" }}</td>{% endfor %}<td class="t">G = {{ foncier.cases.G|floatformat:"0g" }}</td></tr>
+      <tr><td class="n">262</td><td>Réintégration du supplément de déduction</td>{% for c in foncier.direct %}<td class="m cache-tel">{{ c.262|floatformat:"0g" }}</td>{% endfor %}<td class="t">H = {{ foncier.cases.H|floatformat:"0g" }}</td></tr>
+      <tr class="fort"><td class="n">263</td><td>Bénéfice ou déficit<span class="formule">215 − 240 − 250 + 262</span></td>{% for c in foncier.direct %}<td class="m cache-tel">{{ c.263|floatformat:"0g" }}</td>{% endfor %}<td class="t">I = {{ foncier.cases.I|floatformat:"0g" }}</td></tr>
+    </tbody></table></div>
+  {% endif %}
+
+  <h3>Rubrique 420 · résultat {% if foncier.lignes.420 < 0 %}et répartition du déficit{% endif %}</h3>
+  <table class="dr-2044"><tbody>
+    {% with l=foncier.lignes %}
+    <tr class="fort{% if l.420 >= 0 %} vers{% endif %}"><td class="n">420</td><td>Résultat : bénéfice ou déficit total<span class="formule">case D + case I{% if l.420 >= 0 %} · bénéfice → case 4BA{% endif %}</span></td><td class="t">{{ l.420|floatformat:"0g" }} €</td></tr>
+    {% if l.420 < 0 %}
+    <tr><td class="n">431</td><td>Total des revenus bruts<span class="formule">A + E + H</span></td><td class="m">{{ l.431|floatformat:"0g" }} €</td></tr>
+    <tr><td class="n">432</td><td>Total des intérêts d'emprunt<span class="formule">C + G</span></td><td class="m">{{ l.432|floatformat:"0g" }} €</td></tr>
+    <tr><td class="n">433</td><td>Total des autres frais et charges<span class="formule">B + F</span></td><td class="m">{{ l.433|floatformat:"0g" }} €</td></tr>
+    <tr><td class="n">434</td><td>dont travaux de rénovation énergétique<span class="formule">J + K</span></td><td class="m">{{ l.434|floatformat:"0g" }} €</td></tr>
+    {% if foncier.cas == "interets" %}
+    <tr><td colspan="3" class="petit-d">Les intérêts (432) dépassent les revenus (431) : lignes 436 à 439.</td></tr>
+    <tr class="vers"><td class="n">436</td><td>Ligne 433 dans la limite de {{ foncier.plafond|floatformat:"0g" }} €<span class="formule">10 700 € + ligne 434, au plus 21 400 € → case 4BC</span></td><td class="t">{{ l.436|floatformat:"0g" }} €</td></tr>
+    <tr><td class="n">437</td><td>Ligne 433 au-delà de la limite</td><td class="m">{{ l.437|floatformat:"0g" }} €</td></tr>
+    <tr><td class="n">438</td><td>Intérêts non couverts<span class="formule">432 − 431</span></td><td class="m">{{ l.438|floatformat:"0g" }} €</td></tr>
+    <tr class="vers"><td class="n">439</td><td>Total<span class="formule">437 + 438 → case 4BB</span></td><td class="t">{{ l.439|floatformat:"0g" }} €</td></tr>
+    {% else %}
+    <tr><td colspan="3" class="petit-d">Les intérêts (432) ne dépassent pas les revenus (431) : lignes 441 et 442.</td></tr>
+    <tr class="vers"><td class="n">441</td><td>Déficit dans la limite de {{ foncier.plafond|floatformat:"0g" }} €<span class="formule">10 700 € + ligne 434, au plus 21 400 € → case 4BC</span></td><td class="t">{{ l.441|floatformat:"0g" }} €</td></tr>
+    <tr class="vers"><td class="n">442</td><td>Déficit au-delà de la limite<span class="formule">→ case 4BB</span></td><td class="t">{{ l.442|floatformat:"0g" }} €</td></tr>
+    {% endif %}
+    {% endif %}
+    {% endwith %}
+  </tbody></table>
+</section>
+{% endif %}
+
+{% if micro.biens %}
+<section class="bloc-d dr-bloc" aria-label="Micro-foncier">
+  <h2>Micro-foncier <span class="sous">(pas de 2044 : case 4BE, abattement de 30 % fait par les impôts)</span></h2>
+  <table class="liste-d"><tbody>{% for b in micro.biens %}<tr><td>{{ b.bien.nom }}</td><td class="m">{{ b.recettes|floatformat:"0g" }} €</td></tr>{% endfor %}
+    <tr><td><b>Total → 4BE</b></td><td class="m"><b>{{ micro.total|floatformat:"0g" }} €</b></td></tr></tbody></table>
+</section>
+{% endif %}
+
+<section class="bloc-d dr-bloc" id="deficits-foncier" aria-label="Déficits fonciers antérieurs">
+  <h2>Déficits fonciers à reporter <span class="sous">(2044 lignes 450 et 451 → case 4BD)</span></h2>
+  {% include "patrimoine/_deficits_tableau.html" with t=deficits_fonciers nature="foncier" %}
+  <p class="petit-d">Un déficit foncier s'impute sur les revenus fonciers des dix années suivantes, en commençant par le plus ancien. La part imputée sur le revenu global (4BC) n'est pas reportée ici. Les impôts font eux-mêmes l'imputation : déclarez en 4BD le total de la colonne A.</p>
+</section>
+
+{% if lmnp.reel or lmnp.detail_micro or deficits_lmnp.total_a %}
+<section class="bloc-d dr-bloc" aria-label="Location meublée">
+  <h2>Location meublée · du bilan LMNP à la 2042-C-PRO <span class="sous">(<a href="{% url 'biens_lmnp' %}?annee={{ annee }}">bilan 2031 détaillé</a>)</span></h2>
+  {% if lmnp.reel %}
+  <table class="dr-2044"><tbody>
+    <tr><td>Recettes des lots au réel</td><td class="m">{{ lmnp.recettes|floatformat:"0g" }} €</td></tr>
+    <tr><td>Charges déductibles (dont intérêts d'emprunt)</td><td class="m">− {{ lmnp.charges|floatformat:"0g" }} €</td></tr>
+    <tr><td>Amortissements déduits<span class="formule">ils ne peuvent pas créer de déficit</span></td><td class="m">− {{ lmnp.amort_deduit|floatformat:"0g" }} €</td></tr>
+    <tr class="fort vers"><td>Résultat fiscal (2031 / 2033-B){% if lmnp.resultat >= 0 %} → case 5NA{% else %} → case 5NY{% endif %}</td><td class="t">{{ lmnp.resultat|floatformat:"0g" }} €</td></tr>
+  </tbody></table>
+  {% if lmnp.amort_reporte %}<p class="petit-d">Amortissements non déduits cette année : {{ lmnp.amort_reporte|floatformat:"0g" }} €. Ils se reportent sans limite de durée dans votre comptabilité LMNP (tableau 2033-C / 2033-D) ; ils ne se déclarent pas sur la 2042-C-PRO.</p>{% endif %}
+  {% endif %}
+  {% if lmnp.detail_micro %}
+  <h3>Lots au micro-BIC <span class="petit-d">(recettes brutes, sans abattement)</span></h3>
+  <table class="liste-d"><tbody>{% for d in lmnp.detail_micro %}<tr><td>{{ d.lot.bien.nom }} · {{ d.lot.designation }}</td><td><span class="dr-case">{{ d.case }}</span></td><td class="m">{{ d.recettes|floatformat:"0g" }} €</td></tr>{% endfor %}</tbody></table>
+  {% endif %}
+</section>
+{% endif %}
+
+<section class="bloc-d dr-bloc" id="deficits-lmnp" aria-label="Déficits LMNP antérieurs">
+  <h2>Déficits LMNP à reporter <span class="sous">(2042-C-PRO, cases 5GA à 5GJ)</span></h2>
+  {% include "patrimoine/_deficits_tableau.html" with t=deficits_lmnp nature="lmnp" %}
+  <p class="petit-d">Un déficit de location meublée non professionnelle s'impute seulement sur les bénéfices de location meublée non professionnelle des dix années suivantes (pas sur le revenu global). Chaque année d'origine a sa case : 5GA pour {{ annee|add:"-10" }} … 5GJ pour {{ annee|add:"-1" }}.</p>
+</section>
+
+<script>
+document.querySelectorAll(".copier-dr").forEach(function (b) {
+  b.addEventListener("click", function () {
+    if (!navigator.clipboard) return;
+    navigator.clipboard.writeText(b.dataset.montant).then(function () { b.textContent = "Copié"; b.classList.add("fait"); });
+  });
+});
+</script>
+{% endblock %}

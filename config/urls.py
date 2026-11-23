@@ -63,6 +63,7 @@ urlpatterns = [
     path("comptabilite/dossier/<str:code>/immobilisations/reprise/", views.reprise_immobilisations, name="reprise_immobilisations"),
     path("comptabilite/dossier/<str:code>/immobilisations/decomposer/", views.decomposer_bien, name="decomposer_bien"),
     path("comptabilite/declarations/", views.declarations, name="declarations"),
+    path("comptabilite/ma-declaration-de-revenus/", views.declaration_revenus, name="declaration_revenus"),
     path("comptabilite/evolution-des-depenses/", views.evolution_depenses, name="evolution_depenses"),
     path("maison/", views.ma_maison, name="ma_maison"),
     path("maison/entretien/<int:pk>/fait/", views.maison_entretien_fait, name="maison_entretien_fait"),

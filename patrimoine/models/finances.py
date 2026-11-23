@@ -336,6 +336,31 @@ class DeclarationFaite(models.Model):
         return res
 
 
+class DeficitReporte(models.Model):
+    """Déficit encore à reporter, repris de la dernière déclaration (2044 ligne 450 colonne C, 2042-C-PRO cases 5GA à 5GJ) :
+    montant restant au 31 décembre de l'année « au_31_12 », par année d'origine. Les années suivantes se calculent
+    ensuite dans l'aide à la déclaration (bénéfices imputés sur les déficits les plus anciens, nouveaux déficits ajoutés)."""
+
+    class Nature(models.TextChoices):
+        FONCIER = "foncier", "Déficit foncier (2044, case 4BD)"
+        LMNP = "lmnp", "Déficit LMNP (2042-C-PRO, cases 5GA à 5GJ)"
+
+    nature = models.CharField(max_length=10, choices=Nature.choices)
+    au_31_12 = models.PositiveSmallIntegerField("restant au 31/12 de")
+    annee_origine = models.PositiveSmallIntegerField("année d'origine du déficit")
+    montant = models.DecimalField("montant restant à reporter (€)", max_digits=12, decimal_places=2)
+    saisi_le = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = "déficit à reporter"
+        verbose_name_plural = "déficits à reporter"
+        ordering = ["nature", "-au_31_12", "annee_origine"]
+        constraints = [models.UniqueConstraint(fields=["nature", "au_31_12", "annee_origine"], name="deficit_unique_par_annee")]
+
+    def __str__(self):
+        return f"{self.get_nature_display().split(' (')[0]} {self.annee_origine} : {self.montant} € restant au 31/12/{self.au_31_12}"
+
+
 def biens_du_formulaire(formulaire, proprietaire_id=None):
     """Biens dont la saisie alimente ce cerfa."""
     if formulaire == "2044":

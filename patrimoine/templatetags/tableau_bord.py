@@ -238,7 +238,7 @@ def _menu_compta():
     conciergerie = r("conciergerie_ajouter")
     liste = dossiers.tous()
     sous_dossiers = [(d["titre"], r("dossier_compta", args=[d["code"]])) for d in liste]
-    prefixes = [r("compta_accueil") + "$", r("dossier_compta", args=["x"]).rsplit("x/", 1)[0], r("declarations"), r("recap_2044"),
+    prefixes = [r("compta_accueil") + "$", r("dossier_compta", args=["x"]).rsplit("x/", 1)[0], r("declarations"), r("declaration_revenus"), r("recap_2044"),
                 r("annexe_2072"), r("compta_lmnp"), r("compta_societe"), r("biens_lmnp"), r("admin:patrimoine_chargelmnp_changelist")]
     prefixes += [f"{u}?dossier={d['code']}" for d in liste for u in (factures, importer)]
     recurrentes = r("admin:patrimoine_depenserecurrente_changelist")
@@ -248,7 +248,7 @@ def _menu_compta():
 
     if lots_conciergerie().exists():
         sous_saisie.append(("Contrôle conciergerie", conciergerie))
-    return [("dossiers", "Mes dossiers", r("compta_accueil"), prefixes, sous_dossiers + [("Toutes les déclarations", r("declarations"))]),
+    return [("dossiers", "Mes dossiers", r("compta_accueil"), prefixes, sous_dossiers + [("Toutes les déclarations", r("declarations")), ("Ma déclaration de revenus", r("declaration_revenus"))]),
             ("saisie", "Toutes les factures", factures, [factures, conciergerie, recurrentes], sous_saisie),
             ("evolution", "Évolution des dépenses", r("evolution_depenses"), [r("evolution_depenses")], []),
             ("regimes", "Réglages fiscaux", r("regimes_fiscaux"), [r("regimes_fiscaux")], [])]
