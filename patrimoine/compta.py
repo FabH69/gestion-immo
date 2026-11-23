@@ -301,4 +301,11 @@ def recap_2044(annee):
                "total": sum((c["valeurs"].get(code, ZERO) for c in colonnes), ZERO)} for n, l, code, g in LIGNES_2044]
     from .annexe2072 import baux_au_forfait
 
+    from .annexe2072 import arrondis, euro_le_plus_proche
+
+    for l in lignes:
+        l["arrondis"] = arrondis(l["detail"], len(colonnes)) if l["detail"] else None
+        if l["arrondis"] and len(colonnes) > 1:
+            exact = sum((d["total"] for d in l["detail"]), ZERO)
+            l["arrondi_total"] = (exact, euro_le_plus_proche(exact)) if exact != euro_le_plus_proche(exact) else None
     return {"colonnes": colonnes, "lignes": lignes, "baux_forfait": baux_au_forfait([c["bien"] for c in colonnes], annee)}
