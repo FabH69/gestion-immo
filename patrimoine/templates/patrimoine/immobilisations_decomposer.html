@@ -1,0 +1,54 @@
+{% extends "admin/base_site.html" %}
+{% block extrastyle %}{{ block.super }}<style>{% include "patrimoine/_style_dossiers.css" %}{% include "patrimoine/_style_amortissements.css" %}</style>{% endblock %}
+{% block content_title %}{% endblock %}
+{% block breadcrumbs %}<div class="breadcrumbs"><a href="{% url 'admin:index' %}">Accueil</a> › <a href="{% url 'compta_accueil' %}">Comptabilité</a> › <a href="{% url 'dossier_compta' d.code %}">{{ d.titre }}</a> › <a href="{{ retour }}">Immobilisations</a> › Décomposer le prix d'achat</div>{% endblock %}
+{% block content %}
+<h1>Décomposer le prix d'achat{% if bien %} · {{ bien.nom }}{% endif %}</h1>
+<div class="info-a">Un logement ne s'amortit pas d'un seul bloc : le terrain ne s'amortit pas, et chaque partie a sa durée. Les parts proposées sont celles généralement admises ; mettez celles de votre comptable ou d'une expertise si vous les avez. Chaque partie devient une fiche immobilisation.</div>
+{% if not bien %}<p>Aucun bien dans ce dossier.</p>{% else %}
+<form method="post" id="decomposer">{% csrf_token %}
+<div class="deux-col-d">
+<section class="large bloc-d">
+  <div class="grille-a">
+    <div><label for="dc-bien">Bien</label><select id="dc-bien" name="bien" class="champ-a" onchange="window.location.search='?bien='+this.value">{% for b in biens_dossier %}<option value="{{ b.pk }}"{% if b == bien %} selected{% endif %}>{{ b.nom }}</option>{% endfor %}</select></div>
+    <div><label for="dc-prix">Prix d'achat (€)</label><input id="dc-prix" name="prix" class="champ-a" inputmode="decimal" value="{{ bien.prix_acquisition|default_if_none:''|floatformat:'2' }}" required></div>
+    <div><label for="dc-mes">Mise en location le</label><input id="dc-mes" name="mise_en_service" type="date" class="champ-a" value="{{ bien.date_acquisition|date:'Y-m-d' }}" required></div>
+    <div><label for="dc-frais">Frais de notaire et d'agence (€)</label><input id="dc-frais" name="frais" class="champ-a" inputmode="decimal" placeholder="0,00"></div>
+    <div style="grid-column:span 2"><label for="dc-fm">Ces frais</label><select id="dc-fm" name="frais_mode" class="champ-a"><option value="charge">Passés en charge la 1re année (ou non concernés)</option><option value="prix">Ajoutés au prix et amortis avec le bien</option></select></div>
+  </div>
+  <table class="liste-d" style="margin-top:14px"><thead><tr><th>Composant</th><th style="text-align:right">Part (%)</th><th style="text-align:right">Montant</th><th>Durée (ans)</th><th style="text-align:right">Dotation par an</th></tr></thead><tbody>
+  {% for c in composants %}<tr data-c="{{ c.categorie }}"><td>{{ c.libelle }}</td><td class="m"><input name="part_{{ c.categorie }}" value="{{ c.part }}" inputmode="decimal" style="width:64px;text-align:right"></td>
+    <td class="m js-montant">–</td><td>{% if c.categorie == "terrain" %}non amorti<input type="hidden" name="duree_terrain" value="0">{% else %}<input name="duree_{{ c.categorie }}" value="{{ c.duree }}" inputmode="numeric" style="width:60px">{% endif %}</td><td class="m js-dot">–</td></tr>{% endfor %}
+  <tr class="tot"><td>Total</td><td class="m js-parts">100 %</td><td class="m js-total">–</td><td></td><td class="m js-dots">–</td></tr>
+  </tbody></table>
+  {% if existants %}<p class="alerte-a" style="margin-top:12px">Ce bien est déjà décomposé ({{ existants|length }} immobilisations). <label><input type="checkbox" name="remplacer"> Remplacer la décomposition existante</label></p>{% endif %}
+  <div class="boutons-a"><button type="submit" class="button default">Créer les immobilisations</button><a class="button" href="{{ retour }}">Annuler</a></div>
+</section>
+<aside class="etroit bloc-d"><h2>Le mobilier à part</h2>
+  <p class="petit-d" style="margin-top:0">Le mobilier acheté avec le bien (celui de l'inventaire du bail meublé) devient une immobilisation séparée, sur 5 à 10 ans.</p>
+  <div class="grille-a" style="grid-template-columns:1fr 1fr"><div><label for="dc-mob">Mobilier d'origine (€)</label><input id="dc-mob" name="mobilier" class="champ-a" inputmode="decimal" placeholder="0,00"></div>
+    <div><label for="dc-mobd">Durée (ans)</label><input id="dc-mobd" name="duree_mobilier" class="champ-a" value="7" inputmode="numeric"></div></div>
+</aside>
+</div>
+</form>
+<script>
+(function () {
+  var f = document.getElementById("decomposer");
+  function n(v) { v = String(v || "").replace(/[\s  €]/g, "").replace(",", "."); return parseFloat(v) || 0; }
+  function e(v) { return v.toLocaleString("fr-FR", {minimumFractionDigits: 2, maximumFractionDigits: 2}) + " €"; }
+  function calc() {
+    var prix = n(f.prix.value) + (f.frais_mode.value === "prix" ? n(f.frais.value) : 0), parts = 0, dots = 0;
+    f.querySelectorAll("tr[data-c]").forEach(function (tr) {
+      var c = tr.dataset.c, p = n(f["part_" + c].value), d = n(f["duree_" + c].value), m = prix * p / 100;
+      parts += p; tr.querySelector(".js-montant").textContent = e(m);
+      var dot = d ? m / d : 0; dots += dot; tr.querySelector(".js-dot").textContent = d ? e(dot) : "–";
+    });
+    f.querySelector(".js-parts").textContent = parts.toLocaleString("fr-FR") + " %";
+    f.querySelector(".js-parts").style.color = parts === 100 ? "" : "var(--rouge)";
+    f.querySelector(".js-total").textContent = e(prix); f.querySelector(".js-dots").textContent = e(dots);
+  }
+  f.addEventListener("input", calc); calc();
+})();
+</script>
+{% endif %}
+{% endblock %}

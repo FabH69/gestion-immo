@@ -253,6 +253,7 @@ def recapitulatif(regime, annee, bien_choisi=None, par_mois=False):
 
 
 NOTES = {"pret": "part capital des mensualités (non déductible)",
+         "immobilisation": "achats à amortir (non déductibles : seule la dotation de l'année compte)",
          "interets_pret": "charge déductible (bilan 2031 / 2033)",
          "commission": "plateformes et conciergerie"}
 

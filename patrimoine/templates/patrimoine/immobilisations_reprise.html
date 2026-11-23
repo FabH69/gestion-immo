@@ -1,0 +1,42 @@
+{% extends "admin/base_site.html" %}
+{% block extrastyle %}{{ block.super }}<style>{% include "patrimoine/_style_dossiers.css" %}{% include "patrimoine/_style_amortissements.css" %}</style>{% endblock %}
+{% block content_title %}{% endblock %}
+{% block breadcrumbs %}<div class="breadcrumbs"><a href="{% url 'admin:index' %}">Accueil</a> › <a href="{% url 'compta_accueil' %}">Comptabilité</a> › <a href="{% url 'dossier_compta' d.code %}">{{ d.titre }}</a> › <a href="{{ retour }}">Immobilisations</a> › Reprendre l'existant</div>{% endblock %}
+{% block content %}
+<h1>Reprendre les immobilisations existantes · {{ d.titre }}</h1>
+<div class="info-a">Recopiez le <b>tableau des immobilisations et amortissements</b> de votre comptable (2033-C, ou 2054 / 2055) arrêté au 31/12 de la dernière année déclarée. L'appli calcule ensuite seule les dotations à partir de l'année choisie. Chaque ligne devient une fiche immobilisation, modifiable ensuite.</div>
+<form method="post">{% csrf_token %}{{ formset.management_form }}
+<section class="bloc-d" style="margin-bottom:16px">
+  <div class="grille-a">
+    <div><label for="r-bien">Bien</label><select id="r-bien" name="bien" class="champ-a">{% for b in biens_dossier %}<option value="{{ b.pk }}">{{ b.nom }}</option>{% endfor %}</select></div>
+    <div><label for="r-annee">Première année tenue dans l'appli</label><input id="r-annee" name="annee_reprise" class="champ-a" type="number" min="2000" max="2100" value="{{ annee }}" required>
+      <div class="petit-d">Les cumuls saisis sont ceux au 31/12/{{ annee|add:-1 }}.</div></div>
+    {% if d.formulaire == "2031" %}<div><label for="r-report">Amortissements non déduits à reporter (LMNP)</label><input id="r-report" name="report" class="champ-a" inputmode="decimal" value="{% if report %}{{ report.montant|floatformat:'2' }}{% endif %}" placeholder="0,00">
+      <div class="petit-d">« Amortissements réputés différés » du dernier bilan, pour tous les meublés.</div></div>{% endif %}
+  </div>
+</section>
+<section class="bloc-d" style="margin-bottom:16px">
+  <h2>Immobilisations à reprendre</h2>
+  <div class="defile-a"><table class="liste-d"><thead><tr><th>Désignation</th><th>Catégorie</th><th>Mise en service</th><th style="text-align:right">Valeur d'origine</th><th>Durée (ans)</th><th style="text-align:right">Amortissements cumulés</th></tr></thead><tbody>
+  {% for f in formset %}<tr>
+    <td>{{ f.designation }}{{ f.designation.errors }}</td><td>{{ f.categorie }}</td><td>{{ f.mise_en_service }}{{ f.mise_en_service.errors }}</td>
+    <td class="m">{{ f.valeur }}{{ f.valeur.errors }}</td><td>{{ f.duree }}</td><td class="m">{{ f.amortissements_anterieurs }}{{ f.amortissements_anterieurs.errors }}</td></tr>{% endfor %}
+  </tbody></table></div>
+  <p class="petit-d">Durée vide : celle proposée pour la catégorie (mobilier 7 ans, électroménager 5, agencements 10, gros œuvre 50…). Lignes vides ignorées.</p>
+  <details style="margin-top:10px"><summary><b>Coller depuis Excel</b> (beaucoup de lignes d'un coup)</summary>
+    <p class="petit-d">Une ligne par immobilisation, colonnes dans cet ordre : désignation, catégorie, mise en service (jj/mm/aaaa), valeur, durée, amortissements cumulés.</p>
+    <textarea name="collage" rows="6" class="champ-a" style="width:100%" placeholder="Canapé&#9;Mobilier&#9;01/07/2022&#9;1 200,00&#9;7&#9;600,00"></textarea></details>
+  <div class="boutons-a"><button type="submit" class="button default">Enregistrer la reprise</button><a class="button" href="{{ retour }}">Annuler</a></div>
+</section>
+</form>
+{% if controles %}
+<section class="bloc-d">
+  <h2>Contrôle des immobilisations reprises</h2>
+  <p class="petit-d" style="margin-top:0">Cumul saisi (comptable) comparé à ce que l'appli aurait calculé depuis la mise en service.
+    {% if ecarts %}{{ ecarts|length }} écart{{ ecarts|length|pluralize }} : normal si le comptable a utilisé d'autres dates ou durées ; c'est son cumul qui fait foi.{% else %}Aucun écart.{% endif %}</p>
+  <div class="defile-a"><table class="liste-d"><thead><tr><th>Immobilisation</th><th>Bien</th><th>Reprise en</th><th style="text-align:right">Cumul saisi</th><th style="text-align:right">Calculé</th><th style="text-align:right">Écart</th></tr></thead><tbody>
+  {% for c in controles %}<tr><td><a href="{% url 'admin:patrimoine_immobilisation_change' c.immo.pk %}">{{ c.immo.designation }}</a></td><td>{{ c.immo.bien.nom }}</td><td>{{ c.immo.annee_reprise }}</td>
+    <td class="m">{{ c.saisi|floatformat:"2g" }} €</td><td class="m">{{ c.calcule|floatformat:"2g" }} €</td><td class="m">{% if c.ecart %}<span class="pill-d todo">{{ c.ecart|floatformat:"2g" }} €</span>{% else %}<span class="pill-d ok">0</span>{% endif %}</td></tr>{% endfor %}
+  </tbody></table></div>
+</section>{% endif %}
+{% endblock %}

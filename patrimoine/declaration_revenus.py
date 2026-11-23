@@ -125,9 +125,16 @@ def lmnp(annee):
         else:
             reel.append(b)
     t = lambda k: sum((b[k] for b in reel), ZERO)
-    resultat = euros(t("resultat_fiscal"))
+    # amortissements : plafonnés au résultat de l'ensemble des meublés au réel, avec le report des années passées
+    # (comme l'encadré « Ce qui va dans la 2031 » de l'onglet Immobilisations)
+    from .amortissements import report_lmnp
+
+    report = report_lmnp(annee, lambda y: bilan_lmnp._totaux([bilan_lmnp.bilan_lot(l, y) for l in bilan_lmnp.lots_lmnp()])) if reel else ZERO
+    disponible = t("amortissements") + report
+    deduit = min(disponible, max(t("resultat"), ZERO))
+    resultat = euros(t("resultat") - deduit)
     return {"reel": reel, "recettes": euros(t("total_recettes")), "charges": euros(t("total_charges")),
-            "amort_deduit": euros(t("amort_deduit")), "amort_reporte": euros(t("amort_reporte")), "resultat": resultat,
+            "amort_deduit": euros(deduit), "amort_reporte": euros(disponible - deduit), "resultat": resultat,
             "5NA": max(resultat, ZERO), "5NY": max(-resultat, ZERO), "micro": micro, "detail_micro": detail_micro}
 
 

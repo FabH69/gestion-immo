@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="fr"><head><meta charset="utf-8">
+<style>
+  @page { size: A4 landscape; margin: 1.2cm; @bottom-right { content: "Page " counter(page) " / " counter(pages); font-size: 7pt; color: #777; } }
+  body { font-family: "DejaVu Sans", sans-serif; font-size: 8pt; color: #222; }
+  h1 { font-size: 13pt; margin: 0 0 3pt; } h2 { font-size: 10pt; margin: 12pt 0 4pt; }
+  .sous-titre { color: #555; margin-bottom: 10pt; }
+  table { width: 100%; border-collapse: collapse; } th, td { padding: 3pt 4pt; border-bottom: .5pt solid #ccc; text-align: left; }
+  th { background: #eee; font-size: 7pt; } td.m, th.m { text-align: right; white-space: nowrap; } tr.tot td { font-weight: bold; border-top: 1pt solid #333; }
+  tr { page-break-inside: avoid; }
+</style></head>
+<body>
+  <h1>Tableau des immobilisations et amortissements {{ annee }}</h1>
+  <div class="sous-titre">{{ d.titre }} · {{ d.cerfa }} · {% for b in biens_dossier %}{{ b.nom }}{% if not forloop.last %}, {% endif %}{% endfor %} · linéaire, prorata temporis (360 jours) · édité le {{ aujourdhui|date:"d/m/Y" }}</div>
+  <table><thead><tr><th>N°</th><th>Désignation</th><th>Bien</th><th>Catégorie</th><th>Mise en service</th><th>Durée</th><th class="m">Valeur d'origine</th><th class="m">Amortissements au 01/01</th><th class="m">Dotation {{ annee }}</th><th class="m">Amortissements au 31/12</th><th class="m">Valeur nette</th></tr></thead><tbody>
+  {% for l in lignes %}<tr><td>{{ l.immo.numero }}</td><td>{{ l.immo.designation }}{% if l.immo.date_sortie %} (sortie le {{ l.immo.date_sortie|date:"d/m/Y" }}){% endif %}</td><td>{{ l.immo.bien.nom }}</td><td>{{ l.immo.get_categorie_display }}</td><td>{{ l.immo.mise_en_service|date:"d/m/Y" }}</td><td>{% if l.immo.duree %}{{ l.immo.duree }} ans{% else %}–{% endif %}</td>
+    <td class="m">{{ l.valeur|floatformat:"2g" }}</td><td class="m">{{ l.anterieurs|floatformat:"2g" }}</td><td class="m">{{ l.dotation|floatformat:"2g" }}</td><td class="m">{{ l.anterieurs|add:l.dotation|floatformat:"2g" }}</td><td class="m">{{ l.vnc|floatformat:"2g" }}</td></tr>{% endfor %}
+  <tr class="tot"><td colspan="6">Total</td><td class="m">{{ total.valeur|floatformat:"2g" }}</td><td class="m">{{ total.anterieurs|floatformat:"2g" }}</td><td class="m">{{ total.dotation|floatformat:"2g" }}</td><td class="m">{{ total.anterieurs|add:total.dotation|floatformat:"2g" }}</td><td class="m">{{ total.vnc|floatformat:"2g" }}</td></tr>
+  </tbody></table>
+  {% if lmnp %}<h2>Amortissements déductibles (LMNP)</h2>
+  <table style="width:50%"><tbody>
+    <tr><td>Résultat avant amortissements</td><td class="m">{{ lmnp.resultat|floatformat:"2g" }}</td></tr>
+    <tr><td>Amortissements de l'année</td><td class="m">{{ lmnp.amortissements|floatformat:"2g" }}</td></tr>
+    <tr><td>Amortissements reportés des années passées</td><td class="m">{{ lmnp.report_debut|floatformat:"2g" }}</td></tr>
+    <tr class="tot"><td>Amortissements déduits</td><td class="m">{{ lmnp.amort_deduit|floatformat:"2g" }}</td></tr>
+    <tr><td>Reste à reporter</td><td class="m">{{ lmnp.amort_reporte|floatformat:"2g" }}</td></tr>
+  </tbody></table>{% endif %}
+  <p style="color:#777;font-size:7pt;margin-top:8pt">Montants en euros. Document de travail établi à partir des immobilisations saisies dans l'application.</p>
+</body></html>

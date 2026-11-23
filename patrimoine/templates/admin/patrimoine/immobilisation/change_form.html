@@ -1,0 +1,40 @@
+{% extends "admin/change_form.html" %}
+{% block extrastyle %}{{ block.super }}<style>{% include "patrimoine/_style_dossiers.css" %}{% include "patrimoine/_style_amortissements.css" %}
+.plan-immo { margin: 0 0 16px; } .plan-immo .deux-col-d { margin-top: 6px; }</style>{% endblock %}
+{% block breadcrumbs %}<div class="breadcrumbs"><a href="{% url 'admin:index' %}">Accueil</a> › <a href="{% url 'compta_accueil' %}">Comptabilité</a> ›
+  {% if lien_registre %}<a href="{{ lien_registre }}">Immobilisations</a>{% else %}<a href="{% url 'admin:patrimoine_immobilisation_changelist' %}">Immobilisations</a>{% endif %} › {% if add %}Nouvelle immobilisation{% else %}{{ original.designation|truncatewords:"12" }}{% endif %}</div>{% endblock %}
+{% block form_top %}{% if original.piece_id %}<p class="info-a">📎 Créée depuis la facture <a href="{% url 'admin:patrimoine_piececomptable_change' original.piece_id %}">{{ original.piece.fournisseur|default:original.piece.libelle|default:"facture" }} du {{ original.piece.date|date:"d/m/Y" }} · {{ original.piece.montant|floatformat:"2g" }} €</a>. Le bien, la valeur et le fournisseur suivent la facture.</p>{% endif %}{{ block.super }}{% endblock %}
+{% block after_field_sets %}{{ block.super }}
+{% if original %}
+<section class="bloc-d plan-immo">
+  <h2>Plan d'amortissement</h2>
+  {% if plan %}
+  <div class="deux-col-d"><div class="large">
+  <table class="liste-d"><thead><tr><th>Année</th><th style="text-align:right">Dotation</th><th style="text-align:right">Cumul</th><th style="text-align:right">Valeur restante</th><th></th></tr></thead><tbody>
+  {% for l in plan %}<tr class="{% if l.courante %}cour{% elif l.annee < annee_courante %}passe{% endif %}"><td>{% if l.reprise %}Jusqu'à {{ l.annee }}{% else %}{{ l.annee }}{% endif %}</td>
+    <td class="m">{% if l.reprise %}–{% else %}{{ l.dotation|floatformat:"2g" }} €{% endif %}</td><td class="m">{{ l.cumul|floatformat:"2g" }} €</td><td class="m">{{ l.vnc|floatformat:"2g" }} €</td>
+    <td class="petit-d">{% if l.reprise %}cumul repris du comptable{% elif l.declaree %}🔒 déclarée{% elif l.courante %}année en cours{% endif %}</td></tr>{% endfor %}
+  </tbody></table></div>
+  <div class="etroit"><div class="apercu-d">
+    <div><span>Dotation par an</span><b>{{ annuel|floatformat:"2g" }} €</b></div>
+    <div class="fort"><span>Dotation {{ annee_courante }}</span><b>{{ dotation_courante|floatformat:"2g" }} €</b></div>
+    <div><span>Fin d'amortissement</span><b>{{ fin_plan }}</b></div>
+    {% if plus_value is not None %}<div><span>Plus ou moins-value de sortie</span><b>{{ plus_value|floatformat:"2g" }} €</b></div>{% endif %}
+  </div>
+  {% if une_declaree %}<p class="petit-d">Les années marquées 🔒 sont déjà déclarées : changer la valeur, la durée ou les dates ne modifie pas ce qui a été déclaré.</p>{% endif %}</div></div>
+  {% else %}<p class="petit-d">Non amortie (terrain, ou durée à 0).</p>{% endif %}
+</section>
+{% endif %}
+{% endblock %}
+{% block admin_change_form_document_ready %}{{ block.super }}
+{{ durees|json_script:"durees-immo" }}
+<script>
+(function () {
+  // la catégorie propose sa durée d'usage (mobilier 7 ans, électroménager 5, gros œuvre 50…)
+  var durees = JSON.parse(document.getElementById("durees-immo").textContent);
+  var cat = document.getElementById("id_categorie"), duree = document.getElementById("id_duree");
+  if (!cat || !duree) return;
+  cat.addEventListener("change", function () { if (cat.value in durees) duree.value = durees[cat.value]; });
+})();
+</script>
+{% endblock %}
