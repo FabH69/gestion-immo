@@ -365,6 +365,7 @@ td.montant, th.montant, .column-total, .column-paye, .column-reste { text-align:
 .kpi-barre i { display: block; height: 100%; background: var(--ok); border-radius: 5px; min-width: 4px; }
 .grille-accueil { display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr); gap: 20px; align-items: start; }
 .colonne-cartes .module { margin-bottom: 20px; }
+.grille-accueil .compta-a-faire { margin-bottom: 20px; }
 .carte h2 { display: flex; align-items: center; }
 .lien-carte { margin-left: auto; font-size: 13px; font-weight: 500; }
 .ligne-carte { display: flex; align-items: center; gap: 12px; padding: 11px 16px; border-bottom: 1px solid var(--hairline-color); color: var(--body-fg) !important; }
