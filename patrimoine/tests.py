@@ -1000,6 +1000,48 @@ class LocationCourteDureeTests(TestCase):
         self.assertEqual((r.montant_brut, r.commission, r.taxe_sejour, r.net),
                          (Decimal("82.00"), Decimal("13.27"), Decimal("1.49"), Decimal("67.24")))
 
+    def test_import_resolution_airbnb_et_annulation_booking_payee(self):
+        """Rien ne manque : dédommagement Airbnb repris, annulation Booking facturée comptée (comme l'Excel de suivi)."""
+        from . import lcd
+        from .models import ReservationLCD
+        airbnb = ("Date,Type,Code de confirmation,Date de début,Date de fin,Nuits,Voyageur,Montant,Frais de service,Revenus bruts,Taxes reversées par Airbnb\n"
+                  "03/17/2025,Versement de résolution,HMXSHK4JQJ,03/07/2025,03/10/2025,3,Capucine,9.98,,9.98,\n"
+                  "03/11/2025,Réservation,HMXSHK4JQJ,03/07/2025,03/10/2025,3,Capucine,282.92,\"53,08\",336.00,\"7,70\"\n"
+                  "03/11/2025,Payout,,,,,,,,,\n")
+        self.assertEqual(self.importer(airbnb)[1:], (1, 0, 1))
+        self.assertEqual(self.importer(airbnb)[1:], (0, 1, 1))  # réimport : le dédommagement n'est pas compté deux fois
+        r = ReservationLCD.objects.get(reference="HMXSHK4JQJ")
+        self.assertEqual((r.montant_brut, r.arrivee), (Decimal("345.98"), date(2025, 3, 7)))
+
+        booking = ("Type/Type de transaction,Numéro de référence,Date d'arrivée,Date de départ,Statut de la réservation,Montant brut,"
+                   "Taxe de séjour,Commission,Frais de service de paiement,Date du versement\n"
+                   "Réservation,5809964310,2025-09-06,2025-09-07,Annulée,67.22,0.00,-10.08,-0.92,2025-09-08\n"
+                   "Réservation,5809964311,2025-09-10,2025-09-11,Annulée,0.00,0.00,0.00,0.00,2025-09-12\n")
+        self.importer(booking)
+        self.assertFalse(ReservationLCD.objects.get(reference="5809964310").annulee)
+        self.assertTrue(ReservationLCD.objects.get(reference="5809964311").annulee)
+        septembre = lcd.suivi_annuel(self.lot, 2025)[8]
+        self.assertEqual((septembre["brut"], septembre["nuits"]), (Decimal("67.22"), 1))
+
+    def test_import_airbnb_enregistre_dans_excel(self):
+        """Export Airbnb (mois/jour) ouvert puis enregistré en .xlsx par Excel en français : dates remises à l'endroit."""
+        import io
+        from datetime import datetime
+        from openpyxl import Workbook
+        from . import lcd
+        from .models import ReservationLCD
+        classeur = Workbook()
+        feuille = classeur.active
+        feuille.append(["Date", "Type", "Code de confirmation", "Date de début", "Date de fin", "Nuits", "Revenus bruts", "Frais de service"])
+        # Excel a converti « 01/12/2025 » (12 janvier) en 1er décembre ; « 01/14/2025 » est resté du texte.
+        feuille.append([datetime(2025, 1, 15), "Réservation", "HMJANV", datetime(2025, 12, 1), "01/14/2025", 2, 150, 20])
+        fichier = io.BytesIO()
+        classeur.save(fichier)
+        fichier.seek(0)
+        lcd.importer(self.lot, fichier, "airbnb.xlsx")
+        r = ReservationLCD.objects.get(reference="HMJANV")
+        self.assertEqual((r.arrivee, r.depart, r.date_versement), (date(2025, 1, 12), date(2025, 1, 14), date(2025, 1, 15)))
+
     def test_import_booking_et_airbnb_sans_doublon(self):
         from .models import ParametresLCD, ReservationLCD
         booking = ("Type,Reference number,Check-in,Checkout,Guest name,Reservation status,Currency,Payment status,Tourism tax,Amount,Commission,Payments Service Fee,Net,Payout date\n"
@@ -1366,6 +1408,60 @@ class LmnpTests(TestCase):
         b = bilan_lot(self.lot, 2026)
         # 2 mois repris (1 350 €) + 10 mois selon le bail (10 x 700 €)
         self.assertEqual(b["total_recettes"], Decimal("8350"))
+
+    def _payer(self, mois, annee=2026, bail=None):
+        bail = bail or self.lot.baux.get()
+        for m in mois:
+            e = Echeance.objects.create(bail=bail, periode=date(annee, m, 1), loyer_hc=650, charges=50,
+                                        date_exigibilite=date(annee, m, 5))
+            Paiement.objects.create(echeance=e, date=date(annee, m, 5), montant=Decimal("700"))
+
+    def test_paiements_completes_par_le_suivi_repris(self):
+        # suivi repris de janvier à septembre, paiements saisis dans l'appli d'octobre à décembre : les 12 mois comptent
+        from .lmnp import bilan_lot
+        from .models import EncaissementHistorique
+        for m in range(1, 10):
+            EncaissementHistorique.objects.create(lot=self.lot, mois=date(2026, m, 1), montant=700, charges=50)
+        self._payer([10, 11, 12])
+        b = bilan_lot(self.lot, 2026)
+        self.assertEqual(b["total_recettes"], Decimal("8400"))
+        self.assertEqual([r["source"] for r in b["recettes"]], ["Paiements enregistrés (3 mois)", "Suivi repris (9 mois)"])
+
+    def test_mois_paye_et_repris_compte_une_seule_fois(self):
+        from .lmnp import bilan_lot
+        from .models import EncaissementHistorique
+        EncaissementHistorique.objects.create(lot=self.lot, mois=date(2026, 10, 1), montant=700, charges=50)
+        self._payer([10])
+        self.assertEqual(bilan_lot(self.lot, 2026)["total_recettes"], Decimal("700"))
+
+    def test_courte_duree_saisies_et_reservations_mois_par_mois(self):
+        # Chasselay : encaissements saisis pour janvier, réservations importées pour mars → les deux comptent
+        from .lmnp import bilan_lot
+        from .models import EncaissementLCD, ReservationLCD
+        bien = Bien.objects.create(proprietaire=self.lot.bien.proprietaire, nom="Chasselay", adresse="1 rue",
+                                   code_postal="69380", ville="Chasselay")
+        lot = Lot.objects.create(bien=bien, designation="Chasselay", meuble=True, lmnp=True, exploitation="courte")
+        EncaissementLCD.objects.create(lot=lot, mois=date(2026, 1, 1), ca=Decimal("900"))
+        ReservationLCD.objects.create(lot=lot, plateforme="airbnb", reference="HM1", arrivee=date(2026, 3, 4),
+                                      depart=date(2026, 3, 6), montant_brut=Decimal("200"))
+        b = bilan_lot(lot, 2026)
+        self.assertEqual(b["total_recettes"], Decimal("1100"))
+
+    def test_courte_duree_garde_les_loyers_du_bail_de_l_annee(self):
+        # logement loué avec un bail jusqu'en juin puis passé en courte durée : les loyers du bail comptent
+        from .lmnp import bilan_lot
+        from .models import EncaissementLCD
+        bail = self.lot.baux.get()
+        bail.date_fin, bail.actif = date(2026, 6, 30), False
+        bail.save()
+        self._payer(range(1, 7))
+        self.lot.exploitation = "courte"
+        self.lot.save()
+        EncaissementLCD.objects.create(lot=self.lot, mois=date(2026, 8, 1), ca=Decimal("1000"))
+        b = bilan_lot(self.lot, 2026)
+        self.assertEqual(b["total_recettes"], Decimal("5200"))
+        page = self.client.get("/lmnp/?annee=2026").content.decode()
+        self.assertIn("Paiements enregistrés (6 mois)", page)
 
 
 class EncaissementHistoriqueEtatTests(TestCase):
@@ -2574,6 +2670,48 @@ class TableauxBanqueEtRappelsTests(TestCase):
         foncier = Bien.objects.create(proprietaire=self.proprio, nom="Nu", adresse="1 rue", code_postal="69000", ville="Lyon",
                                       comptabilite="foncier")
         self.assertIsNone(rappel_cfe(foncier))
+
+    def test_rappel_import_lcd_le_5_du_mois(self):
+        from .rappels import a_faire, rappel_import_lcd
+
+        lot = Lot.objects.create(bien=self.bien, designation="Studio", exploitation="courte")
+        r = rappel_import_lcd(lot, date(2026, 11, 23))
+        self.assertEqual((r.date, r.periodicite, r.prevenir_jours, r.dans_agenda, r.bien), (date(2026, 12, 5), "mensuel", 0, True, self.bien))
+        self.assertIn("Chasselay – Studio", r.titre)
+        self.assertEqual(rappel_import_lcd(lot, date(2026, 12, 3)), None)  # pas de doublon
+        self.assertEqual(rappel_import_lcd(Lot.objects.create(bien=self.bien, designation="T2"), date(2026, 12, 3)), None)  # location classique
+        self.assertEqual(rappel_import_lcd(Lot.objects.create(bien=self.bien, designation="T3", exploitation="courte"),
+                                           date(2026, 12, 5)).date, date(2026, 12, 5))  # le 5 même : ce jour-là
+        self.assertTrue(any(i["titre"] == r.titre for i in a_faire(date(2026, 12, 1))))
+        r.marquer_fait()
+        r.refresh_from_db()
+        self.assertEqual(r.date, date(2027, 1, 5))  # coché : 5 du mois suivant
+        lot.exploitation = "longue"
+        lot.save()
+        rappel_import_lcd(lot)
+        r.refresh_from_db()
+        self.assertFalse(r.actif)  # le lot quitte la courte durée : rappel arrêté
+        lot.exploitation = "courte"
+        lot.save()
+        rappel_import_lcd(lot)
+        r.refresh_from_db()
+        self.assertTrue(r.actif)
+
+    def test_rappel_import_lcd_depuis_la_fiche_lot(self):
+        lot = Lot.objects.create(bien=self.bien, designation="Studio")
+        from .admin.biens import LotAdmin
+        from django.contrib.admin.sites import site
+        from django.contrib.messages.storage.fallback import FallbackStorage
+        from django.test import RequestFactory
+
+        requete = RequestFactory().post("/")
+        requete.user = User.objects.get(username="admin")
+        requete.session = {}
+        requete._messages = FallbackStorage(requete)
+        lot.exploitation = "courte"
+        LotAdmin(Lot, site).save_model(requete, lot, None, True)
+        self.assertTrue(Rappel.objects.filter(bien=self.bien, titre__startswith="Importer les réservations", actif=True).exists())
+        self.assertIn("le 5 de chaque mois", " ".join(str(m) for m in requete._messages))
 
     def test_rubrique_impots_et_taxes(self):
         from .compta import rubrique_de_charge
@@ -4530,3 +4668,40 @@ class MaMaisonTests(TestCase):
         page = self.client.get("/maison/").content.decode()
         self.assertIn("/mois", page)
         self.assertIn("Capital restant dû", page)
+
+
+class GalerieBiensTests(TestCase):
+    def setUp(self):
+        self.client.force_login(User.objects.create_superuser("admin", "a@example.com", "x"))
+        self.sci = Proprietaire.objects.create(nom="SCI Alpha", type=Proprietaire.Type.SCI_IR)
+        self.perso = Proprietaire.objects.create(nom="Nom propre", type=Proprietaire.Type.NOM_PROPRE)
+        self.lilas = Bien.objects.create(proprietaire=self.sci, nom="Lilas", adresse="1 rue", code_postal="69000", ville="Lyon")
+        Bien.objects.create(proprietaire=self.perso, nom="Maison", adresse="2 rue", code_postal="69000", ville="Lyon")
+        lot = Lot.objects.create(bien=self.lilas, designation="A")
+        Lot.objects.create(bien=self.lilas, designation="B")
+        Bail.objects.create(lot=lot, type=Bail.Type.NU, date_debut=date(2025, 1, 1), loyer_hc=600, actif=True)
+
+    def test_liste_par_defaut_puis_galerie_retenue(self):
+        page = self.client.get("/admin/patrimoine/bien/").content.decode()
+        self.assertIn("result_list", page)
+        self.assertNotIn("bloc-proprio", page)
+        page = self.client.get("/admin/patrimoine/bien/?vue=galerie").content.decode()
+        self.assertIn("bloc-proprio", page)
+        self.assertIn("1/2 lots loués", page)
+        self.assertIn("Ajouter une photo", page)
+        # le choix est retenu sans le paramètre, et les filtres de la liste s'appliquent
+        page = self.client.get(f"/admin/patrimoine/bien/?proprietaire__id__exact={self.perso.pk}").content.decode()
+        self.assertIn("bloc-proprio", page)
+        self.assertIn("Maison", page)
+        self.assertNotIn("Lilas", page)
+        page = self.client.get("/admin/patrimoine/bien/?vue=liste").content.decode()
+        self.assertNotIn("bloc-proprio", page)
+
+    def test_photo_carte_reprend_la_photo_du_lot(self):
+        from .models import PhotoLot
+
+        self.assertEqual(self.lilas.photo_carte, "")
+        PhotoLot.objects.create(lot=self.lilas.lots.first(), image="photos/lot-1/sejour.jpg")
+        self.assertTrue(self.lilas.photo_carte.endswith("photos/lot-1/sejour.jpg"))
+        self.lilas.photo = "photos/biens/facade.jpg"
+        self.assertTrue(self.lilas.photo_carte.endswith("photos/biens/facade.jpg"))
