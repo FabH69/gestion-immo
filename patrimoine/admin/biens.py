@@ -223,6 +223,26 @@ class BienAdmin(admin.ModelAdmin):
 
     VUES = ("liste", "galerie")
 
+    def get_urls(self):
+        from django.urls import path
+
+        return [path("ordre-galerie/", self.admin_site.admin_view(self.ordre_galerie_view), name="patrimoine_bien_ordre_galerie")] + super().get_urls()
+
+    def ordre_galerie_view(self, request):
+        """Enregistre l'ordre de la galerie réglé par glisser-déposer : colonnes propriétaires (POST quoi=proprietaire&ids=3,1,2)
+        ou biens d'une colonne (quoi=bien)."""
+        from django.http import HttpResponseNotAllowed, JsonResponse
+
+        if request.method != "POST":
+            return HttpResponseNotAllowed(["POST"])
+        if not self.has_view_or_change_permission(request):
+            return JsonResponse({"ok": False}, status=403)
+        ids = [int(i) for i in request.POST.get("ids", "").split(",") if i.strip().isdigit()]
+        modele = Bien if request.POST.get("quoi") == "bien" else Proprietaire
+        for rang, pk in enumerate(ids, start=1):
+            modele.objects.filter(pk=pk).update(ordre_galerie=rang)
+        return JsonResponse({"ok": True})
+
     def changelist_view(self, request, extra_context=None):
         """Bascule liste / galerie : ?vue=galerie est retenue pour la session, puis retirée des paramètres de la liste
         (l'admin refuse les paramètres qu'il ne connaît pas)."""
@@ -245,9 +265,10 @@ class BienAdmin(admin.ModelAdmin):
         return reponse
 
     def _galerie(self, biens):
-        """Une colonne par propriétaire (ordre alphabétique), chacune avec les cartes de ses biens."""
+        """Une colonne par propriétaire (ordre réglé par glisser-déposer, sinon alphabétique), chacune avec les cartes de ses biens."""
         blocs = {}
-        for bien in sorted(biens, key=lambda b: (b.proprietaire.nom.lower(), b.nom.lower())):
+        for bien in sorted(biens, key=lambda b: (b.proprietaire.ordre_galerie or 10**6, b.proprietaire.nom.lower(),
+                                            b.ordre_galerie or 10**6, b.nom.lower())):
             lots = [lot for lot in bien.lots.all()]
             courte = self._nb_courte_duree(bien)
             # un logement en courte durée n'a pas de bail mais n'est pas vacant
@@ -262,10 +283,10 @@ class BienAdmin(admin.ModelAdmin):
                 "loyers": loyers, "rendement": self.rendement(bien),
                 "regime": self.regime(bien),
             })
-        for i, bloc in enumerate(blocs.values()):
+        for bloc in blocs.values():
             mots = bloc["proprietaire"].nom.replace("-", " ").split() or ["?"]
             bloc["initiales"] = (mots[0][0] + (mots[-1][0] if len(mots) > 1 else "")).upper()
-            bloc["teinte"] = i % 6
+            bloc["teinte"] = bloc["proprietaire"].pk % 6  # couleur stable quand on déplace les colonnes
         return list(blocs.values())
     fieldsets = [
         (None, {"fields": ["proprietaire", "nom", "adresse", ("code_postal", "ville"), "syndic", ("date_acquisition", "prix_acquisition")]}),

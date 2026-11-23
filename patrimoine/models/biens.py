@@ -30,6 +30,10 @@ class Proprietaire(models.Model):
                   "(page Annexe 2072).")
     notes = models.TextField(blank=True)
 
+    ordre_galerie = models.PositiveIntegerField(
+        "ordre dans la galerie des biens", default=0, editable=False,
+        help_text="Position de la colonne du propriétaire en vue galerie, réglée par glisser-déposer")
+
     class Meta:
         verbose_name = "propriétaire"
         ordering = ["nom"]
@@ -159,6 +163,10 @@ class Bien(models.Model):
 
     EQUIPEMENTS_COMMUNS = ["gardiennage", "ascenseur", "chauffage_collectif", "antenne_tv", "vide_ordures", "interphone",
                            "espaces_verts", "eau_chaude_collective", "local_velos", "fibre"]
+
+    ordre_galerie = models.PositiveIntegerField(
+        "ordre dans la galerie", default=0, editable=False,
+        help_text="Position du bien dans la colonne de son propriétaire en vue galerie, réglée par glisser-déposer")
 
     class Meta:
         ordering = ["proprietaire__nom", "nom"]

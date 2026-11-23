@@ -4767,6 +4767,25 @@ class GalerieBiensTests(TestCase):
         self.lilas.photo = "photos/biens/facade.jpg"
         self.assertTrue(self.lilas.photo_carte.endswith("photos/biens/facade.jpg"))
 
+    def test_ordre_des_colonnes_et_des_biens(self):
+        Bien.objects.create(proprietaire=self.sci, nom="Zèbre", adresse="3 rue", code_postal="69000", ville="Lyon")
+        page = self.client.get("/admin/patrimoine/bien/?vue=galerie").content.decode()
+        page = page[page.index('class="galerie-biens"'):]
+        # par défaut : propriétaires et biens par ordre alphabétique
+        self.assertLess(page.index("Nom propre"), page.index("SCI Alpha"))
+        self.assertLess(page.index(">Lilas<"), page.index(">Zèbre<"))
+        self.assertIn("galerie_ordre.js", page)
+        self.assertIn('header draggable="true"', page)
+        zebre = Bien.objects.get(nom="Zèbre")
+        r = self.client.post("/admin/patrimoine/bien/ordre-galerie/", {"quoi": "proprietaire", "ids": f"{self.sci.pk},{self.perso.pk}"})
+        self.assertEqual(r.json(), {"ok": True})
+        self.client.post("/admin/patrimoine/bien/ordre-galerie/", {"quoi": "bien", "ids": f"{zebre.pk},{self.lilas.pk}"})
+        page = self.client.get("/admin/patrimoine/bien/?vue=galerie").content.decode()
+        page = page[page.index('class="galerie-biens"'):]
+        self.assertLess(page.index("SCI Alpha"), page.index("Nom propre"))
+        self.assertLess(page.index(">Zèbre<"), page.index(">Lilas<"))
+        self.assertEqual(self.client.get("/admin/patrimoine/bien/ordre-galerie/").status_code, 405)
+
     def test_colonnes_loyers_cc_et_courte_duree(self):
         bail = Bail.objects.get()
         bail.charges = 50
