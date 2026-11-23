@@ -59,7 +59,7 @@
   if (!bien || !ligne || !rubrique) return;
   function montrer() {
     var r = regimes[bien.value] || "{{ regime|escapejs }}";
-    ligne.hidden = r === "lmnp" || r === "societe";
+    ligne.hidden = r === "lmnp" || r === "societe" || r === "maison";
     rubrique.hidden = r === "foncier";
   }
   bien.addEventListener("change", montrer);

@@ -231,6 +231,11 @@ def _saisie_retenue(request):
     return Proprietaire.objects.filter(pk=request.session.get("saisie_proprietaire")).first(), request.session.get("saisie_bien")
 
 
+def _maisons():
+    """Résidences principales hors comptabilité locative : leurs factures vont dans « Ma maison »."""
+    return Bien.objects.filter(residence_principale=True, comptabilite="").select_related("proprietaire")
+
+
 def _biens_comptables(regime=""):
     biens = Bien.objects.exclude(comptabilite="").select_related("proprietaire").order_by("proprietaire__nom", "nom")
     return biens.filter(comptabilite=regime) if regime else biens
@@ -296,6 +301,9 @@ class RubriqueFilter(admin.SimpleListFilter):
     parameter_name = "rubrique"
 
     def lookups(self, request, model_admin):
+        bien = request.GET.get("bien", "")
+        if bien.isdigit() and _maisons().filter(pk=bien).exists():  # factures de la maison : ses catégories
+            return list(PieceComptable.RUBRIQUES_MAISON)
         return list(PieceComptable.LIBELLES_RUBRIQUES.items())
 
     def queryset(self, request, queryset):
@@ -407,8 +415,18 @@ class PieceComptableForm(forms.ModelForm):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         if "bien" in self.fields:
-            self.fields["bien"].queryset = _biens_comptables()
-            self.fields["bien"].label_from_instance = lambda b: f"{b.proprietaire.nom} – {b.nom}"
+            self.fields["bien"].queryset = (_biens_comptables() | _maisons()).distinct()
+            self.fields["bien"].label_from_instance = lambda b: f"{b.proprietaire.nom} – {b.nom}" + (" (ma maison)" if b.est_maison else "")
+        if "rubrique" in self.fields:
+            bien = self.instance.bien if self.instance.bien_id else None
+            choisi = self.data.get(self.add_prefix("bien")) if self.is_bound else self.initial.get("bien")
+            if choisi and str(getattr(choisi, "pk", choisi)).isdigit():
+                bien = Bien.objects.filter(pk=getattr(choisi, "pk", choisi)).first() or bien
+            if bien is not None and bien.est_maison:
+                self.fields["rubrique"].choices = [("", "---------")] + PieceComptable.RUBRIQUES_MAISON
+                self.fields["rubrique"].label = "catégorie"
+            elif bien is not None:
+                self.fields["rubrique"].choices = [("", "---------")] + [(g, list(r)) for g, r in PieceComptable.RUBRIQUES]
         # tableau de codification : chaque ligne ne propose que la codification de son bien (ligne 2072 ou rubrique)
         if self.instance.pk and self.instance.bien_id and "ligne" in self.fields and "rubrique" in self.fields:
             inutile = "ligne" if self.instance.par_rubrique else "rubrique"
@@ -545,6 +563,8 @@ class PieceComptableAdmin(admin.ModelAdmin):
         if getattr(self, "_declarations", None) is None:
             self._declarations = dossiers.declaration_des_biens()
         d = self._declarations.get(obj.bien_id)
+        if not d and obj.est_maison:
+            return format_html('<a href="{}?bien={}" class="pill-decl info">Ma maison</a>', reverse("ma_maison"), obj.bien_id)
         if not d:
             return format_html('<span class="pill-decl ko" title="Régime fiscal du bien à renseigner">Hors dossier</span>')
         return format_html('<a href="{}" class="pill-decl info">{}</a>', reverse("dossier_compta", args=[d["code"]]), dossiers.libelle_court(d))
@@ -914,7 +934,7 @@ class PieceComptableAdmin(admin.ModelAdmin):
     def rubrique_courte(self, obj):
         if not obj.rubrique:
             return "–"
-        return format_html('<span class="pill gris">{}</span>', obj.get_rubrique_display())
+        return format_html('<span class="pill gris">{}</span>', obj.rubrique_libelle)
 
     @admin.display(description="codification")
     def codification(self, obj):
@@ -947,7 +967,12 @@ class PieceComptableAdmin(admin.ModelAdmin):
                            obj.fichier.url, "1" if image else "", "Photo" if image else "XML" if extension == "xml" else "PDF")
 
     def get_queryset(self, request):
-        return super().get_queryset(request).select_related("bien", "piece_mere")
+        qs = super().get_queryset(request).select_related("bien", "piece_mere")
+        # listes de la comptabilité : sans les factures de la maison, qui ont leur page (sauf la liste filtrée sur la maison)
+        vue = getattr(getattr(request, "resolver_match", None), "url_name", "") or ""
+        if vue.endswith("_changelist") and not _maisons().filter(pk=request.GET.get("bien") if str(request.GET.get("bien", "")).isdigit() else None).exists():
+            qs = qs.exclude(compta.MAISON)
+        return qs
 
     def get_changeform_initial_data(self, request):
         """Nouvelle facture : le bien choisi dans la liste, ou le seul bien du dernier propriétaire choisi."""
@@ -986,6 +1011,11 @@ class PieceComptableAdmin(admin.ModelAdmin):
         if annee.isdigit():
             extra_context.update({"annee_choisie": int(annee), "annee_cloturee": AnneeCloturee.est_cloturee(int(annee)),
                                   "lien_cloture": reverse("admin:patrimoine_piececomptable_cloture", args=[int(annee)])})
+        bien_liste = request.GET.get("bien", "")
+        maison = _maisons().filter(pk=bien_liste).first() if bien_liste.isdigit() else None
+        if maison:
+            extra_context.update({"title": f"Factures · Ma maison ({maison.nom})",
+                                  "lien_import": reverse("admin:patrimoine_piececomptable_add") + f"?bien={maison.pk}"})
         if regime:
             from ..views.compta import onglets
 
@@ -1003,7 +1033,8 @@ class PieceComptableAdmin(admin.ModelAdmin):
         return super().changelist_view(request, extra_context)
 
     def changeform_view(self, request, object_id=None, form_url="", extra_context=None):
-        biens = {str(b.pk): b.comptabilite for b in Bien.objects.only("pk", "comptabilite")}
+        biens = {str(b.pk): "maison" if b.est_maison else b.comptabilite
+                 for b in Bien.objects.only("pk", "comptabilite", "residence_principale")}
         regime = _regime(request)
         if object_id and not regime:
             regime = PieceComptable.objects.filter(pk=object_id).values_list("bien__comptabilite", flat=True).first() or ""

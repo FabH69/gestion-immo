@@ -37,7 +37,7 @@ MODULES = [
                                                "patrimoine.calendrierics", "patrimoine.evenementics"],
      ["suivi_lcd", "comparatif_lcd", "lcd_accueil", "lcd_calendrier", "lcd_calendriers"], []),
     ("finances", "Encaissements, prêts et endettement", ["patrimoine.pret", "patrimoine.encaissementhistorique"],
-     ["suivi_encaissements", "etat_endettement", "document_amortissement"], []),
+     ["suivi_encaissements", "etat_endettement", "document_amortissement", "ma_maison", "maison_entretien_fait"], ["maison_entretien_fait"]),
     ("compta", "Comptabilité (revenus fonciers, LMNP, société)", ["patrimoine.piececomptable", "patrimoine.declarationfaite", "patrimoine.depenserecurrente", "patrimoine.deficitreporte"],
      ["compta_accueil", "dossier_compta", "declarations", "declaration_revenus", "annexe_2072", "recap_2044", "regimes_fiscaux", "compta_lmnp", "compta_societe", "conciergerie_ajouter", "controle_conciergerie",
       "admin:patrimoine_piececomptable_import"], ["admin:patrimoine_piececomptable_import"]),

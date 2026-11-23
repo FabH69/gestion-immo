@@ -95,6 +95,7 @@ def sites_utiles():
 # --- Menu latéral -------------------------------------------------------------------------------------------
 # Icônes au trait (style Lucide), dessinées en SVG pour rester nettes à toutes les tailles.
 ICONES = {
+    "maison": '<path d="M3 11 12 4l9 7"/><path d="M5 9.8V20h14V9.8"/><path d="M16 6.5V4h2v4"/><path d="M9.5 20v-5h5v5"/>',
     "accueil": '<path d="M3 10.5 12 3l9 7.5"/><path d="M5 9.5V21h14V9.5"/><path d="M10 21v-6h4v6"/>',
     "loyers": '<rect x="2" y="6" width="20" height="12" rx="2"/><circle cx="12" cy="12" r="2.5"/><path d="M6 12h.01M18 12h.01"/>',
     "baux": '<path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><path d="M14 3v6h6M8 13h8M8 17h5"/>',
@@ -196,6 +197,7 @@ def _menu():
             ("encaissements", "Encaissements", r("suivi_encaissements"), [r("suivi_encaissements"), r("etat_loyers_encaisses")],
              [("État des loyers encaissés", r("etat_loyers_encaisses"), "etats")]),
             ("prets", "Prêts et endettement", a("pret"), [a("pret"), r("etat_endettement")], []),
+            ("maison", "Ma maison", r("ma_maison"), [r("ma_maison")], []),
         ]),
         ("Comptabilité", _menu_compta()),
         ("Investir", [
@@ -303,7 +305,7 @@ def menu_lateral(context):
     acces = droits.niveaux(user) if user is not None and user.is_authenticated else {}
     module_du_lien = {"biens": "biens", "locataires": "locataires", "baux": "baux", "loyers": "loyers",
                       "candidatures": "relocation", "annonces": "relocation", "cles": "relocation", "lcd": "lcd",
-                      "encaissements": "finances", "prets": "finances", "etats": "etats",
+                      "encaissements": "finances", "prets": "finances", "maison": "finances", "etats": "etats",
                       "dossiers": "compta", "saisie": "compta", "evolution": "compta", "regimes": "compta",
                       "rappels": "outils"}
     groupes, actif_trouve = [], False

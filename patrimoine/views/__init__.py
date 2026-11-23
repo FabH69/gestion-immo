@@ -81,3 +81,4 @@ from .edl import edl_commencer, edl_resume, edl_saisie  # noqa: F401
 from .gerer_lcd import lcd_accueil, lcd_calendrier, lcd_calendriers  # noqa: F401
 from .essai import essai_demo, essai_entrer, essai_reinitialiser, essai_sortir  # noqa: F401
 from .import_excel import import_excel_page, modele_import_excel  # noqa: F401
+from .maison import ma_maison, maison_entretien_fait  # noqa: F401,E402
