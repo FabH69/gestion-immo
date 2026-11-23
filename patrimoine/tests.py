@@ -4033,8 +4033,8 @@ class RegimesFiscauxTests(TestCase):
         self.assertTrue(any(a["niveau"] == "rouge" for a in regimes.alertes_bien(b)))
 
     def test_page_et_menu(self):
-        self._bien(self.foyer, "Pollionnay", regime_fiscal="nu")
-        self._bien(self.sci, "Vaugneray", regime_a_verifier=True)
+        self._bien(self.foyer, "Pollionnay", regime_fiscal="nu", regime_a_verifier=True)
+        self._bien(self.sci, "Vaugneray")
         page = self.client.get("/comptabilite/regimes-fiscaux/?annee=2025").content.decode()
         for texte in ("Régimes fiscaux – revenus 2025", "Pollionnay", "Déclaration 2044", "Déclaration 2072", "à vérifier",
                       "Les seuils surveillés"):
@@ -4044,14 +4044,66 @@ class RegimesFiscauxTests(TestCase):
     def test_fiche_du_bien_refuse_un_regime_incoherent(self):
         from .admin.biens import BienForm
 
-        b = self._bien(self.sci, "Vaugneray", regime_a_verifier=True)
-        donnees = {"proprietaire": self.sci.pk, "nom": "Vaugneray", "adresse": "1 rue", "code_postal": "69670", "ville": "Vaugneray",
-                   "regime_fiscal": "nu", "option_fiscale": "reel"}
+        b = self._bien(self.h, "Villeurbanne", regime_fiscal="societe_ir")
+        donnees = {"proprietaire": self.h.pk, "nom": "Villeurbanne", "adresse": "1 rue", "code_postal": "69100",
+                   "ville": "Villeurbanne", "regime_fiscal": "nu", "option_fiscale": "reel"}
         form = BienForm(donnees, instance=b)
         self.assertFalse(form.is_valid())
         self.assertIn("regime_fiscal", form.errors)
-        form = BienForm({**donnees, "regime_fiscal": "sci_ir"}, instance=b)
+        form = BienForm({**donnees, "regime_fiscal": "societe_ir"}, instance=b)
         self.assertTrue(form.is_valid(), form.errors)
+
+    def test_bien_d_une_sci_ir_prend_le_regime_de_la_sci(self):
+        # même si on demande location nue au micro ou LMNP, le bien d'une SCI à l'IR est en SCI à l'IR, au réel
+        for regime in ("nu", "lmnp"):
+            b = self._bien(self.sci, f"Vaugneray {regime}", regime_fiscal=regime, option_fiscale="micro",
+                           regime_a_verifier=True)
+            b.refresh_from_db()
+            self.assertEqual((b.regime_fiscal, b.option_fiscale, b.comptabilite, b.regime_a_verifier),
+                             ("sci_ir", "reel", "foncier", False))
+        is_ = Proprietaire.objects.create(nom="SCI IS", type=Proprietaire.Type.SCI_IS)
+        self.assertEqual(self._bien(is_, "Lyon", regime_fiscal="nu").regime_fiscal, "societe_is")
+
+    def test_fiche_d_un_bien_de_sci_ir_force_le_regime(self):
+        from .admin.biens import BienForm
+
+        b = self._bien(self.sci, "Vaugneray")
+        donnees = {"proprietaire": self.sci.pk, "nom": "Vaugneray", "adresse": "1 rue", "code_postal": "69670",
+                   "ville": "Vaugneray", "regime_fiscal": "nu", "option_fiscale": "micro"}
+        form = BienForm(donnees, instance=b)
+        self.assertTrue(form.is_valid(), form.errors)
+        self.assertEqual((form.cleaned_data["regime_fiscal"], form.cleaned_data["option_fiscale"]), ("sci_ir", "reel"))
+        # liste non envoyée (verrouillée) : le régime est quand même celui de la SCI
+        form = BienForm({k: v for k, v in donnees.items() if k != "regime_fiscal"}, instance=b)
+        self.assertTrue(form.is_valid(), form.errors)
+        self.assertEqual(form.cleaned_data["regime_fiscal"], "sci_ir")
+        # la fiche porte la liste des SCI qui imposent leur régime, et le script de verrouillage
+        page = self.client.get(f"/admin/patrimoine/bien/{b.pk}/change/").content.decode()
+        self.assertIn("data-regimes-imposes", page)
+        self.assertIn("regime_impose.js", page)
+
+    def test_passer_un_proprietaire_en_sci_ir_realigne_ses_biens(self):
+        p = Proprietaire.objects.create(nom="Future SCI", type=Proprietaire.Type.NOM_PROPRE)
+        b = self._bien(p, "Craponne", regime_fiscal="nu", option_fiscale="micro")
+        p.type = Proprietaire.Type.SCI_IR
+        p.save()
+        b.refresh_from_db()
+        self.assertEqual((b.regime_fiscal, b.option_fiscale), ("sci_ir", "reel"))
+
+    def test_migration_corrige_les_biens_existants(self):
+        from importlib import import_module
+
+        from django.apps import apps as django_apps
+
+        b = self._bien(self.sci, "Vaugneray")
+        Bien.objects.filter(pk=b.pk).update(regime_fiscal="nu", option_fiscale="micro", comptabilite="foncier",
+                                            regime_a_verifier=True)
+        n = self._bien(self.foyer, "Pollionnay", regime_fiscal="nu", option_fiscale="micro")
+        import_module("patrimoine.migrations.0076_regime_biens_sci").aligner(django_apps, None)
+        b.refresh_from_db()
+        n.refresh_from_db()
+        self.assertEqual((b.regime_fiscal, b.option_fiscale, b.regime_a_verifier), ("sci_ir", "reel", False))
+        self.assertEqual((n.regime_fiscal, n.option_fiscale), ("nu", "micro"))  # nom propre : inchangé
 
     def test_courte_duree_classee_abattement_50(self):
         from .lmnp import bilan_lot
@@ -4462,7 +4514,7 @@ class FacturesAjouterRecurrentesTests(TestCase):
     def setUp(self):
         self.client.force_login(User.objects.create_superuser("admin", "a@example.com", "x"))
         self.alfab = Proprietaire.objects.create(nom="SCI ALFAB", type=Proprietaire.Type.SCI_IR)
-        self.societe = Proprietaire.objects.create(nom="H-INVEST", type=Proprietaire.Type.SCI_IR)
+        self.societe = Proprietaire.objects.create(nom="H-INVEST", type=Proprietaire.Type.SARL_FAMILLE)
         commun = {"adresse": "1 rue", "code_postal": "69000", "ville": "Lyon"}
         self.a = Bien.objects.create(proprietaire=self.alfab, nom="Immeuble A", regime_fiscal="sci_ir", comptabilite="foncier", **commun)
         self.h = Bien.objects.create(proprietaire=self.societe, nom="Bureaux H", comptabilite="societe", **commun)
