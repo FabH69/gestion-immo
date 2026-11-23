@@ -7,7 +7,7 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
 
     dependencies = [
-        ("patrimoine", "0070_depenses_recurrentes"),
+        ("patrimoine", "0071_rappel_import_lcd"),
     ]
 
     operations = [
