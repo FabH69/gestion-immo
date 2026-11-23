@@ -90,6 +90,26 @@ class Pret(models.Model):
             return (self.montant / self.duree_mois).quantize(Decimal("0.01"))
         return (self.montant * t / (1 - (1 + t) ** -self.duree_mois)).quantize(Decimal("0.01"))
 
+    @property
+    def assurance_appliquee(self):
+        """Phrase qui dit d'où vient l'assurance de l'échéancier : tableau de la banque, % du capital restant dû,
+        montant fixe ou aucune."""
+        def e(v):
+            return f"{v:,.2f}".replace(",", "\u202f").replace(".", ",")
+
+        banque = self.lignes_banque()
+        if banque:
+            courante = self._echeance_courante()
+            if courante and courante["assurance"]:
+                return (f"celle du tableau de la banque ({e(courante['assurance'])} €/mois) : retirez le tableau de la banque "
+                        "pour recalculer à partir des conditions")
+            return "aucune (tableau de la banque)"
+        if self.taux_assurance and self.type == self.Type.AMORTISSABLE:
+            return f"{e(self.taux_assurance)} % du capital restant dû, incluse dans l'échéance"
+        if self.assurance_mensuelle:
+            return f"montant fixe de {e(self.assurance_mensuelle)} €/mois (mettez 0 dans « assurance mensuelle » pour un prêt sans assurance)"
+        return "aucune"
+
     def lignes_banque(self):
         """Tableau d'amortissement remis par la banque, s'il a été importé (sinon liste vide)."""
         if not self.pk:

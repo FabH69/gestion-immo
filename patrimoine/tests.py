@@ -924,6 +924,60 @@ class PretAssuranceIncluseTests(TestCase):
         self.assertEqual(pret.capital_restant_du(date(2026, 12, 10)), Decimal("88276.98"))
 
 
+class PretSansAssuranceTests(TestCase):
+    """Vider le % d'assurance sur la fiche du prêt recalcule l'échéance sans assurance (l'ancienne assurance mensuelle fixe,
+    ignorée tant que le % était rempli, ne revient plus)."""
+
+    def setUp(self):
+        from .models import Pret
+        self.client.force_login(User.objects.create_superuser("admin", "", "x"))
+        proprio = Proprietaire.objects.create(nom="X", type=Proprietaire.Type.NOM_PROPRE)
+        self.pret = Pret.objects.create(proprietaire=proprio, banque="CE", montant=Decimal("92233.74"), taux=Decimal("3.13"),
+                                        taux_assurance=Decimal("0.64"), assurance_mensuelle=Decimal("49.19"), duree_mois=240,
+                                        date_premiere_echeance=date(2025, 10, 10))
+
+    def _enregistrer(self, **valeurs):
+        p = self.pret
+        donnees = {"proprietaire": p.proprietaire_id, "banque": p.banque, "reference": "", "type": p.type, "montant": p.montant,
+                   "taux": p.taux, "duree_mois": p.duree_mois, "date_premiere_echeance": "10/10/2025",
+                   "assurance_mensuelle": p.assurance_mensuelle, "taux_assurance": p.taux_assurance or "", "notes": "",
+                   "attestations-TOTAL_FORMS": 0, "attestations-INITIAL_FORMS": 0, "_save": "1", **valeurs}
+        reponse = self.client.post(f"/admin/patrimoine/pret/{p.pk}/change/", donnees, follow=True)
+        self.pret.refresh_from_db()
+        return reponse
+
+    def test_vider_le_pourcentage_recalcule_sans_assurance(self):
+        self.assertEqual(self.pret.mensualite_totale, Decimal("547.80"))
+        self._enregistrer(taux_assurance="")
+        self.assertIsNone(self.pret.taux_assurance)
+        self.assertEqual(self.pret.assurance_mensuelle, 0)
+        self.assertEqual(self.pret.mensualite_totale, self.pret.mensualite_hors_assurance)
+        self.assertEqual(self.pret.mensualite_totale, Decimal("517.55"))
+        self.assertEqual(self.pret.echeancier()[0]["assurance"], 0)
+        self.assertIn("Assurance appliquée : aucune", self.client.get(f"/admin/patrimoine/pret/{self.pret.pk}/change/").content.decode())
+
+    def test_pourcentage_remet_le_montant_fixe_a_zero(self):
+        self._enregistrer()
+        self.assertEqual(self.pret.assurance_mensuelle, 0)
+        self.assertEqual(self.pret.mensualite_totale, Decimal("547.80"))
+
+    def test_montant_fixe_saisi_en_meme_temps_est_garde(self):
+        self._enregistrer(taux_assurance="", assurance_mensuelle="30")
+        self.assertEqual(self.pret.assurance_mensuelle, Decimal("30"))
+        self.assertEqual(self.pret.mensualite_totale, Decimal("547.55"))
+        self.assertIn("montant fixe de 30,00", self.client.get(f"/admin/patrimoine/pret/{self.pret.pk}/change/").content.decode())
+
+    def test_tableau_de_la_banque_prevenu(self):
+        from .models import LigneEcheancier
+        LigneEcheancier.objects.create(pret=self.pret, rang=1, date=date(2025, 10, 10), capital=Decimal("258.03"),
+                                 interets=Decimal("240.58"), assurance=Decimal("49.19"), restant=Decimal("91975.71"))
+        page = self._enregistrer(taux_assurance="").content.decode()
+        self.assertIn("Le tableau de la banque fait foi", page)
+        self.assertIn("Retirer le tableau de la banque", page)
+        fiche = self.client.get(f"/admin/patrimoine/pret/{self.pret.pk}/change/").content.decode()
+        self.assertIn("celle du tableau de la banque (49,19", fiche)
+
+
 class ListesPresentVenduTests(TestCase):
     def test_colonnes_present_et_vendu(self):
         self.client.force_login(User.objects.create_superuser("admin", "", "x"))

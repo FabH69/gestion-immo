@@ -89,12 +89,37 @@ class PretAdmin(admin.ModelAdmin):
 
         return format_html(
             "{}<br>Échéance habituelle : <strong>{} €</strong> dont {} € hors assurance · Dernière échéance : {} · "
-            "Capital restant dû aujourd'hui : <strong>{} €</strong><br>"
+            "Capital restant dû aujourd'hui : <strong>{} €</strong><br>Assurance appliquée : {}<br>"
             '<a href="{}" target="_blank">Tableau d\'amortissement PDF</a> · <a href="{}">Importer le tableau de la banque (PDF)</a>',
             source, e(obj.mensualite_totale), e(obj.mensualite_hors_assurance), obj.date_derniere_echeance.strftime("%d/%m/%Y"),
-            e(obj.capital_restant_du(timezone.localdate())), reverse("document_amortissement", args=[obj.pk]),
+            e(obj.capital_restant_du(timezone.localdate())), obj.assurance_appliquee, reverse("document_amortissement", args=[obj.pk]),
             reverse("admin:patrimoine_pret_tableau", args=[obj.pk]),
         )
+
+    def get_form(self, request, obj=None, **kwargs):
+        form = super().get_form(request, obj, **kwargs)
+        champ = form.base_fields.get("taux_assurance")
+        if champ:
+            champ.help_text = ("Seulement si la banque calcule l'assurance sur le capital restant dû et l'inclut dans une échéance "
+                               "constante (ex. Caisse d'Épargne) : l'assurance mensuelle ci-dessus est alors remise à 0. "
+                               "Vider ce champ recalcule le prêt sans assurance.")
+        return form
+
+    def save_model(self, request, obj, form, change):
+        """Une seule assurance à la fois : en % du capital restant dû, l'assurance mensuelle fixe est remise à 0 (elle était
+        ignorée et revenait dès que le % était effacé) ; vider le % recalcule le prêt sans assurance."""
+        modifies = set(form.changed_data)
+        if obj.taux_assurance and obj.assurance_mensuelle:
+            obj.assurance_mensuelle = 0
+        elif change and "taux_assurance" in modifies and not obj.taux_assurance and "assurance_mensuelle" not in modifies:
+            obj.assurance_mensuelle = 0
+        super().save_model(request, obj, form, change)
+        if change and modifies & {"taux_assurance", "assurance_mensuelle", "montant", "taux", "duree_mois", "date_premiere_echeance"} \
+                and obj.lignes.exists():
+            messages.warning(request, format_html(
+                "Le tableau de la banque fait foi : l'échéancier et l'assurance ne changent pas avec les conditions. "
+                '<a href="{}">Retirer le tableau de la banque</a> pour recalculer à partir des conditions.',
+                reverse("admin:patrimoine_pret_tableau", args=[obj.pk])))
 
     def get_fieldsets(self, request, obj=None):
         fieldsets = super().get_fieldsets(request, obj)
