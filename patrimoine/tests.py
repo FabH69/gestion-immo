@@ -4475,3 +4475,40 @@ class FacturesAjouterRecurrentesTests(TestCase):
             self.client.post("/admin/patrimoine/piececomptable/import/", {"bien": self.a.pk, "fichiers": [SimpleUploadedFile("f.pdf", b"%PDF-x")]})
         p = PieceComptable.objects.order_by("-pk").first()
         self.assertEqual((p.fournisseur, p.ligne, p.preremplie), ("Foncia", "6", True))  # la règle l'emporte, reste à vérifier
+
+
+class GalerieBiensTests(TestCase):
+    def setUp(self):
+        self.client.force_login(User.objects.create_superuser("admin", "a@example.com", "x"))
+        self.sci = Proprietaire.objects.create(nom="SCI Alpha", type=Proprietaire.Type.SCI_IR)
+        self.perso = Proprietaire.objects.create(nom="Nom propre", type=Proprietaire.Type.NOM_PROPRE)
+        self.lilas = Bien.objects.create(proprietaire=self.sci, nom="Lilas", adresse="1 rue", code_postal="69000", ville="Lyon")
+        Bien.objects.create(proprietaire=self.perso, nom="Maison", adresse="2 rue", code_postal="69000", ville="Lyon")
+        lot = Lot.objects.create(bien=self.lilas, designation="A")
+        Lot.objects.create(bien=self.lilas, designation="B")
+        Bail.objects.create(lot=lot, type=Bail.Type.NU, date_debut=date(2025, 1, 1), loyer_hc=600, actif=True)
+
+    def test_liste_par_defaut_puis_galerie_retenue(self):
+        page = self.client.get("/admin/patrimoine/bien/").content.decode()
+        self.assertIn("result_list", page)
+        self.assertNotIn("bloc-proprio", page)
+        page = self.client.get("/admin/patrimoine/bien/?vue=galerie").content.decode()
+        self.assertIn("bloc-proprio", page)
+        self.assertIn("1/2 lots loués", page)
+        self.assertIn("Ajouter une photo", page)
+        # le choix est retenu sans le paramètre, et les filtres de la liste s'appliquent
+        page = self.client.get(f"/admin/patrimoine/bien/?proprietaire__id__exact={self.perso.pk}").content.decode()
+        self.assertIn("bloc-proprio", page)
+        self.assertIn("Maison", page)
+        self.assertNotIn("Lilas", page)
+        page = self.client.get("/admin/patrimoine/bien/?vue=liste").content.decode()
+        self.assertNotIn("bloc-proprio", page)
+
+    def test_photo_carte_reprend_la_photo_du_lot(self):
+        from .models import PhotoLot
+
+        self.assertEqual(self.lilas.photo_carte, "")
+        PhotoLot.objects.create(lot=self.lilas.lots.first(), image="photos/lot-1/sejour.jpg")
+        self.assertTrue(self.lilas.photo_carte.endswith("photos/lot-1/sejour.jpg"))
+        self.lilas.photo = "photos/biens/facade.jpg"
+        self.assertTrue(self.lilas.photo_carte.endswith("photos/biens/facade.jpg"))
