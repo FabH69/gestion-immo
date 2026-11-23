@@ -1000,6 +1000,48 @@ class LocationCourteDureeTests(TestCase):
         self.assertEqual((r.montant_brut, r.commission, r.taxe_sejour, r.net),
                          (Decimal("82.00"), Decimal("13.27"), Decimal("1.49"), Decimal("67.24")))
 
+    def test_import_resolution_airbnb_et_annulation_booking_payee(self):
+        """Rien ne manque : dédommagement Airbnb repris, annulation Booking facturée comptée (comme l'Excel de suivi)."""
+        from . import lcd
+        from .models import ReservationLCD
+        airbnb = ("Date,Type,Code de confirmation,Date de début,Date de fin,Nuits,Voyageur,Montant,Frais de service,Revenus bruts,Taxes reversées par Airbnb\n"
+                  "03/17/2025,Versement de résolution,HMXSHK4JQJ,03/07/2025,03/10/2025,3,Capucine,9.98,,9.98,\n"
+                  "03/11/2025,Réservation,HMXSHK4JQJ,03/07/2025,03/10/2025,3,Capucine,282.92,\"53,08\",336.00,\"7,70\"\n"
+                  "03/11/2025,Payout,,,,,,,,,\n")
+        self.assertEqual(self.importer(airbnb)[1:], (1, 0, 1))
+        self.assertEqual(self.importer(airbnb)[1:], (0, 1, 1))  # réimport : le dédommagement n'est pas compté deux fois
+        r = ReservationLCD.objects.get(reference="HMXSHK4JQJ")
+        self.assertEqual((r.montant_brut, r.arrivee), (Decimal("345.98"), date(2025, 3, 7)))
+
+        booking = ("Type/Type de transaction,Numéro de référence,Date d'arrivée,Date de départ,Statut de la réservation,Montant brut,"
+                   "Taxe de séjour,Commission,Frais de service de paiement,Date du versement\n"
+                   "Réservation,5809964310,2025-09-06,2025-09-07,Annulée,67.22,0.00,-10.08,-0.92,2025-09-08\n"
+                   "Réservation,5809964311,2025-09-10,2025-09-11,Annulée,0.00,0.00,0.00,0.00,2025-09-12\n")
+        self.importer(booking)
+        self.assertFalse(ReservationLCD.objects.get(reference="5809964310").annulee)
+        self.assertTrue(ReservationLCD.objects.get(reference="5809964311").annulee)
+        septembre = lcd.suivi_annuel(self.lot, 2025)[8]
+        self.assertEqual((septembre["brut"], septembre["nuits"]), (Decimal("67.22"), 1))
+
+    def test_import_airbnb_enregistre_dans_excel(self):
+        """Export Airbnb (mois/jour) ouvert puis enregistré en .xlsx par Excel en français : dates remises à l'endroit."""
+        import io
+        from datetime import datetime
+        from openpyxl import Workbook
+        from . import lcd
+        from .models import ReservationLCD
+        classeur = Workbook()
+        feuille = classeur.active
+        feuille.append(["Date", "Type", "Code de confirmation", "Date de début", "Date de fin", "Nuits", "Revenus bruts", "Frais de service"])
+        # Excel a converti « 01/12/2025 » (12 janvier) en 1er décembre ; « 01/14/2025 » est resté du texte.
+        feuille.append([datetime(2025, 1, 15), "Réservation", "HMJANV", datetime(2025, 12, 1), "01/14/2025", 2, 150, 20])
+        fichier = io.BytesIO()
+        classeur.save(fichier)
+        fichier.seek(0)
+        lcd.importer(self.lot, fichier, "airbnb.xlsx")
+        r = ReservationLCD.objects.get(reference="HMJANV")
+        self.assertEqual((r.arrivee, r.depart, r.date_versement), (date(2025, 1, 12), date(2025, 1, 14), date(2025, 1, 15)))
+
     def test_import_booking_et_airbnb_sans_doublon(self):
         from .models import ParametresLCD, ReservationLCD
         booking = ("Type,Reference number,Check-in,Checkout,Guest name,Reservation status,Currency,Payment status,Tourism tax,Amount,Commission,Payments Service Fee,Net,Payout date\n"
