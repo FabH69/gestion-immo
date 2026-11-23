@@ -4519,6 +4519,157 @@ class FacturesAjouterRecurrentesTests(TestCase):
         self.assertEqual((p.fournisseur, p.ligne, p.preremplie), ("Foncia", "6", True))  # la règle l'emporte, reste à vérifier
 
 
+class MaMaisonTests(TestCase):
+    """Page « Ma maison » : dépenses de la résidence principale hors comptabilité locative, entretiens à prévoir."""
+
+    def setUp(self):
+        from .models import PieceComptable
+
+        self.client.force_login(User.objects.create_superuser("admin", "a@example.com", "x"))
+        self.moi = Proprietaire.objects.create(nom="Fabien")
+        commun = {"adresse": "1 rue", "code_postal": "69000", "ville": "Lyon"}
+        self.maison = Bien.objects.create(proprietaire=self.moi, nom="Maison des Vignes", residence_principale=True,
+                                          regime_fiscal="non_loue", comptabilite="", **commun)
+        self.locatif = Bien.objects.create(proprietaire=self.moi, nom="Studio LMNP", regime_fiscal="lmnp", comptabilite="lmnp", **commun)
+        self.aujourdhui = timezone.localdate()
+        self.t = self.aujourdhui.year
+        PieceComptable.objects.create(bien=self.maison, date=date(self.t - 1, 3, 1), fournisseur="EDF", libelle="Électricité",
+                                      montant=Decimal("1200"), rubrique="electricite")
+        PieceComptable.objects.create(bien=self.maison, date=date(self.t - 2, 3, 1), fournisseur="EDF", libelle="Électricité",
+                                      montant=Decimal("1000"), rubrique="electricite")
+        PieceComptable.objects.create(bien=self.maison, date=date(self.t - 1, 9, 1), fournisseur="DGFiP", libelle="Taxe foncière",
+                                      montant=Decimal("1500"), rubrique="taxe_fonciere")
+        PieceComptable.objects.create(bien=self.locatif, date=date(self.t - 1, 3, 1), fournisseur="EDF", libelle="Studio",
+                                      montant=Decimal("999"), rubrique="electricite")
+
+    def test_page_depenses_par_categorie(self):
+        page = self.client.get("/maison/").content.decode()
+        self.assertIn("Maison des Vignes", page)
+        self.assertIn("Électricité", page)
+        self.assertIn("Taxe foncière", page)
+        self.assertIn("1 200 €", page.replace("\xa0", " ")) if "1 200" in page else self.assertIn("200 €", page)
+        self.assertNotIn("Studio", page)  # les biens loués n'y sont pas
+        from . import maison
+
+        s = maison.synthese(self.maison)
+        elec = next(l for l in s["lignes"] if l["code"] == "electricite")
+        self.assertEqual(elec["valeurs"][1:3], [Decimal("1000"), Decimal("1200")])
+        self.assertEqual(elec["ecart"]["pct"], 20)
+        self.assertEqual(s["totaux"][2], Decimal("2700"))
+
+    def test_sans_maison(self):
+        Bien.objects.filter(pk=self.maison.pk).update(residence_principale=False)
+        page = self.client.get("/maison/").content.decode()
+        self.assertIn("Aucune maison suivie", page)
+        self.assertIn("résidence principale", page)
+
+    def test_menu_argent(self):
+        page = self.client.get("/maison/").content.decode()
+        self.assertIn('href="/maison/"', page)
+
+    def test_hors_comptabilite(self):
+        from . import compta
+        from .models import AnneeCloturee, PieceComptable
+
+        a_classer = PieceComptable.objects.create(bien=self.maison, date=date(self.t, 1, 5), fournisseur="Inconnu", montant=Decimal("10"))
+        self.assertNotIn(a_classer, compta.a_codifier())
+        toutes = self.client.get("/admin/patrimoine/piececomptable/").content.decode()
+        self.assertNotIn("DGFiP", toutes)
+        self.assertIn("Studio", toutes)
+        maison = self.client.get(f"/admin/patrimoine/piececomptable/?bien={self.maison.pk}").content.decode()
+        self.assertIn("DGFiP", maison)
+        self.assertIn("Ma maison", maison)
+        # une année clôturée ne verrouille pas les factures de la maison
+        AnneeCloturee.objects.create(annee=self.t - 1)
+        p = PieceComptable.objects.get(libelle="Taxe foncière")
+        self.assertFalse(p.est_verrouillee())
+        p.full_clean()
+
+    def test_categories_reservees(self):
+        from django.core.exceptions import ValidationError
+
+        from .models import PieceComptable
+
+        with self.assertRaises(ValidationError):
+            PieceComptable(bien=self.maison, date=date(self.t, 1, 1), montant=Decimal("1"), rubrique="commission").full_clean()
+        with self.assertRaises(ValidationError):
+            PieceComptable(bien=self.locatif, date=date(self.t, 1, 1), montant=Decimal("1"), rubrique="chauffage").full_clean()
+        PieceComptable(bien=self.maison, date=date(self.t, 1, 1), montant=Decimal("1"), rubrique="chauffage").full_clean()
+        p = PieceComptable(bien=self.maison, rubrique="eau")
+        self.assertEqual(p.rubrique_libelle, "Eau et assainissement")
+
+    def test_formulaire_facture_categories_de_la_maison(self):
+        page = self.client.get(f"/admin/patrimoine/piececomptable/add/?bien={self.maison.pk}&rubrique=entretien").content.decode()
+        self.assertIn("Chauffage (gaz, fioul, bois)", page)
+        self.assertIn('<option value="entretien" selected>', page)
+        self.assertNotIn('value="commission"', page)
+        reponse = self.client.post(f"/admin/patrimoine/piececomptable/add/?next=/maison/", {
+            "bien": self.maison.pk, "date": f"{self.t}-02-01", "fournisseur": "Ramoneur", "montant": "70", "libelle": "Ramonage",
+            "rubrique": "entretien"})
+        self.assertRedirects(reponse, "/maison/", fetch_redirect_response=False)
+
+    def test_depense_recurrente_maison(self):
+        from .models import DepenseRecurrente
+
+        r = DepenseRecurrente.objects.create(bien=self.maison, fournisseur="EDF", libelle="Mensualité", montant=Decimal("145"),
+                                             rubrique="electricite", frequence="mensuelle", premiere_echeance=date(self.t - 1, 1, 15),
+                                             fin=date(self.t - 1, 3, 15))
+        r.full_clean()
+        self.assertEqual(r.generer(), 3)
+        self.assertEqual(r.pieces.filter(rubrique="electricite").count(), 3)
+
+    def test_entretien_fait_et_facture_preremplie(self):
+        from .models import JournalFait
+
+        rappel = Rappel.objects.create(titre="Vidange de la fosse septique", date=self.aujourdhui, bien=self.maison,
+                                       categorie="travaux", periodicite="quadriennal")
+        page = self.client.get("/maison/").content.decode()
+        self.assertIn("Vidange de la fosse septique", page)
+        self.assertIn(f"/maison/entretien/{rappel.pk}/fait/", page)
+        reponse = self.client.post(f"/maison/entretien/{rappel.pk}/fait/")
+        rappel.refresh_from_db()
+        self.assertEqual(rappel.fait_le, self.aujourdhui)
+        self.assertEqual(rappel.date.year, self.aujourdhui.year + 4)
+        self.assertFalse(rappel.fait)
+        self.assertTrue(JournalFait.objects.filter(titre="Vidange de la fosse septique").exists())
+        self.assertEqual(reponse.status_code, 302)
+        for morceau in ("/admin/patrimoine/piececomptable/add/", f"bien={self.maison.pk}", "rubrique=entretien", "next=%2Fmaison%2F"):
+            self.assertIn(morceau, reponse["Location"])
+
+    def test_suggestions_entretiens_courants(self):
+        from . import maison
+
+        Rappel.objects.create(titre="Ramonage du conduit", date=self.aujourdhui, bien=self.maison)
+        titres = [s["titre"] for s in maison.suggestions(self.maison)]
+        self.assertIn("Vidange de la fosse septique", titres)
+        self.assertNotIn("Ramonage du conduit", titres)
+        url = next(s["url"] for s in maison.suggestions(self.maison) if s["titre"] == "Vidange de la fosse septique")
+        self.assertIn("periodicite=quadriennal", url)
+        page = self.client.get(url).content.decode()
+        self.assertIn('value="Vidange de la fosse septique"', page)
+        self.assertIn('<option value="quadriennal" selected>', page)
+
+    def test_periodicites_longues_et_agenda(self):
+        from .agenda import REPETITION
+
+        r = Rappel.objects.create(titre="PAC", date=date(2026, 4, 18), periodicite="biennal")
+        r.marquer_fait()
+        self.assertEqual(r.date, date(2028, 4, 18))
+        r = Rappel.objects.create(titre="SPANC", date=date(2026, 9, 11), periodicite="decennal")
+        r.marquer_fait()
+        self.assertEqual(r.date, date(2036, 9, 11))
+        self.assertEqual(REPETITION["quadriennal"], "FREQ=YEARLY;INTERVAL=4")
+
+    def test_pret_de_la_maison(self):
+        from .models import Pret
+
+        Pret.objects.create(proprietaire=self.moi, bien=self.maison, banque="Banque", montant=Decimal("200000"), taux=Decimal("1.5"),
+                            duree_mois=240, date_premiere_echeance=date(self.t - 2, 1, 5))
+        page = self.client.get("/maison/").content.decode()
+        self.assertIn("/mois", page)
+        self.assertIn("Capital restant dû", page)
+
+
 class GalerieBiensTests(TestCase):
     def setUp(self):
         self.client.force_login(User.objects.create_superuser("admin", "a@example.com", "x"))
