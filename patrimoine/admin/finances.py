@@ -7,8 +7,8 @@ from django.urls import reverse
 from django.utils import timezone
 from django.utils.html import format_html
 
-from .. import compta
-from ..models import AnneeCloturee, AttestationPret, DeclarationFaite, DepenseRecurrente, PieceComptable, Bien, Pret, Proprietaire
+from .. import amortissements, compta
+from ..models import AnneeCloturee, AttestationPret, DeclarationFaite, DepenseRecurrente, Immobilisation, PieceComptable, Bien, Pret, Proprietaire
 from .communs import euros_liste
 
 
@@ -89,12 +89,37 @@ class PretAdmin(admin.ModelAdmin):
 
         return format_html(
             "{}<br>Échéance habituelle : <strong>{} €</strong> dont {} € hors assurance · Dernière échéance : {} · "
-            "Capital restant dû aujourd'hui : <strong>{} €</strong><br>"
+            "Capital restant dû aujourd'hui : <strong>{} €</strong><br>Assurance appliquée : {}<br>"
             '<a href="{}" target="_blank">Tableau d\'amortissement PDF</a> · <a href="{}">Importer le tableau de la banque (PDF)</a>',
             source, e(obj.mensualite_totale), e(obj.mensualite_hors_assurance), obj.date_derniere_echeance.strftime("%d/%m/%Y"),
-            e(obj.capital_restant_du(timezone.localdate())), reverse("document_amortissement", args=[obj.pk]),
+            e(obj.capital_restant_du(timezone.localdate())), obj.assurance_appliquee, reverse("document_amortissement", args=[obj.pk]),
             reverse("admin:patrimoine_pret_tableau", args=[obj.pk]),
         )
+
+    def get_form(self, request, obj=None, **kwargs):
+        form = super().get_form(request, obj, **kwargs)
+        champ = form.base_fields.get("taux_assurance")
+        if champ:
+            champ.help_text = ("Seulement si la banque calcule l'assurance sur le capital restant dû et l'inclut dans une échéance "
+                               "constante (ex. Caisse d'Épargne) : l'assurance mensuelle ci-dessus est alors remise à 0. "
+                               "Vider ce champ recalcule le prêt sans assurance.")
+        return form
+
+    def save_model(self, request, obj, form, change):
+        """Une seule assurance à la fois : en % du capital restant dû, l'assurance mensuelle fixe est remise à 0 (elle était
+        ignorée et revenait dès que le % était effacé) ; vider le % recalcule le prêt sans assurance."""
+        modifies = set(form.changed_data)
+        if obj.taux_assurance and obj.assurance_mensuelle:
+            obj.assurance_mensuelle = 0
+        elif change and "taux_assurance" in modifies and not obj.taux_assurance and "assurance_mensuelle" not in modifies:
+            obj.assurance_mensuelle = 0
+        super().save_model(request, obj, form, change)
+        if change and modifies & {"taux_assurance", "assurance_mensuelle", "montant", "taux", "duree_mois", "date_premiere_echeance"} \
+                and obj.lignes.exists():
+            messages.warning(request, format_html(
+                "Le tableau de la banque fait foi : l'échéancier et l'assurance ne changent pas avec les conditions. "
+                '<a href="{}">Retirer le tableau de la banque</a> pour recalculer à partir des conditions.',
+                reverse("admin:patrimoine_pret_tableau", args=[obj.pk])))
 
     def get_fieldsets(self, request, obj=None):
         fieldsets = super().get_fieldsets(request, obj)
@@ -427,6 +452,14 @@ class PieceComptableForm(forms.ModelForm):
                 self.fields["rubrique"].label = "catégorie"
             elif bien is not None:
                 self.fields["rubrique"].choices = [("", "---------")] + [(g, list(r)) for g, r in PieceComptable.RUBRIQUES]
+        immo = self.instance.immobilisations.first() if self.instance.pk and self.instance.rubrique == "immobilisation" else None
+        if immo and "immo_categorie" in self.fields:
+            self.initial.setdefault("immo_categorie", immo.categorie)
+            self.initial.setdefault("immo_duree", immo.duree)
+            self.initial.setdefault("immo_mise_en_service", immo.mise_en_service)
+        elif "immo_duree" in self.fields:
+            self.initial.setdefault("immo_categorie", "mobilier")
+            self.initial.setdefault("immo_duree", amortissements.duree_proposee("mobilier"))
         # tableau de codification : chaque ligne ne propose que la codification de son bien (ligne 2072 ou rubrique)
         if self.instance.pk and self.instance.bien_id and "ligne" in self.fields and "rubrique" in self.fields:
             inutile = "ligne" if self.instance.par_rubrique else "rubrique"
@@ -437,6 +470,14 @@ class PieceComptableForm(forms.ModelForm):
 
             self.fields["ligne"].choices = [("", "---------")] + compta.choix_lignes_2044()
             self.fields["ligne"].label = "ligne de la déclaration 2044"
+
+    # « Immobilisation (à amortir) » : de quoi créer la fiche immobilisation de la facture
+    immo_categorie = forms.ChoiceField(label="catégorie de l'immobilisation", required=False,
+                                       choices=[(c, l) for c, l in Immobilisation.Categorie.choices if c != "terrain"])
+    immo_duree = forms.IntegerField(label="durée (ans)", required=False, min_value=1, max_value=100)
+    immo_mise_en_service = forms.DateField(label="mise en service le", required=False,
+                                           widget=forms.DateInput(attrs={"type": "date"}, format="%Y-%m-%d"),
+                                           help_text="Vide : la date de la facture")
 
     OBLIGATOIRES = {"bien": "le bien", "date": "la date de la facture", "montant": "le montant"}
 
@@ -524,10 +565,13 @@ class PieceComptableAdmin(admin.ModelAdmin):
     search_fields = ["fournisseur", "libelle", "bien__nom", "notes", "numero_facture", "siren_fournisseur"]
     fieldsets = [
         (None, {"classes": ["identite-lot"], "fields": ["bien", ("date", "date_paiement"), ("fournisseur", "montant"), ("numero_facture", "siren_fournisseur"), ("montant_ht", "montant_tva"), "libelle", "ligne",
-                                                        ("rubrique", "mois_concerne"), "fichier", "notes"],
+                                                        ("rubrique", "mois_concerne"), "charge_confirmee", "fichier", "notes"],
                 "description": "Revenus fonciers : la facture alimente la ligne choisie de l'annexe 2072 (ou du récapitulatif 2044), "
                                "pour l'année de son paiement ; loyers, forfait de 20 € par local et intérêts d'emprunt sont calculés "
                                "automatiquement. LMNP et société : la facture alimente sa rubrique dans le récapitulatif."}),
+        ("Immobilisation (à amortir)", {"classes": ["immo-facture"], "fields": [("immo_categorie", "immo_duree", "immo_mise_en_service")],
+                                        "description": "La facture devient une fiche immobilisation : seule la dotation de chaque année "
+                                                       "compte en charge (linéaire, au prorata la première année)."}),
     ]
 
     def _codifier(self, request):
@@ -590,8 +634,12 @@ class PieceComptableAdmin(admin.ModelAdmin):
     def get_fieldsets(self, request, obj=None):
         # la fiche ne montre que la codification du bien (les deux pour une nouvelle pièce, le choix du bien les départage)
         regime = (obj.bien.comptabilite if obj and obj.bien_id else "") or _regime(request)
-        retirer = {"foncier": {("rubrique", "mois_concerne")}, "lmnp": {"ligne"}, "societe": {"ligne"}}.get(regime, set())
-        return [(t, {**o, "fields": [c for c in o["fields"] if c not in retirer]}) for t, o in self.fieldsets]
+        retirer = {"foncier": {("rubrique", "mois_concerne"), "charge_confirmee"}, "lmnp": {"ligne"}, "societe": {"ligne"}}.get(regime, set())
+        fieldsets = [(t, {**o, "fields": [c for c in o["fields"] if c not in retirer]}) for t, o in self.fieldsets]
+        # revenus fonciers et maison : pas d'immobilisation
+        if regime == "foncier" or (obj and obj.est_maison):
+            fieldsets = [(t, o) for t, o in fieldsets if t != "Immobilisation (à amortir)"]
+        return fieldsets
 
     def get_urls(self):
         from django.urls import path
@@ -909,6 +957,25 @@ class PieceComptableAdmin(admin.ModelAdmin):
     def save_model(self, request, obj, form, change):
         obj.preremplie = False  # enregistrée par l'utilisateur (fiche ou tableau) : les champs sont considérés vérifiés
         super().save_model(request, obj, form, change)
+        self._suivre_immobilisation(request, obj, form)
+
+    def _suivre_immobilisation(self, request, obj, form):
+        """Classée « Immobilisation (à amortir) » : crée ou met à jour sa fiche immobilisation ; plus de 500 € en charge : alerte."""
+        if not obj.par_rubrique or obj.est_maison:
+            return
+        d = getattr(form, "cleaned_data", {}) or {}
+        immo, cree = amortissements.depuis_facture(obj, d.get("immo_categorie") or None, d.get("immo_duree"), d.get("immo_mise_en_service"))
+        if immo:
+            lien = reverse("admin:patrimoine_immobilisation_change", args=[immo.pk])
+            messages.info(request, format_html("{} <a href=\"{}\">{}</a> · {} ans · dotation {} : {}.",
+                                               "Fiche immobilisation créée :" if cree else "Fiche immobilisation mise à jour :", lien,
+                                               immo.designation, immo.duree, immo.mise_en_service.year,
+                                               euros_liste(amortissements.dotation(immo, immo.mise_en_service.year))))
+        elif obj.rubrique in amortissements.RUBRIQUES_A_VERIFIER and obj.montant and obj.montant > amortissements.SEUIL \
+                and not obj.charge_confirmee:
+            messages.warning(request, f"{euros_liste(obj.montant)} classés en charge : au-delà de {amortissements.SEUIL:.0f} €, un meuble, "
+                                      "un équipement ou des travaux d'amélioration s'amortissent. Choisissez « Immobilisation "
+                                      "(à amortir) », ou cochez « c'est bien une charge » s'il s'agit d'une réparation.")
 
     @admin.display(description="facture du", ordering="date")
     def date_affichee(self, obj):
@@ -1039,6 +1106,7 @@ class PieceComptableAdmin(admin.ModelAdmin):
         if object_id and not regime:
             regime = PieceComptable.objects.filter(pk=object_id).values_list("bien__comptabilite", flat=True).first() or ""
         extra_context = {**(extra_context or {}), "regimes_des_biens": biens, "regime": regime,
+                         "seuil_immobilisation": int(amortissements.SEUIL), "durees_immo": amortissements.DUREES,
                          "libelle_regime": compta.libelle(regime) if regime else "",
                          "lien_factures": reverse("admin:patrimoine_piececomptable_changelist") + (f"?compta={regime}" if regime else "")}
         piece = PieceComptable.objects.filter(pk=object_id).select_related("bien").first() if object_id and str(object_id).isdigit() else None

@@ -924,6 +924,60 @@ class PretAssuranceIncluseTests(TestCase):
         self.assertEqual(pret.capital_restant_du(date(2026, 12, 10)), Decimal("88276.98"))
 
 
+class PretSansAssuranceTests(TestCase):
+    """Vider le % d'assurance sur la fiche du prêt recalcule l'échéance sans assurance (l'ancienne assurance mensuelle fixe,
+    ignorée tant que le % était rempli, ne revient plus)."""
+
+    def setUp(self):
+        from .models import Pret
+        self.client.force_login(User.objects.create_superuser("admin", "", "x"))
+        proprio = Proprietaire.objects.create(nom="X", type=Proprietaire.Type.NOM_PROPRE)
+        self.pret = Pret.objects.create(proprietaire=proprio, banque="CE", montant=Decimal("92233.74"), taux=Decimal("3.13"),
+                                        taux_assurance=Decimal("0.64"), assurance_mensuelle=Decimal("49.19"), duree_mois=240,
+                                        date_premiere_echeance=date(2025, 10, 10))
+
+    def _enregistrer(self, **valeurs):
+        p = self.pret
+        donnees = {"proprietaire": p.proprietaire_id, "banque": p.banque, "reference": "", "type": p.type, "montant": p.montant,
+                   "taux": p.taux, "duree_mois": p.duree_mois, "date_premiere_echeance": "10/10/2025",
+                   "assurance_mensuelle": p.assurance_mensuelle, "taux_assurance": p.taux_assurance or "", "notes": "",
+                   "attestations-TOTAL_FORMS": 0, "attestations-INITIAL_FORMS": 0, "_save": "1", **valeurs}
+        reponse = self.client.post(f"/admin/patrimoine/pret/{p.pk}/change/", donnees, follow=True)
+        self.pret.refresh_from_db()
+        return reponse
+
+    def test_vider_le_pourcentage_recalcule_sans_assurance(self):
+        self.assertEqual(self.pret.mensualite_totale, Decimal("547.80"))
+        self._enregistrer(taux_assurance="")
+        self.assertIsNone(self.pret.taux_assurance)
+        self.assertEqual(self.pret.assurance_mensuelle, 0)
+        self.assertEqual(self.pret.mensualite_totale, self.pret.mensualite_hors_assurance)
+        self.assertEqual(self.pret.mensualite_totale, Decimal("517.55"))
+        self.assertEqual(self.pret.echeancier()[0]["assurance"], 0)
+        self.assertIn("Assurance appliquée : aucune", self.client.get(f"/admin/patrimoine/pret/{self.pret.pk}/change/").content.decode())
+
+    def test_pourcentage_remet_le_montant_fixe_a_zero(self):
+        self._enregistrer()
+        self.assertEqual(self.pret.assurance_mensuelle, 0)
+        self.assertEqual(self.pret.mensualite_totale, Decimal("547.80"))
+
+    def test_montant_fixe_saisi_en_meme_temps_est_garde(self):
+        self._enregistrer(taux_assurance="", assurance_mensuelle="30")
+        self.assertEqual(self.pret.assurance_mensuelle, Decimal("30"))
+        self.assertEqual(self.pret.mensualite_totale, Decimal("547.55"))
+        self.assertIn("montant fixe de 30,00", self.client.get(f"/admin/patrimoine/pret/{self.pret.pk}/change/").content.decode())
+
+    def test_tableau_de_la_banque_prevenu(self):
+        from .models import LigneEcheancier
+        LigneEcheancier.objects.create(pret=self.pret, rang=1, date=date(2025, 10, 10), capital=Decimal("258.03"),
+                                 interets=Decimal("240.58"), assurance=Decimal("49.19"), restant=Decimal("91975.71"))
+        page = self._enregistrer(taux_assurance="").content.decode()
+        self.assertIn("Le tableau de la banque fait foi", page)
+        self.assertIn("Retirer le tableau de la banque", page)
+        fiche = self.client.get(f"/admin/patrimoine/pret/{self.pret.pk}/change/").content.decode()
+        self.assertIn("celle du tableau de la banque (49,19", fiche)
+
+
 class ListesPresentVenduTests(TestCase):
     def test_colonnes_present_et_vendu(self):
         self.client.force_login(User.objects.create_superuser("admin", "", "x"))
@@ -1272,8 +1326,15 @@ class MenusNovembreTests(TestCase):
 
     def test_relocation_annonces_avant_candidatures(self):
         page = self.client.get("/admin/").content.decode()
-        relocation = page.split("Relocation</div>")[1]
+        relocation = page.split("Location</div>")[1]
         self.assertLess(relocation.index("<span>Annonces</span>"), relocation.index("<span>Candidatures</span>"))
+
+    def test_section_location_renommee(self):
+        page = self.client.get("/admin/").content.decode()
+        self.assertIn(">Location</div>", page)
+        self.assertNotIn("Relocation</div>", page)
+        lot = self.client.get(reverse("admin:patrimoine_lot_add")).content.decode()
+        self.assertNotIn("Relocation et", lot)
 
     def test_menu_refondu(self):
         menu = self.client.get("/admin/").content.decode().split('id="barre-laterale"')[1].split("</aside>")[0]
@@ -4758,6 +4819,201 @@ class GalerieBiensTests(TestCase):
         self.lilas.photo = "photos/biens/facade.jpg"
         self.assertTrue(self.lilas.photo_carte.endswith("photos/biens/facade.jpg"))
 
+    def test_colonnes_loyers_cc_et_courte_duree(self):
+        bail = Bail.objects.get()
+        bail.charges = 50
+        bail.save()
+        Lot.objects.filter(designation="B").update(exploitation="courte")
+        # liste : loyers charges comprises et pastille « Courte durée » sur le bien
+        page = self.client.get("/admin/patrimoine/bien/?vue=liste").content.decode()
+        self.assertIn("Loyers CC / mois", page)
+        self.assertIn("650 €", page)
+        self.assertIn("Courte durée", page)
+        # galerie : une colonne par propriétaire, loyers CC, le lot en courte durée n'est pas vacant
+        page = self.client.get("/admin/patrimoine/bien/?vue=galerie").content.decode()
+        self.assertEqual(page.count('class="bloc-proprio"'), 2)
+        self.assertIn("650 €", page)
+        self.assertIn("CC / mois", page)
+        self.assertIn("Courte durée", page)
+        self.assertIn("Loué · 2/2 lots", page)
+        # bien uniquement en courte durée : seulement la pastille, pas « Vacant »
+        Lot.objects.create(bien=Bien.objects.get(nom="Maison"), designation="Maison", exploitation="courte")
+        page = self.client.get(f"/admin/patrimoine/bien/?proprietaire__id__exact={self.perso.pk}").content.decode()
+        self.assertIn("Courte durée", page)
+        self.assertNotIn("Vacant", page)
+
+
+class AmortissementsTests(TestCase):
+    """Immobilisations LMNP et société : une fiche par immobilisation, plan linéaire, alerte au-delà de 500 €, reprise
+    de l'existant, décomposition du prix d'un bien, report des amortissements non déduits (LMNP)."""
+
+    def setUp(self):
+        from .models import ChargeLMNP  # noqa: F401
+
+        self.client.force_login(User.objects.create_superuser("admin", "a@a.fr", "x"))
+        self.foyer = Proprietaire.objects.create(nom="Fabien", type=Proprietaire.Type.NOM_PROPRE)
+        self.h = Proprietaire.objects.create(nom="H-INVEST", type=Proprietaire.Type.SARL_FAMILLE)
+        self.studio = Bien.objects.create(proprietaire=self.foyer, nom="Bellecour", adresse="1 rue", code_postal="69002", ville="Lyon",
+                                          regime_fiscal="lmnp", prix_acquisition=Decimal("145000"), date_acquisition=date(2022, 7, 1))
+        self.lot = Lot.objects.create(bien=self.studio, designation="Studio", type="appartement")
+        self.local = Bien.objects.create(proprietaire=self.h, nom="Local", adresse="2 rue", code_postal="69100", ville="Villeurbanne",
+                                         regime_fiscal="societe_is")
+
+    def _immo(self, **kw):
+        from .models import Immobilisation
+
+        d = {"bien": self.studio, "designation": "Canapé", "categorie": "mobilier", "mise_en_service": date(2026, 3, 12),
+             "valeur": Decimal("1290"), "duree": 7}
+        d.update(kw)
+        return Immobilisation.objects.create(**d)
+
+    def test_plan_lineaire_au_prorata(self):
+        from . import amortissements
+
+        i = self._immo()
+        plan = amortissements.plan(i)
+        self.assertEqual(plan[0], {"annee": 2026, "dotation": Decimal("147.94"), "cumul": Decimal("147.94"),
+                                   "vnc": Decimal("1142.06"), "reprise": False})  # 289 jours sur 360
+        self.assertEqual(plan[1]["dotation"], Decimal("184.29"))
+        self.assertEqual(plan[-1]["annee"], 2033)
+        self.assertEqual(plan[-1]["cumul"], Decimal("1290"))
+        self.assertEqual(i.numero, f"IMM-2026-{i.pk:03d}")
+        # terrain : jamais amorti
+        self.assertEqual(amortissements.plan(self._immo(categorie="terrain", valeur=Decimal("20000"), duree=10)), [])
+        # sortie en cours d'année : dotation jusqu'à la date de sortie, plus rien ensuite
+        s = self._immo(mise_en_service=date(2024, 1, 1), valeur=Decimal("3600"), duree=10, date_sortie=date(2026, 6, 30))
+        self.assertEqual(amortissements.dotation(s, 2026), Decimal("180.00"))
+        self.assertEqual(amortissements.dotation(s, 2027), Decimal("0.00"))
+
+    def test_reprise_du_cumul_du_comptable(self):
+        from . import amortissements
+
+        i = self._immo(designation="Gros œuvre", categorie="gros_oeuvre", mise_en_service=date(2022, 7, 1), valeur=Decimal("58000"),
+                       duree=50, annee_reprise=2026, amortissements_anterieurs=Decimal("4000"))
+        plan = amortissements.plan(i)
+        self.assertTrue(plan[0]["reprise"])
+        self.assertEqual(plan[0]["cumul"], Decimal("4000"))
+        self.assertEqual(amortissements.dotation(i, 2026), Decimal("1160.00"))
+        self.assertEqual(amortissements.situation(i, 2026)["anterieurs"], Decimal("4000"))
+
+    def test_facture_classee_immobilisation_cree_sa_fiche(self):
+        from . import compta, lmnp
+        from .models import Immobilisation, PieceComptable
+
+        r = self.client.post("/admin/patrimoine/piececomptable/add/", {
+            "bien": self.studio.pk, "date": "2026-03-12", "fournisseur": "Maison du Monde", "montant": "1290", "libelle": "Canapé",
+            "rubrique": "immobilisation", "immo_categorie": "mobilier", "immo_duree": "7", "immo_mise_en_service": "2026-03-12"})
+        self.assertEqual(r.status_code, 302, r.content.decode()[:3000])
+        p = PieceComptable.objects.get()
+        i = Immobilisation.objects.get(piece=p)
+        self.assertEqual((i.origine, i.valeur, i.duree, i.bien), ("facture", Decimal("1290"), 7, self.studio))
+        # la facture n'est pas une charge : seule la dotation compte dans le bilan LMNP
+        bloc = lmnp.bilan(2026)["blocs"][0]
+        self.assertNotIn("Immobilisation (à amortir)", [c["libelle"] for c in bloc["charges"]])
+        self.assertEqual(bloc["dotations"], Decimal("147.94"))
+        self.assertIn("non déductibles", str(compta.recapitulatif("lmnp", 2026)["groupes"]))
+        # la fiche de la facture garde la catégorie ; reclassée en charge, la fiche immobilisation disparaît
+        page = self.client.get(f"/admin/patrimoine/piececomptable/{p.pk}/change/").content.decode()
+        self.assertIn("immo-facture", page)
+        self.assertIn('"seuil"', page.replace("seuil = ", '"seuil"'))
+        from .amortissements import depuis_facture
+
+        p.rubrique = "autre"
+        p.save()
+        depuis_facture(p)
+        self.assertFalse(Immobilisation.objects.exists())
+
+    def test_alerte_au_dela_de_500_euros(self):
+        from . import amortissements, dossiers
+        from .models import PieceComptable
+
+        p = PieceComptable.objects.create(bien=self.studio, date=date(2026, 5, 2), fournisseur="Boulanger", libelle="Lave-linge",
+                                          montant=Decimal("649"), rubrique="autre")
+        PieceComptable.objects.create(bien=self.studio, date=date(2026, 5, 3), fournisseur="EDF", montant=Decimal("900"), rubrique="electricite")
+        PieceComptable.objects.create(bien=self.studio, date=date(2026, 5, 4), fournisseur="Leroy", montant=Decimal("120"), rubrique="autre")
+        self.assertEqual(list(amortissements.a_verifier([self.studio], 2026)), [p])
+        page = self.client.get("/comptabilite/dossier/2031/immobilisations/?annee=2026").content.decode()
+        self.assertIn("Boulanger · 649 €", page)
+        carte = dossiers.resume(dossiers.trouver("2031"), 2026)
+        self.assertIn("1 facture de plus de 500 € à vérifier", [e["texte"] for e in carte["etapes"]])
+        p.charge_confirmee = True
+        p.save()
+        self.assertFalse(amortissements.a_verifier([self.studio], 2026).exists())
+        # enregistrer la facture en charge affiche l'avertissement
+        r = self.client.post(f"/admin/patrimoine/piececomptable/{p.pk}/change/", {
+            "bien": self.studio.pk, "date": "2026-05-02", "fournisseur": "Boulanger", "montant": "649", "libelle": "Lave-linge",
+            "rubrique": "autre"}, follow=True)
+        self.assertIn("classés en charge", r.content.decode())
+
+    def test_lmnp_amortissement_plafonne_et_reporte(self):
+        from . import lmnp
+        from .models import ChargeLMNP, ReportAmortissements
+
+        self._immo(mise_en_service=date(2025, 1, 1), valeur=Decimal("7000"), duree=7)  # 1 000 € par an
+        ReportAmortissements.objects.create(dossier="2031", annee=2025, montant=Decimal("300"))
+        # 2025 : recettes nulles, une charge saisie de 200 € → résultat négatif, rien déduit, tout reporté
+        ChargeLMNP.objects.create(lot=self.lot, annee=2025, categorie="assurance", montant=Decimal("200"))
+        t = lmnp.bilan(2025)["total"]
+        self.assertEqual((t["report_debut"], t["amort_deduit"], t["amort_reporte"]), (Decimal("300"), Decimal("0"), Decimal("1300")))
+        # 2026 : le report de 2025 arrive au début de l'année
+        t = lmnp.bilan(2026)["total"]
+        self.assertEqual(t["report_debut"], Decimal("1300"))
+        self.assertEqual(t["amort_reporte"], Decimal("2300"))
+
+    def test_pages_registre_pdf_fiche_et_societe(self):
+        from . import dossiers
+
+        i = self._immo()
+        self._immo(bien=self.local, designation="Climatisation", categorie="installations", valeur=Decimal("6000"), duree=10,
+                   mise_en_service=date(2026, 1, 1))
+        page = self.client.get("/comptabilite/dossier/2031/immobilisations/?annee=2026").content.decode()
+        for texte in ("Registre des immobilisations", "Canapé", "147,94", "Ce qui va dans la 2031", "Reprendre l'existant"):
+            self.assertIn(texte, page)
+        self.assertNotIn("Climatisation", page)
+        pdf = self.client.get("/comptabilite/dossier/2031/immobilisations/?annee=2026&format=pdf")
+        self.assertEqual(pdf["Content-Type"], "application/pdf")
+        fiche = self.client.get(f"/admin/patrimoine/immobilisation/{i.pk}/change/").content.decode()
+        self.assertIn("Plan d'amortissement", fiche)
+        self.assertIn("184,29", fiche)
+        code = f"societe-{self.h.pk}"
+        self.assertIn("Climatisation", self.client.get(f"/comptabilite/dossier/{code}/immobilisations/?annee=2026").content.decode())
+        lignes, _ = dossiers.apercu(dossiers.trouver(code), 2026)
+        self.assertIn(("Dotations aux amortissements", Decimal("600.00"), False), lignes)
+        self.assertIn("Immobilisations", [o["libelle"] for o in dossiers.onglets(dossiers.trouver("2031"), "accueil", 2026)])
+        self.assertEqual(self.client.get("/comptabilite/dossier/2044/immobilisations/").status_code, 404)
+
+    def test_reprise_et_decomposition(self):
+        from .models import Immobilisation, ReportAmortissements
+
+        r = self.client.post("/comptabilite/dossier/2031/immobilisations/reprise/", {
+            "bien": self.studio.pk, "annee_reprise": "2026", "report": "2 340,00",
+            "form-TOTAL_FORMS": "2", "form-INITIAL_FORMS": "0", "form-MIN_NUM_FORMS": "0", "form-MAX_NUM_FORMS": "1000",
+            "form-0-designation": "Mobilier d'origine", "form-0-categorie": "mobilier", "form-0-mise_en_service": "2022-07-01",
+            "form-0-valeur": "6000", "form-0-duree": "7", "form-0-amortissements_anterieurs": "2999.99",
+            "collage": "Désignation\tCatégorie\tDate\tValeur\tDurée\tCumul\nCuisine\tAgencements\t15/03/2024\t8 400,00\t10\t1 507,33\n"})
+        self.assertEqual(r.status_code, 302)
+        cuisine = Immobilisation.objects.get(designation="Cuisine")
+        self.assertEqual((cuisine.categorie, cuisine.annee_reprise, cuisine.amortissements_anterieurs), ("agencements", 2026, Decimal("1507.33")))
+        self.assertEqual(ReportAmortissements.objects.get().montant, Decimal("2340"))
+        controle = self.client.get("/comptabilite/dossier/2031/immobilisations/reprise/").content.decode()
+        self.assertIn("Contrôle des immobilisations reprises", controle)
+        # décomposition : 5 composants (terrain non amorti) + le mobilier
+        donnees = {"bien": self.studio.pk, "prix": "145 000", "mise_en_service": "2022-07-01", "frais_mode": "charge", "mobilier": "6000",
+                   "duree_mobilier": "7", "part_terrain": "15", "duree_terrain": "0", "part_gros_oeuvre": "40", "duree_gros_oeuvre": "50",
+                   "part_facade": "10", "duree_facade": "25", "part_installations": "15", "duree_installations": "20",
+                   "part_agencements": "20", "duree_agencements": "12"}
+        self.client.post("/comptabilite/dossier/2031/immobilisations/decomposer/", donnees)
+        creees = Immobilisation.objects.filter(origine="decomposition")
+        self.assertEqual(creees.count(), 6)
+        self.assertEqual(sum(i.valeur for i in creees), Decimal("151000"))
+        self.assertEqual(creees.get(categorie="terrain").duree, 0)
+        # une deuxième fois : refusée sans « remplacer »
+        self.client.post("/comptabilite/dossier/2031/immobilisations/decomposer/", donnees)
+        self.assertEqual(Immobilisation.objects.filter(origine="decomposition").count(), 6)
+        self.client.post("/comptabilite/dossier/2031/immobilisations/decomposer/", {**donnees, "part_terrain": "20", "part_agencements": "15",
+                                                                                    "remplacer": "on"})
+        self.assertEqual(Immobilisation.objects.get(categorie="terrain", origine="decomposition").valeur, Decimal("29000"))
+
 
 class DeclarationRevenusTests(TestCase):
     """Aide à la déclaration de revenus : cases 2042 (4BA à 4BE) depuis la 2044 et les 2072 (part du foyer), cases
@@ -4823,8 +5079,8 @@ class DeclarationRevenusTests(TestCase):
         t = dr.aide(2025)
         par_annee = {l["origine"]: l for l in t["deficits_fonciers"]["lignes"]}
         self.assertEqual(t["deficits_fonciers"]["total_a"], 4400)
-        self.assertIn({"code": "4BD", "libelle": "Déficits antérieurs non encore imputés", "montant": Decimal("4400"),
-                       "origine": "2044 ligne 451", "formulaire": "2042"}, t["cases_foncier"])
+        case = next(c for c in t["cases_foncier"] if c["code"] == "4BD")
+        self.assertEqual((case["montant"], case["origine"], case["ancre"]), (Decimal("4400"), "2044 ligne 451", "deficits-foncier"))
         self.assertEqual((par_annee[2015]["b"], par_annee[2016]["b"], par_annee[2020]["b"]), (400, 1000, 1100))
         self.assertEqual(par_annee[2020]["c"], 1900)
         # année suivante : calculée à partir de la saisie au 31/12/2024 (2015 et 2016 épuisés)
@@ -4873,3 +5129,20 @@ class DeclarationRevenusTests(TestCase):
         self.assertEqual(DeficitReporte.objects.get().montant, Decimal("1250.50"))
         self.assertIn("/comptabilite/ma-declaration-de-revenus/", self.client.get("/admin/").content.decode())
         self.assertContains(self.client.get("/comptabilite/declarations/?annee=2025"), "Ma déclaration de revenus (cases 2042)")
+
+    def test_detail_des_montants(self):
+        from . import declaration_revenus as dr
+
+        dr.enregistrer_stock("foncier", 2023, {2020: Decimal("900")})
+        page = self.client.get("/comptabilite/ma-declaration-de-revenus/detail/?annee=2025").content.decode()
+        for texte in ("Détail des montants – revenus 2025", 'id="foncier-resultat"', 'id="deficits-foncier"',
+                      "ligne R1 de la 2072 × 50 %", "Taxe foncière", "Chaudière", "rénovation énergétique",
+                      "Forfait 20 € × 2 locaux", "Pollionnay", "Gestion", "case 4BC = 720",
+                      "montants restant au 31/12/2023", "<b>2024</b> (calculé par l'appli)"):
+            self.assertIn(texte, page)
+        # chaque case de la page principale mène à son détail
+        principale = self.client.get("/comptabilite/ma-declaration-de-revenus/?annee=2025").content.decode()
+        self.assertIn("/comptabilite/ma-declaration-de-revenus/detail/?annee=2025#foncier-resultat", principale)
+        self.assertIn("Détail des montants", principale)
+        h = dr.historique_deficits("foncier", 2025)
+        self.assertEqual((h["ref"], h["depart"], [e["annee"] for e in h["etapes"]]), (2023, [(2020, Decimal("900"))], [2024]))

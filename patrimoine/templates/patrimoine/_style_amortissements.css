@@ -1,0 +1,23 @@
+.alerte-a { border-radius: 12px; padding: 12px 16px; margin: 0 0 16px; background: var(--orange-c); color: var(--orange); }
+.alerte-a b { font-weight: 700; } .alerte-a a { color: inherit; text-decoration: underline; }
+.info-a { border-radius: 12px; padding: 10px 14px; margin: 0 0 14px; background: var(--darkened-bg); border: 1px solid var(--border-color); font-size: .88rem; }
+.kpi-a { display: grid; grid-template-columns: repeat(4, minmax(0,1fr)); gap: 12px; margin: 0 0 16px; }
+.kpi-a div { border: 1px solid var(--border-color); border-radius: 12px; padding: 10px 14px; background: var(--body-bg); }
+.kpi-a span { display: block; font-size: .78rem; color: var(--body-quiet-color); } .kpi-a b { font-size: 1.2rem; }
+.tag-a { font-size: .72rem; padding: 1px 7px; border-radius: 999px; background: var(--darkened-bg); border: 1px solid var(--border-color); white-space: nowrap; color: var(--body-fg); }
+table.liste-d tr.tot td { font-weight: 700; border-top: 2px solid var(--border-color); }
+table.liste-d tr.cour td { background: var(--selected-bg); font-weight: 600; }
+table.liste-d tr.passe td, table.liste-d tr.sortie td { color: var(--body-quiet-color); }
+table.liste-d input, table.liste-d select, .champ-a { font: inherit; padding: 5px 7px; border: 1px solid var(--border-color); border-radius: 8px; background: var(--body-bg); color: var(--body-fg); box-sizing: border-box; max-width: 100%; }
+.grille-a { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px 14px; }
+.grille-a label { display: block; font-size: .78rem; color: var(--body-quiet-color); margin-bottom: 3px; font-weight: 600; }
+.grille-a .champ-a { width: 100%; }
+.boutons-a { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; align-items: center; }
+.defile-a { overflow-x: auto; }
+.cartes-a { display: none; }
+.cartes-a .c { border: 1px solid var(--border-color); border-radius: 12px; padding: 10px 12px; margin-bottom: 8px; font-size: .88rem; }
+.cartes-a .c .l { display: flex; justify-content: space-between; gap: 8px; padding: 2px 0; }
+@media (max-width: 767px) {
+  .kpi-a { grid-template-columns: 1fr 1fr; } .grille-a { grid-template-columns: 1fr; }
+  .table-large { display: none; } .cartes-a { display: block; }
+}

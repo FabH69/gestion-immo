@@ -180,6 +180,12 @@ class PagesPubliquesTests(TestCase):
         rep = self.client.get(reverse("admin:index"))
         self.assertContains(rep, reverse("simulateurs:frais-de-notaire"))
 
+    def test_mon_espace_avant_les_simulateurs(self):
+        self.client.force_login(User.objects.create_superuser("fabien", "f@example.com", "x"))
+        nav = self.client.get(reverse("simulateurs:accueil")).content.decode().split("<nav>")[1].split("</nav>")[0]
+        self.assertLess(nav.index("Mon espace"), nav.index("Investissement locatif"))
+        self.assertLess(nav.index("Investissement locatif"), nav.index("Mes simulations"))
+
 
 # =====================================================================================================================
 # Module investisseur

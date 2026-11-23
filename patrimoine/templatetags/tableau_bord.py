@@ -183,7 +183,7 @@ def _menu():
              [("Virements reçus", a("versement")), ("Relances d'impayés", r("relances_impayes")), ("Révisions de loyer", a("revisionloyer")),
               ("Dépôts de garantie", a("mouvementdepot"))]),
         ]),
-        ("Relocation", [
+        ("Location", [
             ("annonces", "Annonces", a("annonce"), [a("annonce")], []),
             ("candidatures", "Candidatures", a("candidature"), [a("candidature")], []),
             ("cles", "Changements de locataire", a("changementlocataire"), [a("changementlocataire")], []),

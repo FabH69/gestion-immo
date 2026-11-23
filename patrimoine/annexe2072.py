@@ -135,7 +135,7 @@ def colonne(bien, annee):
     nb_locaux = bien.lots.filter(Q(vendu=False) | Q(date_vente__year__gte=annee)).count()
     if nb_locaux:
         v["7"] = FORFAIT_PAR_LOCAL * nb_locaux
-        detail["7"].append((f"Forfait 20 € × {nb_locaux} local{'aux' if nb_locaux > 1 else ''}", v["7"], None))
+        detail["7"].append((f"Forfait 20 € × {nb_locaux} {'locaux' if nb_locaux > 1 else 'local'}", v["7"], None))
 
     # ligne 17 : intérêts et assurance des prêts rattachés au bien
     for pret in Pret.objects.filter(bien=bien):

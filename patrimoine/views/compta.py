@@ -348,3 +348,14 @@ def declaration_revenus(request):
                 "origines_saisie": list(range(annee - dr.DUREE_REPORT, annee))}
     return render(request, "patrimoine/declaration_revenus.html",
                   {**admin.site.each_context(request), **contexte, "title": f"Ma déclaration de revenus {annee}"})
+
+
+@staff_member_required
+def declaration_revenus_detail(request):
+    """Ma déclaration de revenus › Détail des montants : chaque case, ses lignes, ses immeubles et ses pièces."""
+    from .. import declaration_revenus as dr
+
+    annee = annee_fiscale(request)
+    return render(request, "patrimoine/declaration_revenus_detail.html",
+                  {**admin.site.each_context(request), **dr.detail(annee), "annee": annee, "annees": _annees(),
+                   "title": f"Détail des montants – revenus {annee}"})
