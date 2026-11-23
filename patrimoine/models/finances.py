@@ -400,6 +400,7 @@ class PieceComptable(models.Model):
         ("Prêt", [("pret", "Rbt prêt (capital)"), ("interets_pret", "Intérêts d'emprunt"),
                   ("assurance_pret", "Assurance et frais de prêt")]),
         ("Autre", [("autre", "Autre")]),
+        ("Immobilisations", [("immobilisation", "Immobilisation (à amortir)")]),
     ]
     LIBELLES_RUBRIQUES = {code: libelle for _, rubriques in RUBRIQUES for code, libelle in rubriques}
 
@@ -441,6 +442,8 @@ class PieceComptable(models.Model):
     fichier = models.FileField("facture (PDF, photo ou XML)", upload_to=_chemin_facture, storage=stockage_prive, blank=True,
                                validators=[FileExtensionValidator(["pdf", "jpg", "jpeg", "png", "heic", "xml"])])
     notes = models.TextField(blank=True)
+    charge_confirmee = models.BooleanField("c'est bien une charge (pas une immobilisation)", default=False,
+                                           help_text="Plus de 500 € mais réparation ou entretien : plus d'alerte « à amortir ? »")
     recurrence = models.ForeignKey("DepenseRecurrente", null=True, blank=True, on_delete=models.SET_NULL, related_name="pieces",
                                    editable=False, verbose_name="dépense récurrente",
                                    help_text="Créée automatiquement par cette dépense récurrente")

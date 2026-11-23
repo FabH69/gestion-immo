@@ -82,3 +82,4 @@ from .finances import (  # noqa: F401
     PretAdmin,
 )
 from .outils import ModeleDocumentAdmin, ParametresMailAdmin, RappelAdmin, SiteUtileAdmin  # noqa: F401
+from .immobilisations import ImmobilisationAdmin, ReportAmortissementsAdmin  # noqa: F401
