@@ -3806,10 +3806,27 @@ class RegimesFiscauxTests(TestCase):
         PieceComptable.objects.create(bien=a, date=date(2025, 9, 17), fournisseur="Foncia", libelle="Régul", montant=Decimal("-81.81"), ligne="14")
         PieceComptable.objects.create(bien=a, date=date(2025, 3, 1), fournisseur="Foncia", libelle="Appel T1", montant=Decimal("500"), ligne="13")
         page = self.client.get(f"/comptabilite/2072/?sci={self.sci.pk}&annee=2025").content.decode()
-        # le détail montre le montant saisi (−81,81 €) et explique qu'il est retranché ; la ligne 14 reste positive (cerfa)
-        self.assertRegex(page, r"(?s)▸</button>14</td>.*?Foncia – Régul</a>.*?avoir saisi en négatif : 81,81\xa0€ à retrancher.*?−81,81\xa0€")
+        # la ligne 14 reste positive (cerfa) et le détail montre le même signe (81,81 €) : la somme du détail donne la ligne ;
+        # le badge rappelle l'avoir saisi en négatif, une sous-ligne explique l'arrondi 81,81 € → 82 €
+        self.assertRegex(page, r"(?s)▸</button>14</td>.*?Foncia – Régul</a>.*?avoir saisi en négatif \(−81,81\xa0€\) : compté 81,81\xa0€, que la ligne retranche"
+                               r".*?<td class=\"montant\">81,81\xa0€</td>.*?Somme du détail, arrondie.*?81,81\xa0€ → 82\xa0€")
+        self.assertNotRegex(page, r"(?s)▸</button>14</td>.*?<td class=\"montant\">−81,81")
         self.assertRegex(page, r"(?s)>14</td>.*?<td class=\"montant\">82\xa0€</td>")
         self.assertRegex(page, r"(?s)>16</td>.*?<td class=\"montant\">418\xa0€</td>")  # 500 − 82
+        # même chose sur le récapitulatif 2044 (ligne 230) d'un bien au foncier
+        n = self._bien(self.foyer, "Pollionnay", regime_fiscal="nu")
+        PieceComptable.objects.create(bien=n, date=date(2025, 9, 17), fournisseur="Foncia", libelle="Régul 2044", montant=Decimal("-81.81"), ligne="14")
+        page = self.client.get("/comptabilite/2044/?annee=2025").content.decode()
+        self.assertRegex(page, r"(?s)▸</button>230</td>.*?Régul 2044</a>.*?compté 81,81\xa0€.*?>81,81\xa0€</td>.*?81,81\xa0€ → 82\xa0€")
+        self.assertNotIn(">−81,81", page)  # seul le badge garde le signe saisi
+
+    def test_detail_sans_centimes_pas_de_ligne_d_arrondi(self):
+        from .models import PieceComptable
+
+        a = self._bien(self.sci, "Vaugneray")
+        PieceComptable.objects.create(bien=a, date=date(2025, 3, 1), fournisseur="Foncia", libelle="Appel T1", montant=Decimal("500"), ligne="13")
+        page = self.client.get(f"/comptabilite/2072/?sci={self.sci.pk}&annee=2025").content.decode()
+        self.assertNotIn("Somme du détail", page)
 
     def test_montants_negatifs_dans_toutes_les_declarations(self):
         """Avoirs saisis en négatif : signe gardé dans les détails et les sous-totaux, effet juste sur les totaux."""
