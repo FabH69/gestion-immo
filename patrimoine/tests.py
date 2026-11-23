@@ -84,6 +84,44 @@ class EtatLoyersTests(TestCase):
         self.assertEqual(etat["total"]["charges"], Decimal("100"))
         self.assertEqual(loyers_encaisses(2026)["total"]["mois"][0], Decimal("1100"))
 
+    def test_vue_loyers_regles_au_mois_du_loyer(self):
+        from .etats import loyers_encaisses
+
+        etat = loyers_encaisses(2025, vue="regles")
+        self.assertEqual(etat["vue"], "regles")
+        # le loyer de décembre, payé le 4 janvier 2026, reste en décembre 2025
+        self.assertEqual(etat["total"]["mois"][10], Decimal("1100"))
+        self.assertEqual(etat["total"]["mois"][11], Decimal("1100"))
+        self.assertEqual(etat["total"]["total"], Decimal("2200"))
+        self.assertEqual(loyers_encaisses(2026, vue="regles")["total"]["total"], 0)
+        # la vue encaissements (celle de la déclaration) ne change pas
+        self.assertEqual(loyers_encaisses(2025)["total"]["total"], Decimal("1100"))
+
+    def test_virement_de_deux_mois_reparti_sur_les_deux_loyers(self):
+        from .etats import loyers_encaisses
+
+        lot = Lot.objects.create(bien=Bien.objects.get(nom="Bien SCI A"), designation="Garage")
+        bail = Bail.objects.create(lot=lot, type=Bail.Type.NU, date_debut=date(2025, 1, 1), loyer_hc=Decimal("65"))
+        for mois in (1, 2):
+            e = Echeance.objects.create(bail=bail, periode=date(2025, mois, 1), loyer_hc=Decimal("65"), date_exigibilite=date(2025, mois, 1))
+            Paiement.objects.create(echeance=e, date=date(2025, 1, 10), montant=Decimal("65"))  # un seul virement de 130 €
+
+        def ligne(etat):
+            return next(l for bp in etat["proprietaires"] for bb in bp["biens"] for l in bb["lots"] if l["lot"] == lot)
+
+        self.assertEqual(ligne(loyers_encaisses(2025))["mois"][:2], [Decimal("130"), 0])
+        self.assertEqual(ligne(loyers_encaisses(2025, vue="regles"))["mois"][:2], [Decimal("65"), Decimal("65")])
+        page = self.client.get("/etats/loyers-encaisses/", {"annee": 2025, "vue": "regles"}).content.decode()
+        self.assertIn("Loyers réglés en 2025", page)
+        self.assertIn("&amp;vue=regles", page)
+        self.assertIn("vue=regles&format=csv", page)
+        # le clic sur le montant de février ouvre le loyer de février
+        fevrier = Echeance.objects.get(bail=bail, periode=date(2025, 2, 1))
+        r = self.client.get("/etats/loyers-encaisses/detail/", {"lot": lot.pk, "annee": 2025, "mois": 2, "vue": "regles"})
+        self.assertRedirects(r, f"/admin/patrimoine/echeance/{fevrier.pk}/change/", fetch_redirect_response=False)
+        r = self.client.get("/etats/loyers-encaisses/", {"annee": 2025, "vue": "regles", "format": "csv"})
+        self.assertIn("loyers-regles-2025", r["Content-Disposition"])
+
     def test_filtre_proprietaire_et_exports(self):
         r = self.client.get("/etats/loyers-encaisses/", {"annee": 2025, "proprietaire": self.sci.pk})
         self.assertEqual(r.status_code, 200)

@@ -5,10 +5,16 @@
 .filtres select { padding: 4px; }
 .etat-scroll { overflow-x: auto; }
 </style>{% endblock %}
-{% block breadcrumbs %}<div class="breadcrumbs"><a href="{% url 'admin:index' %}">Accueil</a> › <a href="{% url 'etat_loyers_encaisses' %}">États</a> › Loyers encaissés</div>{% endblock %}
+{% block breadcrumbs %}<div class="breadcrumbs"><a href="{% url 'admin:index' %}">Accueil</a> › <a href="{% url 'etat_loyers_encaisses' %}">États</a> › {% if vue == 'regles' %}Loyers réglés{% else %}Loyers encaissés{% endif %}</div>{% endblock %}
 {% block content %}
-<p>Montants en euros, par date de paiement réelle. Chaque paiement est réparti entre loyer HC et charges au prorata du loyer qu'il règle. Les mois sans paiement enregistré reprennent <a href="{% url 'admin:patrimoine_encaissementhistorique_changelist' %}">votre ancien suivi</a>.</p>
+{% if vue == 'regles' %}<p>Montants en euros, <strong>au mois du loyer réglé</strong> : un virement qui paie deux mois apparaît sur les deux mois. Les totaux peuvent différer de la vue « Encaissements » (loyer de décembre payé en janvier, par exemple) ; pour la déclaration, c'est la vue « Encaissements » qui compte. Les mois repris de <a href="{% url 'admin:patrimoine_encaissementhistorique_changelist' %}">votre ancien suivi</a> restent au mois d'encaissement.</p>
+{% else %}<p>Montants en euros, par date de paiement réelle. Chaque paiement est réparti entre loyer HC et charges au prorata du loyer qu'il règle. Les mois sans paiement enregistré reprennent <a href="{% url 'admin:patrimoine_encaissementhistorique_changelist' %}">votre ancien suivi</a>.</p>{% endif %}
 <form method="get" class="filtres">
+  <div class="groupe-filtre" role="group" aria-label="Affichage">
+    <a href="?annee={{ annee }}&proprietaire={{ proprietaire.pk|default:'' }}" class="chip{% if vue != 'regles' %} actif{% endif %}" title="Chaque paiement au mois où il est reçu (sert à la déclaration)">Encaissements</a>
+    <a href="?annee={{ annee }}&proprietaire={{ proprietaire.pk|default:'' }}&vue=regles" class="chip{% if vue == 'regles' %} actif{% endif %}" title="Chaque paiement au mois du loyer qu'il règle">Loyers réglés</a>
+  </div>
+  {% if vue == 'regles' %}<input type="hidden" name="vue" value="regles">{% endif %}
   <label>Année {% boutons_annees annees annee %}<input type="hidden" name="annee" value="{{ annee }}"></label>
   <label>Propriétaire
     <select name="proprietaire" onchange="this.form.submit()">
@@ -16,8 +22,8 @@
       {% for p in proprietaires_choix %}<option value="{{ p.pk }}" {% if proprietaire.pk == p.pk %}selected{% endif %}>{{ p.nom }}</option>{% endfor %}
     </select>
   </label>
-  <a class="button" href="?annee={{ annee }}&proprietaire={{ proprietaire.pk|default:'' }}&format=pdf">Télécharger en PDF</a>
-  <a class="button" href="?annee={{ annee }}&proprietaire={{ proprietaire.pk|default:'' }}&format=csv">Télécharger pour Excel</a>
+  <a class="button" href="?annee={{ annee }}&proprietaire={{ proprietaire.pk|default:'' }}{% if vue == 'regles' %}&vue=regles{% endif %}&format=pdf">Télécharger en PDF</a>
+  <a class="button" href="?annee={{ annee }}&proprietaire={{ proprietaire.pk|default:'' }}{% if vue == 'regles' %}&vue=regles{% endif %}&format=csv">Télécharger pour Excel</a>
 </form>
 <div class="etat-scroll">{% include "patrimoine/_tableau_etat.html" %}</div>
 {% endblock %}
