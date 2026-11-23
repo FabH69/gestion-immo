@@ -60,6 +60,7 @@ urlpatterns = [
     path("comptabilite/", views.compta_accueil, name="compta_accueil"),
     path("comptabilite/dossier/<str:code>/", views.dossier_compta, name="dossier_compta"),
     path("comptabilite/declarations/", views.declarations, name="declarations"),
+    path("comptabilite/ma-declaration-de-revenus/", views.declaration_revenus, name="declaration_revenus"),
     path("comptabilite/evolution-des-depenses/", views.evolution_depenses, name="evolution_depenses"),
     path("maison/", views.ma_maison, name="ma_maison"),
     path("maison/entretien/<int:pk>/fait/", views.maison_entretien_fait, name="maison_entretien_fait"),

@@ -4705,3 +4705,119 @@ class GalerieBiensTests(TestCase):
         self.assertTrue(self.lilas.photo_carte.endswith("photos/lot-1/sejour.jpg"))
         self.lilas.photo = "photos/biens/facade.jpg"
         self.assertTrue(self.lilas.photo_carte.endswith("photos/biens/facade.jpg"))
+
+
+class DeclarationRevenusTests(TestCase):
+    """Aide à la déclaration de revenus : cases 2042 (4BA à 4BE) depuis la 2044 et les 2072 (part du foyer), cases
+    2042-C-PRO (5NA, 5NY, 5GA à 5GJ) depuis le bilan LMNP, et report des déficits antérieurs."""
+
+    def setUp(self):
+        from .models import PieceComptable
+
+        self.client.force_login(User.objects.create_superuser("admin", "a@example.com", "x"))
+        self.moi = Proprietaire.objects.create(nom="Fabien", type=Proprietaire.Type.NOM_PROPRE)
+        self.sci = Proprietaire.objects.create(nom="SCI ALFAB", type=Proprietaire.Type.SCI_IR, pourcentage_detention=50)
+        commun = {"adresse": "1 rue", "code_postal": "69000", "ville": "Lyon"}
+        immeuble = Bien.objects.create(proprietaire=self.sci, nom="Immeuble", regime_fiscal="sci_ir", **commun)
+        lot_a, _ = Lot.objects.create(bien=immeuble, designation="A"), Lot.objects.create(bien=immeuble, designation="B")
+        bail = Bail.objects.create(lot=lot_a, type=Bail.Type.NU, date_debut=date(2024, 1, 1), loyer_hc=Decimal("500"), charges=Decimal("50"))
+        for m in (1, 2):
+            Echeance.generer_pour_mois(date(2025, m, 1))
+            Paiement.objects.create(echeance=bail.echeances.get(periode=date(2025, m, 1)), date=date(2025, m, 5), montant=550)
+        PieceComptable.objects.create(bien=immeuble, date=date(2025, 3, 1), libelle="Taxe foncière", montant=Decimal("800"), ligne="12")
+        PieceComptable.objects.create(bien=immeuble, date=date(2025, 4, 1), libelle="Chaudière", montant=Decimal("1200"), ligne="9b")
+        self.pollionnay = Bien.objects.create(proprietaire=self.moi, nom="Pollionnay", regime_fiscal="nu", **commun)
+        PieceComptable.objects.create(bien=self.pollionnay, date=date(2025, 6, 1), libelle="Gestion", montant=Decimal("200"), ligne="6")
+
+    def test_parts_de_sci_et_deficit_dans_la_limite(self):
+        from . import declaration_revenus as dr
+
+        r = dr.resultat_foncier(2025)
+        sci = r["sci"][0]
+        # 2072 : R1 = 1 000 (loyers HC), R3 = 40 + 1 200 + 800 = 2 040, R4 = 0 ; part du foyer 50 %
+        self.assertEqual((sci["111"], sci["112"], sci["112bis"], sci["113"], sci["114"]), (500, 1020, 600, 0, -520))
+        self.assertEqual(r["cases"]["I"], -200)
+        self.assertEqual(r["lignes"]["420"], -720)
+        self.assertEqual((r["lignes"]["431"], r["lignes"]["432"], r["lignes"]["433"], r["lignes"]["434"]), (500, 0, 1220, 600))
+        self.assertEqual(r["plafond"], 11300)  # 10 700 € + travaux de rénovation énergétique
+        self.assertEqual((r["4BA"], r["4BB"], r["4BC"]), (0, 0, 720))
+
+    def test_interets_superieurs_aux_revenus(self):
+        from . import declaration_revenus as dr
+        from .models import AttestationPret, PieceComptable, Pret
+
+        pret = Pret.objects.create(proprietaire=self.moi, bien=self.pollionnay, banque="B", montant=Decimal("100000"),
+                                   taux=Decimal("2"), duree_mois=240, date_premiere_echeance=date(2025, 1, 1))
+        AttestationPret.objects.create(pret=pret, annee=2025, interets=Decimal("3000"))
+        PieceComptable.objects.create(bien=self.pollionnay, date=date(2025, 7, 1), libelle="Toiture", montant=Decimal("14800"), ligne="9")
+        r = dr.resultat_foncier(2025)
+        l = r["lignes"]
+        self.assertEqual((l["431"], l["432"], l["433"]), (500, 3000, 16020))
+        self.assertEqual(r["cas"], "interets")
+        self.assertEqual((l["436"], l["437"], l["438"], l["439"]), (11300, 4720, 2500, 7220))
+        self.assertEqual((r["4BC"], r["4BB"]), (11300, 7220))
+
+    def test_deficits_anterieurs_imputes_sur_les_plus_anciens(self):
+        from . import declaration_revenus as dr
+        from .models import Paiement as P
+
+        # nom propre : 3 240 € de loyers encaissés (− 200 € de gestion − 20 € de forfait − 520 € de la SCI) → bénéfice foncier de 2 500 €
+        lot = Lot.objects.create(bien=self.pollionnay, designation="Maison")
+        bail = Bail.objects.create(lot=lot, type=Bail.Type.NU, date_debut=date(2025, 1, 1), loyer_hc=Decimal("3240"), charges=0)
+        Echeance.generer_pour_mois(date(2025, 1, 1))
+        P.objects.create(echeance=bail.echeances.get(periode=date(2025, 1, 1)), date=date(2025, 1, 5), montant=3240)
+        self.assertEqual(dr.resultat_foncier(2025)["4BA"], 2500)
+        dr.enregistrer_stock("foncier", 2024, {2015: Decimal("400"), 2016: Decimal("1000"), 2020: Decimal("3000")})
+        t = dr.aide(2025)
+        par_annee = {l["origine"]: l for l in t["deficits_fonciers"]["lignes"]}
+        self.assertEqual(t["deficits_fonciers"]["total_a"], 4400)
+        self.assertIn({"code": "4BD", "libelle": "Déficits antérieurs non encore imputés", "montant": Decimal("4400"),
+                       "origine": "2044 ligne 451", "formulaire": "2042"}, t["cases_foncier"])
+        self.assertEqual((par_annee[2015]["b"], par_annee[2016]["b"], par_annee[2020]["b"]), (400, 1000, 1100))
+        self.assertEqual(par_annee[2020]["c"], 1900)
+        # année suivante : calculée à partir de la saisie au 31/12/2024 (2015 et 2016 épuisés)
+        stock, source, ref = dr.stock_au_debut("foncier", 2026)
+        self.assertEqual((stock, source, ref), ({2020: Decimal("1900")}, "calcul", 2024))
+
+    def test_deficit_perime_apres_dix_ans(self):
+        from . import declaration_revenus as dr
+
+        dr.enregistrer_stock("foncier", 2024, {2015: Decimal("400")})
+        t = dr.tableau_deficits("foncier", 2025, Decimal("0"), Decimal("0"))
+        l2015 = next(l for l in t["lignes"] if l["origine"] == 2015)
+        self.assertTrue(l2015["perime"])
+        self.assertEqual((t["total_c"], t["perdu"]), (0, 400))
+        self.assertEqual(dr.stock_au_debut("foncier", 2026)[0], {})
+
+    def test_lmnp_deficit_et_cases_5ga_5gj(self):
+        from . import declaration_revenus as dr
+        from .models import ChargeLMNP
+
+        studio = Bien.objects.create(proprietaire=self.moi, nom="Studio", regime_fiscal="lmnp", adresse="2 rue", code_postal="69000", ville="Lyon")
+        lot = Lot.objects.create(bien=studio, designation="Studio", meuble=True)
+        ChargeLMNP.objects.create(lot=lot, annee=2025, categorie="taxe_fonciere", montant=Decimal("700"))
+        dr.enregistrer_stock("lmnp", 2024, {2015: Decimal("300"), 2024: Decimal("150")})
+        t = dr.aide(2025)
+        codes = {c["code"]: c["montant"] for c in t["cases_lmnp"]}
+        self.assertEqual(codes, {"5NY": 700, "5GA": 300, "5GJ": 150})
+        lignes = {l["origine"]: l for l in t["deficits_lmnp"]["lignes"]}
+        self.assertEqual(lignes[2025]["c"], 700)
+        self.assertEqual(t["deficits_lmnp"]["total_c"], 850)  # 2015 perdu après 2025
+
+    def test_page_saisie_et_menu(self):
+        page = self.client.get("/comptabilite/ma-declaration-de-revenus/?annee=2025").content.decode()
+        for texte in ("Ma déclaration de revenus 2025", "4BC", "Déficit imputable sur le revenu global", "SCI ALFAB", "(50 %)",
+                      "Rubrique 110", "ligne 441", "5GA", "Corriger avec ma dernière déclaration"):
+            self.assertIn(texte, page)
+        r = self.client.post("/comptabilite/ma-declaration-de-revenus/", {"nature": "foncier", "annee": "2025",
+                                                                          "montant_2020": "1 250,50", "montant_2021": ""})
+        self.assertRedirects(r, "/comptabilite/ma-declaration-de-revenus/?annee=2025#deficits-foncier", fetch_redirect_response=False)
+        from .models import DeficitReporte
+
+        d = DeficitReporte.objects.get()
+        self.assertEqual((d.nature, d.au_31_12, d.annee_origine, d.montant), ("foncier", 2024, 2020, Decimal("1250.50")))
+        self.assertContains(self.client.get("/comptabilite/ma-declaration-de-revenus/?annee=2025"), "4BD")
+        r = self.client.post("/comptabilite/ma-declaration-de-revenus/", {"nature": "foncier", "annee": "2025", "montant_2020": "abc"})
+        self.assertEqual(DeficitReporte.objects.get().montant, Decimal("1250.50"))
+        self.assertIn("/comptabilite/ma-declaration-de-revenus/", self.client.get("/admin/").content.decode())
+        self.assertContains(self.client.get("/comptabilite/declarations/?annee=2025"), "Ma déclaration de revenus (cases 2042)")

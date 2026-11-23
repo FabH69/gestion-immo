@@ -30,7 +30,8 @@ a.pill-decl:hover { text-decoration: underline; }
 {% block content_title %}{% endblock %}
 {% block breadcrumbs %}<div class="breadcrumbs"><a href="{% url 'admin:index' %}">Accueil</a> › Comptabilité › Déclarations</div>{% endblock %}
 {% block content %}
-<div class="titre-liste titre-compta"><h1>Déclarations – revenus {{ annee }}</h1></div>
+<div class="titre-liste titre-compta"><h1>Déclarations – revenus {{ annee }}</h1>
+  <ul class="object-tools"><li><a href="{% url 'declaration_revenus' %}?annee={{ annee }}">Ma déclaration de revenus (cases 2042)</a></li></ul></div>
 <div class="barre-compta">{% boutons_annees annees annee "civil" %}</div>
 <p class="aide-compta">Une carte par cerfa. Les étapes se cochent seules à partir de la <a href="{{ lien_saisie }}">saisie</a>. Quand la déclaration est faite aux impôts, cochez « Déclaration effectuée le … » : la saisie de ce cerfa pour {{ annee }} (factures des biens concernés, attestations de leurs prêts) est verrouillée. Décochez en cas de déclaration rectificative. L'année choisie ici est reprise par toutes les pages de comptabilité.</p>
 
