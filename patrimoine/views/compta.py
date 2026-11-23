@@ -1,5 +1,7 @@
 """Comptabilité par régime : récapitulatifs par rubrique (LMNP, société), récapitulatif 2044 et contrôle des factures
 de la conciergerie."""
+from decimal import Decimal, InvalidOperation
+
 from django.contrib import admin, messages
 from django.contrib.admin.views.decorators import staff_member_required
 from django.http import Http404
@@ -309,3 +311,40 @@ def evolution_depenses(request):
                 "biens": biens, **sd.synthese(annees, biens)}
     return render(request, "patrimoine/evolution_depenses.html",
                   {**admin.site.each_context(request), **contexte, "title": "Évolution des dépenses"})
+
+
+@staff_member_required
+def declaration_revenus(request):
+    """Comptabilité › Ma déclaration de revenus : cases de la 2042 et de la 2042-C-PRO à recopier, correspondance avec
+    les lignes de la 2044, des 2072 et du bilan LMNP, et suivi des déficits antérieurs (foncier et LMNP)."""
+    from .. import declaration_revenus as dr
+
+    annee = annee_fiscale(request)
+    if request.method == "POST":
+        annee = int(request.POST.get("annee") or annee)
+        nature = request.POST.get("nature")
+        if nature not in ("foncier", "lmnp"):
+            raise Http404
+        au = annee - 1
+        montants, erreurs = {}, []
+        for origine in range(au - dr.DUREE_REPORT + 1, au + 1):
+            brut = request.POST.get(f"montant_{origine}", "").replace(" ", "").replace(" ", "").replace("€", "").replace(",", ".")
+            if not brut:
+                continue
+            try:
+                montants[origine] = Decimal(brut)
+            except InvalidOperation:
+                erreurs.append(str(origine))
+        if erreurs or any(m < 0 for m in montants.values()):
+            messages.error(request, "Montant illisible ou négatif pour " + (", ".join(erreurs) or "une année")
+                           + " : saisissez un nombre positif, par exemple 1250 ou 1 250,50.")
+        else:
+            dr.enregistrer_stock(nature, au, montants)
+            quoi = "fonciers" if nature == "foncier" else "LMNP"
+            messages.success(request, f"Déficits {quoi} restant à reporter au 31/12/{au} enregistrés ; "
+                                      f"les années suivantes sont recalculées à partir de ces montants.")
+        return redirect(reverse("declaration_revenus") + f"?annee={annee}#deficits-{nature}")
+    contexte = {"annee": annee, "annees": _annees(), **dr.aide(annee),
+                "origines_saisie": list(range(annee - dr.DUREE_REPORT, annee))}
+    return render(request, "patrimoine/declaration_revenus.html",
+                  {**admin.site.each_context(request), **contexte, "title": f"Ma déclaration de revenus {annee}"})

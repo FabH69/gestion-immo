@@ -10,7 +10,9 @@ from urllib.parse import urlencode
 from django.utils import timezone
 
 DUREE_RDV = timedelta(hours=1)
-REPETITION = {"mensuel": "FREQ=MONTHLY", "trimestriel": "FREQ=MONTHLY;INTERVAL=3", "annuel": "FREQ=YEARLY"}
+REPETITION = {"mensuel": "FREQ=MONTHLY", "trimestriel": "FREQ=MONTHLY;INTERVAL=3", "semestriel": "FREQ=MONTHLY;INTERVAL=6",
+              "annuel": "FREQ=YEARLY", "biennal": "FREQ=YEARLY;INTERVAL=2", "quadriennal": "FREQ=YEARLY;INTERVAL=4",
+              "decennal": "FREQ=YEARLY;INTERVAL=10"}
 
 
 def _debut_fin(rappel):

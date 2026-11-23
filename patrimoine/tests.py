@@ -1000,6 +1000,48 @@ class LocationCourteDureeTests(TestCase):
         self.assertEqual((r.montant_brut, r.commission, r.taxe_sejour, r.net),
                          (Decimal("82.00"), Decimal("13.27"), Decimal("1.49"), Decimal("67.24")))
 
+    def test_import_resolution_airbnb_et_annulation_booking_payee(self):
+        """Rien ne manque : dédommagement Airbnb repris, annulation Booking facturée comptée (comme l'Excel de suivi)."""
+        from . import lcd
+        from .models import ReservationLCD
+        airbnb = ("Date,Type,Code de confirmation,Date de début,Date de fin,Nuits,Voyageur,Montant,Frais de service,Revenus bruts,Taxes reversées par Airbnb\n"
+                  "03/17/2025,Versement de résolution,HMXSHK4JQJ,03/07/2025,03/10/2025,3,Capucine,9.98,,9.98,\n"
+                  "03/11/2025,Réservation,HMXSHK4JQJ,03/07/2025,03/10/2025,3,Capucine,282.92,\"53,08\",336.00,\"7,70\"\n"
+                  "03/11/2025,Payout,,,,,,,,,\n")
+        self.assertEqual(self.importer(airbnb)[1:], (1, 0, 1))
+        self.assertEqual(self.importer(airbnb)[1:], (0, 1, 1))  # réimport : le dédommagement n'est pas compté deux fois
+        r = ReservationLCD.objects.get(reference="HMXSHK4JQJ")
+        self.assertEqual((r.montant_brut, r.arrivee), (Decimal("345.98"), date(2025, 3, 7)))
+
+        booking = ("Type/Type de transaction,Numéro de référence,Date d'arrivée,Date de départ,Statut de la réservation,Montant brut,"
+                   "Taxe de séjour,Commission,Frais de service de paiement,Date du versement\n"
+                   "Réservation,5809964310,2025-09-06,2025-09-07,Annulée,67.22,0.00,-10.08,-0.92,2025-09-08\n"
+                   "Réservation,5809964311,2025-09-10,2025-09-11,Annulée,0.00,0.00,0.00,0.00,2025-09-12\n")
+        self.importer(booking)
+        self.assertFalse(ReservationLCD.objects.get(reference="5809964310").annulee)
+        self.assertTrue(ReservationLCD.objects.get(reference="5809964311").annulee)
+        septembre = lcd.suivi_annuel(self.lot, 2025)[8]
+        self.assertEqual((septembre["brut"], septembre["nuits"]), (Decimal("67.22"), 1))
+
+    def test_import_airbnb_enregistre_dans_excel(self):
+        """Export Airbnb (mois/jour) ouvert puis enregistré en .xlsx par Excel en français : dates remises à l'endroit."""
+        import io
+        from datetime import datetime
+        from openpyxl import Workbook
+        from . import lcd
+        from .models import ReservationLCD
+        classeur = Workbook()
+        feuille = classeur.active
+        feuille.append(["Date", "Type", "Code de confirmation", "Date de début", "Date de fin", "Nuits", "Revenus bruts", "Frais de service"])
+        # Excel a converti « 01/12/2025 » (12 janvier) en 1er décembre ; « 01/14/2025 » est resté du texte.
+        feuille.append([datetime(2025, 1, 15), "Réservation", "HMJANV", datetime(2025, 12, 1), "01/14/2025", 2, 150, 20])
+        fichier = io.BytesIO()
+        classeur.save(fichier)
+        fichier.seek(0)
+        lcd.importer(self.lot, fichier, "airbnb.xlsx")
+        r = ReservationLCD.objects.get(reference="HMJANV")
+        self.assertEqual((r.arrivee, r.depart, r.date_versement), (date(2025, 1, 12), date(2025, 1, 14), date(2025, 1, 15)))
+
     def test_import_booking_et_airbnb_sans_doublon(self):
         from .models import ParametresLCD, ReservationLCD
         booking = ("Type,Reference number,Check-in,Checkout,Guest name,Reservation status,Currency,Payment status,Tourism tax,Amount,Commission,Payments Service Fee,Net,Payout date\n"
@@ -1373,6 +1415,60 @@ class LmnpTests(TestCase):
         b = bilan_lot(self.lot, 2026)
         # 2 mois repris (1 350 €) + 10 mois selon le bail (10 x 700 €)
         self.assertEqual(b["total_recettes"], Decimal("8350"))
+
+    def _payer(self, mois, annee=2026, bail=None):
+        bail = bail or self.lot.baux.get()
+        for m in mois:
+            e = Echeance.objects.create(bail=bail, periode=date(annee, m, 1), loyer_hc=650, charges=50,
+                                        date_exigibilite=date(annee, m, 5))
+            Paiement.objects.create(echeance=e, date=date(annee, m, 5), montant=Decimal("700"))
+
+    def test_paiements_completes_par_le_suivi_repris(self):
+        # suivi repris de janvier à septembre, paiements saisis dans l'appli d'octobre à décembre : les 12 mois comptent
+        from .lmnp import bilan_lot
+        from .models import EncaissementHistorique
+        for m in range(1, 10):
+            EncaissementHistorique.objects.create(lot=self.lot, mois=date(2026, m, 1), montant=700, charges=50)
+        self._payer([10, 11, 12])
+        b = bilan_lot(self.lot, 2026)
+        self.assertEqual(b["total_recettes"], Decimal("8400"))
+        self.assertEqual([r["source"] for r in b["recettes"]], ["Paiements enregistrés (3 mois)", "Suivi repris (9 mois)"])
+
+    def test_mois_paye_et_repris_compte_une_seule_fois(self):
+        from .lmnp import bilan_lot
+        from .models import EncaissementHistorique
+        EncaissementHistorique.objects.create(lot=self.lot, mois=date(2026, 10, 1), montant=700, charges=50)
+        self._payer([10])
+        self.assertEqual(bilan_lot(self.lot, 2026)["total_recettes"], Decimal("700"))
+
+    def test_courte_duree_saisies_et_reservations_mois_par_mois(self):
+        # Chasselay : encaissements saisis pour janvier, réservations importées pour mars → les deux comptent
+        from .lmnp import bilan_lot
+        from .models import EncaissementLCD, ReservationLCD
+        bien = Bien.objects.create(proprietaire=self.lot.bien.proprietaire, nom="Chasselay", adresse="1 rue",
+                                   code_postal="69380", ville="Chasselay")
+        lot = Lot.objects.create(bien=bien, designation="Chasselay", meuble=True, lmnp=True, exploitation="courte")
+        EncaissementLCD.objects.create(lot=lot, mois=date(2026, 1, 1), ca=Decimal("900"))
+        ReservationLCD.objects.create(lot=lot, plateforme="airbnb", reference="HM1", arrivee=date(2026, 3, 4),
+                                      depart=date(2026, 3, 6), montant_brut=Decimal("200"))
+        b = bilan_lot(lot, 2026)
+        self.assertEqual(b["total_recettes"], Decimal("1100"))
+
+    def test_courte_duree_garde_les_loyers_du_bail_de_l_annee(self):
+        # logement loué avec un bail jusqu'en juin puis passé en courte durée : les loyers du bail comptent
+        from .lmnp import bilan_lot
+        from .models import EncaissementLCD
+        bail = self.lot.baux.get()
+        bail.date_fin, bail.actif = date(2026, 6, 30), False
+        bail.save()
+        self._payer(range(1, 7))
+        self.lot.exploitation = "courte"
+        self.lot.save()
+        EncaissementLCD.objects.create(lot=self.lot, mois=date(2026, 8, 1), ca=Decimal("1000"))
+        b = bilan_lot(self.lot, 2026)
+        self.assertEqual(b["total_recettes"], Decimal("5200"))
+        page = self.client.get("/lmnp/?annee=2026").content.decode()
+        self.assertIn("Paiements enregistrés (6 mois)", page)
 
 
 class EncaissementHistoriqueEtatTests(TestCase):
@@ -2581,6 +2677,48 @@ class TableauxBanqueEtRappelsTests(TestCase):
         foncier = Bien.objects.create(proprietaire=self.proprio, nom="Nu", adresse="1 rue", code_postal="69000", ville="Lyon",
                                       comptabilite="foncier")
         self.assertIsNone(rappel_cfe(foncier))
+
+    def test_rappel_import_lcd_le_5_du_mois(self):
+        from .rappels import a_faire, rappel_import_lcd
+
+        lot = Lot.objects.create(bien=self.bien, designation="Studio", exploitation="courte")
+        r = rappel_import_lcd(lot, date(2026, 11, 23))
+        self.assertEqual((r.date, r.periodicite, r.prevenir_jours, r.dans_agenda, r.bien), (date(2026, 12, 5), "mensuel", 0, True, self.bien))
+        self.assertIn("Chasselay – Studio", r.titre)
+        self.assertEqual(rappel_import_lcd(lot, date(2026, 12, 3)), None)  # pas de doublon
+        self.assertEqual(rappel_import_lcd(Lot.objects.create(bien=self.bien, designation="T2"), date(2026, 12, 3)), None)  # location classique
+        self.assertEqual(rappel_import_lcd(Lot.objects.create(bien=self.bien, designation="T3", exploitation="courte"),
+                                           date(2026, 12, 5)).date, date(2026, 12, 5))  # le 5 même : ce jour-là
+        self.assertTrue(any(i["titre"] == r.titre for i in a_faire(date(2026, 12, 1))))
+        r.marquer_fait()
+        r.refresh_from_db()
+        self.assertEqual(r.date, date(2027, 1, 5))  # coché : 5 du mois suivant
+        lot.exploitation = "longue"
+        lot.save()
+        rappel_import_lcd(lot)
+        r.refresh_from_db()
+        self.assertFalse(r.actif)  # le lot quitte la courte durée : rappel arrêté
+        lot.exploitation = "courte"
+        lot.save()
+        rappel_import_lcd(lot)
+        r.refresh_from_db()
+        self.assertTrue(r.actif)
+
+    def test_rappel_import_lcd_depuis_la_fiche_lot(self):
+        lot = Lot.objects.create(bien=self.bien, designation="Studio")
+        from .admin.biens import LotAdmin
+        from django.contrib.admin.sites import site
+        from django.contrib.messages.storage.fallback import FallbackStorage
+        from django.test import RequestFactory
+
+        requete = RequestFactory().post("/")
+        requete.user = User.objects.get(username="admin")
+        requete.session = {}
+        requete._messages = FallbackStorage(requete)
+        lot.exploitation = "courte"
+        LotAdmin(Lot, site).save_model(requete, lot, None, True)
+        self.assertTrue(Rappel.objects.filter(bien=self.bien, titre__startswith="Importer les réservations", actif=True).exists())
+        self.assertIn("le 5 de chaque mois", " ".join(str(m) for m in requete._messages))
 
     def test_rubrique_impots_et_taxes(self):
         from .compta import rubrique_de_charge
@@ -4386,3 +4524,307 @@ class FacturesAjouterRecurrentesTests(TestCase):
             self.client.post("/admin/patrimoine/piececomptable/import/", {"bien": self.a.pk, "fichiers": [SimpleUploadedFile("f.pdf", b"%PDF-x")]})
         p = PieceComptable.objects.order_by("-pk").first()
         self.assertEqual((p.fournisseur, p.ligne, p.preremplie), ("Foncia", "6", True))  # la règle l'emporte, reste à vérifier
+
+
+class MaMaisonTests(TestCase):
+    """Page « Ma maison » : dépenses de la résidence principale hors comptabilité locative, entretiens à prévoir."""
+
+    def setUp(self):
+        from .models import PieceComptable
+
+        self.client.force_login(User.objects.create_superuser("admin", "a@example.com", "x"))
+        self.moi = Proprietaire.objects.create(nom="Fabien")
+        commun = {"adresse": "1 rue", "code_postal": "69000", "ville": "Lyon"}
+        self.maison = Bien.objects.create(proprietaire=self.moi, nom="Maison des Vignes", residence_principale=True,
+                                          regime_fiscal="non_loue", comptabilite="", **commun)
+        self.locatif = Bien.objects.create(proprietaire=self.moi, nom="Studio LMNP", regime_fiscal="lmnp", comptabilite="lmnp", **commun)
+        self.aujourdhui = timezone.localdate()
+        self.t = self.aujourdhui.year
+        PieceComptable.objects.create(bien=self.maison, date=date(self.t - 1, 3, 1), fournisseur="EDF", libelle="Électricité",
+                                      montant=Decimal("1200"), rubrique="electricite")
+        PieceComptable.objects.create(bien=self.maison, date=date(self.t - 2, 3, 1), fournisseur="EDF", libelle="Électricité",
+                                      montant=Decimal("1000"), rubrique="electricite")
+        PieceComptable.objects.create(bien=self.maison, date=date(self.t - 1, 9, 1), fournisseur="DGFiP", libelle="Taxe foncière",
+                                      montant=Decimal("1500"), rubrique="taxe_fonciere")
+        PieceComptable.objects.create(bien=self.locatif, date=date(self.t - 1, 3, 1), fournisseur="EDF", libelle="Studio",
+                                      montant=Decimal("999"), rubrique="electricite")
+
+    def test_page_depenses_par_categorie(self):
+        page = self.client.get("/maison/").content.decode()
+        self.assertIn("Maison des Vignes", page)
+        self.assertIn("Électricité", page)
+        self.assertIn("Taxe foncière", page)
+        self.assertIn("1 200 €", page.replace("\xa0", " ")) if "1 200" in page else self.assertIn("200 €", page)
+        self.assertNotIn("Studio", page)  # les biens loués n'y sont pas
+        from . import maison
+
+        s = maison.synthese(self.maison)
+        elec = next(l for l in s["lignes"] if l["code"] == "electricite")
+        self.assertEqual(elec["valeurs"][1:3], [Decimal("1000"), Decimal("1200")])
+        self.assertEqual(elec["ecart"]["pct"], 20)
+        self.assertEqual(s["totaux"][2], Decimal("2700"))
+
+    def test_sans_maison(self):
+        Bien.objects.filter(pk=self.maison.pk).update(residence_principale=False)
+        page = self.client.get("/maison/").content.decode()
+        self.assertIn("Aucune maison suivie", page)
+        self.assertIn("résidence principale", page)
+
+    def test_menu_argent(self):
+        page = self.client.get("/maison/").content.decode()
+        self.assertIn('href="/maison/"', page)
+
+    def test_hors_comptabilite(self):
+        from . import compta
+        from .models import AnneeCloturee, PieceComptable
+
+        a_classer = PieceComptable.objects.create(bien=self.maison, date=date(self.t, 1, 5), fournisseur="Inconnu", montant=Decimal("10"))
+        self.assertNotIn(a_classer, compta.a_codifier())
+        toutes = self.client.get("/admin/patrimoine/piececomptable/").content.decode()
+        self.assertNotIn("DGFiP", toutes)
+        self.assertIn("Studio", toutes)
+        maison = self.client.get(f"/admin/patrimoine/piececomptable/?bien={self.maison.pk}").content.decode()
+        self.assertIn("DGFiP", maison)
+        self.assertIn("Ma maison", maison)
+        # une année clôturée ne verrouille pas les factures de la maison
+        AnneeCloturee.objects.create(annee=self.t - 1)
+        p = PieceComptable.objects.get(libelle="Taxe foncière")
+        self.assertFalse(p.est_verrouillee())
+        p.full_clean()
+
+    def test_categories_reservees(self):
+        from django.core.exceptions import ValidationError
+
+        from .models import PieceComptable
+
+        with self.assertRaises(ValidationError):
+            PieceComptable(bien=self.maison, date=date(self.t, 1, 1), montant=Decimal("1"), rubrique="commission").full_clean()
+        with self.assertRaises(ValidationError):
+            PieceComptable(bien=self.locatif, date=date(self.t, 1, 1), montant=Decimal("1"), rubrique="chauffage").full_clean()
+        PieceComptable(bien=self.maison, date=date(self.t, 1, 1), montant=Decimal("1"), rubrique="chauffage").full_clean()
+        p = PieceComptable(bien=self.maison, rubrique="eau")
+        self.assertEqual(p.rubrique_libelle, "Eau et assainissement")
+
+    def test_formulaire_facture_categories_de_la_maison(self):
+        page = self.client.get(f"/admin/patrimoine/piececomptable/add/?bien={self.maison.pk}&rubrique=entretien").content.decode()
+        self.assertIn("Chauffage (gaz, fioul, bois)", page)
+        self.assertIn('<option value="entretien" selected>', page)
+        self.assertNotIn('value="commission"', page)
+        reponse = self.client.post(f"/admin/patrimoine/piececomptable/add/?next=/maison/", {
+            "bien": self.maison.pk, "date": f"{self.t}-02-01", "fournisseur": "Ramoneur", "montant": "70", "libelle": "Ramonage",
+            "rubrique": "entretien"})
+        self.assertRedirects(reponse, "/maison/", fetch_redirect_response=False)
+
+    def test_depense_recurrente_maison(self):
+        from .models import DepenseRecurrente
+
+        r = DepenseRecurrente.objects.create(bien=self.maison, fournisseur="EDF", libelle="Mensualité", montant=Decimal("145"),
+                                             rubrique="electricite", frequence="mensuelle", premiere_echeance=date(self.t - 1, 1, 15),
+                                             fin=date(self.t - 1, 3, 15))
+        r.full_clean()
+        self.assertEqual(r.generer(), 3)
+        self.assertEqual(r.pieces.filter(rubrique="electricite").count(), 3)
+
+    def test_entretien_fait_et_facture_preremplie(self):
+        from .models import JournalFait
+
+        rappel = Rappel.objects.create(titre="Vidange de la fosse septique", date=self.aujourdhui, bien=self.maison,
+                                       categorie="travaux", periodicite="quadriennal")
+        page = self.client.get("/maison/").content.decode()
+        self.assertIn("Vidange de la fosse septique", page)
+        self.assertIn(f"/maison/entretien/{rappel.pk}/fait/", page)
+        reponse = self.client.post(f"/maison/entretien/{rappel.pk}/fait/")
+        rappel.refresh_from_db()
+        self.assertEqual(rappel.fait_le, self.aujourdhui)
+        self.assertEqual(rappel.date.year, self.aujourdhui.year + 4)
+        self.assertFalse(rappel.fait)
+        self.assertTrue(JournalFait.objects.filter(titre="Vidange de la fosse septique").exists())
+        self.assertEqual(reponse.status_code, 302)
+        for morceau in ("/admin/patrimoine/piececomptable/add/", f"bien={self.maison.pk}", "rubrique=entretien", "next=%2Fmaison%2F"):
+            self.assertIn(morceau, reponse["Location"])
+
+    def test_suggestions_entretiens_courants(self):
+        from . import maison
+
+        Rappel.objects.create(titre="Ramonage du conduit", date=self.aujourdhui, bien=self.maison)
+        titres = [s["titre"] for s in maison.suggestions(self.maison)]
+        self.assertIn("Vidange de la fosse septique", titres)
+        self.assertNotIn("Ramonage du conduit", titres)
+        url = next(s["url"] for s in maison.suggestions(self.maison) if s["titre"] == "Vidange de la fosse septique")
+        self.assertIn("periodicite=quadriennal", url)
+        page = self.client.get(url).content.decode()
+        self.assertIn('value="Vidange de la fosse septique"', page)
+        self.assertIn('<option value="quadriennal" selected>', page)
+
+    def test_periodicites_longues_et_agenda(self):
+        from .agenda import REPETITION
+
+        r = Rappel.objects.create(titre="PAC", date=date(2026, 4, 18), periodicite="biennal")
+        r.marquer_fait()
+        self.assertEqual(r.date, date(2028, 4, 18))
+        r = Rappel.objects.create(titre="SPANC", date=date(2026, 9, 11), periodicite="decennal")
+        r.marquer_fait()
+        self.assertEqual(r.date, date(2036, 9, 11))
+        self.assertEqual(REPETITION["quadriennal"], "FREQ=YEARLY;INTERVAL=4")
+
+    def test_pret_de_la_maison(self):
+        from .models import Pret
+
+        Pret.objects.create(proprietaire=self.moi, bien=self.maison, banque="Banque", montant=Decimal("200000"), taux=Decimal("1.5"),
+                            duree_mois=240, date_premiere_echeance=date(self.t - 2, 1, 5))
+        page = self.client.get("/maison/").content.decode()
+        self.assertIn("/mois", page)
+        self.assertIn("Capital restant dû", page)
+
+
+class GalerieBiensTests(TestCase):
+    def setUp(self):
+        self.client.force_login(User.objects.create_superuser("admin", "a@example.com", "x"))
+        self.sci = Proprietaire.objects.create(nom="SCI Alpha", type=Proprietaire.Type.SCI_IR)
+        self.perso = Proprietaire.objects.create(nom="Nom propre", type=Proprietaire.Type.NOM_PROPRE)
+        self.lilas = Bien.objects.create(proprietaire=self.sci, nom="Lilas", adresse="1 rue", code_postal="69000", ville="Lyon")
+        Bien.objects.create(proprietaire=self.perso, nom="Maison", adresse="2 rue", code_postal="69000", ville="Lyon")
+        lot = Lot.objects.create(bien=self.lilas, designation="A")
+        Lot.objects.create(bien=self.lilas, designation="B")
+        Bail.objects.create(lot=lot, type=Bail.Type.NU, date_debut=date(2025, 1, 1), loyer_hc=600, actif=True)
+
+    def test_liste_par_defaut_puis_galerie_retenue(self):
+        page = self.client.get("/admin/patrimoine/bien/").content.decode()
+        self.assertIn("result_list", page)
+        self.assertNotIn("bloc-proprio", page)
+        page = self.client.get("/admin/patrimoine/bien/?vue=galerie").content.decode()
+        self.assertIn("bloc-proprio", page)
+        self.assertIn("1/2 lots loués", page)
+        self.assertIn("Ajouter une photo", page)
+        # le choix est retenu sans le paramètre, et les filtres de la liste s'appliquent
+        page = self.client.get(f"/admin/patrimoine/bien/?proprietaire__id__exact={self.perso.pk}").content.decode()
+        self.assertIn("bloc-proprio", page)
+        self.assertIn("Maison", page)
+        self.assertNotIn("Lilas", page)
+        page = self.client.get("/admin/patrimoine/bien/?vue=liste").content.decode()
+        self.assertNotIn("bloc-proprio", page)
+
+    def test_photo_carte_reprend_la_photo_du_lot(self):
+        from .models import PhotoLot
+
+        self.assertEqual(self.lilas.photo_carte, "")
+        PhotoLot.objects.create(lot=self.lilas.lots.first(), image="photos/lot-1/sejour.jpg")
+        self.assertTrue(self.lilas.photo_carte.endswith("photos/lot-1/sejour.jpg"))
+        self.lilas.photo = "photos/biens/facade.jpg"
+        self.assertTrue(self.lilas.photo_carte.endswith("photos/biens/facade.jpg"))
+
+
+class DeclarationRevenusTests(TestCase):
+    """Aide à la déclaration de revenus : cases 2042 (4BA à 4BE) depuis la 2044 et les 2072 (part du foyer), cases
+    2042-C-PRO (5NA, 5NY, 5GA à 5GJ) depuis le bilan LMNP, et report des déficits antérieurs."""
+
+    def setUp(self):
+        from .models import PieceComptable
+
+        self.client.force_login(User.objects.create_superuser("admin", "a@example.com", "x"))
+        self.moi = Proprietaire.objects.create(nom="Fabien", type=Proprietaire.Type.NOM_PROPRE)
+        self.sci = Proprietaire.objects.create(nom="SCI ALFAB", type=Proprietaire.Type.SCI_IR, pourcentage_detention=50)
+        commun = {"adresse": "1 rue", "code_postal": "69000", "ville": "Lyon"}
+        immeuble = Bien.objects.create(proprietaire=self.sci, nom="Immeuble", regime_fiscal="sci_ir", **commun)
+        lot_a, _ = Lot.objects.create(bien=immeuble, designation="A"), Lot.objects.create(bien=immeuble, designation="B")
+        bail = Bail.objects.create(lot=lot_a, type=Bail.Type.NU, date_debut=date(2024, 1, 1), loyer_hc=Decimal("500"), charges=Decimal("50"))
+        for m in (1, 2):
+            Echeance.generer_pour_mois(date(2025, m, 1))
+            Paiement.objects.create(echeance=bail.echeances.get(periode=date(2025, m, 1)), date=date(2025, m, 5), montant=550)
+        PieceComptable.objects.create(bien=immeuble, date=date(2025, 3, 1), libelle="Taxe foncière", montant=Decimal("800"), ligne="12")
+        PieceComptable.objects.create(bien=immeuble, date=date(2025, 4, 1), libelle="Chaudière", montant=Decimal("1200"), ligne="9b")
+        self.pollionnay = Bien.objects.create(proprietaire=self.moi, nom="Pollionnay", regime_fiscal="nu", **commun)
+        PieceComptable.objects.create(bien=self.pollionnay, date=date(2025, 6, 1), libelle="Gestion", montant=Decimal("200"), ligne="6")
+
+    def test_parts_de_sci_et_deficit_dans_la_limite(self):
+        from . import declaration_revenus as dr
+
+        r = dr.resultat_foncier(2025)
+        sci = r["sci"][0]
+        # 2072 : R1 = 1 000 (loyers HC), R3 = 40 + 1 200 + 800 = 2 040, R4 = 0 ; part du foyer 50 %
+        self.assertEqual((sci["111"], sci["112"], sci["112bis"], sci["113"], sci["114"]), (500, 1020, 600, 0, -520))
+        self.assertEqual(r["cases"]["I"], -200)
+        self.assertEqual(r["lignes"]["420"], -720)
+        self.assertEqual((r["lignes"]["431"], r["lignes"]["432"], r["lignes"]["433"], r["lignes"]["434"]), (500, 0, 1220, 600))
+        self.assertEqual(r["plafond"], 11300)  # 10 700 € + travaux de rénovation énergétique
+        self.assertEqual((r["4BA"], r["4BB"], r["4BC"]), (0, 0, 720))
+
+    def test_interets_superieurs_aux_revenus(self):
+        from . import declaration_revenus as dr
+        from .models import AttestationPret, PieceComptable, Pret
+
+        pret = Pret.objects.create(proprietaire=self.moi, bien=self.pollionnay, banque="B", montant=Decimal("100000"),
+                                   taux=Decimal("2"), duree_mois=240, date_premiere_echeance=date(2025, 1, 1))
+        AttestationPret.objects.create(pret=pret, annee=2025, interets=Decimal("3000"))
+        PieceComptable.objects.create(bien=self.pollionnay, date=date(2025, 7, 1), libelle="Toiture", montant=Decimal("14800"), ligne="9")
+        r = dr.resultat_foncier(2025)
+        l = r["lignes"]
+        self.assertEqual((l["431"], l["432"], l["433"]), (500, 3000, 16020))
+        self.assertEqual(r["cas"], "interets")
+        self.assertEqual((l["436"], l["437"], l["438"], l["439"]), (11300, 4720, 2500, 7220))
+        self.assertEqual((r["4BC"], r["4BB"]), (11300, 7220))
+
+    def test_deficits_anterieurs_imputes_sur_les_plus_anciens(self):
+        from . import declaration_revenus as dr
+        from .models import Paiement as P
+
+        # nom propre : 3 240 € de loyers encaissés (− 200 € de gestion − 20 € de forfait − 520 € de la SCI) → bénéfice foncier de 2 500 €
+        lot = Lot.objects.create(bien=self.pollionnay, designation="Maison")
+        bail = Bail.objects.create(lot=lot, type=Bail.Type.NU, date_debut=date(2025, 1, 1), loyer_hc=Decimal("3240"), charges=0)
+        Echeance.generer_pour_mois(date(2025, 1, 1))
+        P.objects.create(echeance=bail.echeances.get(periode=date(2025, 1, 1)), date=date(2025, 1, 5), montant=3240)
+        self.assertEqual(dr.resultat_foncier(2025)["4BA"], 2500)
+        dr.enregistrer_stock("foncier", 2024, {2015: Decimal("400"), 2016: Decimal("1000"), 2020: Decimal("3000")})
+        t = dr.aide(2025)
+        par_annee = {l["origine"]: l for l in t["deficits_fonciers"]["lignes"]}
+        self.assertEqual(t["deficits_fonciers"]["total_a"], 4400)
+        self.assertIn({"code": "4BD", "libelle": "Déficits antérieurs non encore imputés", "montant": Decimal("4400"),
+                       "origine": "2044 ligne 451", "formulaire": "2042"}, t["cases_foncier"])
+        self.assertEqual((par_annee[2015]["b"], par_annee[2016]["b"], par_annee[2020]["b"]), (400, 1000, 1100))
+        self.assertEqual(par_annee[2020]["c"], 1900)
+        # année suivante : calculée à partir de la saisie au 31/12/2024 (2015 et 2016 épuisés)
+        stock, source, ref = dr.stock_au_debut("foncier", 2026)
+        self.assertEqual((stock, source, ref), ({2020: Decimal("1900")}, "calcul", 2024))
+
+    def test_deficit_perime_apres_dix_ans(self):
+        from . import declaration_revenus as dr
+
+        dr.enregistrer_stock("foncier", 2024, {2015: Decimal("400")})
+        t = dr.tableau_deficits("foncier", 2025, Decimal("0"), Decimal("0"))
+        l2015 = next(l for l in t["lignes"] if l["origine"] == 2015)
+        self.assertTrue(l2015["perime"])
+        self.assertEqual((t["total_c"], t["perdu"]), (0, 400))
+        self.assertEqual(dr.stock_au_debut("foncier", 2026)[0], {})
+
+    def test_lmnp_deficit_et_cases_5ga_5gj(self):
+        from . import declaration_revenus as dr
+        from .models import ChargeLMNP
+
+        studio = Bien.objects.create(proprietaire=self.moi, nom="Studio", regime_fiscal="lmnp", adresse="2 rue", code_postal="69000", ville="Lyon")
+        lot = Lot.objects.create(bien=studio, designation="Studio", meuble=True)
+        ChargeLMNP.objects.create(lot=lot, annee=2025, categorie="taxe_fonciere", montant=Decimal("700"))
+        dr.enregistrer_stock("lmnp", 2024, {2015: Decimal("300"), 2024: Decimal("150")})
+        t = dr.aide(2025)
+        codes = {c["code"]: c["montant"] for c in t["cases_lmnp"]}
+        self.assertEqual(codes, {"5NY": 700, "5GA": 300, "5GJ": 150})
+        lignes = {l["origine"]: l for l in t["deficits_lmnp"]["lignes"]}
+        self.assertEqual(lignes[2025]["c"], 700)
+        self.assertEqual(t["deficits_lmnp"]["total_c"], 850)  # 2015 perdu après 2025
+
+    def test_page_saisie_et_menu(self):
+        page = self.client.get("/comptabilite/ma-declaration-de-revenus/?annee=2025").content.decode()
+        for texte in ("Ma déclaration de revenus 2025", "4BC", "Déficit imputable sur le revenu global", "SCI ALFAB", "(50 %)",
+                      "Rubrique 110", "ligne 441", "5GA", "Corriger avec ma dernière déclaration"):
+            self.assertIn(texte, page)
+        r = self.client.post("/comptabilite/ma-declaration-de-revenus/", {"nature": "foncier", "annee": "2025",
+                                                                          "montant_2020": "1 250,50", "montant_2021": ""})
+        self.assertRedirects(r, "/comptabilite/ma-declaration-de-revenus/?annee=2025#deficits-foncier", fetch_redirect_response=False)
+        from .models import DeficitReporte
+
+        d = DeficitReporte.objects.get()
+        self.assertEqual((d.nature, d.au_31_12, d.annee_origine, d.montant), ("foncier", 2024, 2020, Decimal("1250.50")))
+        self.assertContains(self.client.get("/comptabilite/ma-declaration-de-revenus/?annee=2025"), "4BD")
+        r = self.client.post("/comptabilite/ma-declaration-de-revenus/", {"nature": "foncier", "annee": "2025", "montant_2020": "abc"})
+        self.assertEqual(DeficitReporte.objects.get().montant, Decimal("1250.50"))
+        self.assertIn("/comptabilite/ma-declaration-de-revenus/", self.client.get("/admin/").content.decode())
+        self.assertContains(self.client.get("/comptabilite/declarations/?annee=2025"), "Ma déclaration de revenus (cases 2042)")

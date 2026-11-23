@@ -36,9 +36,14 @@ class Rappel(models.Model):
         PONCTUEL = "ponctuel", "Une seule fois"
         MENSUEL = "mensuel", "Tous les mois"
         TRIMESTRIEL = "trimestriel", "Tous les trimestres"
+        SEMESTRIEL = "semestriel", "Tous les 6 mois"
         ANNUEL = "annuel", "Tous les ans"
+        BIENNAL = "biennal", "Tous les 2 ans"
+        QUADRIENNAL = "quadriennal", "Tous les 4 ans"
+        DECENNAL = "decennal", "Tous les 10 ans"
 
-    MOIS_PAR_PERIODE = {"mensuel": 1, "trimestriel": 3, "annuel": 12}
+    MOIS_PAR_PERIODE = {"mensuel": 1, "trimestriel": 3, "semestriel": 6, "annuel": 12, "biennal": 24, "quadriennal": 48,
+                        "decennal": 120}
 
     class Categorie(models.TextChoices):
         AG = "ag", "Assemblée générale"
@@ -69,6 +74,8 @@ class Rappel(models.Model):
         help_text="Cochée : le rappel arrive tout seul dans l'agenda du téléphone (ou Google Agenda) abonné depuis "
                   "« À faire › 📅 Mon agenda ». Décochée : il reste seulement dans l'appli.")
     fait = models.BooleanField(default=False)
+    fait_le = models.DateField("dernière fois faite le", null=True, blank=True,
+                               help_text="Rempli par « Fait » : date du dernier entretien (affichée dans « Ma maison »)")
     notes = models.TextField(blank=True)
     dernier_mail = models.DateField("dernier mail envoyé le", null=True, blank=True, editable=False)
 
@@ -109,6 +116,9 @@ class Rappel(models.Model):
 
     def marquer_fait(self):
         """Un rappel périodique passe à l'échéance suivante ; un rappel ponctuel est clos."""
+        from django.utils import timezone
+
+        self.fait_le = timezone.localdate()
         if self.periodicite in self.MOIS_PAR_PERIODE:
             self.date = _ajouter_mois(self.date, self.MOIS_PAR_PERIODE[self.periodicite])
         else:
