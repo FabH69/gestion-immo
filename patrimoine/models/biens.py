@@ -37,9 +37,28 @@ class Proprietaire(models.Model):
     def __str__(self):
         return self.nom
 
+    def save(self, *args, **kwargs):
+        super().save(*args, **kwargs)
+        # une SCI à l'IR (ou à l'IS) impose son régime à tous ses biens : on les réaligne quand son type change
+        aligner_biens_sur_proprietaire(self)
+
     @property
     def adresse_complete(self):
         return "\n".join(filter(None, [self.adresse, f"{self.code_postal} {self.ville}".strip()]))
+
+
+def aligner_biens_sur_proprietaire(proprietaire):
+    """Réenregistre les biens dont le régime ou l'option ne suit pas celui imposé par leur SCI. Renvoie leur nombre."""
+    regime = Bien.REGIME_DU_PROPRIETAIRE.get(proprietaire.type)
+    if not regime:
+        return 0
+    biens = proprietaire.biens.exclude(regime_fiscal=regime, option_fiscale=Bien.OptionFiscale.REEL, regime_a_verifier=False)
+    n = 0
+    for bien in biens:
+        bien.proprietaire = proprietaire
+        bien.save()
+        n += 1
+    return n
 
 
 class Syndic(models.Model):
@@ -140,6 +159,9 @@ class Bien(models.Model):
     COMPTA_DU_REGIME = {"nu": "foncier", "sci_ir": "foncier", "lmnp": "lmnp", "lmp": "lmnp", "societe_ir": "societe",
                         "societe_is": "societe", "non_loue": ""}
     REGIMES_MICRO_POSSIBLE = ("nu", "lmnp", "lmp")
+    # régime imposé par le type du propriétaire : les biens d'une SCI à l'IR suivent la SCI (revenus fonciers, réel, 2072),
+    # ceux d'une SCI à l'IS sont à l'IS ; pas de choix bien par bien
+    REGIME_DU_PROPRIETAIRE = {"sci_ir": "sci_ir", "sci_is": "societe_is"}
 
     regime_fiscal = models.CharField(
         "régime fiscal", max_length=12, choices=RegimeFiscal.choices, blank=True,
@@ -170,6 +192,12 @@ class Bien(models.Model):
     def __str__(self):
         return f"{self.nom} ({self.ville})"
 
+    def regime_impose(self):
+        """Régime fixé par le propriétaire (SCI à l'IR ou à l'IS), sinon chaîne vide."""
+        if not self.proprietaire_id:
+            return ""
+        return self.REGIME_DU_PROPRIETAIRE.get(self.proprietaire.type, "")
+
     def regime_deduit(self):
         """Régime qui correspond à l'ancienne « comptabilité » du bien et au type de son propriétaire."""
         type_proprio = self.proprietaire.type if self.proprietaire_id else ""
@@ -198,11 +226,16 @@ class Bien(models.Model):
             self.regime_fiscal = ""
         if not self.regime_fiscal:
             self.regime_fiscal = self.regime_deduit()
+        impose = self.regime_impose()
+        if impose:
+            self.regime_fiscal = impose
+            self.regime_a_verifier = False  # aucun doute possible : c'est le régime de la SCI
         self.comptabilite = self.COMPTA_DU_REGIME[self.regime_fiscal]
         if self.regime_fiscal not in self.REGIMES_MICRO_POSSIBLE:
             self.option_fiscale = self.OptionFiscale.REEL
         if kwargs.get("update_fields") is not None:
-            kwargs["update_fields"] = set(kwargs["update_fields"]) | {"regime_fiscal", "comptabilite", "option_fiscale"}
+            kwargs["update_fields"] = set(kwargs["update_fields"]) | {"regime_fiscal", "comptabilite", "option_fiscale",
+                                                                      "regime_a_verifier"}
         super().save(*args, **kwargs)
         self._charge = {"regime_fiscal": self.regime_fiscal, "comptabilite": self.comptabilite}
 

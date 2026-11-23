@@ -1,4 +1,5 @@
 """Écrans des propriétaires, syndics, biens et lots."""
+import json
 from decimal import Decimal
 
 from django import forms
@@ -139,10 +140,23 @@ class BienForm(forms.ModelForm):
         super().__init__(*args, **kwargs)
         if "regime_fiscal" in self.fields:
             self.fields["regime_fiscal"].required = True
+        if "proprietaire" in self.fields:
+            # pour la fiche : les SCI dont le régime s'impose aux biens (le script verrouille régime et option)
+            imposes = {str(p.pk): Bien.REGIME_DU_PROPRIETAIRE[p.type]
+                       for p in Proprietaire.objects.filter(type__in=list(Bien.REGIME_DU_PROPRIETAIRE))}
+            widget = self.fields["proprietaire"].widget
+            getattr(widget, "widget", widget).attrs["data-regimes-imposes"] = json.dumps(imposes)  # sous l'enveloppe « + »
 
     def clean(self):
         donnees = super().clean()
         regime, proprio = donnees.get("regime_fiscal"), donnees.get("proprietaire")
+        impose = Bien.REGIME_DU_PROPRIETAIRE.get(proprio.type) if proprio else None
+        if impose:
+            # SCI à l'IR (ou à l'IS) : le bien prend le régime de la SCI, au réel, quel que soit le choix affiché
+            regime = donnees["regime_fiscal"] = impose
+            donnees["option_fiscale"] = Bien.OptionFiscale.REEL
+            for champ in ("regime_fiscal", "option_fiscale"):
+                self.errors.pop(champ, None)
         if regime in Bien.REGIMES_MICRO_POSSIBLE:
             pass
         elif donnees.get("option_fiscale") == Bien.OptionFiscale.MICRO and regime:
@@ -161,6 +175,9 @@ class BienAdmin(admin.ModelAdmin):
     form = BienForm
     list_display = ["nom", "ville", "proprietaire", "regime", "syndic", "nb_lots", "loyers_mois", "rendement"]
     list_filter = [VenduFilter, "proprietaire", "regime_fiscal"]
+
+    class Media:
+        js = ["patrimoine/regime_impose.js"]
 
     @admin.display(description="régime fiscal", ordering="regime_fiscal")
     def regime(self, obj):
