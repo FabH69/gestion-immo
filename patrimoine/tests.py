@@ -1272,8 +1272,15 @@ class MenusNovembreTests(TestCase):
 
     def test_relocation_annonces_avant_candidatures(self):
         page = self.client.get("/admin/").content.decode()
-        relocation = page.split("Relocation</div>")[1]
+        relocation = page.split("Location</div>")[1]
         self.assertLess(relocation.index("<span>Annonces</span>"), relocation.index("<span>Candidatures</span>"))
+
+    def test_section_location_renommee(self):
+        page = self.client.get("/admin/").content.decode()
+        self.assertIn(">Location</div>", page)
+        self.assertNotIn("Relocation</div>", page)
+        lot = self.client.get(reverse("admin:patrimoine_lot_add")).content.decode()
+        self.assertNotIn("Relocation et", lot)
 
     def test_menu_refondu(self):
         menu = self.client.get("/admin/").content.decode().split('id="barre-laterale"')[1].split("</aside>")[0]

@@ -69,8 +69,9 @@
 <header><div class="contenu">
   <a class="marque" href="{% url 'simulateurs:accueil' %}"><span class="logo">⌂</span>Simulateurs immobiliers</a>
   <nav>
+    {% if user.is_authenticated %}<a class="compte" href="{% url 'admin:index' %}">Mon espace</a>{% else %}<a class="compte" href="{% url 'admin:login' %}">Se connecter</a>{% endif %}
     {% for s in simulateurs %}{% if s.disponible %}<a href="{% url s.nom_url %}"{% if s.slug == simulateur.slug %} class="actif"{% endif %}>{{ s.titre }}</a>{% endif %}{% endfor %}
-    {% if user.is_authenticated %}<a href="{% url 'simulateurs:mes_simulations' %}"{% if mes_simulations_actif %} class="actif"{% endif %}>Mes simulations</a><a class="compte" href="{% url 'admin:index' %}">Mon espace</a>{% else %}<a class="compte" href="{% url 'admin:login' %}">Se connecter</a>{% endif %}
+    {% if user.is_authenticated %}<a href="{% url 'simulateurs:mes_simulations' %}"{% if mes_simulations_actif %} class="actif"{% endif %}>Mes simulations</a>{% endif %}
   </nav>
 </div></header>
 <main>{% if messages %}{% for m in messages %}<div class="{% if m.level_tag == 'error' %}alerte{% else %}ok{% endif %}">{{ m }}</div>{% endfor %}{% endif %}{% block contenu %}{% endblock %}

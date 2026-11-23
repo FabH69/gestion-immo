@@ -26,7 +26,7 @@ MODULES = [
       "admin:patrimoine_echeance_encaisser", "admin:patrimoine_echeance_virement", "relances_impayes", "lettre_relance", "preparer_mail_relance", "depot_bail"],
      ["revision_loyer", "admin:patrimoine_echeance_generer", "admin:patrimoine_echeance_encaisser", "admin:patrimoine_echeance_virement", "lettre_relance",
       "preparer_mail_relance", "depot_bail"]),
-    ("relocation", "Relocation (candidatures, annonces)", ["patrimoine.candidature", "patrimoine.garantcandidature",
+    ("relocation", "Location (candidatures, annonces)", ["patrimoine.candidature", "patrimoine.garantcandidature",
                                                          "patrimoine.piececandidature", "patrimoine.annonce",
                                                          "patrimoine.changementlocataire", "patrimoine.tache"],
      ["preparer_mail_candidature", "envoyer_lien_candidature", "photos_zip", "admin:patrimoine_annonce_modele_du_lot", "annonce_pdf",
