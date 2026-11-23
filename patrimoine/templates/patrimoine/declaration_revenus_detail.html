@@ -105,20 +105,27 @@ details.dr-imm > div { padding: 4px 8px 10px; overflow-x: auto; }
 <section class="bloc-d dr-bloc" id="lmnp" aria-label="Location meublée">
   <h2>Location meublée · case {% if lmnp.resultat >= 0 %}5NA{% else %}5NY{% endif %} <span class="sous">(bilan LMNP, lot par lot)</span></h2>
   {% for b in lots %}{% if not b.micro %}
-  <details class="dr-imm" open><summary>{{ b.lot.bien.nom }} · {{ b.lot.designation }} <span class="chiffres">résultat fiscal {{ b.resultat_fiscal|euros }}</span></summary><div>
+  <details class="dr-imm" open><summary>{{ b.lot.bien.nom }} · {{ b.lot.designation }} <span class="chiffres">résultat avant amortissements {{ b.resultat|euros }}</span></summary><div>
     <table class="dr-t"><thead><tr><th>Élément</th><th>D'où ça vient</th><th class="m">Montant</th></tr></thead><tbody>
       {% for r in b.recettes %}<tr><td>{{ r.libelle }}</td><td class="petit-d">{{ r.source }}</td><td class="m">{{ r.montant|euros:2 }}</td></tr>{% endfor %}
       <tr class="fort"><td>Recettes</td><td></td><td class="m">{{ b.total_recettes|euros:2 }}</td></tr>
       {% for c in b.charges %}<tr><td>{{ c.libelle }}</td><td class="petit-d">{{ c.source }}</td><td class="m">− {{ c.montant|euros:2 }}</td></tr>{% endfor %}
       <tr class="fort"><td>Résultat avant amortissements</td><td></td><td class="m">{{ b.resultat|euros:2 }}</td></tr>
-      <tr><td>Amortissements de l'année</td><td class="petit-d">Charges LMNP, catégorie « Amortissements »</td><td class="m">{{ b.amortissements|euros:2 }}</td></tr>
-      <tr><td>Amortissements déduits<span class="formule">au plus le résultat avant amortissements : ils ne créent pas de déficit</span></td><td></td><td class="m">− {{ b.amort_deduit|euros:2 }}</td></tr>
-      {% if b.amort_reporte %}<tr><td>Amortissements reportés</td><td class="petit-d">à reprendre les années suivantes, sans limite de durée</td><td class="m">{{ b.amort_reporte|euros:2 }}</td></tr>{% endif %}
-      <tr class="fort vers"><td>Résultat fiscal</td><td></td><td class="m">{{ b.resultat_fiscal|euros:2 }}</td></tr>
+      {% if b.amortissements %}<tr><td>Amortissements de l'année</td><td class="petit-d">Immobilisations du lot</td><td class="m">{{ b.amortissements|euros:2 }}</td></tr>{% endif %}
     </tbody></table>
   </div></details>
   {% endif %}{% endfor %}
-  {% if lmnp.reel %}<p><b>Total des lots au réel, arrondi à l'euro : {{ lmnp.resultat|euros }} → {% if lmnp.resultat >= 0 %}case 5NA{% else %}case 5NY = {{ lmnp.5NY|euros }}{% endif %}</b></p>{% endif %}
+  {% if lmnp.reel %}
+  <h3>Tous les meublés au réel (une seule 2031)</h3>
+  <table class="dr-t"><tbody>
+    <tr><td>Résultat avant amortissements</td><td class="m">{{ lmnp.avant_amortissements|euros }}</td></tr>
+    <tr><td>Amortissements de l'année</td><td class="m">{{ lmnp.amortissements|euros }}</td></tr>
+    <tr><td>Amortissements non déduits les années passées (report)</td><td class="m">{{ lmnp.report_anterieur|euros }}</td></tr>
+    <tr><td>Amortissements déduits<span class="formule">au plus le résultat avant amortissements : ils ne créent pas de déficit</span></td><td class="m">− {{ lmnp.amort_deduit|euros }}</td></tr>
+    <tr><td>Amortissements reportés à l'an prochain<span class="formule">sans limite de durée, pas de case sur la 2042-C-PRO</span></td><td class="m">{{ lmnp.amort_reporte|euros }}</td></tr>
+    <tr class="fort vers"><td>Résultat fiscal → {% if lmnp.resultat >= 0 %}case 5NA{% else %}case 5NY{% endif %}</td><td class="m">{{ lmnp.resultat|euros }}</td></tr>
+  </tbody></table>
+  {% endif %}
 </section>
 {% if lmnp.detail_micro %}
 <section class="bloc-d dr-bloc" id="lmnp-micro" aria-label="Micro-BIC">

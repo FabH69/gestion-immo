@@ -90,6 +90,26 @@ class Pret(models.Model):
             return (self.montant / self.duree_mois).quantize(Decimal("0.01"))
         return (self.montant * t / (1 - (1 + t) ** -self.duree_mois)).quantize(Decimal("0.01"))
 
+    @property
+    def assurance_appliquee(self):
+        """Phrase qui dit d'où vient l'assurance de l'échéancier : tableau de la banque, % du capital restant dû,
+        montant fixe ou aucune."""
+        def e(v):
+            return f"{v:,.2f}".replace(",", "\u202f").replace(".", ",")
+
+        banque = self.lignes_banque()
+        if banque:
+            courante = self._echeance_courante()
+            if courante and courante["assurance"]:
+                return (f"celle du tableau de la banque ({e(courante['assurance'])} €/mois) : retirez le tableau de la banque "
+                        "pour recalculer à partir des conditions")
+            return "aucune (tableau de la banque)"
+        if self.taux_assurance and self.type == self.Type.AMORTISSABLE:
+            return f"{e(self.taux_assurance)} % du capital restant dû, incluse dans l'échéance"
+        if self.assurance_mensuelle:
+            return f"montant fixe de {e(self.assurance_mensuelle)} €/mois (mettez 0 dans « assurance mensuelle » pour un prêt sans assurance)"
+        return "aucune"
+
     def lignes_banque(self):
         """Tableau d'amortissement remis par la banque, s'il a été importé (sinon liste vide)."""
         if not self.pk:
@@ -425,6 +445,7 @@ class PieceComptable(models.Model):
         ("Prêt", [("pret", "Rbt prêt (capital)"), ("interets_pret", "Intérêts d'emprunt"),
                   ("assurance_pret", "Assurance et frais de prêt")]),
         ("Autre", [("autre", "Autre")]),
+        ("Immobilisations", [("immobilisation", "Immobilisation (à amortir)")]),
     ]
     LIBELLES_RUBRIQUES = {code: libelle for _, rubriques in RUBRIQUES for code, libelle in rubriques}
 
@@ -466,6 +487,8 @@ class PieceComptable(models.Model):
     fichier = models.FileField("facture (PDF, photo ou XML)", upload_to=_chemin_facture, storage=stockage_prive, blank=True,
                                validators=[FileExtensionValidator(["pdf", "jpg", "jpeg", "png", "heic", "xml"])])
     notes = models.TextField(blank=True)
+    charge_confirmee = models.BooleanField("c'est bien une charge (pas une immobilisation)", default=False,
+                                           help_text="Plus de 500 € mais réparation ou entretien : plus d'alerte « à amortir ? »")
     recurrence = models.ForeignKey("DepenseRecurrente", null=True, blank=True, on_delete=models.SET_NULL, related_name="pieces",
                                    editable=False, verbose_name="dépense récurrente",
                                    help_text="Créée automatiquement par cette dépense récurrente")
