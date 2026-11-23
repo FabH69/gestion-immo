@@ -4707,6 +4707,30 @@ class GalerieBiensTests(TestCase):
         self.assertTrue(self.lilas.photo_carte.endswith("photos/biens/facade.jpg"))
 
 
+    def test_colonnes_loyers_cc_et_courte_duree(self):
+        bail = Bail.objects.get()
+        bail.charges = 50
+        bail.save()
+        Lot.objects.filter(designation="B").update(exploitation="courte")
+        # liste : loyers charges comprises et pastille « Courte durée » sur le bien
+        page = self.client.get("/admin/patrimoine/bien/?vue=liste").content.decode()
+        self.assertIn("Loyers CC / mois", page)
+        self.assertIn("650 €", page)
+        self.assertIn("Courte durée", page)
+        # galerie : une colonne par propriétaire, loyers CC, le lot en courte durée n'est pas vacant
+        page = self.client.get("/admin/patrimoine/bien/?vue=galerie").content.decode()
+        self.assertEqual(page.count('class="bloc-proprio"'), 2)
+        self.assertIn("650 €", page)
+        self.assertIn("CC / mois", page)
+        self.assertIn("Courte durée", page)
+        self.assertIn("Loué · 2/2 lots", page)
+        # bien uniquement en courte durée : seulement la pastille, pas « Vacant »
+        Lot.objects.create(bien=Bien.objects.get(nom="Maison"), designation="Maison", exploitation="courte")
+        page = self.client.get(f"/admin/patrimoine/bien/?proprietaire__id__exact={self.perso.pk}").content.decode()
+        self.assertIn("Courte durée", page)
+        self.assertNotIn("Vacant", page)
+
+
 class DeclarationRevenusTests(TestCase):
     """Aide à la déclaration de revenus : cases 2042 (4BA à 4BE) depuis la 2044 et les 2072 (part du foyer), cases
     2042-C-PRO (5NA, 5NY, 5GA à 5GJ) depuis le bilan LMNP, et report des déficits antérieurs."""

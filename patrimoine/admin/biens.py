@@ -159,7 +159,7 @@ class BienForm(forms.ModelForm):
 @admin.register(Bien)
 class BienAdmin(admin.ModelAdmin):
     form = BienForm
-    list_display = ["nom", "ville", "proprietaire", "regime", "syndic", "nb_lots", "loyers_mois", "rendement"]
+    list_display = ["nom_bien", "ville", "proprietaire", "regime", "syndic", "nb_lots", "loyers_mois", "rendement"]
     list_filter = [VenduFilter, "proprietaire", "regime_fiscal"]
 
     @admin.display(description="régime fiscal", ordering="regime_fiscal")
@@ -173,7 +173,7 @@ class BienAdmin(admin.ModelAdmin):
         """Colonnes de vente seulement quand on regarde les biens vendus (sinon des croix rouges partout)."""
         vente = request.GET.get("vente") or "non"
         if vente == "oui":
-            return ["nom", "ville", "proprietaire", "nb_lots", "date_vente"]
+            return ["nom_bien", "ville", "proprietaire", "nb_lots", "date_vente"]
         if vente == "tous":
             return self.list_display + ["vendu", "date_vente"]
         return self.list_display
@@ -186,12 +186,26 @@ class BienAdmin(admin.ModelAdmin):
     def _loyers_hc(self, obj):
         return sum((b.loyer_hc or 0 for lot in obj.lots.all() for b in lot.baux_actifs), Decimal(0))
 
-    @admin.display(description="loyers HC / mois")
+    def _loyers_cc(self, obj):
+        """Loyers charges comprises des baux actifs : ce que les locataires versent chaque mois."""
+        return sum(((b.loyer_hc or 0) + (b.charges or 0) for lot in obj.lots.all() for b in lot.baux_actifs), Decimal(0))
+
+    @staticmethod
+    def _nb_courte_duree(obj):
+        return sum(1 for lot in obj.lots.all() if lot.exploitation == "courte" and not lot.vendu)
+
+    @admin.display(description="nom", ordering="nom")
+    def nom_bien(self, obj):
+        if self._nb_courte_duree(obj):
+            return format_html('{} <span class="pill bleu">Courte durée</span>', obj.nom)
+        return obj.nom
+
+    @admin.display(description="loyers CC / mois")
     def loyers_mois(self, obj):
-        total = self._loyers_hc(obj)
+        total = self._loyers_cc(obj)
         return f"{total:,.0f} €".replace(",", " ") if total else "–"
 
-    @admin.display(description="rendement brut")
+    @admin.display(description="rendement brut (HC)")
     def rendement(self, obj):
         total = self._loyers_hc(obj)
         if not total or not obj.prix_acquisition:
@@ -231,16 +245,19 @@ class BienAdmin(admin.ModelAdmin):
         return reponse
 
     def _galerie(self, biens):
-        """Blocs par propriétaire (ordre alphabétique), chacun avec les cartes de ses biens."""
+        """Une colonne par propriétaire (ordre alphabétique), chacune avec les cartes de ses biens."""
         blocs = {}
         for bien in sorted(biens, key=lambda b: (b.proprietaire.nom.lower(), b.nom.lower())):
             lots = [lot for lot in bien.lots.all()]
-            loues = sum(1 for lot in lots if lot.baux_actifs)
-            loyers = self._loyers_hc(bien)
+            courte = self._nb_courte_duree(bien)
+            # un logement en courte durée n'a pas de bail mais n'est pas vacant
+            loues = sum(1 for lot in lots if lot.baux_actifs or (lot.exploitation == "courte" and not lot.vendu))
+            loyers = self._loyers_cc(bien)
             bloc = blocs.setdefault(bien.proprietaire_id, {"proprietaire": bien.proprietaire, "cartes": [], "loyers": Decimal(0)})
             bloc["loyers"] += loyers
             bloc["cartes"].append({
                 "bien": bien, "photo": bien.photo_carte, "nb_lots": len(lots), "loues": loues,
+                "courte": courte, "que_courte": bool(lots) and courte == len(lots),
                 "occupation": "vide" if not loues else ("partiel" if loues < len(lots) else "plein"),
                 "loyers": loyers, "rendement": self.rendement(bien),
                 "regime": self.regime(bien),
