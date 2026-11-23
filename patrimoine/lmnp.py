@@ -12,40 +12,86 @@ def _ligne(libelle, montant, source=""):
     return {"libelle": libelle, "montant": montant, "source": source}
 
 
+def _a_un_bail_dans_l_annee(lot, annee):
+    from django.db.models import Q
+    from .models import Bail
+
+    return Bail.objects.filter(lot=lot, date_debut__lte=date(annee, 12, 31)) \
+        .filter(Q(date_fin__isnull=True) | Q(date_fin__gte=date(annee, 1, 1))).exists()
+
+
+def _recettes_baux(lot, annee):
+    """Loyers des baux : paiements enregistrés, complétés mois par mois par le suivi repris (comme l'état des loyers
+    encaissés et la 2072). Sans aucun paiement ni suivi repris, estimation selon les baux."""
+    from .encaissements import loyers_dus_lot
+    from .models import EncaissementHistorique
+
+    recettes = []
+    paiements = list(Paiement.objects.filter(echeance__bail__lot=lot, date__year=annee))
+    historiques = list(EncaissementHistorique.objects.filter(lot=lot, mois__year=annee))
+    if paiements:
+        payes = {p.date.month for p in paiements}
+        recettes.append(_ligne("Loyers et charges encaissés", sum((p.montant for p in paiements), ZERO),
+                               f"Paiements enregistrés ({_nb_mois(payes)})"))
+        repris = [h for h in historiques if h.mois.month not in payes]
+        if repris:
+            recettes.append(_ligne("Loyers et charges encaissés (suivi repris)", sum((h.montant for h in repris), ZERO),
+                                   f"Suivi repris ({_nb_mois({h.mois.month for h in repris})})"))
+        return recettes
+    if historiques:
+        recettes.append(_ligne("Loyers et charges encaissés", sum((h.montant for h in historiques), ZERO), "Suivi repris"))
+    loyers, provisions = loyers_dus_lot(lot, annee, exclure_mois={h.mois.month for h in historiques})
+    if loyers:
+        recettes.append(_ligne("Loyers" + (" (mois restants)" if historiques else ""), loyers, "Selon les baux"))
+    if provisions:
+        recettes.append(_ligne("Charges refacturées au locataire" + (" (mois restants)" if historiques else ""), provisions, "Selon les baux"))
+    return recettes
+
+
+def _nb_mois(mois):
+    return f"{len(mois)} mois"
+
+
+def _courte_duree(lot, annee):
+    """Courte durée : pour chaque mois, l'encaissement saisi s'il existe, sinon les réservations importées. Les charges
+    mensuelles (énergie, internet, PNO…) comptent pour toute l'année."""
+    from .lcd import suivi_annuel
+
+    saisies = {e.mois.month: e for e in EncaissementLCD.objects.filter(lot=lot, mois__year=annee)}
+    mois = suivi_annuel(lot, annee)
+    autres = [m for m in mois if m["mois"] not in saisies]
+    somme = lambda champ: sum((getattr(e, champ) for e in saisies.values()), ZERO)
+    total = lambda champ: sum((m[champ] for m in autres), ZERO)
+    src_saisie = f"Suivi des encaissements ({_nb_mois(saisies)})"
+    mois_resa = sum(1 for m in autres if m["brut"])
+    src_resa = f"Réservations importées ({mois_resa} mois)"
+    recettes, charges = [], []
+    if saisies:
+        recettes.append(_ligne("Locations courte durée (CA)", somme("ca"), src_saisie))
+        if somme("aircover") or somme("regul"):
+            recettes.append(_ligne("AirCover et régularisations", somme("aircover") + somme("regul"), src_saisie))
+    if mois_resa:
+        recettes.append(_ligne("Locations Airbnb / Booking (hors taxe de séjour)", total("brut") - total("taxe"), src_resa))
+    if saisies:
+        charges += [_ligne("Ménage", somme("menage"), src_saisie),
+                    _ligne("Commission de conciergerie", somme("commission"), src_saisie),
+                    _ligne("Frais", somme("frais"), src_saisie)]
+    charges += [_ligne("Commissions des plateformes", total("commission") + total("frais"), "Réservations importées"),
+                _ligne("Ménage, consommables, conciergerie", total("gestion"), "Frais de gestion"),
+                _ligne("Charges mensuelles (énergie, internet, PNO, copropriété…)",
+                       sum((m["charges"] for m in mois), ZERO), "Charges mensuelles")]
+    return recettes, charges
+
+
 def bilan_lot(lot, annee):
     recettes, charges = [], []
     if lot.exploitation == "courte":
-        saisies = list(EncaissementLCD.objects.filter(lot=lot, mois__year=annee))
-        if saisies:
-            somme = lambda champ: sum((getattr(e, champ) for e in saisies), ZERO)
-            recettes.append(_ligne("Locations courte durée (CA)", somme("ca"), "Suivi des encaissements"))
-            if somme("aircover") or somme("regul"):
-                recettes.append(_ligne("AirCover et régularisations", somme("aircover") + somme("regul"), "Suivi des encaissements"))
-            charges += [_ligne("Ménage", somme("menage"), "Suivi des encaissements"),
-                        _ligne("Commission de conciergerie", somme("commission"), "Suivi des encaissements"),
-                        _ligne("Frais", somme("frais"), "Suivi des encaissements")]
-        else:
-            from .lcd import suivi_annuel, totaliser
-            t = totaliser(suivi_annuel(lot, annee))
-            recettes.append(_ligne("Locations Airbnb / Booking (hors taxe de séjour)", t["brut"] - t["taxe"], "Réservations importées"))
-            charges += [_ligne("Commissions des plateformes", t["commission"] + t["frais"], "Réservations importées"),
-                        _ligne("Ménage, consommables, conciergerie", t["gestion"], "Frais de gestion"),
-                        _ligne("Charges mensuelles (énergie, internet, PNO, copropriété…)", t["charges"], "Charges mensuelles")]
+        recettes, charges = _courte_duree(lot, annee)
+        # logement loué avec un bail une partie de l'année (avant le passage en courte durée) : ses loyers comptent aussi
+        if _a_un_bail_dans_l_annee(lot, annee):
+            recettes = _recettes_baux(lot, annee) + recettes
     else:
-        paiements = Paiement.objects.filter(echeance__bail__lot=lot, date__year=annee)
-        if paiements.exists():
-            recettes.append(_ligne("Loyers et charges encaissés", sum((p.montant for p in paiements), ZERO), "Paiements enregistrés"))
-        else:
-            from .encaissements import loyers_dus_lot
-            from .models import EncaissementHistorique
-            historiques = list(EncaissementHistorique.objects.filter(lot=lot, mois__year=annee))
-            if historiques:
-                recettes.append(_ligne("Loyers et charges encaissés", sum((h.montant for h in historiques), ZERO), "Suivi repris"))
-            loyers, provisions = loyers_dus_lot(lot, annee, exclure_mois={h.mois.month for h in historiques})
-            if loyers:
-                recettes.append(_ligne("Loyers" + (" (mois restants)" if historiques else ""), loyers, "Selon les baux"))
-            if provisions:
-                recettes.append(_ligne("Charges refacturées au locataire" + (" (mois restants)" if historiques else ""), provisions, "Selon les baux"))
+        recettes = _recettes_baux(lot, annee)
 
     seul_lot = lot.bien.comptabilite == "lmnp" and not lot.bien.lots.exclude(pk=lot.pk).filter(
         pk__in=lots_lmnp().values("pk")).exists()

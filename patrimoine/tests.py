@@ -1367,6 +1367,60 @@ class LmnpTests(TestCase):
         # 2 mois repris (1 350 €) + 10 mois selon le bail (10 x 700 €)
         self.assertEqual(b["total_recettes"], Decimal("8350"))
 
+    def _payer(self, mois, annee=2026, bail=None):
+        bail = bail or self.lot.baux.get()
+        for m in mois:
+            e = Echeance.objects.create(bail=bail, periode=date(annee, m, 1), loyer_hc=650, charges=50,
+                                        date_exigibilite=date(annee, m, 5))
+            Paiement.objects.create(echeance=e, date=date(annee, m, 5), montant=Decimal("700"))
+
+    def test_paiements_completes_par_le_suivi_repris(self):
+        # suivi repris de janvier à septembre, paiements saisis dans l'appli d'octobre à décembre : les 12 mois comptent
+        from .lmnp import bilan_lot
+        from .models import EncaissementHistorique
+        for m in range(1, 10):
+            EncaissementHistorique.objects.create(lot=self.lot, mois=date(2026, m, 1), montant=700, charges=50)
+        self._payer([10, 11, 12])
+        b = bilan_lot(self.lot, 2026)
+        self.assertEqual(b["total_recettes"], Decimal("8400"))
+        self.assertEqual([r["source"] for r in b["recettes"]], ["Paiements enregistrés (3 mois)", "Suivi repris (9 mois)"])
+
+    def test_mois_paye_et_repris_compte_une_seule_fois(self):
+        from .lmnp import bilan_lot
+        from .models import EncaissementHistorique
+        EncaissementHistorique.objects.create(lot=self.lot, mois=date(2026, 10, 1), montant=700, charges=50)
+        self._payer([10])
+        self.assertEqual(bilan_lot(self.lot, 2026)["total_recettes"], Decimal("700"))
+
+    def test_courte_duree_saisies_et_reservations_mois_par_mois(self):
+        # Chasselay : encaissements saisis pour janvier, réservations importées pour mars → les deux comptent
+        from .lmnp import bilan_lot
+        from .models import EncaissementLCD, ReservationLCD
+        bien = Bien.objects.create(proprietaire=self.lot.bien.proprietaire, nom="Chasselay", adresse="1 rue",
+                                   code_postal="69380", ville="Chasselay")
+        lot = Lot.objects.create(bien=bien, designation="Chasselay", meuble=True, lmnp=True, exploitation="courte")
+        EncaissementLCD.objects.create(lot=lot, mois=date(2026, 1, 1), ca=Decimal("900"))
+        ReservationLCD.objects.create(lot=lot, plateforme="airbnb", reference="HM1", arrivee=date(2026, 3, 4),
+                                      depart=date(2026, 3, 6), montant_brut=Decimal("200"))
+        b = bilan_lot(lot, 2026)
+        self.assertEqual(b["total_recettes"], Decimal("1100"))
+
+    def test_courte_duree_garde_les_loyers_du_bail_de_l_annee(self):
+        # logement loué avec un bail jusqu'en juin puis passé en courte durée : les loyers du bail comptent
+        from .lmnp import bilan_lot
+        from .models import EncaissementLCD
+        bail = self.lot.baux.get()
+        bail.date_fin, bail.actif = date(2026, 6, 30), False
+        bail.save()
+        self._payer(range(1, 7))
+        self.lot.exploitation = "courte"
+        self.lot.save()
+        EncaissementLCD.objects.create(lot=self.lot, mois=date(2026, 8, 1), ca=Decimal("1000"))
+        b = bilan_lot(self.lot, 2026)
+        self.assertEqual(b["total_recettes"], Decimal("5200"))
+        page = self.client.get("/lmnp/?annee=2026").content.decode()
+        self.assertIn("Paiements enregistrés (6 mois)", page)
+
 
 class EncaissementHistoriqueEtatTests(TestCase):
     def test_mois_sans_paiement_repris_dans_l_etat(self):
