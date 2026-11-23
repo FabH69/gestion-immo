@@ -16,7 +16,7 @@
       <span class="avatar-proprio teinte-{{ bloc.teinte }}">{{ bloc.initiales }}</span>
       <div class="titre-proprio">
         <a href="{% url 'admin:patrimoine_proprietaire_change' bloc.proprietaire.pk %}"><strong>{{ bloc.proprietaire.nom }}</strong></a>
-        <span>{{ bloc.proprietaire.get_type_display }} · {{ bloc.cartes|length }} bien{{ bloc.cartes|length|pluralize }}{% if bloc.loyers %} · {{ bloc.loyers|floatformat:"0g" }} € HC / mois{% endif %}</span>
+        <span>{{ bloc.proprietaire.get_type_display }} · {{ bloc.cartes|length }} bien{{ bloc.cartes|length|pluralize }}{% if bloc.loyers %} · {{ bloc.loyers|floatformat:"0g" }} € CC / mois{% endif %}</span>
       </div>
     </header>
     <div class="cartes-biens">
@@ -32,8 +32,9 @@
           <span class="regime-tel">{{ c.regime }}</span>
           <span class="adresse">{{ c.bien.adresse }}, {{ c.bien.code_postal }} {{ c.bien.ville }}</span>
           <div class="chiffres-carte">
-            {% if not c.nb_lots %}<span class="pill gris">Aucun lot</span>{% elif c.occupation == "vide" %}<span class="pill gris">Vacant{% if c.nb_lots > 1 %} ({{ c.nb_lots }} lots){% endif %}</span>{% elif c.occupation == "plein" %}<span class="pill ok">Loué{% if c.nb_lots > 1 %} · {{ c.nb_lots }}/{{ c.nb_lots }} lots{% endif %}</span>{% else %}<span class="pill orange">{{ c.loues }}/{{ c.nb_lots }} lots loués</span>{% endif %}
-            {% if c.loyers %}<span class="montant">{{ c.loyers|floatformat:"0g" }} €<small> / mois</small></span>{% endif %}
+            {% if c.courte %}<span class="pill bleu">Courte durée{% if c.courte > 1 %} · {{ c.courte }} lots{% endif %}</span>{% endif %}
+            {% if not c.nb_lots %}<span class="pill gris">Aucun lot</span>{% elif c.que_courte %}{% elif c.occupation == "vide" %}<span class="pill gris">Vacant{% if c.nb_lots > 1 %} ({{ c.nb_lots }} lots){% endif %}</span>{% elif c.occupation == "plein" %}<span class="pill ok">Loué{% if c.nb_lots > 1 %} · {{ c.nb_lots }}/{{ c.nb_lots }} lots{% endif %}</span>{% else %}<span class="pill orange">{{ c.loues }}/{{ c.nb_lots }} lots loués</span>{% endif %}
+            {% if c.loyers %}<span class="montant">{{ c.loyers|floatformat:"0g" }} €<small> CC / mois</small></span>{% endif %}
           </div>
           {% if c.rendement != "–" %}<span class="rendement">Rendement brut {{ c.rendement }}</span>{% endif %}
         </div>

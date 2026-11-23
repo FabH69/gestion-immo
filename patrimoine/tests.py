@@ -4767,6 +4767,29 @@ class GalerieBiensTests(TestCase):
         self.lilas.photo = "photos/biens/facade.jpg"
         self.assertTrue(self.lilas.photo_carte.endswith("photos/biens/facade.jpg"))
 
+    def test_colonnes_loyers_cc_et_courte_duree(self):
+        bail = Bail.objects.get()
+        bail.charges = 50
+        bail.save()
+        Lot.objects.filter(designation="B").update(exploitation="courte")
+        # liste : loyers charges comprises et pastille « Courte durée » sur le bien
+        page = self.client.get("/admin/patrimoine/bien/?vue=liste").content.decode()
+        self.assertIn("Loyers CC / mois", page)
+        self.assertIn("650 €", page)
+        self.assertIn("Courte durée", page)
+        # galerie : une colonne par propriétaire, loyers CC, le lot en courte durée n'est pas vacant
+        page = self.client.get("/admin/patrimoine/bien/?vue=galerie").content.decode()
+        self.assertEqual(page.count('class="bloc-proprio"'), 2)
+        self.assertIn("650 €", page)
+        self.assertIn("CC / mois", page)
+        self.assertIn("Courte durée", page)
+        self.assertIn("Loué · 2/2 lots", page)
+        # bien uniquement en courte durée : seulement la pastille, pas « Vacant »
+        Lot.objects.create(bien=Bien.objects.get(nom="Maison"), designation="Maison", exploitation="courte")
+        page = self.client.get(f"/admin/patrimoine/bien/?proprietaire__id__exact={self.perso.pk}").content.decode()
+        self.assertIn("Courte durée", page)
+        self.assertNotIn("Vacant", page)
+
 
 class AmortissementsTests(TestCase):
     """Immobilisations LMNP et société : une fiche par immobilisation, plan linéaire, alerte au-delà de 500 €, reprise
