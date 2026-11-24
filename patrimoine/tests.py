@@ -4810,6 +4810,60 @@ class MaMaisonTests(TestCase):
         self.assertIn('value="Vidange de la fosse septique"', page)
         self.assertIn('<option value="quadriennal" selected>', page)
 
+    def test_fiches_pratiques_liste(self):
+        from . import fiches_maison as fm
+
+        Rappel.objects.create(titre="Entretien de la chaudière", date=self.aujourdhui, bien=self.maison, periodicite="annuel")
+        page = self.client.get("/maison/fiches/").content.decode()
+        for f in fm.FICHES:
+            self.assertIn(f"/maison/fiches/{f['slug']}/?bien={self.maison.pk}", page)
+        self.assertIn("Au fil des saisons", page)
+        self.assertIn("Assurance habitation", page)
+        self.assertIn("✓ rappel suivi", page)  # la chaudière, déjà suivie
+        self.assertEqual(fm.suivis(self.maison), {"chaudiere"})
+        # le menu Ma maison propose les fiches, la page Ma maison y renvoie
+        self.assertIn("Fiches pratiques", self.client.get("/maison/").content.decode())
+
+    def test_fiche_cree_le_rappel_ou_montre_le_suivi(self):
+        page = self.client.get(f"/maison/fiches/fosse-septique/?bien={self.maison.pk}").content.decode()
+        self.assertIn("Obligatoire.", page)
+        self.assertIn("Vidange de la fosse septique", page)
+        self.assertIn("Contrôle SPANC (assainissement)", page)
+        self.assertEqual(page.count("＋ Me le rappeler"), 2)
+        from . import fiches_maison as fm
+
+        url = fm.rappels_de_la_fiche(fm.PAR_SLUG["fosse-septique"], self.maison, date(2026, 11, 24))[0]["url"]
+        self.assertIn("periodicite=quadriennal", url)
+        self.assertIn("date=2027-05-01", url)  # mois conseillé : mai
+        self.assertIn("dans_agenda=on", url)
+        form = self.client.get(url).content.decode()
+        self.assertIn('value="Vidange de la fosse septique"', form)
+        self.assertIn("Fiche pratique : /maison/fiches/fosse-septique/", form)
+        r = Rappel.objects.create(titre="Vidange de la fosse septique", date=date(2027, 5, 1), bien=self.maison, periodicite="quadriennal")
+        page = self.client.get(f"/maison/fiches/fosse-septique/?bien={self.maison.pk}").content.decode()
+        self.assertIn("✓ Suivi · prochain le 01/05/2027", page)
+        self.assertEqual(page.count("＋ Me le rappeler"), 1)
+        # l'entretien de Ma maison pointe vers sa fiche
+        maison = self.client.get("/maison/").content.decode()
+        self.assertIn(f"/maison/fiches/fosse-septique/?bien={self.maison.pk}", maison)
+        self.assertTrue(r.pk)
+
+    def test_fiche_sans_maison_et_fiche_inconnue(self):
+        Bien.objects.filter(pk=self.maison.pk).update(residence_principale=False)
+        page = self.client.get("/maison/fiches/chaudiere/").content.decode()
+        self.assertIn("Chaudière", page)
+        self.assertNotIn("Me le rappeler", page)
+        self.assertIn("Suivez d'abord votre résidence principale", page)
+        self.assertEqual(self.client.get("/maison/fiches/inconnue/").status_code, 404)
+
+    def test_prochaine_date_des_fiches(self):
+        from .fiches_maison import _prochaine_date
+
+        self.assertEqual(_prochaine_date(9, date(2026, 11, 24)), date(2027, 9, 1))
+        self.assertEqual(_prochaine_date(12, date(2026, 11, 10)), date(2026, 12, 1))
+        self.assertEqual(_prochaine_date(12, date(2026, 11, 24)), date(2027, 12, 1))  # moins de 15 jours : l'an prochain
+        self.assertEqual(_prochaine_date(None, date(2026, 12, 10)), date(2027, 1, 1))
+
     def test_periodicites_longues_et_agenda(self):
         from .agenda import REPETITION
 

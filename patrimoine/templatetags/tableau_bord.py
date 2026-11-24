@@ -197,7 +197,8 @@ def _menu():
             ("encaissements", "Encaissements", r("suivi_encaissements"), [r("suivi_encaissements"), r("etat_loyers_encaisses")],
              [("État des loyers encaissés", r("etat_loyers_encaisses"), "etats")]),
             ("prets", "Prêts et endettement", a("pret"), [a("pret"), r("etat_endettement")], []),
-            ("maison", "Ma maison", r("ma_maison"), [r("ma_maison")], []),
+            ("maison", "Ma maison", r("ma_maison"), [r("ma_maison"), r("maison_fiches")],
+             [("Fiches pratiques", r("maison_fiches"))]),
         ]),
         ("Comptabilité", _menu_compta()),
         ("Investir", [

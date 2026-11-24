@@ -72,6 +72,7 @@ table.tab-ev tr.total-ev td { font-weight: 700; border-top: 2px solid var(--bord
   <a class="button default" href="{{ liens.ajouter_facture }}">＋ Ajouter une facture</a>
   <a class="button" href="{{ liens.ajouter_recurrente }}">↻ Dépense récurrente</a>
   <a class="button" href="{{ liens.ajouter_entretien }}">🔧 Entretien à rappeler</a>
+  <a class="button" href="{{ liens.fiches }}">📖 Fiches pratiques</a>
 </div>
 
 <div class="deux-col-d">
@@ -102,14 +103,15 @@ table.tab-ev tr.total-ev td { font-weight: 700; border-top: 2px solid var(--bord
   <h2>Entretiens à prévoir</h2>
   {% if entretiens %}<div class="ent-m">
   {% for e in entretiens %}<div class="l"><div><div class="t"><a href="{% url 'admin:patrimoine_rappel_change' e.rappel.pk %}?next={{ liens.retour|urlencode }}">{{ e.rappel.titre }}</a></div>
-      <div class="d">{{ e.rappel.get_periodicite_display }} · dernier : {% if e.dernier %}{{ e.dernier|date:"d/m/Y" }}{% if e.cout %} ({{ e.cout|floatformat:"0g" }} €){% endif %}{% else %}—{% endif %}{% if e.rappel.dans_agenda %} · 📅{% endif %}</div></div>
+      <div class="d">{{ e.rappel.get_periodicite_display }} · dernier : {% if e.dernier %}{{ e.dernier|date:"d/m/Y" }}{% if e.cout %} ({{ e.cout|floatformat:"0g" }} €){% endif %}{% else %}—{% endif %}{% if e.rappel.dans_agenda %} · 📅{% endif %}{% if e.fiche %} · <a href="{% url 'maison_fiche' e.fiche %}?bien={{ bien.pk }}">📖 fiche</a>{% endif %}</div></div>
     <div class="a"><span class="pill-d {{ e.etat }}">{{ e.etat_texte }}</span>
       {% if e.a_faire %}<form method="post" action="{% url 'maison_entretien_fait' e.rappel.pk %}">{% csrf_token %}<button class="button" type="submit" title="Noter fait aujourd'hui, puis ajouter la facture">✓ Fait</button></form>{% endif %}</div></div>{% endfor %}
   </div>{% else %}<p class="petit-d">Aucun entretien suivi. Choisissez ci-dessous ceux de votre maison : chacun devient un rappel (mail 7 jours avant, 📅 agenda).</p>{% endif %}
   {% if suggestions %}<div class="sugg-m">Ajouter en un clic :
     {% for s in suggestions %}<a class="pill-d mute" href="{{ s.url }}" title="{{ s.periodicite }}{% if s.obligatoire %} · obligatoire{% endif %}{% if s.precision %} · {{ s.precision }}{% endif %}">＋ {{ s.titre }}</a>{% endfor %}
   </div>{% endif %}
-  <p class="note-ev">« ✓ Fait » (à 30 jours de l'échéance ou en retard) note l'entretien fait aujourd'hui, décale le rappel à la prochaine échéance et ouvre sa facture pré-remplie (catégorie Entretien).</p>
+  <p class="note-ev">« ✓ Fait » (à 30 jours de l'échéance ou en retard) note l'entretien fait aujourd'hui, décale le rappel à la prochaine échéance et ouvre sa facture pré-remplie (catégorie Entretien).
+    Fréquences, obligations et gestes à faire soi-même : <a href="{{ liens.fiches }}">📖 fiches pratiques ›</a></p>
 </section>
 </div>
 
