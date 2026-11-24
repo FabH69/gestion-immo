@@ -136,7 +136,7 @@ def report_lmnp(annee, totaux_de):
     if debut is None or debut > annee:
         return ZERO
     reste = report.montant if report else ZERO
-    for y in range(max(debut, annee - 15), annee):
+    for y in range(debut, annee):  # report sans limite de durée (CGI art. 39 C II) : toujours depuis l'année de départ
         t = totaux_de(y)
         deduit = min(t["amortissements"] + reste, max(t["resultat"], ZERO))
         reste = t["amortissements"] + reste - deduit
