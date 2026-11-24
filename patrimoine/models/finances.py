@@ -496,6 +496,8 @@ class PieceComptable(models.Model):
                                    verbose_name="facture scindée",
                                    help_text="Part d'une facture scindée sur plusieurs rubriques ou plusieurs biens "
                                              "(la pièce mère porte le PDF)")
+    import_fec = models.ForeignKey("ImportFEC", null=True, blank=True, on_delete=models.SET_NULL, related_name="pieces",
+                                   editable=False, verbose_name="reprise FEC", help_text="Créée par l'import de ce FEC")
 
     class Meta:
         verbose_name = "facture / pièce comptable"

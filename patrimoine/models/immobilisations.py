@@ -25,6 +25,7 @@ class Immobilisation(models.Model):
         FACTURE = "facture", "Facture saisie"
         REPRISE = "reprise", "Reprise (tableau du comptable)"
         DECOMPOSITION = "decomposition", "Décomposition du prix du bien"
+        FEC = "fec", "Reprise d'un FEC"
         SAISIE = "saisie", "Saisie directe"
 
     class MotifSortie(models.TextChoices):
@@ -58,6 +59,8 @@ class Immobilisation(models.Model):
     motif_sortie = models.CharField("motif de sortie", max_length=12, choices=MotifSortie.choices, blank=True)
     prix_cession = models.DecimalField("prix de cession (€)", max_digits=12, decimal_places=2, null=True, blank=True)
     notes = models.TextField(blank=True)
+    import_fec = models.ForeignKey("ImportFEC", null=True, blank=True, on_delete=models.SET_NULL, related_name="immobilisations",
+                                   editable=False, verbose_name="reprise FEC", help_text="Créée par l'import de ce FEC")
 
     class Meta:
         verbose_name = "immobilisation"

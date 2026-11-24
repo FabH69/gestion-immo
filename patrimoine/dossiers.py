@@ -152,6 +152,8 @@ def onglets(dossier, actif, annee):
              ("a_saisir", "À saisir", r["lien_a_saisir"]), ("ajouter", "Ajouter des factures", r["lien_import"])]
     if amortissable(dossier):
         liste.append(("immobilisations", "Immobilisations", reverse("immobilisations", args=[dossier["code"]]) + f"?annee={annee}"))
+    if dossier["formulaire"] != "2044":  # le nom propre en revenus fonciers ne tient pas de comptabilité
+        liste.append(("fec", "Reprise FEC", reverse("reprise_fec", args=[dossier["code"]])))
     return [{"code": c, "libelle": l, "url": u, "compte": None, "actif": c == actif} for c, l, u in liste]
 
 
