@@ -5027,6 +5027,16 @@ class AmortissementsTests(TestCase):
         self.assertEqual(t["report_debut"], Decimal("1300"))
         self.assertEqual(t["amort_reporte"], Decimal("2300"))
 
+    def test_lmnp_report_sans_limite_de_duree(self):
+        """CGI art. 39 C II : les amortissements non déduits se reportent sans limite de durée, même 17 ans après."""
+        from . import lmnp
+        from .models import ReportAmortissements
+
+        self._immo(mise_en_service=date(2025, 1, 1), valeur=Decimal("7000"), duree=7)  # 1 000 € par an de 2025 à 2031
+        ReportAmortissements.objects.create(dossier="2031", annee=2025, montant=Decimal("300"))
+        # aucune recette : rien n'est jamais déduit, tout (300 € repris + 7 000 € de dotations) reste reporté en 2042
+        self.assertEqual(lmnp.bilan(2042)["total"]["report_debut"], Decimal("7300"))
+
     def test_pages_registre_pdf_fiche_et_societe(self):
         from . import dossiers
 
