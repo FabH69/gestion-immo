@@ -44,6 +44,7 @@
   </tbody></table>{% else %}<p class="legende">Aucune relance pour ce bail.</p>{% endif %}
 </div>
 {% else %}
+{% if peut_modifier %}<div class="boutons" style="margin-bottom:12px"><a class="button" href="{% url 'completer_impayes' %}" title="Liste Excel des loyers dus : indiquez ceux qui ont été payés, puis réimportez-la">Compléter avec Excel</a></div>{% endif %}
 <div class="module relance-carte">
   {% if baux %}<table><thead><tr><th>Logement et locataire</th><th>Loyers impayés</th><th class="m">Total dû</th><th>Dernière relance</th><th>À faire</th></tr></thead><tbody>
   {% for b in baux %}<tr>
