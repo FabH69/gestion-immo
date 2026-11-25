@@ -195,7 +195,7 @@ def _menu():
             ("locataires", "Locataires", a("locataire"), [a("locataire")], []),
             ("baux", "Baux", a("bail"), [a("bail")], [("États des lieux", a("etatdeslieux")), ("Garants", a("garant"))]),
             ("loyers", "Loyers", a("echeance"), [a("echeance"), a("versement"), r("relances_impayes"), a("revisionloyer"), a("mouvementdepot")],
-             [("Virements reçus", a("versement")), ("Relances d'impayés", r("relances_impayes")), ("Révisions de loyer", a("revisionloyer")),
+             [("Paiements reçus", a("versement")), ("Relances d'impayés", r("relances_impayes")), ("Révisions de loyer", a("revisionloyer")),
               ("Dépôts de garantie", a("mouvementdepot"))]),
         ]),
         ("Location", [
@@ -396,7 +396,7 @@ def _donnees_tableau_de_bord():
 
     def statut(e):
         paye = sum((p.montant for p in e.paiements.all()), Decimal(0))
-        if paye >= e.total:
+        if paye + e.remise >= e.total:
             return "ok", "Payé"
         if e.date_exigibilite < aujourdhui:
             return "rouge", "En retard"
@@ -490,14 +490,17 @@ def a_faire_groupes(items, aujourdhui):
         plus_ancien = min(i["date"] for i in liste)
         detail = (liste[0]["detail"] if n == 1 else
                   f"le plus ancien du {plus_ancien:%d/%m/%Y}" if plus_ancien < aujourdhui else f"à partir du {plus_ancien:%d/%m/%Y}")
+        encaisser = None
         if categorie == "Loyer":
             url = reverse("relances_impayes")
+            # le locataire a peut-être payé : « Encaisser » ouvre le formulaire prérempli (un loyer) ou la liste à encaisser
+            encaisser = liste[0].get("encaisser") if n == 1 else reverse("admin:patrimoine_echeance_changelist") + "?retard=oui"
         elif n == 1:
             url, bouton = liste[0]["url"], bouton if categorie in TYPES_A_FAIRE else "Ouvrir"
         else:
             url = reverse("a_faire") + f"?type={liste[0].get('genre', '')}"
         lignes.append({"categorie": categorie, "titre": titre, "detail": detail, "url": url, "bouton": bouton, "nombre": n,
-                       "retard": sum(1 for i in liste if i["en_retard"]), "date": plus_ancien,
+                       "retard": sum(1 for i in liste if i["en_retard"]), "date": plus_ancien, "encaisser": encaisser,
                        "detail_url": reverse("a_faire") + f"?type={liste[0].get('genre', '')}"})
     return sorted(lignes, key=lambda l: (not l.get("important"), not l["retard"], l["date"],
                                          l.get("heure") is not None, l.get("heure") or time.min))

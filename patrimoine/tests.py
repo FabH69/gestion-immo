@@ -1843,12 +1843,17 @@ class NouveauLookTests(TestCase):
         Echeance.generer_pour_mois(date(2026, 10, 1))
         e = Echeance.objects.get()
         liste = self.client.get("/admin/patrimoine/echeance/?periode__year=2026").content.decode()
-        self.assertIn(f'formaction="/admin/patrimoine/echeance/{e.pk}/encaisser/"', liste)
+        # le bouton ouvre le formulaire d'encaissement prérempli (reste dû) ; un clic sur « Valider » suffit
+        self.assertIn(f"/admin/patrimoine/echeance/virement/?bail={e.bail_id}&amp;echeance={e.pk}&amp;montant=500.00", liste)
         self.assertNotIn("form-encaisser", liste)  # pas de formulaire imbriqué dans celui de la liste (1er bouton inopérant)
-        self.client.post(f"/admin/patrimoine/echeance/{e.pk}/encaisser/")
+        r = self.client.get(f"/admin/patrimoine/echeance/virement/?bail={e.bail_id}&echeance={e.pk}&montant=500.00")
+        self.assertContains(r, f'name="part-{e.pk}" value="500,00"')
+        self.client.post("/admin/patrimoine/echeance/virement/", {"etape": "valider", "bail": e.bail_id, "echeance": e.pk,
+                         "date": "2026-10-06", "montant": "500", "mode": "virement", "notes": "", f"part-{e.pk}": "500"})
         e.refresh_from_db()
         self.assertEqual(e.statut, Echeance.Statut.PAYE)
         self.assertEqual(e.paiements.get().montant, 500)
+        self.assertIsNotNone(e.paiements.get().versement)  # visible dans « Paiements reçus »
 
 
 class AFaireTests(TestCase):
@@ -3496,7 +3501,8 @@ class VirementRepartiTests(TestCase):
 
     def test_page_et_apercu(self):
         r = self.client.get("/admin/patrimoine/echeance/")
-        self.assertContains(r, "Encaisser un virement")
+        self.assertContains(r, "Encaisser un paiement")
+        self.assertContains(r, "Paiements reçus")
         r = self._envoyer("repartir", "1600")
         self.assertContains(r, f'name="part-{self.oct.pk}" value="800,00"')
         self.assertContains(r, f'name="part-{self.nov.pk}" value="800,00"')
