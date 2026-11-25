@@ -10,7 +10,7 @@
   tr { page-break-inside: avoid; }
 </style></head>
 <body>
-  <h1>État des loyers encaissés – année {{ annee }}</h1>
-  <div class="sous-titre">{% if proprietaire %}{{ proprietaire.nom }}{% else %}Toutes entités{% endif %} · montants en euros, par date d'encaissement · édité le {{ aujourdhui|date:"d/m/Y" }}</div>
+  <h1>État des loyers {% if vue == 'regles' %}réglés{% else %}encaissés{% endif %} – année {{ annee }}</h1>
+  <div class="sous-titre">{% if proprietaire %}{{ proprietaire.nom }}{% else %}Toutes entités{% endif %} · montants en euros, {% if vue == 'regles' %}par mois du loyer réglé{% else %}par date d'encaissement{% endif %} · édité le {{ aujourdhui|date:"d/m/Y" }}</div>
   {% include "patrimoine/_tableau_etat.html" %}
 </body></html>
