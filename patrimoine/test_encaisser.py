@@ -124,6 +124,7 @@ class EncaisserTests(TestCase):
         self.assertEqual(self.oct.document[0], "recu-partiel")  # pas de quittance pour 800 € : seuls 500 € ont été payés
         liste = self.client.get(f"/admin/patrimoine/echeance/?bail={self.bail.pk}&reglement=tous")
         self.assertContains(liste, "Soldé (remise)")
+        self.assertNotContains(liste, ">Quittance<")
 
     def test_rembourser_le_trop_percu(self):
         self.encaisser("1000", [(self.oct, "800"), (self.nov, "0")])

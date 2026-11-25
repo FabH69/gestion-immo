@@ -331,7 +331,10 @@ class EcheanceAdmin(admin.ModelAdmin):
 
     @admin.display(description="")
     def actions_ligne(self, obj):
-        libelle = {"paye": "Quittance", "partiel": "Reçu PDF"}.get(obj.statut, "Avis PDF")
+        # libellé d'après le document réel : un loyer soldé par une remise sans être payé en entier n'a pas de quittance
+        paye = self._paye(obj)
+        libelle = ("Quittance" if obj.statut == "paye" and paye >= obj.total else
+                   "Reçu PDF" if obj.statut == "partiel" or (obj.statut == "paye" and paye > 0) else "Avis PDF")
         pdf = format_html('<a class="lien-action" href="{}" target="_blank">{}</a>', reverse("document_echeance", args=[obj.pk]), libelle)
         if obj.statut == "paye":
             return pdf
