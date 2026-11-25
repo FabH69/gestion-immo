@@ -63,6 +63,17 @@ def bloc_compta(context):
 
 
 @register.simple_tag(takes_context=True)
+def boutons_actions_rapides(context):
+    """Accueil, bloc « Actions rapides » : les actions choisies, dans l'ordre et avec le libellé de l'utilisateur."""
+    from patrimoine import accueil
+
+    choix = context.get("choix_accueil")
+    if choix is None:  # pas de réglages : actions d'origine
+        return accueil.actions_rapides(accueil.ACTIONS_D_ORIGINE, {}, context.get("droits"))
+    return accueil.actions_rapides(choix.get("actions"), (context.get("libelles_accueil") or {}).get("actions"), context.get("droits"))
+
+
+@register.simple_tag(takes_context=True)
 def disposition_accueil(context):
     """Accueil : blocs de l'utilisateur dans son ordre, à leur place, avec les données qu'il a choisies."""
     from patrimoine import accueil

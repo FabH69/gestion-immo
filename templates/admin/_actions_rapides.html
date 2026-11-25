@@ -1,11 +1,7 @@
-{% load tableau_bord %}
-{% if droits.loyers or droits.relocation == "modification" %}<div class="module carte actions-rapides">
-  <h2>Actions rapides</h2>
+{% load tableau_bord %}{% boutons_actions_rapides as boutons %}<div class="module carte actions-rapides">
+  <h2>Actions rapides<a class="lien-carte" href="{% url 'personnaliser_accueil' %}#bloc-actions">Choisir</a></h2>
   <div class="actions-rapides-liste">
-    {% if droits.loyers %}{% if "encaisser" in choix %}<a class="button" href="{% url 'admin:patrimoine_echeance_changelist' %}">Encaisser un loyer</a>{% endif %}
-    {% if "quittance" in choix %}<a class="button" href="{% url 'envoyer_quittance' %}">Créer une quittance</a>{% endif %}
-    {% if "relancer" in choix %}<a class="button" href="{% url 'relances_impayes' %}">Relancer un impayé</a>{% endif %}{% endif %}
-    {% if droits.relocation == "modification" and "annonce" in choix %}<a class="button" href="{% url 'admin:patrimoine_annonce_add' %}">Créer une annonce</a>{% endif %}
-    {% if not choix %}<span class="carte-vide" style="padding:0">Aucune action choisie : <a href="{% url 'personnaliser_accueil' %}">choisir</a>.</span>{% endif %}
+    {% for b in boutons %}<a class="button" href="{{ b.url }}">{{ b.libelle }}</a>
+    {% empty %}<span class="carte-vide" style="padding:0">Aucune action choisie : <a href="{% url 'personnaliser_accueil' %}#bloc-actions">choisir</a>.</span>{% endfor %}
   </div>
-</div>{% endif %}
+</div>

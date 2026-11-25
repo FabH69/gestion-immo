@@ -4745,6 +4745,47 @@ class PersonnaliserAccueilTests(TestCase):
         self.assertEqual(r["blocs"][0]["place"], accueil.DROITE)
         self.assertEqual(r["blocs"][1]["donnees"], ["crd"])
 
+    def test_actions_rapides_ordre_libelle_et_nouvelles(self):
+        post = {"ordre": ["actions"], "visible_actions": "1", "place_actions": "droite", "action": "enregistrer",
+                "proposees_actions": ["rappel", "quittance", "encaisser", "bail"],
+                "donnees_actions": ["rappel", "quittance", "bail"],
+                "libelle_actions_quittance": "  Quittance   du mois ", "libelle_actions_rappel": ""}
+        self.client.post(reverse("personnaliser_accueil"), post)
+        page = self._accueil()
+        bloc = page[page.index("Actions rapides"):page.index("Notes rapides")]
+        self.assertIn(reverse("admin:patrimoine_rappel_add"), bloc)
+        self.assertIn(reverse("admin:patrimoine_bail_add"), bloc)
+        self.assertIn("Quittance du mois", bloc)
+        self.assertNotIn("Créer une quittance", bloc)
+        self.assertNotIn("Encaisser un loyer", bloc)
+        self.assertLess(bloc.index("Ajouter un rappel"), bloc.index("Quittance du mois"))
+        self.assertLess(bloc.index("Quittance du mois"), bloc.index("Nouveau bail"))
+        # l'écran garde l'ordre choisi et le nom personnalisé
+        ecran = self.client.get(reverse("personnaliser_accueil")).content.decode()
+        self.assertLess(ecran.index('value="rappel"'), ecran.index('value="quittance"'))
+        self.assertIn('value="Quittance du mois"', ecran)
+        self.assertIn("Nouvelle réservation courte durée", ecran)
+
+    def test_actions_d_origine_et_encaisser(self):
+        page = self._accueil()
+        bloc = page[page.index("Actions rapides"):page.index("Notes rapides")]
+        self.assertIn(reverse("admin:patrimoine_echeance_virement"), bloc)  # « Encaisser » : la seule façon d'enregistrer un paiement
+        self.assertNotIn("Nouveau bail", bloc)
+
+    def test_actions_selon_droits(self):
+        from . import accueil, droits
+
+        user = User.objects.create_user("lecteur", password="x", is_staff=True)
+        droits.appliquer(user, {"loyers": droits.CONSULTATION, "compta": droits.MODIFICATION})
+        self.client.force_login(user)
+        accueil.enregistrer(user, {"blocs": [{"code": "actions", "donnees": ["encaisser", "quittance", "facture_import", "bail"]}]})
+        page = self._accueil()
+        bloc = page[page.index("Actions rapides"):]
+        self.assertIn("Créer une quittance", bloc)
+        self.assertIn("Ajouter des factures", bloc)
+        self.assertNotIn("Encaisser un loyer", bloc)  # loyers en consultation seulement
+        self.assertNotIn("Nouveau bail", bloc)
+
     def test_droits_limites(self):
         from . import droits
 
