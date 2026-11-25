@@ -33,10 +33,34 @@ class EncaissementHistoriqueAdmin(admin.ModelAdmin):
     """Loyers repris d'un ancien suivi. Enregistrer une ligne la transforme en paiement reçu du locataire de ce mois-là
     (réparti sur les loyers qu'elle couvre) : il n'y a ainsi qu'une seule liste des encaissements, « Paiements reçus ».
     Les lignes qui restent ici sont celles qu'on n'a pas pu rattacher (aucun bail ce mois-là, ou paiement déjà saisi)."""
-    list_display = ["mois", "lot", "montant", "charges", "note"]
+    list_display = ["mois", "lot", "montant", "charges", "note", "pas_repris"]
     list_filter = ["lot__bien__proprietaire"]
     date_hierarchy = "mois"
     navigation_par = "mois"
+    actions = ["reprendre", "reprendre_bail_suivant"]
+
+    @admin.display(description="pourquoi elle est encore ici")
+    def pas_repris(self, obj):
+        from ..reprise_historique import raison
+
+        return raison(obj) or "peut être reprise"
+
+    def _reprendre(self, request, queryset, bail_suivant):
+        from ..reprise_historique import convertir
+
+        n, laissees = convertir(queryset, bail_suivant=bail_suivant)
+        if n:
+            self.message_user(request, f"{n} ligne(s) reprise(s) dans « Paiements reçus ».", messages.SUCCESS)
+        for h, raison in laissees:
+            self.message_user(request, f"{h.lot} – {h.mois:%m/%Y} gardée : {raison}.", messages.WARNING)
+
+    @admin.action(description="Reprendre dans « Paiements reçus »")
+    def reprendre(self, request, queryset):
+        self._reprendre(request, queryset, False)
+
+    @admin.action(description="Rattacher au locataire suivant du lot et reprendre (mois avant la date d'entrée saisie)")
+    def reprendre_bail_suivant(self, request, queryset):
+        self._reprendre(request, queryset, True)
 
     def save_model(self, request, obj, form, change):
         super().save_model(request, obj, form, change)
