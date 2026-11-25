@@ -4594,6 +4594,124 @@ class BlocComptaAccueilTests(TestCase):
         self.assertNotIn("Comptabilité à faire", self.client.get("/admin/").content.decode())
 
 
+class PersonnaliserAccueilTests(TestCase):
+    """Accueil personnalisable : ordre, place et affichage des blocs, données choisies, par utilisateur."""
+
+    def setUp(self):
+        self.admin = User.objects.create_superuser("admin", "a@example.com", "x")
+        self.client.force_login(self.admin)
+
+    def _accueil(self):
+        return self.client.get("/admin/").content.decode()
+
+    def _enregistrer(self, ordre, masques=(), places=None, donnees=None, action="enregistrer"):
+        from . import accueil
+
+        post = {"ordre": ordre, "action": action}
+        for code in ordre:
+            if code not in masques:
+                post[f"visible_{code}"] = "1"
+            post[f"place_{code}"] = (places or {}).get(code, dict((c, p) for c, _, p, _ in accueil.BLOCS)[code])
+            for c, *_ in dict((c, d) for c, _, _, d in accueil.BLOCS)[code] or []:
+                post.setdefault(f"proposees_{code}", []).append(c)
+            post[f"donnees_{code}"] = (donnees or {}).get(code, [c for c, *_ in dict((c, d) for c, _, _, d in accueil.BLOCS)[code] or []])
+        return self.client.post(reverse("personnaliser_accueil"), post)
+
+    def test_accueil_d_origine_et_lien(self):
+        page = self._accueil()
+        for texte in ("Personnaliser l'accueil", "Encaissé en", "Comptabilité à faire", "Actions rapides", "Notes rapides", "À faire"):
+            self.assertIn(texte, page)
+        self.assertLess(page.index("Encaissé en"), page.index("Comptabilité à faire"))
+        ecran = self.client.get(reverse("personnaliser_accueil")).content.decode()
+        self.assertIn("Chiffres clés", ecran)
+        self.assertIn("Revenir à la présentation d'origine", ecran)
+
+    def test_ordre_et_masquage(self):
+        r = self._enregistrer(["notes", "actions", "chiffres", "compta", "a_faire"], masques=["compta"],
+                              places={"notes": "largeur"}, action="voir")
+        self.assertRedirects(r, reverse("admin:index"))
+        page = self._accueil()
+        self.assertNotIn("Comptabilité à faire", page)
+        self.assertLess(page.index("Notes rapides"), page.index("Actions rapides"))
+        self.assertLess(page.index("Actions rapides"), page.index("Encaissé en"))
+
+    def test_donnees_choisies(self):
+        self._enregistrer(["chiffres", "compta", "a_faire", "actions", "notes"],
+                          donnees={"chiffres": ["crd"], "actions": ["quittance"]})
+        page = self._accueil()
+        self.assertIn("Capital restant dû locatif", page)
+        self.assertNotIn("Encaissé en", page)
+        self.assertNotIn("Cash-flow locatif", page)
+        self.assertIn("Créer une quittance", page)
+        self.assertNotIn("Encaisser un loyer", page)
+
+    def test_types_a_faire(self):
+        Rappel.objects.create(titre="Ramoner", date=timezone.localdate(), categorie="Entretien")
+        self.assertIn("Ramoner", self._accueil())
+        self._enregistrer(["chiffres", "compta", "a_faire", "actions", "notes"], donnees={"a_faire": ["loyers"]})
+        self.assertNotIn("Ramoner", self._accueil())
+
+    def test_compta_lignes_choisies(self):
+        from .models import PieceComptable
+
+        moi = Proprietaire.objects.create(nom="Fabien", type=Proprietaire.Type.NOM_PROPRE)
+        sans = Bien.objects.create(proprietaire=moi, nom="Garage", regime_fiscal="nu", option_fiscale="micro", adresse="2 rue",
+                                   code_postal="69000", ville="Lyon")
+        PieceComptable.objects.create(bien=sans, libelle="Importée")
+        self.assertIn("Bien hors dossier", self._accueil())
+        self._enregistrer(["chiffres", "compta", "a_faire", "actions", "notes"], donnees={"compta": ["factures"]})
+        page = self._accueil()
+        self.assertNotIn("Bien hors dossier", page)
+        self.assertIn("Rien à faire", page)
+
+    def test_propre_a_chaque_utilisateur_et_retour_origine(self):
+        self._enregistrer(["chiffres", "compta", "a_faire", "actions", "notes"], masques=["notes"])
+        self.assertNotIn("Notes rapides", self._accueil())
+        autre = User.objects.create_superuser("autre", "b@example.com", "x")
+        self.client.force_login(autre)
+        self.assertIn("Notes rapides", self._accueil())
+        self.client.force_login(self.admin)
+        self.client.post(reverse("personnaliser_accueil"), {"action": "origine"})
+        self.assertIn("Notes rapides", self._accueil())
+
+    def test_tout_masque(self):
+        self._enregistrer(["chiffres", "compta", "a_faire", "actions", "notes"],
+                          masques=["chiffres", "compta", "a_faire", "actions", "notes"])
+        self.assertIn("Tous les blocs sont masqués", self._accueil())
+
+    def test_reglages_abimes_ou_incomplets(self):
+        from . import accueil
+
+        r = accueil.normaliser({"blocs": [{"code": "inconnu"}, {"code": "notes", "place": "nulle_part"}, {"code": "notes"},
+                                          {"code": "chiffres", "donnees": ["crd", "faux"]}]})
+        codes = [b["code"] for b in r["blocs"]]
+        self.assertEqual(codes[:2], ["notes", "chiffres"])
+        self.assertEqual(sorted(codes), sorted(c for c, *_ in accueil.BLOCS))
+        self.assertEqual(r["blocs"][0]["place"], accueil.DROITE)
+        self.assertEqual(r["blocs"][1]["donnees"], ["crd"])
+
+    def test_droits_limites(self):
+        from . import droits
+
+        user = User.objects.create_user("aide", password="x", is_staff=True)
+        droits.appliquer(user, {"loyers": droits.MODIFICATION})
+        self.client.force_login(user)
+        ecran = self.client.get(reverse("personnaliser_accueil")).content.decode()
+        self.assertNotIn("Comptabilité à faire", ecran)
+        self.assertNotIn("Cash-flow", ecran)
+        self.assertIn("Loyers encaissés du mois", ecran)
+        # le bloc compta, non proposé, garde son réglage
+        self.client.post(reverse("personnaliser_accueil"), {"ordre": ["notes", "chiffres", "actions"], "visible_notes": "1",
+                                                            "place_notes": "gauche", "action": "enregistrer"})
+        from . import accueil
+        r = accueil.reglages(user)
+        self.assertEqual([b["code"] for b in r["blocs"]][:3], ["notes", "chiffres", "actions"])
+        self.assertTrue(next(b for b in r["blocs"] if b["code"] == "compta")["visible"])
+        page = self.client.get("/admin/").content.decode()
+        self.assertIn("Notes rapides", page)
+        self.assertNotIn("Encaissé en", page)
+
+
 class FacturesAjouterRecurrentesTests(TestCase):
     """Factures et dépenses : menu « + Ajouter », dépenses récurrentes, colonne « Déclaration », règles par fournisseur."""
 

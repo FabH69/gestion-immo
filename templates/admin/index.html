@@ -2,18 +2,29 @@
 {% load tableau_bord %}
 {% block content_title %}
 <div class="entete-accueil">
-  <h1>Bonjour {% firstof user.first_name user.get_username|capfirst %}</h1>
-  <p class="sous-titre">{% now "l j F Y" %}</p>
+  <div>
+    <h1>Bonjour {% firstof user.first_name user.get_username|capfirst %}</h1>
+    <p class="sous-titre">{% now "l j F Y" %}</p>
+  </div>
+  <a class="lien-personnaliser" href="{% url 'personnaliser_accueil' %}" title="Choisir, ranger et masquer les blocs de l'accueil">{% icone "reglages" 16 %} Personnaliser l'accueil</a>
 </div>
 {% endblock %}
 {% block content %}
 <div id="content-main" class="accueil">
   {% donnees_accueil as tb %}
-  {% include "admin/_chiffres_cles.html" %}
-  <div class="grille-accueil{% if not droits.outils and not droits.relocation and not droits.compta %} une-colonne{% endif %}">
-    {% if droits.outils or droits.relocation or droits.compta %}<div>{% bloc_compta %}{% if droits.outils %}{% bloc_a_faire %}{% elif droits.relocation %}{% bloc_taches_changement 3 %}{% endif %}</div>{% endif %}
-    <div class="colonne-cartes">{% include "admin/_cartes_laterales.html" %}</div>
-  </div>
+  {% disposition_accueil as dispo %}
+  {% with choix_accueil=dispo.donnees %}
+  {% for s in dispo.sections %}
+    {% if s.largeur %}<div class="section-accueil">{% include "admin/_bloc_accueil.html" with code=s.largeur %}</div>
+    {% elif s.seule %}<div class="section-accueil colonne-accueil">{% for code in s.seule %}{% include "admin/_bloc_accueil.html" %}{% endfor %}</div>
+    {% else %}<div class="grille-accueil">
+      <div class="colonne-accueil">{% for code in s.gauche %}{% include "admin/_bloc_accueil.html" %}{% endfor %}</div>
+      <div class="colonne-accueil colonne-cartes">{% for code in s.droite %}{% include "admin/_bloc_accueil.html" %}{% endfor %}</div>
+    </div>{% endif %}
+  {% empty %}
+  <p class="carte-vide">Tous les blocs sont masqués. <a href="{% url 'personnaliser_accueil' %}">Personnaliser l'accueil</a> pour en afficher.</p>
+  {% endfor %}
+  {% endwith %}
 </div>
 {% endblock %}
 {% block sidebar %}{% endblock %}

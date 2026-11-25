@@ -12,6 +12,9 @@ def bloc_a_faire(context):
     aujourdhui = timezone.localdate()
     relocation = bool((context.get("droits") or {}).get("relocation"))
     items = a_faire(aujourdhui, avec_taches=relocation)
+    genres = (context.get("choix_accueil") or {}).get("a_faire")
+    if genres is not None:  # types choisis dans « Personnaliser l'accueil » ; un rappel important reste toujours affiché
+        items = [i for i in items if i.get("genre", "rappels") in genres or i.get("important")]
     return {"nb_a_faire": len(items), "nb_retard": sum(i["en_retard"] for i in items), "csrf_token": context.get("csrf_token"),
             "groupes": a_faire_groupes(items, aujourdhui), "modifiable": (context.get("droits") or {}).get("outils") == "modification",
             "request": context.get("request")}
@@ -52,7 +55,19 @@ def bloc_compta(context):
     if not (context.get("droits") or {}).get("compta") or request is None:
         return {"visible": False}
     annee = annee_fiscale(request)
-    return {"visible": True, "lignes": dossiers.a_faire(annee), "annee": annee, "request": request}
+    lignes = dossiers.a_faire(annee)
+    genres = (context.get("choix_accueil") or {}).get("compta")
+    if genres is not None:  # lignes choisies dans « Personnaliser l'accueil »
+        lignes = [l for l in lignes if l.get("genre") in genres]
+    return {"visible": True, "lignes": lignes, "annee": annee, "request": request}
+
+
+@register.simple_tag(takes_context=True)
+def disposition_accueil(context):
+    """Accueil : blocs de l'utilisateur dans son ordre, à leur place, avec les données qu'il a choisies."""
+    from patrimoine import accueil
+
+    return accueil.disposition(context.get("user"), context.get("droits"))
 
 
 @register.filter
