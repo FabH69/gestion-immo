@@ -12,7 +12,7 @@
     {% for g in groupes %}
     <tr class="groupe-a-faire{% if g.important %} important{% endif %}">
       <th scope="row">{% if g.important %}<span class="etoile" title="Rappel important">★</span> {% endif %}<a href="{{ g.url }}">{{ g.titre }}</a>{% if g.retard %} <span class="pill rouge">{% if g.important %}en retard{% else %}{{ g.retard }} en retard{% endif %}</span>{% endif %}<div class="detail">{{ g.detail }}</div></th>
-      <td class="action-groupe">{% if g.action %}{% if modifiable %}<form method="post" action="{{ g.action }}" class="form-fait">{% csrf_token %}<button type="submit" class="button bouton-fait">Fait</button></form>{% endif %}{% else %}{% if g.nombre > 1 and g.detail_url != g.url %}<a class="lien-detail" href="{{ g.detail_url }}">Voir les {{ g.nombre }}</a>{% endif %}<a class="button" href="{{ g.url }}">{{ g.bouton }}</a>{% endif %}</td>
+      <td class="action-groupe">{% if g.action %}{% if modifiable %}<form method="post" action="{{ g.action }}" class="form-fait">{% csrf_token %}<button type="submit" class="button bouton-fait">Fait</button></form>{% endif %}{% else %}{% if g.nombre > 1 and g.detail_url != g.url %}<a class="lien-detail" href="{{ g.detail_url }}">Voir les {{ g.nombre }}</a>{% endif %}{% if g.encaisser %}<a class="button bouton-encaisser-accueil" href="{{ g.encaisser }}{% if g.nombre == 1 %}&amp;next={{ request.path|urlencode }}{% endif %}" title="Le locataire a payé : enregistrer le paiement">Encaisser</a> {% endif %}<a class="button" href="{{ g.url }}">{{ g.bouton }}</a>{% endif %}</td>
     </tr>
     {% empty %}
     <tr><td colspan="2" style="padding:16px;color:var(--body-quiet-color)">Rien à faire dans les 30 prochains jours.</td></tr>

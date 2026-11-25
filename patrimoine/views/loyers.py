@@ -221,6 +221,7 @@ def relances_impayes(request):
         for b in baux:
             b["suggere_libelle"] = Relance.Niveau(b["suggere"]).label.split(". ", 1)[-1]
         contexte["baux"] = baux
+        contexte["peut_modifier"] = droits.niveau(request.user, "loyers") == droits.MODIFICATION
     return render(request, "patrimoine/relances.html", contexte)
 
 

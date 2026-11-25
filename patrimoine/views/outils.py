@@ -250,7 +250,7 @@ def resultats_recherche(q, user, par_groupe=15):
             lambda o: f"{o.lot} – {o.get_type_display()}")
     actifs = [b.pk for b in baux if b.actif][:par_groupe]
     mois = timezone.localdate().replace(day=1)
-    loyers = [e for e in (Echeance.objects.filter(bail_id=pk, periode__lte=mois).select_related("bail__lot__bien").order_by("-periode").first()
+    loyers = [e for e in (Echeance.objects.filter(bail_id=pk, periode__lte=mois, nature="loyer").select_related("bail__lot__bien").order_by("-periode").first()
                           for pk in actifs) if e]
     ajouter("Loyers", "loyers", loyers, change("echeance"), lambda e: f"{e.bail.lot} · {e.get_statut_display().lower()}",
             lambda e: f"{MOIS[e.periode.month - 1].capitalize()} {e.periode.year} · {e.total:.0f} €")

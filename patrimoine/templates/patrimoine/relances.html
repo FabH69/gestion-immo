@@ -32,6 +32,7 @@
   <div class="boutons">
     <a class="button" href="{% url 'preparer_mail_relance' detail.bail.pk %}?niveau={{ niveau }}">Préparer le mail dans Outlook</a>
     <a class="button annuler" target="_blank" href="{% url 'lettre_relance' detail.bail.pk %}?niveau={{ niveau }}">Lettre PDF</a>
+    <a class="button annuler" href="{% url 'admin:patrimoine_echeance_virement' %}?bail={{ detail.bail.pk }}&amp;montant={{ detail.total|stringformat:'.2f' }}&amp;next={{ request.get_full_path|urlencode }}" title="Le locataire a payé : enregistrer le paiement">Encaisser</a>
   </div>
   <p class="legende">Chaque mail ou lettre préparé est noté dans l'historique ci-dessous ; la relance suivante est proposée d'après lui.</p>
   {% endif %}
@@ -50,7 +51,7 @@
     <td>{% for e, r in b.lignes %}{{ e.periode|date:"M Y" }}{% if not forloop.last %}, {% endif %}{% endfor %}</td>
     <td class="m">{{ b.total|euros }}</td>
     <td>{% if b.derniere %}{{ b.derniere.get_niveau_display }} le {{ b.derniere.date|date:"d/m" }}{% else %}–{% endif %}</td>
-    <td><a class="button" href="?bail={{ b.bail.pk }}">{{ b.suggere_libelle }}</a></td>
+    <td><a class="button" href="?bail={{ b.bail.pk }}">{{ b.suggere_libelle }}</a>{% if peut_modifier %} <a class="button annuler" href="{% url 'admin:patrimoine_echeance_virement' %}?bail={{ b.bail.pk }}&amp;montant={{ b.total|stringformat:'.2f' }}&amp;next={{ request.get_full_path|urlencode }}" title="Le locataire a payé : enregistrer le paiement">Encaisser</a>{% endif %}</td>
   </tr>{% endfor %}</tbody></table>
   {% else %}<p>Aucun loyer impayé en retard : rien à relancer.</p>{% endif %}
 </div>

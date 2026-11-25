@@ -10,14 +10,21 @@ from .location import Bail
 
 
 class Echeance(models.Model):
-    """Loyer dû pour un mois donné sur un bail."""
+    """Loyer dû pour un mois donné sur un bail (ou somme à part : régularisation annuelle des charges)."""
 
     class Statut(models.TextChoices):
         A_PAYER = "a_payer", "À payer"
         PARTIEL = "partiel", "Payé partiellement"
         PAYE = "paye", "Payé"
 
+    class Nature(models.TextChoices):
+        LOYER = "loyer", "Loyer du mois"
+        REGULARISATION = "regularisation", "Régularisation des charges"
+
     bail = models.ForeignKey(Bail, on_delete=models.PROTECT, related_name="echeances")
+    nature = models.CharField(max_length=15, choices=Nature.choices, default=Nature.LOYER,
+                              help_text="« Régularisation des charges » : complément de charges demandé une fois par an, "
+                                        "en plus du loyer (mettez le montant dans « charges » et 0 en loyer)")
     periode = models.DateField("période", help_text="Premier jour du mois concerné")
     loyer_hc = models.DecimalField("loyer HC (€)", max_digits=10, decimal_places=2)
     charges = models.DecimalField("charges (€)", max_digits=10, decimal_places=2, default=0)
@@ -25,15 +32,25 @@ class Echeance(models.Model):
     statut = models.CharField(max_length=10, choices=Statut.choices, default=Statut.A_PAYER, editable=False)
     ajustee = models.BooleanField("montant modifié à la main", default=False, editable=False,
                                   help_text="Le loyer ou les charges ont été corrigés à la main : ils ne sont plus recalculés automatiquement")
+    remise = models.DecimalField("remise ou abandon (€)", max_digits=10, decimal_places=2, default=0,
+                                 help_text="Partie du loyer que vous ne demandez plus (geste commercial, impayé abandonné) : "
+                                           "elle solde le loyer sans encaissement")
+    motif_remise = models.CharField("motif de la remise", max_length=255, blank=True)
 
     class Meta:
         verbose_name = "loyer"
         verbose_name_plural = "loyers"
         ordering = ["-periode", "bail__lot__bien__nom"]
-        constraints = [models.UniqueConstraint(fields=["bail", "periode"], name="echeance_unique_par_mois")]
+        constraints = [models.UniqueConstraint(fields=["bail", "periode", "nature"], name="echeance_unique_par_mois")]
 
     def __str__(self):
+        if self.nature == self.Nature.REGULARISATION:
+            return f"{self.bail.lot} – régularisation des charges {self.periode:%m/%Y}"
         return f"{self.bail.lot} – {self.periode:%m/%Y}"
+
+    @property
+    def est_regularisation(self):
+        return self.nature == self.Nature.REGULARISATION
 
     @property
     def total(self):
@@ -45,14 +62,14 @@ class Echeance(models.Model):
 
     @property
     def reste_du(self):
-        return self.total - self.montant_paye
+        return self.total - self.montant_paye - (self.remise or 0)
 
     @property
     def document(self):
         """(code, libellé) du PDF à remettre : quittance si soldé, reçu si payé en partie (obligatoire), sinon avis d'échéance."""
-        if self.statut == self.Statut.PAYE:
+        if self.statut == self.Statut.PAYE and self.montant_paye >= self.total:
             return "quittance", "Quittance"
-        if self.statut == self.Statut.PARTIEL:
+        if self.statut == self.Statut.PARTIEL or (self.statut == self.Statut.PAYE and self.montant_paye > 0):
             return "recu-partiel", "Reçu de paiement partiel"
         return "avis-echeance", "Avis d'échéance"
 
@@ -62,7 +79,7 @@ class Echeance(models.Model):
 
     def mettre_a_jour_statut(self):
         paye = self.montant_paye
-        if paye >= self.total:
+        if paye + (self.remise or 0) >= self.total:
             self.statut = self.Statut.PAYE
         elif paye > 0:
             self.statut = self.Statut.PARTIEL
@@ -83,6 +100,7 @@ class Echeance(models.Model):
             echeance, cree = cls.objects.get_or_create(
                 bail=bail,
                 periode=periode,
+                nature=cls.Nature.LOYER,
                 defaults={
                     "loyer_hc": loyer,
                     "charges": charges,
@@ -99,7 +117,7 @@ class Echeance(models.Model):
     def actualiser_loyer(self):
         """Échéance pas encore réglée ni corrigée à la main : reprend le loyer en vigueur ce mois-là (après une révision)
         et les charges du bail."""
-        if self.ajustee or self.paiements.exists():
+        if self.ajustee or self.nature != self.Nature.LOYER or self.paiements.exists():
             return False
         loyer, charges = self.bail.montants_du_mois(self.periode)
         if (self.loyer_hc, self.charges) == (loyer, charges):
@@ -118,20 +136,31 @@ class ModePaiement(models.TextChoices):
 
 
 class Versement(models.Model):
-    """Virement (ou chèque…) reçu d'un locataire, réparti sur un ou plusieurs loyers.
+    """Paiement reçu d'un locataire (virement, chèque, CAF…), réparti sur un ou plusieurs loyers.
 
-    Chaque part est un paiement rattaché à un loyer ; ce qui n'est affecté à aucun loyer reste en avance
-    et s'impute tout seul sur les loyers suivants, dès qu'ils sont créés."""
+    C'est la seule façon d'encaisser : chaque part est un paiement rattaché à un loyer ; une part peut aller au dépôt
+    de garantie ; ce qui n'est affecté à rien reste en avance et s'impute tout seul sur les loyers suivants,
+    sauf si on le rembourse au locataire. Un paiement annulé (erreur, chèque impayé, prélèvement rejeté) reste
+    dans l'historique mais ne règle plus rien."""
 
     bail = models.ForeignKey(Bail, on_delete=models.PROTECT, related_name="versements")
     date = models.DateField("date de réception")
     montant = models.DecimalField("montant reçu (€)", max_digits=10, decimal_places=2)
     mode = models.CharField(max_length=20, choices=ModePaiement.choices, default=ModePaiement.VIREMENT)
     notes = models.CharField(max_length=255, blank=True)
+    part_depot = models.DecimalField("dont dépôt de garantie (€)", max_digits=10, decimal_places=2, default=0,
+                                     help_text="Partie de ce paiement qui est le dépôt de garantie (souvent avec le premier loyer)")
+    rembourse = models.DecimalField("avance remboursée au locataire (€)", max_digits=10, decimal_places=2, default=0,
+                                    help_text="Trop-perçu rendu au locataire : il n'est plus gardé pour les loyers suivants")
+    date_remboursement = models.DateField("remboursée le", null=True, blank=True)
+    annule = models.BooleanField("annulé", default=False,
+                                 help_text="Erreur de saisie, chèque sans provision, prélèvement rejeté : le paiement reste dans "
+                                           "l'historique mais ne règle plus aucun loyer")
+    motif_annulation = models.CharField("motif de l'annulation", max_length=255, blank=True)
 
     class Meta:
-        verbose_name = "virement reçu"
-        verbose_name_plural = "virements reçus"
+        verbose_name = "paiement reçu"
+        verbose_name_plural = "paiements reçus"
         ordering = ["-date", "-pk"]
 
     def __str__(self):
@@ -143,16 +172,36 @@ class Versement(models.Model):
 
     @property
     def avance(self):
-        """Partie du versement pas encore affectée à un loyer (trop-perçu gardé pour les loyers suivants)."""
-        return self.montant - self.montant_reparti
+        """Partie du paiement affectée à rien (trop-perçu gardé pour les loyers suivants), hors dépôt et remboursement."""
+        if self.annule:
+            return 0
+        return self.montant - self.montant_reparti - (self.part_depot or 0) - (self.rembourse or 0)
+
+    def annuler(self, motif=""):
+        """Annule le paiement : ses parts sont retirées des loyers (qui redeviennent à payer), sa part de dépôt aussi."""
+        self.paiements.all().delete()
+        self.mouvements_depot.all().delete()
+        self.annule, self.motif_annulation = True, motif or self.motif_annulation
+        self.save(update_fields=["annule", "motif_annulation"])
+
+    def enregistrer_depot(self):
+        """Crée le mouvement « encaissement » du dépôt de garantie pour la part de dépôt de ce paiement."""
+        if self.part_depot and self.part_depot > 0:
+            MouvementDepot.objects.create(bail=self.bail, versement=self, type=MouvementDepot.Type.ENCAISSEMENT, date=self.date,
+                                          montant=self.part_depot, mode=self.mode,
+                                          justification=f"Part du paiement du {self.date:%d/%m/%Y}")
 
     @staticmethod
-    def repartition_proposee(bail, montant, exclure_versement=None):
-        """[(loyer, part)] : le montant couvre d'abord le loyer non soldé le plus ancien, puis le suivant…"""
+    def repartition_proposee(bail, montant, exclure_versement=None, priorite=None):
+        """[(loyer, part)] : le montant couvre d'abord le loyer choisi (bouton « Encaisser » d'une ligne), puis le loyer
+        non soldé le plus ancien, puis le suivant…"""
         from decimal import Decimal
         reste = Decimal(montant)
         parts = []
-        for e in bail.echeances.exclude(statut=Echeance.Statut.PAYE).order_by("periode"):
+        echeances = list(bail.echeances.exclude(statut=Echeance.Statut.PAYE).order_by("periode", "nature"))
+        if priorite is not None:
+            echeances.sort(key=lambda e: e.pk != priorite.pk)
+        for e in echeances:
             du = e.reste_du
             if du <= 0:
                 continue
@@ -171,7 +220,7 @@ class Versement(models.Model):
     @classmethod
     def imputer_avances(cls, echeance):
         """Nouveau loyer : utilise les avances (trop-perçus) du bail, de la plus ancienne à la plus récente."""
-        for v in cls.objects.filter(bail=echeance.bail).order_by("date", "pk"):
+        for v in cls.objects.filter(bail=echeance.bail, annule=False).order_by("date", "pk"):
             du = echeance.reste_du
             if du <= 0:
                 break
@@ -186,7 +235,7 @@ class Paiement(models.Model):
 
     echeance = models.ForeignKey(Echeance, on_delete=models.CASCADE, related_name="paiements", verbose_name="échéance")
     versement = models.ForeignKey(Versement, on_delete=models.CASCADE, null=True, blank=True, related_name="paiements",
-                                  verbose_name="virement", help_text="Virement reçu dont ce paiement est une part")
+                                  verbose_name="paiement reçu", help_text="Paiement reçu dont ce paiement est une part")
     date = models.DateField()
     montant = models.DecimalField("montant (€)", max_digits=10, decimal_places=2)
     mode = models.CharField(max_length=20, choices=Mode.choices, default=Mode.VIREMENT)
@@ -221,6 +270,8 @@ class MouvementDepot(models.Model):
         RESTITUTION = "restitution", "Restitution au locataire"
 
     bail = models.ForeignKey(Bail, on_delete=models.PROTECT, related_name="mouvements_depot")
+    versement = models.ForeignKey(Versement, on_delete=models.CASCADE, null=True, blank=True, related_name="mouvements_depot",
+                                  verbose_name="paiement reçu", help_text="Paiement reçu dont ce dépôt est une part")
     type = models.CharField(max_length=15, choices=Type.choices, default=Type.ENCAISSEMENT)
     date = models.DateField()
     montant = models.DecimalField("montant (€)", max_digits=10, decimal_places=2, help_text="Toujours positif")

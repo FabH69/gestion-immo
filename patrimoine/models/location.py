@@ -172,13 +172,13 @@ class Bail(models.Model):
         auto = lambda e: all(p.notes.startswith(self.PAIEMENT_SUPPOSE) for p in e.paiements.all())
         suivant = (Bail.objects.filter(lot_id=self.lot_id, date_debut__gt=self.date_debut).exclude(pk=self.pk)
                    .order_by("date_debut").first())
-        for e in self.echeances.filter(periode__gt=self.date_fin).order_by("periode"):
+        for e in self.echeances.filter(periode__gt=self.date_fin, nature="loyer").order_by("periode"):
             if auto(e):
                 e.delete()
                 faits.append(f"{e.periode:%m/%Y} retiré")
                 continue
             fin_mois = e.periode.replace(day=calendar.monthrange(e.periode.year, e.periode.month)[1])
-            autre = suivant.echeances.filter(periode=e.periode).first() if suivant and suivant.date_debut <= fin_mois else None
+            autre = suivant.echeances.filter(periode=e.periode, nature="loyer").first() if suivant and suivant.date_debut <= fin_mois else None
             if suivant and suivant.date_debut <= fin_mois and (autre is None or (not autre.ajustee and auto(autre))):
                 if autre:
                     autre.delete()
@@ -187,7 +187,7 @@ class Bail(models.Model):
                 faits.append(f"{e.periode:%m/%Y} encaissé rattaché au locataire suivant")
             else:
                 a_verifier.append(f"{e.periode:%m/%Y}")
-        e = self.echeances.filter(periode=self.date_fin.replace(day=1)).first()
+        e = self.echeances.filter(periode=self.date_fin.replace(day=1), nature="loyer").first()
         if e and not e.ajustee:
             paiements = list(e.paiements.all())
             if not paiements:

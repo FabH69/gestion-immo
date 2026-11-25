@@ -1,5 +1,5 @@
 {% extends "admin/base_site.html" %}
-{% block breadcrumbs %}<div class="breadcrumbs"><a href="{% url 'admin:index' %}">Accueil</a> › <a href="{% url 'admin:patrimoine_echeance_changelist' %}">Loyers</a> › Encaisser un virement</div>{% endblock %}
+{% block breadcrumbs %}<div class="breadcrumbs"><a href="{% url 'admin:index' %}">Accueil</a> › <a href="{% url 'admin:patrimoine_echeance_changelist' %}">Loyers</a> › Encaisser un paiement</div>{% endblock %}
 {% block extrastyle %}{{ block.super }}<style>
 .carte { background: var(--body-bg); border: 1px solid var(--hairline-color); border-radius: 12px; box-shadow: 0 1px 6px rgba(16,24,40,.06); padding: 16px 18px; margin-bottom: 18px; max-width: 900px; }
 .aide { font-size: .85rem; color: var(--body-quiet-color); line-height: 1.55; }
@@ -16,16 +16,22 @@ table.ech tr.total td { font-weight: 700; border-top: 2px solid var(--body-fg); 
 </style>{% endblock %}
 {% block content %}
 <form method="post">{% csrf_token %}
+{% if echeance_choisie %}<input type="hidden" name="echeance" value="{{ echeance_choisie.pk }}">{% endif %}
+{% if retour %}<input type="hidden" name="next" value="{{ retour }}">{% endif %}
 <div class="carte">
-  <p class="aide">Un virement peut régler plusieurs mois d'un coup, ou une partie seulement d'un loyer. L'appli le répartit
-    sur les loyers non soldés, du plus ancien au plus récent ; vous pouvez corriger la répartition avant de valider.
-    Ce qui dépasse reste en <b>avance</b> et sera utilisé automatiquement sur les loyers suivants.</p>
+  {% if echeance_choisie %}<p class="resume-virement">Encaisser <b>{% if echeance_choisie.est_regularisation %}la régularisation des charges{% else %}le loyer de {{ echeance_choisie.periode|date:"F Y" }}{% endif %}</b> :
+    le montant est prérempli avec le reste dû. S'il a payé pile, validez ; sinon changez le montant, la date ou le mode.</p>{% endif %}
+  <p class="aide">Un paiement peut régler plusieurs mois d'un coup, ou une partie seulement d'un loyer (le reste dû reste affiché
+    et sera comblé en premier par le paiement suivant). L'appli le répartit sur les loyers non soldés{% if echeance_choisie %}, celui-ci d'abord, puis{% else %},{% endif %}
+    du plus ancien au plus récent ; vous pouvez corriger la répartition avant de valider.
+    Ce qui dépasse reste en <b>avance</b> et sera utilisé automatiquement sur les loyers suivants (ou remboursé, depuis « Paiements reçus »).
+    Pour la CAF en tiers payant, encaissez sa part avec le mode « CAF / APL », puis la part du locataire.</p>
   {{ form.non_field_errors }}
   <div class="champs-modif">{% for f in form %}<div>{{ f.label_tag }}{{ f }}{{ f.errors }}</div>{% endfor %}</div>
   {% if not repartir %}
   <input type="hidden" name="etape" value="repartir">
   <button type="submit" class="button default">Voir la répartition</button>
-  <a class="button annuler" href="{% url 'admin:patrimoine_echeance_changelist' %}">Annuler</a>
+  <a class="button annuler" href="{% if retour %}{{ retour }}{% else %}{% url 'admin:patrimoine_echeance_changelist' %}{% endif %}">Annuler</a>
   {% else %}
   <button type="submit" name="etape" value="repartir" class="button">Recalculer la répartition</button>
   {% endif %}
@@ -35,11 +41,11 @@ table.ech tr.total td { font-weight: 700; border-top: 2px solid var(--body-fg); 
   {% if erreurs %}<ul class="erreurs">{% for e in erreurs %}<li>{{ e }}</li>{% endfor %}</ul>{% endif %}
   {% if lignes %}
   <table class="ech" id="repartition">
-    <tr><th>Mois</th><th class="m">Dû</th><th class="m">Déjà payé</th><th class="m">Reste dû</th><th class="m">Part de ce virement</th><th>Après</th></tr>
+    <tr><th>Mois</th><th class="m">Dû</th><th class="m">Déjà payé</th><th class="m">Reste dû</th><th class="m">Part de ce paiement</th><th>Après</th></tr>
     {% for l in lignes %}<tr>
-      <td>{{ l.echeance.periode|date:"m/Y" }}</td>
+      <td>{% if l.echeance.est_regularisation %}Régul. charges {% endif %}{{ l.echeance.periode|date:"m/Y" }}</td>
       <td class="m">{{ l.echeance.total|floatformat:2 }} €</td>
-      <td class="m">{{ l.echeance.montant_paye|floatformat:2 }} €</td>
+      <td class="m">{{ l.echeance.montant_paye|floatformat:2 }} €{% if l.echeance.remise %} <small>(+ remise {{ l.echeance.remise|floatformat:2 }} €)</small>{% endif %}</td>
       <td class="m">{{ l.echeance.reste_du|floatformat:2 }} €</td>
       <td class="m"><input type="text" inputmode="decimal" name="part-{{ l.echeance.pk }}" value="{{ l.part|floatformat:2 }}" data-reste="{{ l.echeance.reste_du|stringformat:'s' }}"></td>
       <td class="apres"></td>
@@ -49,10 +55,11 @@ table.ech tr.total td { font-weight: 700; border-top: 2px solid var(--body-fg); 
   {% else %}
   <p>Aucun loyer à régler pour ce bail : tout le montant sera gardé en avance pour les prochains loyers.</p>
   {% endif %}
+  {% if depot %}<p class="resume-virement">Dépôt de garantie : <b>{{ depot|floatformat:2 }} €</b> (compte des dépôts, hors loyers)</p>{% endif %}
   <p class="resume-virement">Avance gardée pour les prochains loyers : <b id="avance">{{ avance|floatformat:2 }} €</b></p>
-  {% if avance_existante %}<p class="aide">Ce locataire a déjà {{ avance_existante|floatformat:2 }} € d'avance d'un virement précédent.</p>{% endif %}
+  {% if avance_existante %}<p class="aide">Ce locataire a déjà {{ avance_existante|floatformat:2 }} € d'avance d'un paiement précédent.</p>{% endif %}
   <button type="submit" name="etape" value="valider" class="button default">Valider l'encaissement</button>
-  <a class="button annuler" href="{% url 'admin:patrimoine_echeance_changelist' %}">Annuler</a>
+  <a class="button annuler" href="{% if retour %}{{ retour }}{% else %}{% url 'admin:patrimoine_echeance_changelist' %}{% endif %}">Annuler</a>
 </div>
 <script>
 (function () {
@@ -68,7 +75,8 @@ table.ech tr.total td { font-weight: 700; border-top: 2px solid var(--body-fg); 
       apres.textContent = part >= reste ? '✓ payé' : (part > 0 ? 'partiel, reste ' + euros(reste - part) : 'non réglé');
     });
     var t = document.getElementById('total-reparti'); if (t) t.textContent = euros(total);
-    var a = nombre(champMontant.value) - total;
+    var depot = document.getElementById('id_part_depot');
+    var a = nombre(champMontant.value) - total - (depot ? nombre(depot.value) : 0);
     document.getElementById('avance').textContent = a < 0 ? 'trop réparti de ' + euros(-a) : euros(a);
   }
   document.querySelectorAll('#repartition input').forEach(function (i) { i.addEventListener('input', maj); });

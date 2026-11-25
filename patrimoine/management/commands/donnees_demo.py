@@ -4,7 +4,7 @@ from decimal import Decimal
 
 from django.core.management.base import BaseCommand
 
-from patrimoine.models import Annonce, Bail, Bien, Candidature, PhotoLot, ChangementLocataire, Garant, Echeance, MouvementDepot, Pret, Rappel, Locataire, Lot, Paiement, Proprietaire
+from patrimoine.models import Annonce, Bail, Bien, Candidature, PhotoLot, ChangementLocataire, Garant, Echeance, MouvementDepot, Pret, Rappel, Locataire, Lot, Paiement, Proprietaire, Versement
 
 
 class Command(BaseCommand):
@@ -56,9 +56,11 @@ class Command(BaseCommand):
             Echeance.generer_pour_mois(date(2026, mois, 1))
         for e in Echeance.objects.all():
             if e.periode.month == 9 or e.bail.lot == lots[0]:
-                Paiement.objects.create(echeance=e, date=e.date_exigibilite.replace(day=5), montant=e.total)
+                v = Versement.objects.create(bail=e.bail, date=e.date_exigibilite.replace(day=5), montant=e.total)
+                v.repartir([(e, e.total)])
             elif e.bail.lot == lots[3]:
-                Paiement.objects.create(echeance=e, date=date(2026, 10, 8), montant=Decimal("500"))
+                v = Versement.objects.create(bail=e.bail, date=date(2026, 10, 8), montant=Decimal("500"))
+                v.repartir([(e, Decimal("500"))])
 
         changement = ChangementLocataire.objects.create(lot=lots[1], date_conge=date(2026, 9, 20), date_arrivee=date(2027, 1, 1))
         for tache in changement.taches.all()[:2]:
