@@ -1,0 +1,5 @@
+{% extends "admin/patrimoine/change_list.html" %}
+{% block footer %}{{ block.super }}
+{% url 'admin:patrimoine_candidature_change' 999999999 as lien_fiche %}
+{% include "admin/patrimoine/_fenetre_selection.html" with lien_fiche=lien_fiche libelle_fiche="Ouvrir le dossier" %}
+{% endblock %}

@@ -676,6 +676,29 @@ class CandidatureEtGarantTests(TestCase):
         self.assertIn("Tom Martin", filtre)
         self.assertNotIn("Léa Durand", filtre)
 
+    def test_fenetre_actions_lignes_cochees(self):
+        """Dossiers de candidature cochés : fenêtre d'actions en bas (ouvrir, retenir, ne pas retenir, supprimer après confirmation)."""
+        from .models import Candidature
+
+        c = Candidature.objects.create(lot=self.lot, statut="recue", prenom="Léa", nom="Durand")
+        self.client.force_login(User.objects.create_superuser("admin", "a@example.com", "x"))
+        page = self.client.get("/admin/patrimoine/candidature/").content.decode()
+        self.assertIn('id="fenetre-selection"', page)
+        self.assertIn('id="fenetre-selection-annuler"', page)
+        self.assertIn("Ouvrir le dossier", page)
+        self.assertIn("/admin/patrimoine/candidature/999999999/change/", page)
+        for action in ("retenir", "refuser", "delete_selected"):
+            self.assertIn(f'value="{action}"', page)
+        # « Ne pas retenir » depuis la fenêtre
+        r = self.client.post("/admin/patrimoine/candidature/", {"action": "refuser", "_selected_action": [c.pk]}, follow=True)
+        self.assertContains(r, "1 dossier passé en « non retenue ».")
+        self.assertEqual(Candidature.objects.get(pk=c.pk).statut, Candidature.Statut.REFUSEE)
+        # supprimer : rien n'est supprimé sans la confirmation (« post »), puis suppression une fois confirmé
+        self.client.post("/admin/patrimoine/candidature/", {"action": "delete_selected", "_selected_action": [c.pk]})
+        self.assertTrue(Candidature.objects.filter(pk=c.pk).exists())
+        self.client.post("/admin/patrimoine/candidature/", {"action": "delete_selected", "post": "yes", "_selected_action": [c.pk]})
+        self.assertFalse(Candidature.objects.filter(pk=c.pk).exists())
+
     def test_retenir_et_preparer_le_bail(self):
         from urllib.parse import parse_qs, urlparse
 
