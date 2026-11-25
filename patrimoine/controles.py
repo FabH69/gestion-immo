@@ -182,6 +182,43 @@ def booking_manquant(aujourdhui=None):
     return lignes
 
 
+def historique_non_repris():
+    """Loyers du suivi historique pas encore devenus des paiements reçus (pas de bail ce mois-là, paiement déjà saisi)."""
+    from .models import EncaissementHistorique
+    from .reprise_historique import raison
+
+    return [(f"historique:{h.pk}", f"{_nom(h.lot)} – {MOIS_FR[h.mois.month - 1]} {h.mois.year} : {raison(h) or 'à reprendre'}",
+             _a("encaissementhistorique", h.pk))
+            for h in EncaissementHistorique.objects.select_related("lot__bien").order_by("lot_id", "mois")]
+
+
+def loyers_payes_sans_reglement():
+    """Règle de base : un loyer n'est payé que par un règlement reçu (ou une remise). Ne doit jamais rien trouver."""
+    from django.db.models import DecimalField, F, Sum, Value
+    from django.db.models.functions import Coalesce
+
+    from .models import Echeance
+
+    zero = Value(0, output_field=DecimalField())
+    qs = (Echeance.objects.filter(statut=Echeance.Statut.PAYE)
+          .annotate(paye=Coalesce(Sum("paiements__montant"), zero))
+          .filter(paye__lt=F("loyer_hc") + F("charges") - F("remise")).select_related("bail__lot__bien"))
+    return [(f"echeance:{e.pk}", f"{_nom(e.bail.lot)} – {MOIS_FR[e.periode.month - 1]} {e.periode.year}", _a("echeance", e.pk)) for e in qs]
+
+
+def avances_non_utilisees():
+    """Paiements reçus dont une partie n'est affectée à aucun loyer : à garder pour le mois suivant ou à rembourser."""
+    from .models import Versement
+
+    lignes = []
+    for v in Versement.objects.filter(annule=False).select_related("bail__lot__bien").prefetch_related("paiements"):
+        avance = v.avance
+        if avance > 0:
+            lignes.append((f"avance:{v.pk}", f"{_nom(v.bail.lot)} – {avance:.2f} € reçus le {v.date:%d/%m/%Y}".replace(".", ","),
+                           _a("versement", v.pk)))
+    return lignes
+
+
 # (code, niveau, titre, explication, icône, fonction, module de droits nécessaire pour la voir)
 CONTROLES = [
     ("bail_irl", BLOQUANT, "Baux sans IRL de référence", "La révision du loyer ne peut pas être calculée.", "irl", baux_sans_irl, "baux"),
@@ -209,6 +246,12 @@ CONTROLES = [
      "dpe", lots_dpe_sans_date, "biens"),
     ("pret_tableau", A_COMPLETER, "Prêts sans tableau de la banque", "L'échéancier est calculé : importez le tableau pour avoir les "
      "montants exacts.", "banque", prets_sans_tableau, "finances"),
+    ("loyer_sans_reglement", BLOQUANT, "Loyers payés sans règlement reçu",
+     "Un loyer n'est payé que par un paiement reçu (ou une remise) : à corriger.", "facture", loyers_payes_sans_reglement, "loyers"),
+    ("historique", A_COMPLETER, "Loyers de l'historique pas encore repris",
+     "Ces encaissements ne sont pas encore des paiements reçus : rattachez-les au bon bail.", "facture", historique_non_repris, "loyers"),
+    ("avance", A_COMPLETER, "Avances non utilisées", "Trop-perçus gardés pour les loyers suivants : à imputer ou à rembourser.",
+     "banque", avances_non_utilisees, "loyers"),
 ]
 NIVEAUX = [(BLOQUANT, "Bloquent un document"), (A_COMPLETER, "À compléter")]
 # ce qui est vérifié, dit court pour « Tout est bon »
@@ -216,7 +259,8 @@ SUJETS = {"bail_irl": "IRL des baux", "bail_locataire": "locataires des baux", "
           "lot_interdit": "classes DPE louables", "lot_dpe_date": "dates des DPE",
           "locataire_email": "e-mails des locataires", "bail_depot": "dépôts de garantie", "bail_pdl": "compteurs électriques",
           "chaudiere": "entretien des chaudières", "conciergerie": "factures de conciergerie", "booking": "imports Booking",
-          "pret_tableau": "tableaux des prêts"}
+          "pret_tableau": "tableaux des prêts", "loyer_sans_reglement": "règlements des loyers",
+          "historique": "reprise de l'historique", "avance": "avances des locataires"}
 
 
 def executer(user=None):

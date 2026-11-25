@@ -265,6 +265,27 @@ class RepriseAvantDateEntreeTests(TestCase):
         self.assertFalse(Versement.objects.filter(pk=zero.pk).exists())
         sept.refresh_from_db()
         octo.refresh_from_db()
-        self.assertEqual((sept.total, sept.statut), (Decimal("696.99"), Echeance.Statut.PAYE))  # le loyer de septembre = ce qui a été payé
-        self.assertEqual((octo.montant_paye, octo.statut), (Decimal("700"), Echeance.Statut.PAYE))
+        # le loyer n'est pas modifié : l'écart de 3,01 € est soldé une fois, par une remise visible « Écart de reprise »
+        self.assertEqual((sept.total, sept.montant_paye, sept.statut), (Decimal("700"), Decimal("696.99"), Echeance.Statut.PAYE))
+        self.assertEqual((sept.remise, sept.motif_remise), (Decimal("3.01"), "Écart de reprise de l'historique"))
+        self.assertEqual((octo.montant_paye, octo.remise, octo.statut), (Decimal("700"), 0, Echeance.Statut.PAYE))
         self.assertEqual([p.echeance for p in v10.paiements.all()], [octo])
+        # relancer la reprise ne cumule pas les remises
+        reconstruire(aujourdhui=date(2026, 11, 25))
+        sept.refresh_from_db()
+        self.assertEqual((sept.remise, sept.statut), (Decimal("3.01"), Echeance.Statut.PAYE))
+
+    def test_ecart_important_et_nouveau_paiement_restent_partiels(self):
+        """Hors reprise, et au-delà de 5 % : seul un règlement reçu rend un loyer payé."""
+        from .reprise_historique import convertir
+
+        self.H.objects.all().delete()
+        self.H.objects.create(lot=self.lot, mois=date(2026, 8, 1), montant=Decimal("50"))  # 50 sur 65 : écart trop grand
+        convertir(aujourdhui=date(2026, 11, 25))
+        aout = Echeance.objects.get(periode=date(2026, 8, 1))
+        self.assertEqual((aout.remise, aout.statut), (0, Echeance.Statut.PARTIEL))
+        oct_ = Echeance.objects.create(bail=self.bail, periode=date(2026, 10, 1), loyer_hc=65, date_exigibilite=date(2026, 10, 1))
+        v = Versement.objects.create(bail=self.bail, date=date(2026, 10, 2), montant=Decimal("64"))
+        v.repartir([(oct_, Decimal("64"))])
+        oct_.refresh_from_db()
+        self.assertEqual((oct_.remise, oct_.statut), (0, Echeance.Statut.PARTIEL))

@@ -9,12 +9,18 @@ Une ligne est laissée telle quelle quand aucun bail ne couvre le mois, ou quand
 ce lot ce mois-là (les états et déclarations l'ignorent déjà dans ce cas : la convertir compterait deux fois).
 Pour un mois antérieur au premier bail saisi (bail enregistré avec une date d'entrée trop tardive), l'action
 « Rattacher au locataire suivant » de l'historique force le rattachement au bail qui suit. Une ligne à 0 € est
-simplement retirée : rien n'a été reçu ce mois-là."""
+simplement retirée : rien n'a été reçu ce mois-là.
+
+Pendant la reprise seulement, un mois payé presque entièrement (écart d'au plus 5 % : ancien loyer avant une révision
+non saisie, arrondi) est soldé par une remise « Écart de reprise de l'historique », visible sur le loyer : le loyer
+n'est pas modifié. Les paiements saisis ensuite suivent la règle stricte : seul un règlement reçu rend un loyer payé."""
 import calendar
 from datetime import date, timedelta
 from decimal import Decimal
 
 NOTE = "Repris du suivi historique"
+MOTIF_ECART = "Écart de reprise de l'historique"
+ECART_MAX = Decimal("0.05")  # au plus 5 % du loyer du mois
 
 
 def _mois_suivant(d):
@@ -59,32 +65,43 @@ def raison(h):
     return None
 
 
-TOLERANCE = Decimal("0.95")
-
-
-def _repartir(v, bail, mois, limite):
+def _repartir(v, bail, mois, limite, touches):
     """Le montant règle d'abord le loyer de son propre mois, puis les suivants (130 € pour 65 € : ce mois et le suivant).
-    Le suivi repris dit ce qui a été payé : un mois encore sans paiement réglé un peu moins que le loyer calculé
-    (révision non saisie, arrondi : au moins 95 %) prend le montant réellement payé, au lieu de laisser un petit reste dû
-    qui décalerait tous les mois suivants."""
+    Le loyer n'est jamais modifié pour coller au paiement."""
     from .models import Paiement
 
-    reste, periode, premier = Decimal(v.montant), mois, True
+    reste, periode = Decimal(v.montant), mois
     while reste > 0 and periode <= limite and not (bail.date_fin and periode > bail.date_fin):
         e = _echeance(bail, periode)
-        if premier and e.total > 0 and TOLERANCE * e.total <= reste < e.total and not e.paiements.exists():
-            ratio = reste / e.total
-            e.loyer_hc = (e.loyer_hc * ratio).quantize(Decimal("0.01"))
-            e.charges = reste - e.loyer_hc
-            e.ajustee = True
-            e.save(update_fields=["loyer_hc", "charges", "ajustee"])
-        premier = False
         du = e.reste_du
         if du > 0:
             part = min(du, reste)
             Paiement.objects.create(echeance=e, versement=v, date=v.date, montant=part, mode=v.mode, notes=v.notes)
+            touches[e.pk] = e
             reste -= part
         periode = _mois_suivant(periode)
+
+
+def _solder_ecarts(touches):
+    """Une fois tout le suivi repris : un mois payé à au moins 95 % est soldé par une remise (écart de reprise)."""
+    soldes = 0
+    for e in touches.values():
+        e.refresh_from_db()
+        du = e.reste_du
+        if 0 < du <= ECART_MAX * e.total and e.montant_paye > 0:
+            e.remise = (e.remise or 0) + du
+            e.motif_remise = MOTIF_ECART
+            e.save(update_fields=["remise", "motif_remise"])
+            e.mettre_a_jour_statut()
+            soldes += 1
+    return soldes
+
+
+def _retirer_soldes(echeances):
+    """Retire les remises d'écart de reprise (avant de refaire la répartition)."""
+    for e in echeances.filter(motif_remise=MOTIF_ECART):
+        e.remise, e.motif_remise = 0, ""
+        e.save(update_fields=["remise", "motif_remise"])
 
 
 def reconstruire(aujourdhui=None):
@@ -94,13 +111,27 @@ def reconstruire(aujourdhui=None):
 
     limite = (aujourdhui or date.today()).replace(day=1)
     repris = list(Versement.objects.filter(notes__startswith=NOTE).select_related("bail").order_by("bail_id", "date", "pk"))
+    from .models import Echeance
+
+    echeances = Echeance.objects.filter(paiements__versement__in=repris).distinct()
+    ids = list(echeances.values_list("pk", flat=True))
     for v in repris:
         v.paiements.all().delete()  # le statut des loyers est recalculé à chaque suppression
+    echeances = Echeance.objects.filter(pk__in=ids)
+    _retirer_soldes(echeances)
+    for e in echeances.filter(ajustee=True, paiements__isnull=True):  # ancien ajustement automatique du loyer : annulé
+        e.ajustee = False
+        e.save(update_fields=["ajustee"])
+    for e in echeances:
+        e.actualiser_loyer()  # loyer en vigueur ce mois-là (révision ou loyer initial saisis sur le bail)
+        e.mettre_a_jour_statut()
+    touches = {}
     for v in repris:
         if not v.montant:
             v.delete()
             continue
-        _repartir(v, v.bail, v.date.replace(day=1), limite)
+        _repartir(v, v.bail, v.date.replace(day=1), limite, touches)
+    _solder_ecarts(touches)
     return len(repris)
 
 
@@ -113,7 +144,7 @@ def convertir(historiques=None, aujourdhui=None, bail_suivant=False):
     limite = aujourdhui.replace(day=1)
     lignes = list((historiques if historiques is not None else EncaissementHistorique.objects.all())
                   .select_related("lot").order_by("lot_id", "mois"))
-    converties, laissees = 0, []
+    converties, laissees, touches = 0, [], {}
     for h in lignes:
         mois = h.mois.replace(day=1)
         fin = mois.replace(day=calendar.monthrange(mois.year, mois.month)[1])
@@ -129,7 +160,8 @@ def convertir(historiques=None, aujourdhui=None, bail_suivant=False):
             laissees.append((h, raison(h)))
             continue
         v = Versement.objects.create(bail=bail, date=mois, montant=h.montant, notes=(f"{NOTE} – {h.note}" if h.note else NOTE)[:255])
-        _repartir(v, bail, mois, limite)
+        _repartir(v, bail, mois, limite, touches)
         h.delete()
         converties += 1
+    _solder_ecarts(touches)
     return converties, laissees

@@ -31,7 +31,7 @@ class DeplacerVersLotTests(TestCase):
                                         loyer_hc=Decimal("80"), charges=Decimal("0"), jour_echeance=5)
         self.bail.locataires.add(Locataire.objects.create(nom="Durand"))
         Echeance.generer_pour_mois(date(2026, 10, 1))
-        Paiement.objects.create(echeance=Echeance.objects.get(), date=date(2026, 10, 5), montant=Decimal("80"))
+        Paiement.recu(echeance=Echeance.objects.get(), date=date(2026, 10, 5), montant=Decimal("80"))
         EncaissementHistorique.objects.create(lot=self.lot_ancien, mois=date(2024, 12, 1), montant=Decimal("80"))
         self.facture = PieceComptable.objects.create(bien=self.garage, date=date(2026, 3, 5), fournisseur="Mairie",
                                                      libelle="Taxe foncière", montant=Decimal("120"), rubrique="taxe_fonciere")

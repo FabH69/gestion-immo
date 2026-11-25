@@ -231,10 +231,12 @@ class Versement(models.Model):
 
 
 class Paiement(models.Model):
+    """Part d'un paiement reçu affectée à un loyer. Règle de base : seul un règlement reçu rend un loyer payé ;
+    une part sans paiement reçu est donc refusée (dans le code et dans la base)."""
     Mode = ModePaiement
 
     echeance = models.ForeignKey(Echeance, on_delete=models.CASCADE, related_name="paiements", verbose_name="échéance")
-    versement = models.ForeignKey(Versement, on_delete=models.CASCADE, null=True, blank=True, related_name="paiements",
+    versement = models.ForeignKey(Versement, on_delete=models.CASCADE, related_name="paiements",
                                   verbose_name="paiement reçu", help_text="Paiement reçu dont ce paiement est une part")
     date = models.DateField()
     montant = models.DecimalField("montant (€)", max_digits=10, decimal_places=2)
@@ -248,8 +250,16 @@ class Paiement(models.Model):
         return f"{self.montant} € le {self.date:%d/%m/%Y}"
 
     def save(self, *args, **kwargs):
+        if not self.versement_id:
+            raise ValueError("Un loyer ne se règle que par un paiement reçu : passez par « Encaisser » (Versement).")
         super().save(*args, **kwargs)
         self.echeance.mettre_a_jour_statut()
+
+    @classmethod
+    def recu(cls, echeance, date, montant, mode=ModePaiement.VIREMENT, notes=""):
+        """Enregistre un paiement reçu du locataire entièrement affecté à ce loyer (raccourci : tests, données de démo)."""
+        v = Versement.objects.create(bail=echeance.bail, date=date, montant=montant, mode=mode, notes=notes)
+        return cls.objects.create(echeance=echeance, versement=v, date=date, montant=montant, mode=mode, notes=notes)
 
 
 
