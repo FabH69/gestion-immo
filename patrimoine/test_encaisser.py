@@ -201,7 +201,7 @@ class RepriseHistoriqueTests(TestCase):
         self.H.objects.create(lot=self.lot, mois=date(2026, 10, 1), montant=Decimal("65"))  # déjà saisi dans l'appli
         n, laissees = convertir(aujourdhui=date(2026, 11, 25))
         self.assertEqual(n, 0)
-        self.assertEqual(sorted(r for _, r in laissees), ["aucun bail ne couvre ce mois", "un paiement est déjà enregistré ce mois-là"])
+        self.assertEqual(sorted(r for _, r in laissees), ["aucun bail ce mois-là : le bail de Johannel commence le 01/06/2025", "un paiement est déjà enregistré ce mois-là"])
         self.assertEqual(self.H.objects.count(), 2)
 
     def test_saisie_dans_l_historique_devient_un_paiement_recu(self):
@@ -209,3 +209,83 @@ class RepriseHistoriqueTests(TestCase):
                              {"lot": self.lot.pk, "mois": "01/02/2026", "montant": "65", "charges": "0", "note": ""})
         self.assertRedirects(r, "/admin/patrimoine/versement/", fetch_redirect_response=False)
         self.assertEqual(Versement.objects.get().paiements.get().echeance.periode, date(2026, 2, 1))
+
+
+class RepriseAvantDateEntreeTests(TestCase):
+    """Bail saisi avec une date d'entrée postérieure à l'historique (cas du garage) et mois à 0 €."""
+
+    def setUp(self):
+        from .models import EncaissementHistorique
+
+        self.H = EncaissementHistorique
+        self.client.force_login(User.objects.create_superuser("admin", "a@a.fr", "x"))
+        proprio = Proprietaire.objects.create(nom="SCI G", type=Proprietaire.Type.SCI_IR)
+        bien = Bien.objects.create(proprietaire=proprio, nom="Saint Pierre", adresse="1 rue", code_postal="69000", ville="Lyon")
+        self.lot = Lot.objects.create(bien=bien, designation="Garage Saint Pierre", type=Lot.Type.PARKING)
+        self.bail = Bail.objects.create(lot=self.lot, type=Bail.Type.NU, date_debut=date(2026, 8, 1), loyer_hc=Decimal("65"), jour_echeance=1)
+        self.bail.locataires.add(Locataire.objects.create(nom="JOHANNEL", prenom="Fabrice"))
+        for mois, montant in [(1, "130"), (3, "130"), (5, "130"), (7, "130"), (8, "65"), (9, "0")]:
+            self.H.objects.create(lot=self.lot, mois=date(2026, mois, 1), montant=Decimal(montant))
+
+    def test_reprise_automatique_puis_rattachement(self):
+        from .reprise_historique import convertir
+
+        n, laissees = convertir(aujourdhui=date(2026, 11, 25))
+        self.assertEqual(n, 2)  # août converti, septembre à 0 € retiré sans paiement
+        self.assertEqual(Versement.objects.get().montant, Decimal("65"))
+        self.assertEqual(len(laissees), 4)
+        self.assertIn("JOHANNEL commence le 01/08/2026", laissees[0][1])
+        liste = self.client.get("/admin/patrimoine/encaissementhistorique/").content.decode()
+        self.assertIn("commence le 01/08/2026", liste)
+        # action « Rattacher au locataire suivant du lot et reprendre »
+        self.client.post("/admin/patrimoine/encaissementhistorique/",
+                         {"action": "reprendre_bail_suivant", "_selected_action": list(self.H.objects.values_list("pk", flat=True))})
+        self.assertFalse(self.H.objects.exists())
+        self.assertEqual(Versement.objects.filter(bail=self.bail).count(), 5)
+        janvier = Versement.objects.get(date=date(2026, 1, 1))
+        self.assertEqual(sorted(p.echeance.periode.month for p in janvier.paiements.all()), [1, 2])
+        for mois in range(1, 9):
+            self.assertEqual(Echeance.objects.get(periode=date(2026, mois, 1)).statut, Echeance.Statut.PAYE, mois)
+
+    def test_reconstruire_regle_chaque_mois_et_retire_les_zero(self):
+        """Première version : un mois payé 646,99 € sur un loyer calculé à 650 € laissait 3,01 € dû, comblés par le mois
+        suivant, et ainsi de suite (« 696,99 € » sur un loyer de 700 €)."""
+        from .reprise_historique import NOTE, reconstruire
+
+        bail = Bail.objects.create(lot=Lot.objects.create(bien=self.lot.bien, designation="Chazay"), type=Bail.Type.MEUBLE,
+                                   date_debut=date(2026, 1, 1), loyer_hc=Decimal("650"), charges=Decimal("50"), jour_echeance=5)
+        sept = Echeance.objects.create(bail=bail, periode=date(2026, 9, 1), loyer_hc=650, charges=50, date_exigibilite=date(2026, 9, 5))
+        octo = Echeance.objects.create(bail=bail, periode=date(2026, 10, 1), loyer_hc=650, charges=50, date_exigibilite=date(2026, 10, 5))
+        v9 = Versement.objects.create(bail=bail, date=date(2026, 9, 1), montant=Decimal("696.99"), notes=NOTE)
+        v9.repartir([(sept, Decimal("696.99"))])
+        v10 = Versement.objects.create(bail=bail, date=date(2026, 10, 1), montant=Decimal("700"), notes=f"{NOTE} – BOUVET")
+        v10.repartir([(sept, Decimal("3.01")), (octo, Decimal("696.99"))])  # l'ancienne répartition en chaîne
+        zero = Versement.objects.create(bail=self.bail, date=date(2026, 9, 1), montant=0, notes=NOTE)
+        reconstruire(aujourdhui=date(2026, 11, 25))
+        self.assertFalse(Versement.objects.filter(pk=zero.pk).exists())
+        sept.refresh_from_db()
+        octo.refresh_from_db()
+        # le loyer n'est pas modifié : l'écart de 3,01 € est soldé une fois, par une remise visible « Écart de reprise »
+        self.assertEqual((sept.total, sept.montant_paye, sept.statut), (Decimal("700"), Decimal("696.99"), Echeance.Statut.PAYE))
+        self.assertEqual((sept.remise, sept.motif_remise), (Decimal("3.01"), "Écart de reprise de l'historique"))
+        self.assertEqual((octo.montant_paye, octo.remise, octo.statut), (Decimal("700"), 0, Echeance.Statut.PAYE))
+        self.assertEqual([p.echeance for p in v10.paiements.all()], [octo])
+        # relancer la reprise ne cumule pas les remises
+        reconstruire(aujourdhui=date(2026, 11, 25))
+        sept.refresh_from_db()
+        self.assertEqual((sept.remise, sept.statut), (Decimal("3.01"), Echeance.Statut.PAYE))
+
+    def test_ecart_important_et_nouveau_paiement_restent_partiels(self):
+        """Hors reprise, et au-delà de 5 % : seul un règlement reçu rend un loyer payé."""
+        from .reprise_historique import convertir
+
+        self.H.objects.all().delete()
+        self.H.objects.create(lot=self.lot, mois=date(2026, 8, 1), montant=Decimal("50"))  # 50 sur 65 : écart trop grand
+        convertir(aujourdhui=date(2026, 11, 25))
+        aout = Echeance.objects.get(periode=date(2026, 8, 1))
+        self.assertEqual((aout.remise, aout.statut), (0, Echeance.Statut.PARTIEL))
+        oct_ = Echeance.objects.create(bail=self.bail, periode=date(2026, 10, 1), loyer_hc=65, date_exigibilite=date(2026, 10, 1))
+        v = Versement.objects.create(bail=self.bail, date=date(2026, 10, 2), montant=Decimal("64"))
+        v.repartir([(oct_, Decimal("64"))])
+        oct_.refresh_from_db()
+        self.assertEqual((oct_.remise, oct_.statut), (0, Echeance.Statut.PARTIEL))
