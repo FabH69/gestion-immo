@@ -12,6 +12,9 @@ table.ech .m { text-align: right; }
 table.ech input { width: 7em; text-align: right; }
 table.ech tr.total td { font-weight: 700; border-top: 2px solid var(--body-fg); border-bottom: none; }
 .erreurs { color: #b42318; }
+.defile-tableau { overflow-x: auto; }
+@media (max-width: 600px) { .champs-modif > div { width: 100%; } .champs-modif select, .champs-modif input { width: 100%; box-sizing: border-box; }
+  table.ech td, table.ech th { padding: 6px 4px; font-size: .85rem; } table.ech input { width: 5.5em; } table.ech .secondaire { display: none; } }
 .resume-virement { font-size: 1rem; margin: 10px 0; }
 </style>{% endblock %}
 {% block content %}
@@ -40,18 +43,18 @@ table.ech tr.total td { font-weight: 700; border-top: 2px solid var(--body-fg); 
 <div class="carte">
   {% if erreurs %}<ul class="erreurs">{% for e in erreurs %}<li>{{ e }}</li>{% endfor %}</ul>{% endif %}
   {% if lignes %}
-  <table class="ech" id="repartition">
-    <tr><th>Mois</th><th class="m">Dû</th><th class="m">Déjà payé</th><th class="m">Reste dû</th><th class="m">Part de ce paiement</th><th>Après</th></tr>
+  <div class="defile-tableau"><table class="ech" id="repartition">
+    <tr><th>Mois</th><th class="m secondaire">Dû</th><th class="m secondaire">Déjà payé</th><th class="m">Reste dû</th><th class="m">Part de ce paiement</th><th>Après</th></tr>
     {% for l in lignes %}<tr>
       <td>{% if l.echeance.est_regularisation %}Régul. charges {% endif %}{{ l.echeance.periode|date:"m/Y" }}</td>
-      <td class="m">{{ l.echeance.total|floatformat:2 }} €</td>
-      <td class="m">{{ l.echeance.montant_paye|floatformat:2 }} €{% if l.echeance.remise %} <small>(+ remise {{ l.echeance.remise|floatformat:2 }} €)</small>{% endif %}</td>
+      <td class="m secondaire">{{ l.echeance.total|floatformat:2 }} €</td>
+      <td class="m secondaire">{{ l.echeance.montant_paye|floatformat:2 }} €{% if l.echeance.remise %} <small>(+ remise {{ l.echeance.remise|floatformat:2 }} €)</small>{% endif %}</td>
       <td class="m">{{ l.echeance.reste_du|floatformat:2 }} €</td>
       <td class="m"><input type="text" inputmode="decimal" name="part-{{ l.echeance.pk }}" value="{{ l.part|floatformat:2 }}" data-reste="{{ l.echeance.reste_du|stringformat:'s' }}"></td>
       <td class="apres"></td>
     </tr>{% endfor %}
-    <tr class="total"><td colspan="4">Total réparti</td><td class="m" id="total-reparti">{{ total|floatformat:2 }} €</td><td></td></tr>
-  </table>
+    <tr class="total"><td>Total réparti</td><td class="secondaire"></td><td class="secondaire"></td><td></td><td class="m" id="total-reparti">{{ total|floatformat:2 }} €</td><td></td></tr>
+  </table></div>
   {% else %}
   <p>Aucun loyer à régler pour ce bail : tout le montant sera gardé en avance pour les prochains loyers.</p>
   {% endif %}
