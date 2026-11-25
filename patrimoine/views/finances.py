@@ -44,7 +44,17 @@ def etat_loyers_encaisses(request):
         response = HttpResponse(HTML(string=html).write_pdf(), content_type="application/pdf")
         response["Content-Disposition"] = f'attachment; filename="{nom_fichier}.pdf"'
         return response
+    contexte["annees_a_encaisser"] = annees_loyers_a_encaisser(proprietaire)
     return render(request, "patrimoine/etat_loyers.html", {**admin.site.each_context(request), **contexte, "liens": True, "title": f"{'Loyers réglés' if vue == 'regles' else 'Loyers encaissés'} en {annee}" + (f" – {proprietaire.nom}" if proprietaire else "")})
+
+
+def annees_loyers_a_encaisser(proprietaire=None):
+    """Années passées dont au moins un loyer déjà exigible n'est pas entièrement encaissé (ni soldé par une remise)."""
+    echeances = Echeance.objects.exclude(statut=Echeance.Statut.PAYE).filter(
+        date_exigibilite__lte=timezone.localdate(), periode__year__lt=timezone.localdate().year)
+    if proprietaire:
+        echeances = echeances.filter(bail__lot__bien__proprietaire=proprietaire)
+    return sorted({d.year for d in echeances.dates("periode", "year")}, reverse=True)
 
 
 @staff_member_required

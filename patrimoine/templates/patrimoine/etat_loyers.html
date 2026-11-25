@@ -3,6 +3,7 @@
 {% block extrastyle %}{{ block.super }}<style>{% include "patrimoine/_style_etat.css" %}
 .filtres { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; margin: 10px 0 18px; }
 .filtres select { padding: 4px; }
+.filtre-annee { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
 .etat-scroll { overflow-x: auto; }
 </style>{% endblock %}
 {% block breadcrumbs %}<div class="breadcrumbs"><a href="{% url 'admin:index' %}">Accueil</a> › <a href="{% url 'etat_loyers_encaisses' %}">États</a> › {% if vue == 'regles' %}Loyers réglés{% else %}Loyers encaissés{% endif %}</div>{% endblock %}
@@ -15,7 +16,7 @@
     <a href="?annee={{ annee }}&proprietaire={{ proprietaire.pk|default:'' }}&vue=regles" class="chip{% if vue == 'regles' %} actif{% endif %}" title="Chaque paiement au mois du loyer qu'il règle">Loyers réglés</a>
   </div>
   {% if vue == 'regles' %}<input type="hidden" name="vue" value="regles">{% endif %}
-  <label>Année {% boutons_annees annees annee %}<input type="hidden" name="annee" value="{{ annee }}"></label>
+  <div class="filtre-annee">Année {% boutons_annees annees annee "loyers" annees_a_encaisser %}<input type="hidden" name="annee" value="{{ annee }}"></div>
   <label>Propriétaire
     <select name="proprietaire" onchange="this.form.submit()">
       <option value="">Tous</option>

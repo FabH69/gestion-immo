@@ -607,9 +607,11 @@ def navigation_periode(cl):
 
 
 @register.inclusion_tag("patrimoine/_annees.html", takes_context=True)
-def boutons_annees(context, annees, annee, mode=""):
+def boutons_annees(context, annees, annee, mode="", ouvertes=()):
     """Années en boutons (à la place d'une liste déroulante) ; les autres paramètres de la page sont conservés.
-    mode « civil » : année en cours et précédente en boutons, années antérieures dans une liste déroulante."""
+    mode « civil » : année en cours et précédente en boutons, années antérieures dans une liste déroulante.
+    mode « loyers » : année en cours et années passées dont des loyers restent à encaisser (`ouvertes`) en boutons,
+    toutes les autres dans une liste déroulante « Autres années »."""
     request = context.get("request")
 
     def lien(a):
@@ -624,6 +626,15 @@ def boutons_annees(context, annees, annee, mode=""):
         toutes = {int(x) for x in annees} | set(range(t - 10, t - 1))  # toujours les années passées, même sans donnée
         anterieures = [{"libelle": a, "url": lien(a), "actif": int(a) == int(annee)} for a in sorted(toutes, reverse=True) if a < t - 1]
         return {"boutons": boutons, "anterieures": anterieures, "anterieure_active": any(a["actif"] for a in anterieures)}
+    if mode == "loyers":
+        t = timezone.localdate().year
+        ouvertes = {int(a) for a in ouvertes if int(a) < t}
+        boutons = [{"libelle": f"{t} (en cours)", "url": lien(t), "actif": int(annee) == t}]
+        boutons += [{"libelle": f"{a} (à encaisser)", "url": lien(a), "actif": int(annee) == a} for a in sorted(ouvertes, reverse=True)]
+        autres = [{"libelle": a, "url": lien(a), "actif": int(a) == int(annee)}
+                  for a in sorted({int(x) for x in annees} | {int(annee)}, reverse=True) if a != t and a not in ouvertes]
+        return {"boutons": boutons, "anterieures": autres, "anterieure_active": any(a["actif"] for a in autres),
+                "titre_liste": "Autres années"}
     boutons = []
     for a in sorted(annees, reverse=True):
         boutons.append({"libelle": a, "url": lien(a), "actif": a == annee})

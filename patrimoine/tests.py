@@ -133,6 +133,31 @@ class EtatLoyersTests(TestCase):
         r = self.client.get("/etats/loyers-encaisses/", {"annee": 2025, "format": "pdf"})
         self.assertEqual(r["Content-Type"], "application/pdf")
 
+    def test_annees_en_boutons_tant_que_loyers_a_encaisser(self):
+        """Année en cours + années passées avec un loyer non encaissé en boutons ; les autres dans une liste déroulante."""
+        t = timezone.localdate().year
+        lot = Lot.objects.create(bien=Bien.objects.get(nom="Bien SCI A"), designation="Cave")
+        bail = Bail.objects.create(lot=lot, type=Bail.Type.NU, date_debut=date(t - 3, 1, 1), loyer_hc=Decimal("40"))
+        Echeance.objects.create(bail=bail, periode=date(t - 2, 12, 1), loyer_hc=Decimal("40"), date_exigibilite=date(t - 2, 12, 1))
+        paye = Echeance.objects.create(bail=bail, periode=date(t - 3, 6, 1), loyer_hc=Decimal("40"), date_exigibilite=date(t - 3, 6, 1))
+        Paiement.objects.create(echeance=paye, date=date(t - 3, 6, 2), montant=Decimal("40"))
+        paye.mettre_a_jour_statut()
+
+        page = self.client.get("/etats/loyers-encaisses/").content.decode()
+        self.assertIn(f">{t} (en cours)</a>", page)
+        self.assertIn(f">{t - 2} (à encaisser)</a>", page)
+        self.assertNotIn(f"{t - 3} (à encaisser)", page)
+        self.assertIn("Autres années", page)
+        self.assertIn(f">{t - 3}</option>", page)
+        self.assertNotIn(f">{t - 2}</option>", page)
+        # le loyer est encaissé : l'année passe dans la liste déroulante
+        e = Echeance.objects.get(bail=bail, periode=date(t - 2, 12, 1))
+        Paiement.objects.create(echeance=e, date=date(t - 1, 1, 5), montant=Decimal("40"))
+        e.mettre_a_jour_statut()
+        page = self.client.get("/etats/loyers-encaisses/").content.decode()
+        self.assertNotIn("(à encaisser)", page)
+        self.assertIn(f">{t - 2}</option>", page)
+
 
 class ChangementLocataireTests(TestCase):
     def setUp(self):
