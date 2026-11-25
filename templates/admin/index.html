@@ -13,7 +13,7 @@
 <div id="content-main" class="accueil">
   {% donnees_accueil as tb %}
   {% disposition_accueil as dispo %}
-  {% with choix_accueil=dispo.donnees %}
+  {% with choix_accueil=dispo.donnees libelles_accueil=dispo.libelles %}
   {% for s in dispo.sections %}
     {% if s.largeur %}<div class="section-accueil">{% include "admin/_bloc_accueil.html" with code=s.largeur %}</div>
     {% elif s.seule %}<div class="section-accueil colonne-accueil">{% for code in s.seule %}{% include "admin/_bloc_accueil.html" %}{% endfor %}</div>
