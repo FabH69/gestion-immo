@@ -402,3 +402,23 @@ def agenda_flux(request, jeton):
     reponse["Content-Disposition"] = 'inline; filename="gestion-immo.ics"'
     reponse["Cache-Control"] = "private, max-age=900"
     return reponse
+
+
+@staff_member_required
+def personnaliser_accueil(request):
+    """Accueil › Personnaliser : chacun range ses blocs (ordre, place), les affiche ou non et choisit les données montrées."""
+    from .. import accueil, droits
+
+    acces = {**droits.niveaux(request.user), "admin": request.user.is_superuser}
+    if request.method == "POST":
+        if request.POST.get("action") == "origine":
+            accueil.enregistrer(request.user, accueil.reglages_d_origine())
+            messages.success(request, "L'accueil a retrouvé sa présentation d'origine.")
+            return redirect("personnaliser_accueil")
+        accueil.enregistrer(request.user, accueil.depuis_formulaire(request.POST, accueil.reglages(request.user)))
+        messages.success(request, "Votre accueil est enregistré.")
+        return redirect("admin:index" if request.POST.get("action") == "voir" else "personnaliser_accueil")
+    return render(request, "patrimoine/personnaliser_accueil.html", {
+        **admin.site.each_context(request), "title": "Personnaliser l'accueil",
+        "blocs": accueil.pour_l_ecran(request.user, acces), "places": accueil.PLACES,
+    })

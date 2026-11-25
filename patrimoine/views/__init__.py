@@ -63,6 +63,7 @@ from .outils import (  # noqa: F401
     agenda_abonnement,
     agenda_flux,
     enregistrer_note,
+    personnaliser_accueil,
     fichier_prive,
     ne_plus_rappeler,
     rappel_agenda,
