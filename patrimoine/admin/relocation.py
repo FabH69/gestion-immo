@@ -407,7 +407,8 @@ class CandidatureAdmin(LotsALouerMixin, admin.ModelAdmin):
 
     @admin.action(description="Ne pas retenir")
     def refuser(self, request, queryset):
-        queryset.update(statut=Candidature.Statut.REFUSEE)
+        n = queryset.update(statut=Candidature.Statut.REFUSEE)
+        self.message_user(request, f"{n} dossier{'s' if n > 1 else ''} passé{'s' if n > 1 else ''} en « non retenue ».")
 
 
 @admin.register(Annonce)
