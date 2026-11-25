@@ -289,3 +289,24 @@ class RepriseAvantDateEntreeTests(TestCase):
         v.repartir([(oct_, Decimal("64"))])
         oct_.refresh_from_db()
         self.assertEqual((oct_.remise, oct_.statut), (0, Echeance.Statut.PARTIEL))
+
+
+class ReprisePaiementEnRetardTests(TestCase):
+    """Après la PR 91 : un paiement repris arrivé en retard partait sur les mois suivants, laissant le mois oublié impayé
+    (et une avance inutilisée au bout)."""
+
+    def test_paiement_en_retard_regle_le_mois_oublie(self):
+        from .models import EncaissementHistorique as H
+        from .reprise_historique import convertir
+
+        proprio = Proprietaire.objects.create(nom="SCI R", type=Proprietaire.Type.SCI_IR)
+        bien = Bien.objects.create(proprietaire=proprio, nom="Rue", adresse="1 rue", code_postal="69000", ville="Lyon")
+        lot = Lot.objects.create(bien=bien, designation="T1")
+        bail = Bail.objects.create(lot=lot, type=Bail.Type.NU, date_debut=date(2026, 1, 1), loyer_hc=Decimal("500"), jour_echeance=1)
+        for mois, montant in [(1, "500"), (2, "0"), (3, "1000"), (4, "500")]:
+            H.objects.create(lot=lot, mois=date(2026, mois, 1), montant=Decimal(montant))
+        convertir(aujourdhui=date(2026, 4, 20))
+        for mois in (1, 2, 3, 4):
+            self.assertEqual(Echeance.objects.get(bail=bail, periode=date(2026, mois, 1)).statut, Echeance.Statut.PAYE, mois)
+        self.assertFalse(Echeance.objects.filter(periode=date(2026, 5, 1)).exists())
+        self.assertEqual(sum(v.avance for v in Versement.objects.all()), 0)

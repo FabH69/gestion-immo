@@ -66,19 +66,32 @@ def raison(h):
 
 
 def _repartir(v, bail, mois, limite, touches):
-    """Le montant règle d'abord le loyer de son propre mois, puis les suivants (130 € pour 65 € : ce mois et le suivant).
-    Le loyer n'est jamais modifié pour coller au paiement."""
-    from .models import Paiement
+    """Le montant règle d'abord le loyer de son propre mois, puis les loyers plus anciens restés impayés (paiement en
+    retard : rien en janvier, 130 € en février règlent février puis janvier), puis les mois suivants (130 € pour 65 €
+    en janvier : janvier et février). Comme le bouton « Encaisser ». Le loyer n'est jamais modifié pour coller au paiement."""
+    from .models import Echeance, Paiement
 
-    reste, periode = Decimal(v.montant), mois
-    while reste > 0 and periode <= limite and not (bail.date_fin and periode > bail.date_fin):
-        e = _echeance(bail, periode)
+    reste = Decimal(v.montant)
+
+    def payer(e):
+        nonlocal reste
         du = e.reste_du
-        if du > 0:
+        if du > 0 and reste > 0:
             part = min(du, reste)
             Paiement.objects.create(echeance=e, versement=v, date=v.date, montant=part, mode=v.mode, notes=v.notes)
             touches[e.pk] = e
             reste -= part
+
+    if mois <= limite and not (bail.date_fin and mois > bail.date_fin):
+        payer(_echeance(bail, mois))
+    premier = bail.echeances.filter(nature=Echeance.Nature.LOYER).order_by("periode").values_list("periode", flat=True).first()
+    periode = max(premier, bail.date_debut.replace(day=1)) if premier else mois
+    while reste > 0 and periode < mois:  # mois plus anciens, y compris un mois sans rien reçu entre deux paiements
+        payer(_echeance(bail, periode))
+        periode = _mois_suivant(periode)
+    periode = _mois_suivant(mois)
+    while reste > 0 and periode <= limite and not (bail.date_fin and periode > bail.date_fin):
+        payer(_echeance(bail, periode))
         periode = _mois_suivant(periode)
 
 
