@@ -30,10 +30,34 @@ def libelle_echeance(e):
 
 @admin.register(EncaissementHistorique)
 class EncaissementHistoriqueAdmin(admin.ModelAdmin):
+    """Loyers repris d'un ancien suivi. Enregistrer une ligne la transforme en paiement reçu du locataire de ce mois-là
+    (réparti sur les loyers qu'elle couvre) : il n'y a ainsi qu'une seule liste des encaissements, « Paiements reçus ».
+    Les lignes qui restent ici sont celles qu'on n'a pas pu rattacher (aucun bail ce mois-là, ou paiement déjà saisi)."""
     list_display = ["mois", "lot", "montant", "charges", "note"]
     list_filter = ["lot__bien__proprietaire"]
     date_hierarchy = "mois"
     navigation_par = "mois"
+
+    def save_model(self, request, obj, form, change):
+        super().save_model(request, obj, form, change)
+        from ..reprise_historique import convertir
+
+        n, laissees = convertir(EncaissementHistorique.objects.filter(pk=obj.pk))
+        if n:
+            self.message_user(request, f"{obj.montant} € de {obj.mois:%m/%Y} enregistrés comme paiement reçu du locataire "
+                                       "(voir « Paiements reçus »).", messages.SUCCESS)
+        for _, raison in laissees:
+            self.message_user(request, f"Gardé dans l'historique : {raison}.", messages.WARNING)
+
+    def response_add(self, request, obj, post_url_continue=None):
+        if not EncaissementHistorique.objects.filter(pk=obj.pk).exists():
+            return redirect("admin:patrimoine_versement_changelist")
+        return super().response_add(request, obj, post_url_continue)
+
+    def response_change(self, request, obj):
+        if not EncaissementHistorique.objects.filter(pk=obj.pk).exists():
+            return redirect("admin:patrimoine_versement_changelist")
+        return super().response_change(request, obj)
 
 
 class EcheanceStatutFilter(admin.SimpleListFilter):

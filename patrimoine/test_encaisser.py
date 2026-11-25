@@ -156,3 +156,56 @@ class EncaisserTests(TestCase):
                                                          "reglement": "tous"})
         self.assertEqual(Versement.objects.count(), 2)
         self.assertFalse(Paiement.objects.filter(versement__isnull=True).exists())
+
+
+class RepriseHistoriqueTests(TestCase):
+    """Loyers encaissés (historique) → paiements reçus, y compris un montant qui couvre deux mois."""
+
+    def setUp(self):
+        from .models import EncaissementHistorique
+
+        self.H = EncaissementHistorique
+        self.client.force_login(User.objects.create_superuser("admin", "a@a.fr", "x"))
+        proprio = Proprietaire.objects.create(nom="SCI G", type=Proprietaire.Type.SCI_IR)
+        bien = Bien.objects.create(proprietaire=proprio, nom="Saint Pierre", adresse="1 rue", code_postal="69000", ville="Lyon")
+        self.lot = Lot.objects.create(bien=bien, designation="Garage Saint Pierre", type=Lot.Type.PARKING)
+        self.bail = Bail.objects.create(lot=self.lot, type=Bail.Type.NU, date_debut=date(2025, 6, 1), loyer_hc=Decimal("65"), jour_echeance=1)
+        self.bail.locataires.add(Locataire.objects.create(nom="Johannel"))
+
+    def test_un_montant_qui_couvre_deux_mois(self):
+        from .reprise_historique import convertir
+
+        self.H.objects.create(lot=self.lot, mois=date(2026, 1, 1), montant=Decimal("130"))
+        self.H.objects.create(lot=self.lot, mois=date(2026, 3, 1), montant=Decimal("65"), note="virement mars")
+        n, laissees = convertir(aujourdhui=date(2026, 11, 25))
+        self.assertEqual((n, laissees), (2, []))
+        self.assertFalse(self.H.objects.exists())
+        janvier, mars = Versement.objects.order_by("date")
+        self.assertEqual((janvier.date, janvier.montant, janvier.avance), (date(2026, 1, 1), Decimal("130"), 0))
+        self.assertEqual(sorted(p.echeance.periode.month for p in janvier.paiements.all()), [1, 2])
+        self.assertEqual([p.echeance.periode.month for p in mars.paiements.all()], [3])
+        self.assertIn("virement mars", mars.notes)
+        for mois in (1, 2, 3):
+            self.assertEqual(Echeance.objects.get(periode=date(2026, mois, 1)).statut, Echeance.Statut.PAYE)
+        self.assertFalse(Echeance.objects.filter(periode=date(2026, 4, 1)).exists())  # pas de loyer inventé sans historique
+        self.assertContains(self.client.get("/admin/patrimoine/versement/"), "Johannel")
+
+    def test_lignes_laissees(self):
+        from .reprise_historique import convertir
+
+        self.H.objects.create(lot=self.lot, mois=date(2025, 1, 1), montant=Decimal("65"))  # avant le bail
+        Echeance.generer_pour_mois(date(2026, 10, 1))
+        e = Echeance.objects.get()
+        v = Versement.objects.create(bail=self.bail, date=date(2026, 10, 3), montant=Decimal("65"))
+        v.repartir([(e, Decimal("65"))])
+        self.H.objects.create(lot=self.lot, mois=date(2026, 10, 1), montant=Decimal("65"))  # déjà saisi dans l'appli
+        n, laissees = convertir(aujourdhui=date(2026, 11, 25))
+        self.assertEqual(n, 0)
+        self.assertEqual(sorted(r for _, r in laissees), ["aucun bail ne couvre ce mois", "un paiement est déjà enregistré ce mois-là"])
+        self.assertEqual(self.H.objects.count(), 2)
+
+    def test_saisie_dans_l_historique_devient_un_paiement_recu(self):
+        r = self.client.post("/admin/patrimoine/encaissementhistorique/add/",
+                             {"lot": self.lot.pk, "mois": "01/02/2026", "montant": "65", "charges": "0", "note": ""})
+        self.assertRedirects(r, "/admin/patrimoine/versement/", fetch_redirect_response=False)
+        self.assertEqual(Versement.objects.get().paiements.get().echeance.periode, date(2026, 2, 1))
