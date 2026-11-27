@@ -65,6 +65,37 @@ def raison(h):
     return None
 
 
+def raisons(historiques):
+    """Comme raison(h) pour une liste de lignes d'historique, en quelques requêtes au total (contrôles)."""
+    from .models import Bail, Paiement
+
+    lots = {h.lot_id for h in historiques}
+    if not lots:
+        return []
+    payes = {(lot, d.year, d.month) for lot, d in
+             Paiement.objects.filter(echeance__bail__lot_id__in=lots).values_list("echeance__bail__lot_id", "date")}
+    baux = {}
+    for b in Bail.objects.filter(lot_id__in=lots).prefetch_related("locataires").order_by("date_debut", "pk"):
+        baux.setdefault(b.lot_id, []).append(b)
+    resultat = []
+    for h in historiques:
+        mois = h.mois.replace(day=1)
+        fin = mois.replace(day=calendar.monthrange(mois.year, mois.month)[1])
+        du_lot = baux.get(h.lot_id, [])
+        if (h.lot_id, mois.year, mois.month) in payes:
+            resultat.append("un paiement est déjà enregistré ce mois-là")
+        elif not any(b.date_debut <= fin and not (b.date_fin and b.date_fin < mois) for b in du_lot):
+            suivant = next((b for b in du_lot if b.date_debut > mois), None)
+            if suivant:
+                noms = ", ".join(str(l) for l in suivant.locataires.all()) or "le bail suivant"
+                resultat.append(f"aucun bail ce mois-là : le bail de {noms} commence le {suivant.date_debut:%d/%m/%Y}")
+            else:
+                resultat.append("aucun bail ne couvre ce mois")
+        else:
+            resultat.append(None)
+    return resultat
+
+
 def _repartir(v, bail, mois, limite, touches):
     """Le montant règle d'abord le loyer de son propre mois, puis les loyers plus anciens restés impayés (paiement en
     retard : rien en janvier, 130 € en février règlent février puis janvier), puis les mois suivants (130 € pour 65 €
