@@ -1,6 +1,6 @@
 """Échéances de loyer, paiements, dépôts de garantie, relances et loyers repris d'un ancien suivi."""
 import calendar
-from datetime import date
+from datetime import date, timedelta
 from decimal import Decimal
 from django.db import models
 from django.db.models.signals import post_delete
@@ -106,6 +106,34 @@ class Echeance(models.Model):
         else:
             self.statut = self.Statut.A_PAYER
         self.save(update_fields=["statut"])
+
+    @classmethod
+    def rattraper(cls, aujourdhui=None, max_mois=12):
+        """Mois oubliés : pour chaque bail actif, crée les loyers manquants entre son premier loyer et le mois en cours
+        (trou entre deux loyers ou après le dernier ; au plus 12 mois en arrière). Arrive quand l'appli n'a pas été
+        ouverte un mois, ou quand le bail a été saisi ou déplacé après coup. Jamais avant le premier loyer existant :
+        pas de loyers anciens inventés. Renvoie le nombre créé."""
+        aujourdhui = aujourdhui or date.today()
+        courant = aujourdhui.replace(day=1)
+        plancher = courant
+        for _ in range(max_mois):
+            plancher = (plancher - timedelta(days=1)).replace(day=1)
+        crees = 0
+        for bail in Bail.objects.filter(actif=True):
+            premier = bail.echeances.filter(nature=cls.Nature.LOYER).order_by("periode").values_list("periode", flat=True).first()
+            if premier is None:
+                continue
+            mois = max(premier, plancher, bail.date_debut.replace(day=1))
+            while mois < courant and not (bail.date_fin and mois > bail.date_fin):
+                fin = mois.replace(day=calendar.monthrange(mois.year, mois.month)[1])
+                loyer, charges = bail.montants_du_mois(mois)
+                e, cree = cls.objects.get_or_create(bail=bail, periode=mois, nature=cls.Nature.LOYER, defaults={
+                    "loyer_hc": loyer, "charges": charges, "date_exigibilite": mois.replace(day=min(bail.jour_echeance, fin.day))})
+                if cree:
+                    Versement.imputer_avances(e)
+                    crees += 1
+                mois = (mois.replace(day=28) + timedelta(days=4)).replace(day=1)
+        return crees
 
     @classmethod
     def generer_pour_mois(cls, periode):

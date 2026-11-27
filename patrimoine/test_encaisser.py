@@ -360,3 +360,24 @@ class AffecterAvanceTests(DatesDesLoyersTests):
         statuts = [e.statut for e in Echeance.objects.order_by("periode")]
         self.assertEqual(statuts, [Echeance.Statut.PAYE, Echeance.Statut.PAYE, Echeance.Statut.PARTIEL])
         self.assertEqual(Versement.objects.get().avance, 0)
+
+
+class RattrapageMoisOubliesTests(DatesDesLoyersTests):
+    """Bail saisi ou déplacé après coup (garage) : les mois entre son dernier loyer et le mois en cours sont créés."""
+
+    def test_mois_manquants_crees_depuis_le_dernier_loyer(self):
+        n = Echeance.rattraper(aujourdhui=date(2023, 7, 10))
+        self.assertEqual(n, 3)  # avril, mai, juin ; le mois en cours reste à generer_pour_mois
+        self.assertEqual(sorted(e.periode.month for e in Echeance.objects.all()), [1, 2, 3, 4, 5, 6])
+        self.assertEqual(Echeance.rattraper(aujourdhui=date(2023, 7, 10)), 0)  # pas de doublon
+        Echeance.objects.filter(periode=date(2023, 5, 1)).delete()  # trou entre deux loyers (octobre du garage)
+        self.assertEqual(Echeance.rattraper(aujourdhui=date(2023, 7, 10)), 1)
+        avant = Bail.objects.create(lot=self.bail.lot, type=Bail.Type.NU, date_debut=date(2020, 1, 1), date_fin=date(2020, 12, 31),
+                                    loyer_hc=Decimal("500"), jour_echeance=5, actif=False)
+        self.assertFalse(avant.echeances.exists())  # bail terminé : rien n'est inventé
+
+    def test_avance_imputee_sur_les_mois_rattrapes(self):
+        v = Versement.objects.create(bail=self.bail, date=date(2023, 3, 5), montant=Decimal("2200"))
+        v.repartir([(e, Decimal("550")) for e in self.ech])  # 550 d'avance
+        Echeance.rattraper(aujourdhui=date(2023, 6, 10))
+        self.assertEqual(Echeance.objects.get(periode=date(2023, 4, 1)).statut, Echeance.Statut.PAYE)
