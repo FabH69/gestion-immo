@@ -13,10 +13,26 @@ from .fiche import FicheMixin
 
 
 class BienInline(admin.TabularInline):
+    """Biens du propriétaire : les biens vendus passent en bas, avec la date de vente et le prix s'il est connu."""
     model = Bien
-    fields = ["nom", "ville"]
+    fields = ["nom", "ville", "vente"]
+    readonly_fields = ["vente"]
     extra = 0
     show_change_link = True
+
+    def get_queryset(self, request):
+        return super().get_queryset(request).prefetch_related("immobilisations").order_by("vendu", "-date_vente", "nom")
+
+    @admin.display(description="vente")
+    def vente(self, obj):
+        if not obj.pk or not obj.vendu:
+            return "–"
+        # prix connu : prix de cession saisi sur les immobilisations sorties pour « Vente du bien »
+        prix = [i.prix_cession for i in obj.immobilisations.all() if i.motif_sortie == "vente_bien" and i.prix_cession is not None]
+        texte = "Vendu" + (f" le {obj.date_vente:%d/%m/%Y}" if obj.date_vente else "")
+        if prix:
+            texte += f" – {euros_liste(sum(prix))}"
+        return format_html('<span class="pill gris">{}</span>', texte)
 
 
 class PhotoInline(admin.TabularInline):
@@ -80,7 +96,10 @@ class ProprietaireAdmin(admin.ModelAdmin):
 
     @admin.display(description="biens")
     def nb_biens(self, obj):
-        return obj.biens.count()
+        biens = list(obj.biens.all())
+        vendus = sum(1 for b in biens if b.vendu)
+        en_cours = len(biens) - vendus
+        return f"{en_cours} (+ {vendus} vendu{'s' if vendus > 1 else ''})" if vendus else en_cours
 
 
 @admin.register(Syndic)
