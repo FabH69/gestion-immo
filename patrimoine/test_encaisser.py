@@ -310,3 +310,40 @@ class ReprisePaiementEnRetardTests(TestCase):
             self.assertEqual(Echeance.objects.get(bail=bail, periode=date(2026, mois, 1)).statut, Echeance.Statut.PAYE, mois)
         self.assertFalse(Echeance.objects.filter(periode=date(2026, 5, 1)).exists())
         self.assertEqual(sum(v.avance for v in Versement.objects.all()), 0)
+
+
+class DatesDesLoyersTests(TestCase):
+    """Loyers anciens encaissés d'un coup : chacun doit garder la date de son mois (états, déclarations)."""
+
+    def setUp(self):
+        self.client.force_login(User.objects.create_superuser("admin", "a@a.fr", "x"))
+        proprio = Proprietaire.objects.create(nom="SCI D", type=Proprietaire.Type.SCI_IR)
+        bien = Bien.objects.create(proprietaire=proprio, nom="Thibaudiere", adresse="1 rue", code_postal="69000", ville="Lyon")
+        self.bail = Bail.objects.create(lot=Lot.objects.create(bien=bien, designation="Maison"), type=Bail.Type.NU,
+                                        date_debut=date(2023, 1, 1), loyer_hc=Decimal("550"), jour_echeance=5)
+        self.ech = [Echeance.objects.create(bail=self.bail, periode=date(2023, m, 1), loyer_hc=550, date_exigibilite=date(2023, m, 5))
+                    for m in (1, 2, 3)]
+
+    def test_tout_encaisser_date_chaque_loyer_a_son_echeance(self):
+        self.client.post("/admin/patrimoine/echeance/", {"action": "marquer_paye", "_selected_action": [e.pk for e in self.ech]})
+        self.assertEqual(sorted(Versement.objects.values_list("date", flat=True)), [date(2023, 1, 5), date(2023, 2, 5), date(2023, 3, 5)])
+
+    def test_remettre_a_la_date_d_echeance(self):
+        v = Versement.objects.create(bail=self.bail, date=date(2026, 11, 27), montant=Decimal("1650"))
+        v.repartir([(e, Decimal("550")) for e in self.ech])
+        seul = Versement.objects.create(bail=self.bail, date=date(2026, 11, 27), montant=Decimal("550"))
+        avril = Echeance.objects.create(bail=self.bail, periode=date(2023, 4, 1), loyer_hc=550, date_exigibilite=date(2023, 4, 5))
+        seul.repartir([(avril, Decimal("550"))])
+        donnees = {"action": "dater_a_l_echeance", "_selected_action": [v.pk, seul.pk]}
+        r = self.client.post("/admin/patrimoine/versement/", donnees)
+        self.assertContains(r, "Redater 4 loyers")
+        self.assertEqual(Versement.objects.filter(date=date(2026, 11, 27)).count(), 2)  # aperçu : rien n'a changé
+        from unittest import mock
+        with mock.patch("patrimoine.sauvegarde.creer") as sauvegarde:
+            self.client.post("/admin/patrimoine/versement/", {**donnees, "appliquer": "1"})
+        sauvegarde.assert_called_once()
+        self.assertEqual(sorted(Versement.objects.values_list("date", "montant")),
+                         [(date(2023, m, 5), Decimal("550.00")) for m in (1, 2, 3, 4)])
+        from .models import Paiement
+        self.assertEqual(sorted(Paiement.objects.values_list("date", flat=True)), [date(2023, m, 5) for m in (1, 2, 3, 4)])
+        self.assertTrue(all(e.statut == Echeance.Statut.PAYE for e in Echeance.objects.all()))

@@ -477,14 +477,15 @@ class EcheanceAdmin(admin.ModelAdmin):
             "action_checkbox_name": admin.helpers.ACTION_CHECKBOX_NAME,
         })
 
-    @admin.action(description="Tout encaisser (virement, aujourd'hui)")
+    @admin.action(description="Tout encaisser (virement, à la date d'échéance de chaque loyer)")
     def marquer_paye(self, request, queryset):
-        """Un paiement reçu par loyer coché, du reste dû, daté d'aujourd'hui."""
+        """Un paiement reçu par loyer coché, du reste dû, daté de l'échéance du loyer (aujourd'hui si elle n'est pas passée) :
+        des loyers anciens cochés ensemble gardent chacun leur date, pour les états et les déclarations."""
         n = 0
         for e in queryset.exclude(statut=Echeance.Statut.PAYE):
             if e.reste_du <= 0:
                 continue
-            v = Versement.objects.create(bail=e.bail, date=timezone.localdate(), montant=e.reste_du)
+            v = Versement.objects.create(bail=e.bail, date=min(e.date_exigibilite, timezone.localdate()), montant=e.reste_du)
             v.repartir([(e, e.reste_du)])
             n += 1
         self.message_user(request, f"{n} échéance(s) marquée(s) comme payée(s).", messages.SUCCESS)
@@ -559,6 +560,33 @@ class VersementAdmin(admin.ModelAdmin):
                                                 "dans l'historique, mais les loyers qu'il réglait redeviennent à payer."}),
     ]
     inlines = [VersementPaiementInline]
+    actions = ["dater_a_l_echeance"]
+
+    @admin.action(description="Remettre chaque loyer à sa date d'échéance")
+    def dater_a_l_echeance(self, request, queryset):
+        """Paiements saisis tous à la même date (ex. le jour de la saisie) : chaque loyer réglé prend la date d'échéance de
+        son mois. Un paiement qui règle plusieurs loyers est séparé en un paiement par loyer. Aperçu avant de valider."""
+        from ..recaler_dates import appliquer, proposer
+
+        changements = proposer(queryset)
+        if request.POST.get("appliquer"):
+            from .. import sauvegarde
+
+            try:
+                sauvegarde.creer()
+            except Exception:
+                pass  # la sauvegarde ne doit pas bloquer la correction
+            n = appliquer(changements)
+            self.message_user(request, f"{n} loyer(s) remis à leur date d'échéance.", messages.SUCCESS)
+            return None
+        if not changements:
+            self.message_user(request, "Rien à changer : chaque loyer est déjà à sa date d'échéance.", messages.INFO)
+            return None
+        return render(request, "admin/patrimoine/versement/dater.html", {
+            **self.admin_site.each_context(request), "title": "Remettre chaque loyer à sa date d'échéance",
+            "opts": self.model._meta, "changements": changements, "versements": queryset,
+            "action_checkbox_name": admin.helpers.ACTION_CHECKBOX_NAME,
+        })
 
     def get_readonly_fields(self, request, obj=None):
         lecture = ["bail", "date", "montant", "mode", "part_depot", "avance_restante"]
