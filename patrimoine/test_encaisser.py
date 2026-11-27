@@ -347,3 +347,16 @@ class DatesDesLoyersTests(TestCase):
         from .models import Paiement
         self.assertEqual(sorted(Paiement.objects.values_list("date", flat=True)), [date(2023, m, 5) for m in (1, 2, 3, 4)])
         self.assertTrue(all(e.statut == Echeance.Statut.PAYE for e in Echeance.objects.all()))
+
+
+class AffecterAvanceTests(DatesDesLoyersTests):
+    def test_affecter_un_paiement_aux_loyers_impayes(self):
+        v = Versement.objects.create(bail=self.bail, date=date(2023, 3, 10), montant=Decimal("1200"))  # rien d'affecté
+        donnees = {"action": "affecter_avance", "_selected_action": [v.pk]}
+        r = self.client.post("/admin/patrimoine/versement/", donnees)
+        self.assertContains(r, "dont 1\u202f200,00")
+        self.assertEqual(v.paiements.count(), 0)  # aperçu
+        self.client.post("/admin/patrimoine/versement/", {**donnees, "appliquer": "1"})
+        statuts = [e.statut for e in Echeance.objects.order_by("periode")]
+        self.assertEqual(statuts, [Echeance.Statut.PAYE, Echeance.Statut.PAYE, Echeance.Statut.PARTIEL])
+        self.assertEqual(Versement.objects.get().avance, 0)
