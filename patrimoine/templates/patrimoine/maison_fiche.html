@@ -1,0 +1,41 @@
+{% extends "admin/base_site.html" %}
+{% block extrastyle %}{{ block.super }}<style>{% include "patrimoine/_style_dossiers.css" %}{% include "patrimoine/_style_fiches_maison.css" %}</style>{% endblock %}
+{% block content_title %}{% endblock %}
+{% block breadcrumbs %}<div class="breadcrumbs"><a href="{% url 'admin:index' %}">Accueil</a> › <a href="{% url 'ma_maison' %}{{ suffixe }}">Ma maison</a> › <a href="{% url 'maison_fiches' %}{{ suffixe }}">Fiches pratiques</a> › {{ fiche.titre }}</div>{% endblock %}
+{% block content %}
+<div class="fiche-f">
+<div class="titre-liste titre-compta"><h1>{{ fiche.icone }} {{ fiche.titre }}</h1></div>
+<p class="intro-f">{{ fiche.resume }}</p>
+
+<div class="reperes-f">
+  <div><span>Fréquence conseillée</span><b>{{ fiche.frequence }}</b></div>
+  <div><span>Qui s'en charge</span><b>{{ fiche.qui }}</b></div>
+  {% if fiche.cout %}<div><span>Coût indicatif</span><b>{{ fiche.cout }}</b></div>{% endif %}
+  <div><span>Meilleur moment</span><b>{{ fiche.moment }}</b></div>
+</div>
+{% if fiche.obligatoire %}<div class="oblig-f"><b>Obligatoire.</b> {{ fiche.obligation }}</div>{% endif %}
+
+<section class="bloc-d rappels-f" id="rappels">
+  <h2>🔔 Mes rappels</h2>
+  {% if not bien %}<p class="petit-d">Suivez d'abord votre résidence principale dans <a href="{% url 'ma_maison' %}">Ma maison</a> pour créer ces rappels.</p>{% endif %}
+  {% include "patrimoine/_choix_maison.html" %}
+  {% for r in rappels %}<div class="l"><div><b>{{ r.titre }}</b><div class="d">{{ r.periodicite }}{% if r.rappel %}{% if r.rappel.fait_le %} · dernier : {{ r.rappel.fait_le|date:"d/m/Y" }}{% endif %}{% endif %}</div></div>
+    {% if r.rappel %}<a class="pill-d {% if r.rappel.actif and not r.rappel.fait %}ok{% else %}mute{% endif %}" href="{% url 'admin:patrimoine_rappel_change' r.rappel.pk %}?next={% url 'maison_fiche' fiche.slug %}{{ suffixe|urlencode }}">{% if r.rappel.actif and not r.rappel.fait %}✓ Suivi · prochain le {{ r.rappel.date|date:"d/m/Y" }}{% else %}Rappel arrêté · le revoir{% endif %}</a>
+    {% elif r.url %}<a class="button default" href="{{ r.url }}">＋ Me le rappeler</a>{% endif %}</div>{% endfor %}
+  {% if bien %}<p class="petit-d" style="margin:10px 0 0">Le rappel est rattaché à {{ bien.nom }} (Travaux / entretien), arrive dans votre agenda 📅 et vous prévient par mail 7 jours avant. « ✓ Fait » dans Ma maison le décale à la prochaine échéance.</p>{% endif %}
+</section>
+
+<div class="deux-col-d">
+  <section class="bloc-d large"><h2>🧰 Ce que vous pouvez faire vous-même</h2><ul>{% for g in fiche.gestes %}<li>{{ g }}</li>{% endfor %}</ul></section>
+  <section class="bloc-d etroit"><h2>⚠️ Signes qui doivent alerter</h2><ul>{% for a in fiche.alertes %}<li>{{ a }}</li>{% endfor %}</ul></section>
+</div>
+{% if fiche.garder %}<section class="bloc-d"><h2>📁 À garder</h2><p style="margin:0">{{ fiche.garder }}</p></section>{% endif %}
+
+<div class="nav-f">
+  <span>{% if precedente %}<a href="{% url 'maison_fiche' precedente.slug %}{{ suffixe }}">‹ {{ precedente.titre }}</a>{% endif %}</span>
+  <a href="{% url 'maison_fiches' %}{{ suffixe }}">Toutes les fiches</a>
+  <span>{% if suivante %}<a href="{% url 'maison_fiche' suivante.slug %}{{ suffixe }}">{{ suivante.titre }} ›</a>{% endif %}</span>
+</div>
+<p class="bientot-f">Repères généraux : les obligations peuvent varier selon votre département ou votre commune.</p>
+</div>
+{% endblock %}
