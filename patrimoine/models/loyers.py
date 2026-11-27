@@ -1,12 +1,31 @@
 """Échéances de loyer, paiements, dépôts de garantie, relances et loyers repris d'un ancien suivi."""
 import calendar
 from datetime import date
+from decimal import Decimal
 from django.db import models
 from django.db.models.signals import post_delete
 from django.dispatch import receiver
 
 from .biens import Lot
 from .location import Bail
+
+
+def _somme_paiements(objet):
+    """Somme des paiements d'un loyer ou d'un paiement reçu. Si la liste a été chargée d'avance
+    (prefetch_related("paiements")), on l'additionne sans refaire une requête par ligne : c'est ce qui rend
+    les listes rapides (accueil, relances, contrôles)."""
+    deja = getattr(objet, "_prefetched_objects_cache", {}).get("paiements")
+    if deja is not None:
+        return sum((p.montant for p in deja), Decimal(0))
+    return objet.paiements.aggregate(s=models.Sum("montant"))["s"] or 0
+
+
+def _oublier_paiements(paiement):
+    """Un paiement vient d'être créé ou supprimé : la liste chargée d'avance sur son loyer et son paiement reçu n'est plus à jour."""
+    for nom in ("echeance", "versement"):
+        objet = paiement._state.fields_cache.get(nom)
+        if objet is not None:
+            getattr(objet, "_prefetched_objects_cache", {}).pop("paiements", None)
 
 
 class Echeance(models.Model):
@@ -58,7 +77,7 @@ class Echeance(models.Model):
 
     @property
     def montant_paye(self):
-        return self.paiements.aggregate(s=models.Sum("montant"))["s"] or 0
+        return _somme_paiements(self)
 
     @property
     def reste_du(self):
@@ -78,6 +97,7 @@ class Echeance(models.Model):
         return self.periode.replace(day=calendar.monthrange(self.periode.year, self.periode.month)[1])
 
     def mettre_a_jour_statut(self):
+        getattr(self, "_prefetched_objects_cache", {}).pop("paiements", None)  # toujours relu en base
         paye = self.montant_paye
         if paye + (self.remise or 0) >= self.total:
             self.statut = self.Statut.PAYE
@@ -168,7 +188,7 @@ class Versement(models.Model):
 
     @property
     def montant_reparti(self):
-        return self.paiements.aggregate(s=models.Sum("montant"))["s"] or 0
+        return _somme_paiements(self)
 
     @property
     def avance(self):
@@ -180,6 +200,7 @@ class Versement(models.Model):
     def annuler(self, motif=""):
         """Annule le paiement : ses parts sont retirées des loyers (qui redeviennent à payer), sa part de dépôt aussi."""
         self.paiements.all().delete()
+        getattr(self, "_prefetched_objects_cache", {}).pop("paiements", None)
         self.mouvements_depot.all().delete()
         self.annule, self.motif_annulation = True, motif or self.motif_annulation
         self.save(update_fields=["annule", "motif_annulation"])
@@ -253,6 +274,7 @@ class Paiement(models.Model):
         if not self.versement_id:
             raise ValueError("Un loyer ne se règle que par un paiement reçu : passez par « Encaisser » (Versement).")
         super().save(*args, **kwargs)
+        _oublier_paiements(self)
         self.echeance.mettre_a_jour_statut()
 
     @classmethod
@@ -266,6 +288,7 @@ class Paiement(models.Model):
 @receiver(post_delete, sender=Paiement)
 def _statut_apres_suppression(sender, instance, **kwargs):
     """Paiement supprimé (seul, ou avec le virement dont il est une part) : le statut du loyer est recalculé."""
+    _oublier_paiements(instance)
     echeance = Echeance.objects.filter(pk=instance.echeance_id).first()
     if echeance:
         echeance.mettre_a_jour_statut()

@@ -217,11 +217,19 @@ class Bail(models.Model):
 
     def loyer_au(self, jour):
         """Loyer HC en vigueur à une date : dernière révision appliquée avant cette date, sinon loyer initial."""
-        appliquees = self.revisions.filter(appliquee=True)
-        revision = appliquees.filter(date_effet__lte=jour).order_by("-date_effet").first()
+        deja = getattr(self, "_prefetched_objects_cache", {}).get("revisions")
+        if deja is not None:  # révisions chargées d'avance (prefetch_related("revisions")) : pas de requête par mois
+            appliquees = [r for r in deja if r.appliquee]
+            avant = [r for r in appliquees if r.date_effet <= jour]
+            apres = [r for r in appliquees if r.date_effet > jour]
+            revision = max(avant, key=lambda r: r.date_effet) if avant else None
+            suivante = min(apres, key=lambda r: r.date_effet) if apres else None
+        else:
+            appliquees = self.revisions.filter(appliquee=True)
+            revision = appliquees.filter(date_effet__lte=jour).order_by("-date_effet").first()
+            suivante = None if revision else appliquees.filter(date_effet__gt=jour).order_by("date_effet").first()
         if revision:
             return revision.nouveau_loyer
-        suivante = appliquees.filter(date_effet__gt=jour).order_by("date_effet").first()
         if suivante:
             return suivante.ancien_loyer
         # sans révision enregistrée : loyer initial avant la dernière révision connue, loyer actuel ensuite

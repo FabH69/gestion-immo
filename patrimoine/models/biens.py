@@ -353,6 +353,9 @@ class Lot(models.Model):
 
     @property
     def bail_actif(self):
+        deja = getattr(self, "baux_actifs_charges", None)  # chargés d'avance par la liste des lots : pas de requête par ligne
+        if deja is not None:
+            return deja[0] if deja else None
         return self.baux.filter(actif=True).first()
 
     @property

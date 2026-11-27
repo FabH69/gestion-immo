@@ -32,7 +32,8 @@ def impayes(bail, a_date=None):
     """[(échéance, reste dû)] des loyers échus et non soldés du bail, du plus ancien au plus récent."""
     a_date = a_date or timezone.localdate()
     lignes = []
-    for e in bail.echeances.exclude(statut=Echeance.Statut.PAYE).filter(date_exigibilite__lt=a_date).order_by("periode"):
+    for e in (bail.echeances.exclude(statut=Echeance.Statut.PAYE).filter(date_exigibilite__lt=a_date)
+              .order_by("periode").prefetch_related("paiements")):
         reste = e.reste_du
         if reste > 0:
             lignes.append((e, reste))
@@ -47,8 +48,9 @@ def baux_en_impaye():
     for bail in Bail.objects.filter(pk__in=ids).select_related("lot__bien").prefetch_related("locataires"):
         lignes = impayes(bail)
         if lignes:
+            derniere = derniere_relance(bail, lignes)  # une seule recherche pour la dernière relance et le niveau suggéré
             resultat.append({"bail": bail, "lignes": lignes, "total": sum((r for _, r in lignes), Decimal(0)),
-                             "derniere": derniere_relance(bail, lignes), "suggere": niveau_suggere(bail, lignes)})
+                             "derniere": derniere, "suggere": SUITE[derniere.niveau if derniere else None]})
     return sorted(resultat, key=lambda x: x["lignes"][0][0].periode)
 
 
