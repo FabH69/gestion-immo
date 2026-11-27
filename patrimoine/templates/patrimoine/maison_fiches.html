@@ -1,0 +1,31 @@
+{% extends "admin/base_site.html" %}
+{% block extrastyle %}{{ block.super }}<style>{% include "patrimoine/_style_dossiers.css" %}{% include "patrimoine/_style_fiches_maison.css" %}</style>{% endblock %}
+{% block content_title %}{% endblock %}
+{% block breadcrumbs %}<div class="breadcrumbs"><a href="{% url 'admin:index' %}">Accueil</a> › <a href="{% url 'ma_maison' %}{{ suffixe }}">Ma maison</a> › Fiches pratiques</div>{% endblock %}
+{% block content %}
+<div class="titre-liste titre-compta"><h1>Fiches pratiques{% if bien %} <span class="petit-d" style="font-weight:400">· {{ bien.nom }}</span>{% endif %}</h1></div>
+{% include "patrimoine/_choix_maison.html" %}
+<p class="intro-f">L'entretien courant de la maison, appareil par appareil : à quelle fréquence, ce qui est obligatoire, ce que vous pouvez faire vous-même
+  et les signes qui doivent alerter. Chaque fiche crée en un clic le rappel qui va avec{% if not bien %} (une fois votre résidence principale suivie dans <a href="{% url 'ma_maison' %}">Ma maison</a>){% endif %}.</p>
+
+{% for g in groupes %}<section class="theme-f" id="{{ g.code }}">
+  <h2>{{ g.icone }} {{ g.libelle }}</h2>
+  <div class="cartes-f">{% for f in g.fiches %}
+    <a class="carte-f" href="{% url 'maison_fiche' f.slug %}{{ suffixe }}">
+      <span class="tete"><span class="ic">{{ f.icone }}</span>{{ f.titre }}</span>
+      <p>{{ f.resume }}</p>
+      <span class="pieds"><span class="pill-d info">{{ f.frequence }}</span>{% if f.obligatoire %}<span class="pill-d todo">obligatoire</span>{% endif %}{% if f.suivi %}<span class="pill-d ok">✓ rappel suivi</span>{% endif %}</span>
+    </a>{% endfor %}
+  </div>
+</section>{% endfor %}
+
+<section class="bloc-d" id="saisons">
+  <h2>📅 Au fil des saisons</h2>
+  <div class="saisons-f">{% for ic, saison, choses in saisons %}<div><b>{{ ic }} {{ saison }}</b><ul>{% for c in choses %}<li>{{ c }}</li>{% endfor %}</ul></div>{% endfor %}</div>
+</section>
+
+<div class="conseils-f" id="conseils">{% for ic, titre, lignes in conseils %}
+  <section class="bloc-d"><h2>{{ ic }} {{ titre }}</h2><ul>{% for c in lignes %}<li>{{ c }}</li>{% endfor %}</ul></section>{% endfor %}
+</div>
+<p class="bientot-f">Ces fiches donnent des repères généraux. Les fréquences obligatoires peuvent varier selon votre département (ramonage) ou votre commune (SPANC) : en cas de doute, la mairie ou votre assureur vous renseignent.</p>
+{% endblock %}

@@ -11,6 +11,7 @@ from django.urls import reverse
 from django.utils import timezone
 from django.utils.http import urlencode
 
+from .fiches_maison import FICHE_DU_RAPPEL
 from .models import Bien, DepenseRecurrente, PieceComptable, Rappel
 
 ZERO = Decimal("0")
@@ -127,8 +128,9 @@ def entretiens(bien, pieces, aujourdhui):
             etat, texte = "todo", f"Dans {jours} jour{'s' if jours > 1 else ''}"
         else:
             etat, texte = "ok", f"{MOIS_COURTS[r.date.month - 1].capitalize()} {r.date.year}"
+        fiche = FICHE_DU_RAPPEL.get(r.titre.strip().lower())
         lignes.append({"rappel": r, "dernier": dernier, "cout": facture.montant if facture else None, "etat": etat,
-                       "etat_texte": texte, "a_faire": jours <= 30})
+                       "etat_texte": texte, "a_faire": jours <= 30, "fiche": fiche["slug"] if fiche else None})
     return lignes
 
 
@@ -158,6 +160,7 @@ def liens(bien):
         "ajouter_entretien": reverse("admin:patrimoine_rappel_add") + q(bien=bien.pk, categorie=Rappel.Categorie.TRAVAUX, periodicite="annuel"),
         "factures": reverse("admin:patrimoine_piececomptable_changelist") + f"?bien={bien.pk}",
         "recurrentes": reverse("admin:patrimoine_depenserecurrente_changelist") + f"?bien__id__exact={bien.pk}",
+        "fiches": reverse("maison_fiches") + f"?bien={bien.pk}",
         "retour": retour,
     }
 

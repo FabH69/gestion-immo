@@ -1,0 +1,29 @@
+.fil-m { font-size: .85rem; margin: 0 0 12px; }
+.choix-maison { margin: 0 0 14px; }
+.intro-f { margin: 0 0 16px; color: var(--body-quiet-color); max-width: 820px; }
+.theme-f { margin: 0 0 22px; }
+.theme-f h2 { font-size: 15px; margin: 0 0 10px; background: none; color: var(--body-fg); padding: 0; text-transform: none; letter-spacing: 0; }
+.cartes-f { display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 12px; }
+.carte-f { display: flex; flex-direction: column; gap: 6px; border: 1px solid var(--border-color); border-radius: 12px; padding: 12px 14px;
+           background: var(--body-bg); color: var(--body-fg) !important; text-decoration: none !important; }
+.carte-f:hover { border-color: var(--primary); }
+.carte-f .tete { display: flex; align-items: center; gap: 8px; font-weight: 700; }
+.carte-f .ic { font-size: 1.3rem; }
+.carte-f p { margin: 0; font-size: .84rem; color: var(--body-quiet-color); }
+.carte-f .pieds { display: flex; flex-wrap: wrap; gap: 6px; margin-top: auto; padding-top: 4px; }
+.saisons-f { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 12px; }
+.saisons-f ul, .conseils-f ul, .fiche-f ul { margin: 6px 0 0; padding-left: 18px; }
+.saisons-f li, .conseils-f li, .fiche-f li { margin: 0 0 5px; font-size: .88rem; list-style: disc; }
+.conseils-f { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 12px; margin-top: 12px; }
+.bientot-f { margin-top: 16px; font-size: .82rem; color: var(--body-quiet-color); }
+.reperes-f { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 10px; margin: 0 0 16px; }
+.reperes-f div { border: 1px solid var(--border-color); border-radius: 12px; padding: 10px 12px; background: var(--body-bg); }
+.reperes-f span { display: block; font-size: .75rem; color: var(--body-quiet-color); text-transform: uppercase; letter-spacing: .03em; }
+.reperes-f b { display: block; margin-top: 3px; font-size: .9rem; font-weight: 500; }
+.oblig-f { padding: 10px 14px; border-radius: 12px; background: var(--orange-c); color: var(--orange); margin: 0 0 16px; font-size: .9rem; }
+.rappels-f .l { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px; padding: 9px 0; border-top: 1px solid var(--hairline-color); }
+.rappels-f .l:first-of-type { border-top: 0; }
+.rappels-f .d { font-size: .8rem; color: var(--body-quiet-color); }
+.nav-f { display: flex; justify-content: space-between; gap: 10px; margin-top: 16px; font-size: .88rem; }
+.fiche-f .bloc-d { margin-bottom: 14px; }
+.carte-f .pill-d { white-space: normal; }
