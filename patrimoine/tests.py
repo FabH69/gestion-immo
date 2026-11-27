@@ -5620,3 +5620,31 @@ class DetailParLotTests(TestCase):
         self.assertRegex(page, r'(?s)▸</button>211</td>.*?groupe-lot.*?Garage <span class="nb">3</span>.*?Saint Pierre 2 <span class="nb">3</span>')
         page = self.client.get("/comptabilite/ma-declaration-de-revenus/detail/?annee=2025").content.decode()
         self.assertRegex(page, r'(?s)groupe-lot.*?Garage <span class="nb-lot">3</span>.*?195,00\xa0€.*?groupe-lot.*?Saint Pierre 2')
+
+
+class BiensVendusFicheProprietaireTests(TestCase):
+    """Fiche propriétaire : les biens vendus passent en bas de la liste, avec « Vendu le … » et le prix s'il est connu."""
+
+    def setUp(self):
+        from .models import Immobilisation
+
+        self.client.force_login(User.objects.create_superuser("admin", "a@example.com", "x"))
+        self.sci = Proprietaire.objects.create(nom="SCI ALFAB", type=Proprietaire.Type.SCI_IR)
+        commun = {"proprietaire": self.sci, "adresse": "1 rue", "code_postal": "69000", "ville": "Lyon"}
+        self.vendu = Bien.objects.create(nom="Appartement A", vendu=True, date_vente=date(2025, 6, 30), **commun)
+        Bien.objects.create(nom="Studio B", vendu=True, **commun)
+        Bien.objects.create(nom="Maison Z", **commun)
+        Immobilisation.objects.create(bien=self.vendu, designation="Bâti", mise_en_service=date(2015, 1, 1), valeur=Decimal(100000),
+                                      duree=30, date_sortie=date(2025, 6, 30), motif_sortie="vente_bien",
+                                      prix_cession=Decimal(150000))
+
+    def test_vendus_en_bas_avec_la_vente(self):
+        page = self.client.get(reverse("admin:patrimoine_proprietaire_change", args=[self.sci.pk])).content.decode()
+        self.assertLess(page.index('value="Maison Z"'), page.index('value="Appartement A"'))
+        self.assertLess(page.index('value="Maison Z"'), page.index('value="Studio B"'))
+        self.assertIn("Vendu le 30/06/2025 – 150 000,00 €", page)
+        self.assertIn('<span class="pill gris">Vendu</span>', page)  # vendu sans date ni prix
+
+    def test_liste_des_proprietaires(self):
+        page = self.client.get(reverse("admin:patrimoine_proprietaire_changelist")).content.decode()
+        self.assertIn("1 (+ 2 vendus)", page)
