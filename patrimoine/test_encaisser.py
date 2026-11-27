@@ -370,6 +370,8 @@ class RattrapageMoisOubliesTests(DatesDesLoyersTests):
         self.assertEqual(n, 3)  # avril, mai, juin ; le mois en cours reste à generer_pour_mois
         self.assertEqual(sorted(e.periode.month for e in Echeance.objects.all()), [1, 2, 3, 4, 5, 6])
         self.assertEqual(Echeance.rattraper(aujourdhui=date(2023, 7, 10)), 0)  # pas de doublon
+        Echeance.objects.filter(periode=date(2023, 5, 1)).delete()  # trou entre deux loyers (octobre du garage)
+        self.assertEqual(Echeance.rattraper(aujourdhui=date(2023, 7, 10)), 1)
         avant = Bail.objects.create(lot=self.bail.lot, type=Bail.Type.NU, date_debut=date(2020, 1, 1), date_fin=date(2020, 12, 31),
                                     loyer_hc=Decimal("500"), jour_echeance=5, actif=False)
         self.assertFalse(avant.echeances.exists())  # bail terminé : rien n'est inventé
