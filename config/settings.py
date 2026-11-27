@@ -60,6 +60,7 @@ MIDDLEWARE = [
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
     "patrimoine.sauvegarde.SauvegardeAutomatiqueMiddleware",
     "patrimoine.loyers_auto.LoyersAutomatiquesMiddleware",
+    "patrimoine.controles.OublierApresModificationMiddleware",
 ]
 
 ROOT_URLCONF = "config.urls"

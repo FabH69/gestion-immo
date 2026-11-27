@@ -74,3 +74,43 @@ class RapiditeTests(TestCase):
         p.save()
         self.assertEqual(e.montant_paye, Decimal("660"))
         self.assertEqual(e.statut, Echeance.Statut.PAYE)
+
+
+@override_settings(SAUVEGARDE_AUTO=False, LOYERS_AUTO=False)
+class ControlesRapidesTests(TestCase):
+    def setUp(self):
+        self.user = User.objects.create_superuser("admin", "a@a.fr", "x")
+        self.client.force_login(self.user)
+        proprio = Proprietaire.objects.create(nom="SCI R", type=Proprietaire.Type.SCI_IR)
+        bien = Bien.objects.create(proprietaire=proprio, nom="Immeuble", adresse="1 rue", code_postal="69000", ville="Lyon")
+        self.lot = Lot.objects.create(bien=bien, designation="T2")
+        self.bail = Bail.objects.create(lot=self.lot, type=Bail.Type.NU, date_debut=date(2024, 3, 1), loyer_hc=Decimal("600"), charges=Decimal("50"))
+        self.bail.locataires.add(Locataire.objects.create(nom="Durand"))
+        mars = Echeance.objects.create(bail=self.bail, periode=date(2024, 3, 1), loyer_hc=Decimal("600"), charges=Decimal("50"),
+                                       date_exigibilite=date(2024, 3, 1))
+        Versement.objects.create(bail=self.bail, date=date(2024, 3, 5), montant=Decimal("700")).repartir([(mars, Decimal("650"))])
+
+    def test_historique_meme_raison_qu_une_par_une(self):
+        from .models import EncaissementHistorique
+        from .reprise_historique import raison, raisons
+
+        for mois in (date(2024, 1, 1), date(2024, 3, 1), date(2024, 4, 1)):  # avant le bail, mois déjà payé, mois à reprendre
+            EncaissementHistorique.objects.create(lot=self.lot, mois=mois, montant=Decimal("650"))
+        lignes = list(EncaissementHistorique.objects.order_by("mois"))
+        self.assertEqual(raisons(lignes), [raison(h) for h in lignes])
+        self.assertEqual(raisons(lignes)[2], None)
+        self.assertIn("commence le 01/03/2024", raisons(lignes)[0])
+        with CaptureQueriesContext(connection) as q:
+            controles.historique_non_repris()
+        self.assertLessEqual(len(q), 5)
+
+    def test_avance_trouvee_par_la_base(self):
+        lignes = controles.avances_non_utilisees()
+        self.assertEqual(len(lignes), 1)
+        self.assertIn("50,00 € reçus le 05/03/2024", lignes[0][1])
+
+    def test_pastille_recalculee_apres_un_enregistrement(self):
+        controles.memoriser(self.user, [{"nombre": 1}] * 9)
+        self.assertEqual(controles.nombre_a_traiter(self.user), 9)  # gardée en mémoire
+        self.client.post("/notes/enregistrer/", {"texte": "note"})
+        self.assertNotEqual(controles.nombre_a_traiter(self.user), 9)  # recalculée après l'envoi d'un formulaire
