@@ -1,0 +1,35 @@
+{% extends "admin/base_site.html" %}
+{% load tableau_bord %}
+{% block breadcrumbs %}<div class="breadcrumbs"><a href="{% url 'admin:index' %}">Accueil</a> › <a href="{% url 'admin:patrimoine_echeance_changelist' %}">Loyers</a> › Encaisser le mois</div>{% endblock %}
+{% block content %}
+<p class="bq-intro">Un locataire a payé pile ? Un clic sur <b>✓ Reçu</b> : le paiement est daté du <b>jour d'échéance du loyer</b>, pas du jour de la saisie. Un autre montant, un virement qui paie deux mois, une part CAF : <b>Autre montant</b>, la répartition s'affiche tout de suite.{% if comptes_releve %} Les comptes suivis par relevé se rapprochent depuis <a href="{% url 'releve_banque' %}">Relevé de banque</a>.{% endif %}</p>
+<div class="bq-barre">
+  <a class="bq-onglet" href="{{ precedent }}">◀ {{ nom_precedent|capfirst }}{% if retard_avant %} ({{ retard_avant }} en retard avant){% endif %}</a>
+  <span class="bq-onglet actif">{{ mois|date:"F Y"|capfirst }}</span>
+  <a class="bq-onglet" href="{{ suivant }}">{{ nom_suivant|capfirst }} ▶</a>
+  <span class="espace"></span>
+  <form method="get"><input type="hidden" name="mois" value="{{ mois|date:'Y-m' }}">
+    <select name="proprietaire" onchange="this.form.submit()"><option value="">Tous les propriétaires</option>{% for p in proprietaires %}<option value="{{ p.pk }}"{% if p == proprietaire %} selected{% endif %}>{{ p }}</option>{% endfor %}</select></form>
+</div>
+<div class="bq-chiffres">
+  <div class="bq-chiffre"><span>Attendu</span><b>{{ attendu|euros:2 }}</b></div>
+  <div class="bq-chiffre"><span>Reçu</span><b class="bq-credit">{{ recu|euros:2 }}</b></div>
+  <div class="bq-chiffre"><span>Reste</span><b{% if reste > 0 %} class="bq-debit"{% endif %}>{{ reste|euros:2 }}</b></div>
+</div>
+<form method="post" class="bq-carte">{% csrf_token %}
+{% if lignes %}
+<table class="bq-table">
+  <thead><tr>{% if peut_modifier %}<th style="width:24px"></th>{% endif %}<th>Locataire et logement</th><th class="m bq-cache-tel">Dû le</th><th class="m">Montant</th><th>État</th><th></th></tr></thead>
+  <tbody>{% for l in lignes %}<tr>
+    {% if peut_modifier %}<td>{% if l.reste > 0 %}<input type="checkbox" name="coches" value="{{ l.e.pk }}" aria-label="Cocher {{ l.noms }}">{% endif %}</td>{% endif %}
+    <td><b>{{ l.noms }}</b><small>{{ l.e.bail.lot }}{% if l.e.est_regularisation %} · régularisation des charges{% endif %}</small></td>
+    <td class="m bq-cache-tel">{{ l.e.date_exigibilite|date:"d/m" }}</td>
+    <td class="m">{{ l.e.total|euros:2 }}{% if l.paye and l.reste > 0 %}<small>reste {{ l.reste|euros:2 }}</small>{% endif %}</td>
+    <td><span class="bq-etat {{ l.etat.0 }}">{{ l.etat.1 }}</span></td>
+    <td><div class="bq-actions">{% if l.reste > 0 and peut_modifier %}<button type="submit" name="un" value="{{ l.e.pk }}" class="button bq-recu" title="Encaisse {{ l.reste|euros:2 }}, daté du {{ l.e.date_exigibilite|date:'d/m/Y' }}">✓ Reçu</button><a class="button" href="{{ l.autre }}">Autre montant</a>{% elif l.voir %}<a href="{{ l.voir }}" class="bq-regle">Voir le paiement</a>{% endif %}</div></td>
+  </tr>{% endfor %}</tbody>
+</table>
+{% if peut_modifier and a_encaisser %}<p style="margin:12px 0 4px"><button type="submit" name="tous" class="button">✓ Reçu pour les loyers cochés</button></p>{% endif %}
+{% else %}<p class="bq-intro">Aucun loyer ce mois-ci{% if proprietaire %} pour {{ proprietaire }}{% endif %}.</p>{% endif %}
+</form>
+{% endblock %}

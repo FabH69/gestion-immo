@@ -205,8 +205,10 @@ def _menu():
              [("Propriétaires", a("proprietaire")), ("Lots", a("lot")), ("Syndics", a("syndic"))]),
             ("locataires", "Locataires", a("locataire"), [a("locataire")], []),
             ("baux", "Baux", a("bail"), [a("bail")], [("États des lieux", a("etatdeslieux")), ("Garants", a("garant"))]),
-            ("loyers", "Loyers", a("echeance"), [a("echeance"), a("versement"), r("relances_impayes"), a("revisionloyer"), a("mouvementdepot")],
-             [("Paiements reçus", a("versement")), ("Relances d'impayés", r("relances_impayes")), ("Révisions de loyer", a("revisionloyer")),
+            ("loyers", "Loyers", a("echeance"), [a("echeance"), a("versement"), r("relances_impayes"), a("revisionloyer"), a("mouvementdepot"),
+                                                 r("encaisser_mois"), r("releve_banque"), a("comptebancaire")],
+             [("Encaisser le mois", r("encaisser_mois")), ("Relevé de banque", r("releve_banque")), ("Comptes bancaires", a("comptebancaire")),
+              ("Paiements reçus", a("versement")), ("Relances d'impayés", r("relances_impayes")), ("Révisions de loyer", a("revisionloyer")),
               ("Dépôts de garantie", a("mouvementdepot"))]),
         ]),
         ("Location", [
@@ -250,6 +252,19 @@ def _menu():
               ("Mot de passe", r("admin:password_change"), ADMIN), ("Toutes les tables", r("toutes_les_tables"))]),
         ]),
     ]
+
+
+# « ? » à côté d'une entrée du menu : ce qu'elle fait, en une ou deux phrases (survol, clavier ou toucher)
+AIDES_MENU = {
+    "Encaisser le mois": "Mode saisie : un mois à l'écran, un clic sur « ✓ Reçu » par locataire. Le paiement est daté du jour "
+                         "d'échéance du loyer. « Autre montant » pour un paiement partiel, deux mois d'un coup ou la CAF.",
+    "Relevé de banque": "Mode relevé : importez le relevé de la banque (OFX, CSV, CAMT ou PDF). L'appli propose loyers, factures, "
+                        "prêts, frais et apports d'associés ; vous validez les lignes sûres d'un coup.",
+    "Comptes bancaires": "Un compte par compte en banque, avec sa façon d'être suivi : saisie ou relevé de banque. La règle fiscale "
+                         "(trésorerie pour la 2044 et la 2072, engagement pour l'IS et la 2031) est déduite du propriétaire.",
+    "Paiements reçus": "Tous les paiements enregistrés, quelle que soit la façon de les saisir : leur répartition sur les loyers, "
+                       "l'avance qui reste, l'annulation d'un paiement rejeté.",
+}
 
 
 def _menu_compta():
@@ -349,7 +364,7 @@ def menu_lateral(context):
                 from patrimoine import regimes
 
                 pastille = regimes.nombre_alertes_rouges()  # incohérences entre régime, propriétaire et lots
-            sous_liens = [{"libelle": s[0], "url": s[1], "actif": _correspond(s[1], chemin, params)}
+            sous_liens = [{"libelle": s[0], "url": s[1], "actif": _correspond(s[1], chemin, params), "aide": AIDES_MENU.get(s[0], "")}
                           for s in sous if len(s) < 3 or acces.get(s[2]) or (s[2] == ADMIN and user is not None and user.is_superuser)]
             if ico == "reglages":
                 # Paramètres : chacun n'y voit que ce que ses droits permettent ; on ouvre sur le premier lien visible

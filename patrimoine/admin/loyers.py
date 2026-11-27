@@ -10,15 +10,21 @@ from django.urls import path, reverse
 from django.utils import timezone
 from django.utils.html import format_html
 
-from ..models import EncaissementHistorique, Bail, Echeance, MouvementDepot, RevisionLoyer, Paiement, Proprietaire, Versement
+from ..models import EncaissementHistorique, Bail, CompteBancaire, Echeance, LigneReleve, MouvementDepot, RegleRapprochement, RevisionLoyer, Paiement, Proprietaire, Versement
 from .communs import euros_liste
 
 
 def url_encaisser(echeance, retour=""):
-    """Adresse du formulaire « Encaisser » prérempli pour ce loyer : son reste dû, aujourd'hui, par virement."""
+    """Adresse du formulaire « Encaisser » prérempli pour ce loyer : son reste dû, par virement, daté du jour d'échéance
+    du loyer (pas du jour de la saisie : un loyer d'octobre encaissé en novembre reste daté d'octobre) ; un loyer pas
+    encore échu payé d'avance est daté d'aujourd'hui."""
     from urllib.parse import urlencode
 
-    params = {"bail": echeance.bail_id, "echeance": echeance.pk, "montant": f"{max(echeance.reste_du, Decimal(0)):.2f}"}
+    from django.utils import timezone
+
+    jour = min(echeance.date_exigibilite, timezone.localdate())
+    params = {"bail": echeance.bail_id, "echeance": echeance.pk, "montant": f"{max(echeance.reste_du, Decimal(0)):.2f}",
+              "date": jour.isoformat()}
     if retour:
         params["next"] = retour
     return reverse("admin:patrimoine_echeance_virement") + "?" + urlencode(params)
@@ -754,3 +760,41 @@ class RevisionLoyerAdmin(admin.ModelAdmin):
     def liens(self, obj):
         return format_html('<a href="{}">Ouvrir</a> · <a href="{}" target="_blank">Courrier PDF</a>',
                            f"{reverse('revision_loyer', args=[obj.bail_id])}?revision={obj.pk}", reverse("lettre_revision", args=[obj.pk]))
+
+
+class RegleRapprochementInline(admin.TabularInline):
+    model = RegleRapprochement
+    extra = 0
+    fields = ["motif", "action", "bail", "bien", "pret", "associe", "fournisseur"]
+    verbose_name_plural = "règles apprises (créées en cochant « Retenir » sur le relevé ; modifiables ici)"
+
+
+@admin.register(CompteBancaire)
+class CompteBancaireAdmin(admin.ModelAdmin):
+    """Comptes bancaires : chacun choisit sa façon d'être suivi (saisie ou relevé de banque)."""
+    list_display = ["nom", "proprietaire", "banque", "mode_court", "regle_fiscale", "lignes_a_traiter"]
+    list_filter = ["mode", "proprietaire"]
+    fields = ["proprietaire", "nom", "banque", "iban", "mode", "associes", "regle_fiscale_detail", "actif", "notes"]
+    readonly_fields = ["regle_fiscale_detail"]
+    inlines = [RegleRapprochementInline]
+
+    @admin.display(description="suivi")
+    def mode_court(self, obj):
+        return "Relevé de banque" if obj.mode == CompteBancaire.Mode.RELEVE else "Saisie"
+
+    @admin.display(description="règle fiscale")
+    def regle_fiscale(self, obj):
+        return obj.logique_libelle
+
+    @admin.display(description="règle fiscale appliquée")
+    def regle_fiscale_detail(self, obj):
+        if not obj.pk:
+            return "Déduite du propriétaire après l'enregistrement : trésorerie (2044, 2072) ou engagement (IS, BIC)."
+        return format_html("<b>{}</b><br><span class='help'>{}</span>", obj.logique_libelle, obj.logique_explication)
+
+    @admin.display(description="lignes à traiter")
+    def lignes_a_traiter(self, obj):
+        n = obj.lignes.filter(statut=LigneReleve.Statut.A_TRAITER).count()
+        if not n:
+            return "–"
+        return format_html('<a href="{}?compte={}">{} à traiter</a>', reverse("releve_banque"), obj.pk, n)

@@ -1,0 +1,56 @@
+/* Encaisser le mois et Relevé de banque */
+.bq-intro { color: var(--body-quiet-color); max-width: 860px; margin: 0 0 14px; line-height: 1.45; }
+.bq-barre { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-bottom: 14px; }
+.bq-barre .espace { flex: 1; }
+.bq-onglet { display: inline-block; padding: 6px 14px; border-radius: 999px; background: var(--darkened-bg); color: var(--body-fg); text-decoration: none; font-size: 13.5px; }
+.bq-onglet.actif { background: var(--primary); color: #fff; }
+.bq-chiffres { display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 14px; }
+.bq-chiffre { background: var(--body-bg); border: 1px solid var(--hairline-color); border-radius: 12px; padding: 10px 16px; min-width: 130px; flex: 1; }
+.bq-chiffre span { display: block; color: var(--body-quiet-color); font-size: 12.5px; }
+.bq-chiffre b { font-size: 21px; }
+.bq-carte { background: var(--body-bg); border: 1px solid var(--hairline-color); border-radius: 12px; padding: 10px 14px; margin-bottom: 14px; }
+.bq-carte h2 { margin: 4px 0 10px; font-size: 16px; }
+.bq-table { width: 100%; border-collapse: collapse; }
+.bq-table th { text-align: left; font-weight: 500; color: var(--body-quiet-color); font-size: 12.5px; padding: 6px; border-bottom: 1px solid var(--hairline-color); }
+.bq-table td { padding: 9px 6px; border-bottom: 1px solid var(--hairline-color); vertical-align: middle; }
+.bq-table .m { text-align: right; white-space: nowrap; }
+.bq-table small { display: block; color: var(--body-quiet-color); font-size: 12.5px; }
+.bq-etat { display: inline-block; padding: 2px 9px; border-radius: 999px; font-size: 12.5px; font-weight: 600; white-space: nowrap; }
+.bq-etat.ok { background: #e3f4e6; color: #1e6b2c; } .bq-etat.orange { background: #fff1d6; color: #8a5a00; }
+.bq-etat.rouge { background: #fde3e3; color: #a12020; } .bq-etat.gris { background: var(--darkened-bg); color: var(--body-quiet-color); }
+.bq-etat.bleu { background: #e2ecf9; color: #24508f; }
+.bq-actions { display: flex; gap: 6px; justify-content: flex-end; flex-wrap: wrap; }
+.bq-actions form { margin: 0; }
+.bq-recu { background: #2e8b57 !important; border-color: #2e8b57 !important; color: #fff !important; }
+.bq-credit { color: #1e6b2c; } .bq-debit { color: #a12020; }
+.bq-prop { border-left: 4px solid #2e8b57; background: rgba(46, 139, 87, .07); border-radius: 8px; padding: 7px 10px; }
+.bq-prop.verifier { border-color: #e0a21b; background: rgba(224, 162, 27, .09); }
+.bq-prop.aucune { border-color: var(--hairline-color); background: var(--darkened-bg); }
+.bq-prop .pourquoi { color: var(--body-quiet-color); font-size: 12.5px; display: block; }
+.bq-prop .boutons { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 6px; align-items: center; }
+.bq-changer summary { cursor: pointer; display: inline-block; }
+.bq-changer .grille { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 8px; margin-top: 8px; }
+.bq-changer label { font-size: 12.5px; color: var(--body-quiet-color); display: block; }
+.bq-changer select, .bq-changer input[type=text] { width: 100%; box-sizing: border-box; }
+.bq-pied { position: sticky; bottom: 0; background: var(--primary); color: #fff; border-radius: 12px; padding: 10px 14px; display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+.bq-pied .espace { flex: 1; }
+.bq-pied button { background: #f4c04e !important; color: #1b4a4e !important; font-weight: 700; border: 0 !important; }
+.bq-depot { border: 2px dashed var(--hairline-color); border-radius: 12px; padding: 14px; display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+.bq-regle { font-size: 12.5px; color: var(--body-quiet-color); }
+@media (max-width: 700px) {
+  .bq-cache-tel { display: none; }
+  .bq-table td, .bq-table th { padding: 7px 4px; }
+  .bq-pied { position: static; margin-top: 10px; }
+  .bq-releve thead { display: none; }
+  .bq-releve tr { display: grid; grid-template-columns: 1fr auto; border-bottom: 1px solid var(--hairline-color); }
+  .bq-releve td { border: 0; }
+  .bq-releve td:last-child { grid-column: 1 / -1; padding-top: 0; }
+  .bq-chiffre { min-width: 100px; padding: 8px 10px; } .bq-chiffre b { font-size: 17px; }
+}
+/* « ? » des entrées du menu : l'explication s'ouvre au survol, au clavier ou au toucher */
+.menu-sous a { position: relative; }
+.menu-aide { display: inline-grid; place-items: center; width: 17px; height: 17px; border-radius: 50%; border: 1px solid currentColor;
+  font-size: 11px; font-weight: 700; margin-left: 6px; opacity: .75; cursor: help; vertical-align: 1px; }
+.menu-aide-texte { display: none; position: fixed; z-index: 1000; max-width: 280px; background: #fff; color: #1d2b2c; border-radius: 10px;
+  padding: 10px 12px; font-size: 13px; line-height: 1.4; box-shadow: 0 6px 24px rgba(0,0,0,.25); white-space: normal; font-weight: 400; }
+.menu-aide-texte.visible { display: block; }
