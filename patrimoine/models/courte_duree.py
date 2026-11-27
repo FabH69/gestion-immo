@@ -18,6 +18,8 @@ class EncaissementLCD(models.Model):
     frais = models.DecimalField("frais (€)", max_digits=10, decimal_places=2, default=0)
     regul = models.DecimalField("régularisation (€)", max_digits=10, decimal_places=2, default=0, help_text="Positif si vous recevez, négatif si vous payez")
     notes = models.CharField(max_length=255, blank=True)
+    import_fec = models.ForeignKey("ImportFEC", null=True, blank=True, on_delete=models.SET_NULL, related_name="encaissements_lcd",
+                                   editable=False, verbose_name="reprise FEC", help_text="Créé par l'import de ce FEC")
 
     CHAMPS = ["ca", "aircover", "menage", "commission", "frais", "regul"]
 

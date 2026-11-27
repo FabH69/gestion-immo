@@ -309,6 +309,8 @@ class EncaissementHistorique(models.Model):
     montant = models.DecimalField("montant encaissé (€)", max_digits=10, decimal_places=2)
     charges = models.DecimalField("dont charges (€)", max_digits=10, decimal_places=2, default=0)
     note = models.CharField(max_length=255, blank=True)
+    import_fec = models.ForeignKey("ImportFEC", null=True, blank=True, on_delete=models.SET_NULL, related_name="encaissements",
+                                   editable=False, verbose_name="reprise FEC", help_text="Créé par l'import de ce FEC")
 
     class Meta:
         verbose_name = "loyer encaissé (historique)"

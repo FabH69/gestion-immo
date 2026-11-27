@@ -4,7 +4,7 @@
 {% block breadcrumbs %}<div class="breadcrumbs"><a href="{% url 'admin:index' %}">Accueil</a> › <a href="{% url 'compta_accueil' %}">Comptabilité</a> › <a href="{% url 'dossier_compta' d.code %}">{{ d.titre }}</a> › <a href="{{ retour }}">Immobilisations</a> › Reprendre l'existant</div>{% endblock %}
 {% block content %}
 <h1>Reprendre les immobilisations existantes · {{ d.titre }}</h1>
-<div class="info-a">Recopiez le <b>tableau des immobilisations et amortissements</b> de votre comptable (2033-C, ou 2054 / 2055) arrêté au 31/12 de la dernière année déclarée. L'appli calcule ensuite seule les dotations à partir de l'année choisie. Chaque ligne devient une fiche immobilisation, modifiable ensuite.</div>
+<div class="info-a">Recopiez le <b>tableau des immobilisations et amortissements</b> de votre comptable (2033-C, ou 2054 / 2055) arrêté au 31/12 de la dernière année déclarée. L'appli calcule ensuite seule les dotations à partir de l'année choisie. Chaque ligne devient une fiche immobilisation, modifiable ensuite. Vous avez le <b>FEC</b> de l'ancien logiciel ou du comptable ? <a href="{% url 'reprise_fec' d.code %}">Importez-le</a> : les immobilisations et leurs cumuls sont repris d'un coup.</div>
 <form method="post">{% csrf_token %}{{ formset.management_form }}
 <section class="bloc-d" style="margin-bottom:16px">
   <div class="grille-a">

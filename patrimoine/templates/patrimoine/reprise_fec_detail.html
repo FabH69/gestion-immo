@@ -1,0 +1,119 @@
+{% extends "admin/base_site.html" %}
+{% block extrastyle %}{{ block.super }}<style>{% include "patrimoine/_style_dossiers.css" %}{% include "patrimoine/_style_amortissements.css" %}
+.fec-compte { font-variant-numeric: tabular-nums; white-space: nowrap; }
+table.liste-d td.m, table.liste-d th.m { text-align: right; white-space: nowrap; }
+.fec-ignore td { color: var(--body-quiet-color); }
+.fec-ok-a { border-radius: 12px; padding: 10px 14px; margin: 0 0 14px; background: var(--darkened-bg); border-left: 4px solid #2e7d32; }
+table.fec-immos select { max-width: 170px; } table.fec-immos input[name$="_designation"] { width: 150px; }
+table.liste-d select { max-width: 260px; }
+.kpi-a b small { font-size: .75rem; font-weight: 400; color: var(--body-quiet-color); }
+</style>{% endblock %}
+{% block content_title %}{% endblock %}
+{% block breadcrumbs %}<div class="breadcrumbs"><a href="{% url 'admin:index' %}">Accueil</a> › <a href="{% url 'compta_accueil' %}">Comptabilité</a> › <a href="{% url 'dossier_compta' d.code %}">{{ d.titre }}</a> › <a href="{{ url_liste }}">Reprise FEC</a> › {{ imp.nom_fichier }}</div>{% endblock %}
+{% block content %}
+<div class="titre-liste titre-compta"><h1>{{ d.titre }} · reprise du FEC</h1></div>
+<p class="petit-d">{{ imp.nom_fichier }} · {{ a.nb }} lignes · exercice du {{ a.debut|date:"d/m/Y" }} au {{ s.fin|date:"d/m/Y" }}{% if imp.siren %} · SIREN {{ imp.siren }}{% endif %} · séparateur : {{ s.separateur }}</p>
+{% include "patrimoine/_onglets_compta.html" %}
+
+{% if imp.etat == "importe" %}
+<div class="fec-ok-a"><b>Reprise enregistrée le {{ imp.importe_le|date:"d/m/Y à H:i" }}</b> : {{ imp.resume.factures }} facture{{ imp.resume.factures|pluralize }}
+  ({{ imp.resume.total_factures|floatformat:"2g" }} €), {{ imp.resume.loyers }} mois de loyers ({{ imp.resume.total_loyers|floatformat:"2g" }} €), {{ imp.resume.immobilisations }} immobilisation{{ imp.resume.immobilisations|pluralize }} et {{ imp.resume.soldes }} solde{{ imp.resume.soldes|pluralize }} de bilan.
+  <div class="boutons-a" style="margin-top:8px"><a class="button" href="{{ lien_factures }}">Voir les factures</a>{% if lien_immos %}<a class="button" href="{{ lien_immos }}">Voir le registre des immobilisations</a>{% endif %}
+    <form method="post" action="{% url 'reprise_fec_annuler' d.code imp.pk %}" onsubmit="return confirm('Supprimer tout ce que cet import a créé ?')">{% csrf_token %}<button type="submit" class="button"{% if bloquees %} disabled title="Des factures sont dans une année clôturée ou déclarée"{% endif %}>Annuler cet import</button></form></div>
+  {% if bloquees %}<p class="petit-d">{{ bloquees|length }} facture{{ bloquees|length|pluralize }} de l'import {{ bloquees|length|pluralize:"est,sont" }} dans une année clôturée ou déclarée : déverrouillez l'année pour pouvoir annuler.</p>{% endif %}
+  {% if lien_reprise_immos %}<p class="petit-d">LMNP : le FEC ne contient pas les amortissements réputés différés (ARD, hors comptabilité). Saisissez-les si besoin sur la page <a href="{{ lien_reprise_immos }}">Reprendre l'existant</a>.</p>{% endif %}
+</div>
+{% elif imp.etat == "annule" %}
+<div class="info-a"><b>Import annulé le {{ imp.annule_le|date:"d/m/Y à H:i" }}</b> : ce qu'il avait créé a été supprimé. Déposez à nouveau le fichier pour le refaire.</div>
+{% endif %}
+
+{% for e in s.erreurs_lecture %}{% if forloop.first %}<div class="alerte-a"><b>Lignes non lues</b><ul style="margin:4px 0 0">{% endif %}<li>{{ e }}</li>{% if forloop.last %}</ul></div>{% endif %}{% endfor %}
+{% if brouillon %}{% for al in s.alertes %}<div class="alerte-a">⚠️ {{ al }}</div>{% endfor %}{% endif %}
+
+<div class="kpi-a">
+  <div><span>Contrôle du fichier</span><b>{% if not a.desequilibres and a.total_debit == a.total_credit %}✓ équilibré{% else %}⚠️ à vérifier{% endif %}</b></div>
+  <div><span>Produits (classe 7)</span><b>{{ a.produits|floatformat:"0g" }} €</b></div>
+  <div><span>Charges (classe 6)</span><b>{{ a.charges|floatformat:"0g" }} €</b></div>
+  <div><span>Résultat selon le FEC</span><b>{{ a.resultat|floatformat:"0g" }} €</b></div>
+</div>
+
+{% if brouillon %}
+<form method="post">{% csrf_token %}
+<section class="bloc-d" style="margin-bottom:16px">
+  <h2>1. Ce qu'il faut reprendre</h2>
+  <div class="grille-a">
+    <div><label><input type="checkbox" name="charges"{% if imp.options.charges %} checked{% endif %}> Les charges (factures)</label>
+      <label><input type="checkbox" name="recettes"{% if imp.options.recettes %} checked{% endif %}> Les loyers encaissés</label></div>
+    {% if choix_biens|length > 1 %}<div><label for="f-defaut">Bien quand le libellé ne le dit pas</label><select id="f-defaut" name="bien_defaut" class="champ-a">{% for v, l in choix_biens %}{% if v|first == "b" %}<option value="{{ v }}"{% if imp.options.bien_defaut == v %} selected{% endif %}>{{ l }}</option>{% endif %}{% endfor %}</select></div>{% endif %}
+    {% if amortissable %}<div><label for="f-annee">Première année calculée par l'appli</label><input id="f-annee" name="annee_reprise" type="number" min="2000" max="2100" class="champ-a" value="{{ s.annee_reprise }}">
+      <div class="petit-d">Les cumuls d'amortissements sont ceux du FEC au {{ s.fin|date:"d/m/Y" }}.</div></div>{% endif %}
+  </div>
+</section>
+
+<section class="bloc-d" style="margin-bottom:16px">
+  <h2>2. Correspondance des comptes de charges et de produits</h2>
+  <p class="petit-d" style="margin-top:0">Proposée d'après le numéro et le libellé de chaque compte{% if imp.correspondances %} (ou reprise du précédent import du dossier){% endif %}. Les dotations aux amortissements (68) ne sont pas reprises : le registre les recalcule. L'impôt sur les sociétés (695) non plus.</p>
+  <div class="defile-a"><table class="liste-d"><thead><tr><th>Compte</th><th>Libellé</th><th class="m">Écritures</th><th class="m">Montant</th><th>Devient</th><th>Bien</th></tr></thead><tbody>
+  {% for c in comptes %}<tr{% if c.cible == "ignorer" %} class="fec-ignore"{% endif %}><td class="fec-compte">{{ c.compte }}</td><td>{{ c.libelle }}</td><td class="m">{{ c.nb }}</td><td class="m">{{ c.net|floatformat:"2g" }} €</td>
+    <td><select name="c_{{ c.compte }}">{% for v, l in cibles %}<option value="{{ v }}"{% if v == c.cible %} selected{% endif %}>{{ l }}</option>{% endfor %}</select></td>
+    <td><select name="b_{{ c.compte }}"><option value="">—</option>{% for v, l in choix_biens %}<option value="{{ v }}"{% if v == c.bien %} selected{% endif %}>{{ l }}</option>{% endfor %}</select></td></tr>
+  {% empty %}<tr><td colspan="6" class="petit-d">Aucun compte de charges ni de produits dans ce fichier.</td></tr>{% endfor %}
+  </tbody></table></div>
+</section>
+
+{% if amortissable %}<section class="bloc-d" style="margin-bottom:16px">
+  <h2>3. Immobilisations et amortissements</h2>
+  <p class="petit-d" style="margin-top:0">Une fiche par compte d'immobilisation (classe 2), avec le cumul des amortissements (comptes 28) au {{ s.fin|date:"d/m/Y" }}. La durée est déduite de la dotation de l'exercice quand c'est possible ; une date « estimée » est calculée d'après le cumul, corrigez-la si vous la connaissez. Vous pourrez ensuite scinder une fiche (par exemple un compte « Mobilier » qui regroupe plusieurs meubles).</p>
+  <div class="defile-a"><table class="liste-d fec-immos"><thead><tr><th>Reprendre</th><th>Compte</th><th>Désignation</th><th>Catégorie</th><th>Bien</th><th>Mise en service</th><th class="m">Valeur</th><th>Durée</th><th class="m">Cumul amorti</th><th class="m">Dotation FEC</th><th class="m">Dotation {{ s.annee_reprise }}</th></tr></thead><tbody>
+  {% for i in s.immos %}<tr{% if i.statut != "ok" %} class="fec-ignore"{% endif %}>
+    <td><input type="checkbox" name="i_{{ i.compte }}_inclure"{% if i.inclure %} checked{% endif %}>{% if i.statut == "doublon" %} <span class="pill-d todo">déjà dans le registre</span>{% endif %}</td>
+    <td class="fec-compte">{{ i.compte }}</td>
+    <td><input name="i_{{ i.compte }}_designation" value="{{ i.designation }}" maxlength="200"></td>
+    <td><select name="i_{{ i.compte }}_categorie">{% for v, l in categories %}<option value="{{ v }}"{% if v == i.categorie %} selected{% endif %}>{{ l }}</option>{% endfor %}</select></td>
+    <td><select name="i_{{ i.compte }}_bien">{% for v, l in choix_biens %}<option value="{{ v }}"{% if v == i.bien %} selected{% endif %}>{{ l }}</option>{% endfor %}</select></td>
+    <td><input type="date" name="i_{{ i.compte }}_mise_en_service" value="{{ i.mise_en_service }}">{% if i.mes_estimee %}<div class="petit-d">estimée</div>{% endif %}</td>
+    <td class="m">{{ i.valeur|floatformat:"2g" }} €</td>
+    <td><input name="i_{{ i.compte }}_duree" value="{{ i.duree }}" size="3" inputmode="numeric"> ans</td>
+    <td class="m">{{ i.cumul|floatformat:"2g" }} €</td><td class="m">{{ i.dotation_fec|floatformat:"2g" }} €</td><td class="m">{{ i.dotation_reprise|floatformat:"2g" }} €</td></tr>
+  {% empty %}<tr><td colspan="11" class="petit-d">Aucune immobilisation à l'actif dans ce fichier.</td></tr>{% endfor %}
+  </tbody></table></div>
+</section>{% endif %}
+
+<div class="boutons-a" style="margin-bottom:20px"><button type="submit" name="action" value="simuler" class="button">Recalculer la simulation</button>
+  <button type="submit" name="action" value="enregistrer" class="button default"{% if s.bloquant %} disabled title="Choisissez un bien pour chaque compte repris"{% endif %}>Enregistrer la reprise</button>
+  <button type="submit" formaction="{% url 'reprise_fec_annuler' d.code imp.pk %}" class="button" style="background:transparent;color:var(--body-quiet-color);border:1px solid var(--border-color)">Abandonner cet import</button></div>
+</form>
+{% endif %}
+
+<section class="bloc-d" id="simulation" style="margin-bottom:16px">
+  <h2>{% if brouillon %}Simulation : ce qui sera créé{% else %}Soldes de bilan et contrôles{% endif %}</h2>
+  {% if brouillon %}<div class="kpi-a">
+    <div><span>Factures</span><b>{{ s.nb_factures }} <small>· {{ s.total_factures|floatformat:"0g" }} €</small></b></div>
+    <div><span>Loyers encaissés</span><b>{{ s.nb_loyers }} mois <small>· {{ s.total_loyers|floatformat:"0g" }} €</small></b></div>
+    <div><span>Immobilisations</span><b>{{ s.nb_immos }} <small>· {{ s.total_immos|floatformat:"0g" }} €</small></b></div>
+    <div><span>Soldes de bilan</span><b>{{ s.soldes|length }}</b></div>
+  </div>
+  {% if s.nb_verrou or s.nb_doublons %}<p class="petit-d">Non repris : {% if s.nb_verrou %}{{ s.nb_verrou }} écriture{{ s.nb_verrou|pluralize }} dans une année clôturée ou déclarée{% endif %}{% if s.nb_verrou and s.nb_doublons %}, {% endif %}{% if s.nb_doublons %}{{ s.nb_doublons }} facture{{ s.nb_doublons|pluralize }} déjà saisie{{ s.nb_doublons|pluralize }} (même bien, même date, même montant){% endif %}.</p>{% endif %}
+
+  {% if s.groupes %}<h3>Factures par bien et par rubrique</h3>
+  <div class="defile-a"><table class="liste-d"><thead><tr><th>Bien</th><th>Rubrique</th><th class="m">Factures</th><th class="m">Total</th><th>Année</th></tr></thead><tbody>
+  {% for g in s.groupes %}<tr><td>{{ g.bien.nom }}</td><td>{{ g.libelle }}{% if g.alerte_pret %} <span class="pill-d todo">déjà compté par le prêt</span>{% endif %}</td><td class="m">{{ g.nb }}</td><td class="m">{{ g.total|floatformat:"2g" }} €</td><td>{{ g.annees|join:", " }}</td></tr>{% endfor %}
+  <tr class="tot"><td colspan="2">Total</td><td class="m">{{ s.nb_factures }}</td><td class="m">{{ s.total_factures|floatformat:"2g" }} €</td><td></td></tr>
+  </tbody></table></div>{% endif %}
+
+  {% if s.loyers %}<details style="margin-top:12px"><summary><b>Loyers encaissés par mois</b> ({{ s.nb_loyers }} mois repris{% if s.loyers|length != s.nb_loyers %}, {{ s.loyers|length|add:0 }} au total{% endif %})</summary>
+  <div class="defile-a"><table class="liste-d"><thead><tr><th>Logement</th><th>Mois</th><th class="m">Montant</th><th></th></tr></thead><tbody>
+  {% for l in s.loyers %}<tr{% if l.statut != "ok" %} class="fec-ignore"{% endif %}><td>{{ l.lot }}{% if l.courte %} <span class="tag-a">courte durée</span>{% endif %}</td><td>{{ l.mois|date:"F Y" }}</td><td class="m">{{ l.montant|floatformat:"2g" }} €</td>
+    <td>{% if l.statut == "existe" %}déjà un montant pour ce mois : gardé{% elif l.statut == "zero" %}0 €{% endif %}</td></tr>{% endfor %}
+  </tbody></table></div></details>{% endif %}
+
+  {% if amortissable and s.nb_immos %}<p style="margin-top:12px">Immobilisations : valeur {{ s.total_immos|floatformat:"2g" }} €, déjà amorties {{ s.cumul_immos|floatformat:"2g" }} € au {{ s.fin|date:"d/m/Y" }}. Dotation {{ s.annee_reprise }} calculée par l'appli : <b>{{ s.dotation_reprise|floatformat:"2g" }} €</b>.</p>{% endif %}
+  {% endif %}
+
+  {% if s.soldes %}<details style="margin-top:12px"{% if not brouillon %} open{% endif %}><summary><b>Soldes de bilan au {{ s.fin|date:"d/m/Y" }}</b> (gardés pour mémoire : capital, emprunts, comptes d'associés, tiers, banque)</summary>
+  {% if s.emprunts_fec or s.emprunts_appli %}<p class="petit-d">Emprunts (comptes 164) : <b>{{ s.emprunts_fec|floatformat:"2g" }} €</b> selon le FEC, {{ s.emprunts_appli|floatformat:"2g" }} € de capital restant dû selon les prêts de l'appli{% if s.ecart_emprunts %} : <span class="pill-d todo">écart {{ s.ecart_emprunts|floatformat:"2g" }} €</span> (un prêt manque ou son échéancier diffère){% else %} <span class="pill-d ok">identique</span>{% endif %}.</p>{% endif %}
+  <div class="defile-a"><table class="liste-d"><thead><tr><th>Compte</th><th>Libellé</th><th class="m">Débit</th><th class="m">Crédit</th><th class="m">Solde</th></tr></thead><tbody>
+  {% for x in s.soldes %}<tr><td class="fec-compte">{{ x.compte }}</td><td>{{ x.libelle }}</td><td class="m">{{ x.debit|floatformat:"2g" }}</td><td class="m">{{ x.credit|floatformat:"2g" }}</td><td class="m">{{ x.montant|floatformat:"2g" }} {{ x.sens }}</td></tr>{% endfor %}
+  </tbody></table></div></details>{% endif %}
+</section>
+{% endblock %}
