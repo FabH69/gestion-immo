@@ -3,6 +3,7 @@
 Chaque contrôle renvoie des lignes (clé, libellé, lien pour compléter). Une ligne peut être écartée avec « Ne pas
 contrôler » (cas voulu, ex. un dépôt de garantie réellement à 0 €) : elle est mémorisée dans ControleIgnore."""
 import calendar
+import functools
 from datetime import date
 
 from django.urls import reverse
@@ -15,8 +16,17 @@ TYPES_BAIL_HABITATION = ("nu", "meuble", "etudiant", "mobilite")
 MOIS_FR = ["janvier", "février", "mars", "avril", "mai", "juin", "juillet", "août", "septembre", "octobre", "novembre", "décembre"]
 
 
+_GABARIT_PK = 987654321
+
+
+@functools.lru_cache(maxsize=None)
+def _gabarit_url(nom):
+    return reverse(f"admin:patrimoine_{nom}_change", args=[_GABARIT_PK])
+
+
 def _a(nom, pk):
-    return reverse(f"admin:patrimoine_{nom}_change", args=[pk])
+    # adresse calculée une fois par table puis complétée : reverse() est lent quand il y a des centaines de lignes
+    return _gabarit_url(nom).replace(str(_GABARIT_PK), str(pk))
 
 
 def _nom(lot):
@@ -182,6 +192,48 @@ def booking_manquant(aujourdhui=None):
     return lignes
 
 
+def historique_non_repris():
+    """Loyers du suivi historique pas encore devenus des paiements reçus (pas de bail ce mois-là, paiement déjà saisi)."""
+    from .models import EncaissementHistorique
+    from .reprise_historique import raisons
+
+    lignes = list(EncaissementHistorique.objects.select_related("lot__bien").order_by("lot_id", "mois"))
+    return [(f"historique:{h.pk}", f"{_nom(h.lot)} – {MOIS_FR[h.mois.month - 1]} {h.mois.year} : {r or 'à reprendre'}",
+             _a("encaissementhistorique", h.pk))
+            for h, r in zip(lignes, raisons(lignes))]
+
+
+def loyers_payes_sans_reglement():
+    """Règle de base : un loyer n'est payé que par un règlement reçu (ou une remise). Ne doit jamais rien trouver."""
+    from django.db.models import DecimalField, F, Sum, Value
+    from django.db.models.functions import Coalesce
+
+    from .models import Echeance
+
+    zero = Value(0, output_field=DecimalField())
+    qs = (Echeance.objects.filter(statut=Echeance.Statut.PAYE)
+          .annotate(paye=Coalesce(Sum("paiements__montant"), zero))
+          .filter(paye__lt=F("loyer_hc") + F("charges") - F("remise")).select_related("bail__lot__bien"))
+    return [(f"echeance:{e.pk}", f"{_nom(e.bail.lot)} – {MOIS_FR[e.periode.month - 1]} {e.periode.year}", _a("echeance", e.pk)) for e in qs]
+
+
+def avances_non_utilisees():
+    """Paiements reçus dont une partie n'est affectée à aucun loyer : à garder pour le mois suivant ou à rembourser.
+    Calcul fait par la base (une requête), même avec des années de paiements reçus."""
+    from django.db.models import DecimalField, F, Sum, Value
+    from django.db.models.functions import Coalesce
+
+    from .models import Versement
+
+    zero = Value(0, output_field=DecimalField())
+    qs = (Versement.objects.filter(annule=False)
+          .annotate(reparti=Coalesce(Sum("paiements__montant"), zero))
+          .annotate(reste=F("montant") - F("reparti") - Coalesce(F("part_depot"), zero) - Coalesce(F("rembourse"), zero))
+          .filter(reste__gt=0).select_related("bail__lot__bien").order_by("-date", "-pk"))
+    return [(f"avance:{v.pk}", f"{_nom(v.bail.lot)} – {v.reste:.2f} € reçus le {v.date:%d/%m/%Y}".replace(".", ","), _a("versement", v.pk))
+            for v in qs]
+
+
 # (code, niveau, titre, explication, icône, fonction, module de droits nécessaire pour la voir)
 CONTROLES = [
     ("bail_irl", BLOQUANT, "Baux sans IRL de référence", "La révision du loyer ne peut pas être calculée.", "irl", baux_sans_irl, "baux"),
@@ -209,6 +261,12 @@ CONTROLES = [
      "dpe", lots_dpe_sans_date, "biens"),
     ("pret_tableau", A_COMPLETER, "Prêts sans tableau de la banque", "L'échéancier est calculé : importez le tableau pour avoir les "
      "montants exacts.", "banque", prets_sans_tableau, "finances"),
+    ("loyer_sans_reglement", BLOQUANT, "Loyers payés sans règlement reçu",
+     "Un loyer n'est payé que par un paiement reçu (ou une remise) : à corriger.", "facture", loyers_payes_sans_reglement, "loyers"),
+    ("historique", A_COMPLETER, "Loyers de l'historique pas encore repris",
+     "Ces encaissements ne sont pas encore des paiements reçus : rattachez-les au bon bail.", "facture", historique_non_repris, "loyers"),
+    ("avance", A_COMPLETER, "Avances non utilisées", "Trop-perçus gardés pour les loyers suivants : à imputer ou à rembourser.",
+     "banque", avances_non_utilisees, "loyers"),
 ]
 NIVEAUX = [(BLOQUANT, "Bloquent un document"), (A_COMPLETER, "À compléter")]
 # ce qui est vérifié, dit court pour « Tout est bon »
@@ -216,7 +274,8 @@ SUJETS = {"bail_irl": "IRL des baux", "bail_locataire": "locataires des baux", "
           "lot_interdit": "classes DPE louables", "lot_dpe_date": "dates des DPE",
           "locataire_email": "e-mails des locataires", "bail_depot": "dépôts de garantie", "bail_pdl": "compteurs électriques",
           "chaudiere": "entretien des chaudières", "conciergerie": "factures de conciergerie", "booking": "imports Booking",
-          "pret_tableau": "tableaux des prêts"}
+          "pret_tableau": "tableaux des prêts", "loyer_sans_reglement": "règlements des loyers",
+          "historique": "reprise de l'historique", "avance": "avances des locataires"}
 
 
 def executer(user=None):
@@ -238,23 +297,48 @@ def executer(user=None):
     return resultats
 
 
+DUREE_PASTILLE = 15 * 60  # recalcul au plus tous les quarts d'heure, et tout de suite après une modification
+
+
 def _cle_cache(user):
-    return f"controles:{getattr(user, 'pk', None) or 'tous'}"
+    from django.core.cache import cache
+
+    return f"controles:{cache.get('controles:generation', 0)}:{getattr(user, 'pk', None) or 'tous'}"
 
 
 def memoriser(user, resultats):
-    """Garde 2 minutes le nombre de contrôles à traiter : la pastille du menu ne refait pas tous les contrôles à chaque page."""
+    """Garde le nombre de contrôles à traiter : la pastille du menu ne refait pas tous les contrôles à chaque page."""
     from django.core.cache import cache
 
     n = sum(1 for r in resultats if r["nombre"])
-    cache.set(_cle_cache(user), n, 120)
+    cache.set(_cle_cache(user), n, DUREE_PASTILLE)
     return n
 
 
 def oublier(user=None):
+    """Sans utilisateur : la pastille de tout le monde sera recalculée à la prochaine page."""
     from django.core.cache import cache
 
-    cache.delete(_cle_cache(user))
+    if user is None:
+        try:
+            cache.incr("controles:generation")
+        except ValueError:
+            cache.set("controles:generation", 1, None)
+    else:
+        cache.delete(_cle_cache(user))
+
+
+class OublierApresModificationMiddleware:
+    """Après un enregistrement (formulaire envoyé), la pastille des contrôles est recalculée à la page suivante."""
+
+    def __init__(self, get_response):
+        self.get_response = get_response
+
+    def __call__(self, request):
+        response = self.get_response(request)
+        if request.method == "POST" and response.status_code < 400:
+            oublier()
+        return response
 
 
 def nombre_a_traiter(user=None):

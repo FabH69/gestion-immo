@@ -85,11 +85,11 @@ def a_faire(aujourdhui, horizon_jours=PREAVIS_JOURS, avec_taches=False):
     items = []
 
     def ajouter(date, titre, detail, categorie, url, action=None, stop=None, important=False, limite_propre=None, genre="rappels",
-                heure=None, agenda=None):
+                heure=None, agenda=None, encaisser=None):
         if date <= (limite_propre or limite):
             items.append({
                 "date": date, "heure": heure, "heure_texte": heure_courte(heure), "agenda": agenda, "titre": titre, "detail": detail, "categorie": categorie, "genre": genre,
-                "url": url, "action": action, "stop": stop, "en_retard": date < aujourdhui, "important": important,
+                "url": url, "action": action, "stop": stop, "en_retard": date < aujourdhui, "important": important, "encaisser": encaisser,
             })
 
     baux = Bail.objects.filter(actif=True).select_related("lot__bien").prefetch_related("locataires")
@@ -137,11 +137,15 @@ def a_faire(aujourdhui, horizon_jours=PREAVIS_JOURS, avec_taches=False):
     impayes = (Echeance.objects.exclude(statut=Echeance.Statut.PAYE)
                .filter(date_exigibilite__lt=aujourdhui - timedelta(days=DELAI_RETARD_JOURS), date_exigibilite__gte=_ajouter_mois(aujourdhui, -12))
                .select_related("bail__lot__bien").prefetch_related("bail__locataires", "paiements"))
+    from .admin.loyers import url_encaisser
+
     for e in impayes:
         noms = ", ".join(str(l) for l in e.bail.locataires.all())
-        ajouter(e.date_exigibilite, f"Loyer de {e.periode:%m/%Y} non réglé : {e.reste_du:.2f} €".replace(".", ","),
+        titre = (f"Régularisation des charges {e.periode:%m/%Y} non réglée" if e.est_regularisation
+                 else f"Loyer de {e.periode:%m/%Y} non réglé")
+        ajouter(e.date_exigibilite, f"{titre} : {e.reste_du:.2f} €".replace(".", ","),
                 f"{e.bail.lot} – {noms}" if noms else str(e.bail.lot), "Loyer",
-                reverse("admin:patrimoine_echeance_change", args=[e.pk]), genre="loyers")
+                reverse("admin:patrimoine_echeance_change", args=[e.pk]), genre="loyers", encaisser=url_encaisser(e))
 
     for rappel in Rappel.objects.filter(fait=False, actif=True).select_related("bien"):
         # affiché dès qu'il entre dans la période (30 jours sur l'accueil) ; « me prévenir par mail N jours avant »

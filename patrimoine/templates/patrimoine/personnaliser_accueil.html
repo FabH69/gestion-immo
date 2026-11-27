@@ -1,0 +1,139 @@
+{% extends "admin/base_site.html" %}
+{% block extrastyle %}{{ block.super }}<style>
+.perso-accueil { max-width: 760px; }
+.perso-bloc { display: flex; gap: 12px; align-items: flex-start; background: var(--body-bg); border: 1px solid var(--hairline-color);
+  border-radius: 12px; padding: 12px 14px; margin-bottom: 10px; }
+.perso-bloc.masque { opacity: .6; }
+.perso-bloc.glisse { opacity: .4; border-style: dashed; }
+.perso-bloc.cible { border-color: var(--primary); box-shadow: 0 0 0 2px var(--selected-bg); }
+.perso-poignee { cursor: grab; color: var(--body-quiet-color); font-size: 20px; line-height: 1; padding: 4px 2px; user-select: none; }
+.perso-corps { flex: 1; min-width: 0; }
+.perso-titre { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; }
+.perso-titre label.afficher { display: flex; align-items: center; gap: 8px; font-weight: 600; font-size: 15px; margin: 0; cursor: pointer; }
+.perso-titre select { margin-left: auto; height: 32px !important; border-radius: 8px; }
+.perso-donnees { display: flex; flex-wrap: wrap; gap: 6px 16px; margin-top: 10px; padding-top: 8px; border-top: 1px solid var(--hairline-color); }
+.perso-donnees label { display: flex; align-items: center; gap: 6px; font-size: 13px; margin: 0; cursor: pointer; }
+.perso-donnees .aide { width: 100%; font-size: 12px; color: var(--body-quiet-color); margin: 0; }
+.perso-actions { margin-top: 10px; padding-top: 8px; border-top: 1px solid var(--hairline-color); }
+.perso-actions .aide { font-size: 12px; color: var(--body-quiet-color); margin: 0 0 6px; }
+.perso-action { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 220px) auto; gap: 8px; align-items: center; padding: 5px 0; border-bottom: 1px dashed var(--hairline-color); }
+.perso-action:last-child { border-bottom: 0; }
+.perso-action label { display: flex; align-items: center; gap: 6px; font-size: 13px; margin: 0; cursor: pointer; }
+.perso-action input[type=text] { width: 100%; box-sizing: border-box; height: 30px; font-size: 13px; }
+.perso-action.eteinte label span, .perso-action.eteinte input[type=text] { opacity: .55; }
+.perso-fleches-action { display: flex; gap: 4px; }
+.perso-fleches-action button { width: 28px; height: 26px; padding: 0; border-radius: 6px; border: 1px solid var(--hairline-color); background: var(--body-bg); color: var(--body-fg); cursor: pointer; }
+.perso-fleches-action button:disabled { opacity: .3; cursor: default; }
+.perso-fleches { display: flex; flex-direction: column; gap: 4px; }
+.perso-fleches button { width: 32px; height: 28px; padding: 0; border-radius: 6px; border: 1px solid var(--hairline-color);
+  background: var(--body-bg); color: var(--body-fg); cursor: pointer; font-size: 14px; }
+.perso-fleches button:hover { border-color: var(--primary); color: var(--primary); }
+.perso-fleches button:disabled { opacity: .3; cursor: default; }
+.perso-boutons { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 18px; align-items: center; }
+.perso-boutons .origine { margin-left: auto; background: none; border: 0; color: var(--link-fg); cursor: pointer; font-size: 13px; padding: 0; }
+@media (max-width: 767px) {
+  .perso-action { grid-template-columns: minmax(0, 1fr) auto; }
+  .perso-action input[type=text] { grid-column: 1; grid-row: 2; }
+  .perso-titre select { margin-left: 0; width: 100%; }
+  .perso-boutons .origine { margin-left: 0; }
+}
+</style>{% endblock %}
+{% block breadcrumbs %}<div class="breadcrumbs"><a href="{% url 'admin:index' %}">Accueil</a> › Personnaliser l'accueil</div>{% endblock %}
+{% block content_title %}<h1>Personnaliser l'accueil</h1>
+<p class="sous-titre-page">Faites glisser un bloc (ou utilisez les flèches) pour changer l'ordre, décochez-le pour le masquer, choisissez sa place et les données qu'il montre. Ces réglages ne concernent que vous.</p>{% endblock %}
+{% block content %}
+<div id="content-main" class="perso-accueil">
+<form method="post" id="form-perso">{% csrf_token %}
+  <div id="liste-blocs">
+  {% for b in blocs %}
+  <div class="perso-bloc{% if not b.visible %} masque{% endif %}" draggable="true" data-code="{{ b.code }}" id="bloc-{{ b.code }}">
+    <span class="perso-poignee" title="Faire glisser pour déplacer" aria-hidden="true">⠿</span>
+    <input type="hidden" name="ordre" value="{{ b.code }}">
+    <div class="perso-corps">
+      <div class="perso-titre">
+        <label class="afficher"><input type="checkbox" name="visible_{{ b.code }}" value="1"{% if b.visible %} checked{% endif %}> {{ b.titre }}</label>
+        <select name="place_{{ b.code }}" aria-label="Place du bloc {{ b.titre }}">
+          {% for code, libelle in places %}<option value="{{ code }}"{% if code == b.place %} selected{% endif %}>{{ libelle }}</option>{% endfor %}
+        </select>
+      </div>
+      {% if b.rangeable %}<div class="perso-actions">
+        <p class="aide">Cochez les actions à afficher, rangez-les avec les flèches et changez leur nom si vous voulez (laisser vide = nom d'origine).</p>
+        {% for c in b.choix %}<div class="perso-action{% if not c.coche %} eteinte{% endif %}">
+          <input type="hidden" name="proposees_{{ b.code }}" value="{{ c.code }}">
+          <label><input type="checkbox" name="donnees_{{ b.code }}" value="{{ c.code }}"{% if c.coche %} checked{% endif %}> <span>{{ c.libelle }}</span></label>
+          <input type="text" name="libelle_{{ b.code }}_{{ c.code }}" value="{{ c.libelle_perso }}" placeholder="{{ c.libelle }}" maxlength="40" aria-label="Nom affiché pour {{ c.libelle }}">
+          <span class="perso-fleches-action"><button type="button" class="monter-action" title="Monter" aria-label="Monter {{ c.libelle }}">↑</button><button type="button" class="descendre-action" title="Descendre" aria-label="Descendre {{ c.libelle }}">↓</button></span>
+        </div>{% endfor %}
+      </div>{% elif b.choix %}<div class="perso-donnees">
+        {% for c in b.choix %}<label><input type="hidden" name="proposees_{{ b.code }}" value="{{ c.code }}"><input type="checkbox" name="donnees_{{ b.code }}" value="{{ c.code }}"{% if c.coche %} checked{% endif %}> {{ c.libelle }}</label>{% endfor %}
+        {% if b.code == "a_faire" %}<p class="aide">Les rappels importants ★ restent toujours affichés.</p>{% endif %}
+      </div>{% endif %}
+    </div>
+    <div class="perso-fleches">
+      <button type="button" class="monter" title="Monter" aria-label="Monter {{ b.titre }}">↑</button>
+      <button type="button" class="descendre" title="Descendre" aria-label="Descendre {{ b.titre }}">↓</button>
+    </div>
+  </div>
+  {% endfor %}
+  </div>
+  <div class="perso-boutons">
+    <button type="submit" name="action" value="voir" class="button default">Enregistrer et voir l'accueil</button>
+    <button type="submit" name="action" value="enregistrer" class="button">Enregistrer</button>
+    <a href="{% url 'admin:index' %}">Annuler</a>
+    <button type="submit" name="action" value="origine" class="origine">Revenir à la présentation d'origine</button>
+  </div>
+</form>
+</div>
+<script>
+(function () {
+  var liste = document.getElementById("liste-blocs"), enCours = null;
+  function fleches() {
+    var blocs = liste.querySelectorAll(".perso-bloc");
+    blocs.forEach(function (b, i) {
+      b.querySelector(".monter").disabled = i === 0;
+      b.querySelector(".descendre").disabled = i === blocs.length - 1;
+    });
+    liste.querySelectorAll(".perso-actions").forEach(function (zone) {
+      var lignes = zone.querySelectorAll(".perso-action");
+      lignes.forEach(function (l, i) {
+        l.querySelector(".monter-action").disabled = i === 0;
+        l.querySelector(".descendre-action").disabled = i === lignes.length - 1;
+      });
+    });
+  }
+  liste.addEventListener("click", function (e) {
+    var action = e.target.closest(".perso-action");
+    if (action) {
+      var zone = action.parentNode;
+      if (e.target.classList.contains("monter-action") && action.previousElementSibling && action.previousElementSibling.classList.contains("perso-action")) zone.insertBefore(action, action.previousElementSibling);
+      if (e.target.classList.contains("descendre-action") && action.nextElementSibling) zone.insertBefore(action.nextElementSibling, action);
+      fleches(); return;
+    }
+    var bloc = e.target.closest(".perso-bloc");
+    if (!bloc) return;
+    if (e.target.classList.contains("monter") && bloc.previousElementSibling) liste.insertBefore(bloc, bloc.previousElementSibling);
+    if (e.target.classList.contains("descendre") && bloc.nextElementSibling) liste.insertBefore(bloc.nextElementSibling, bloc);
+    fleches();
+  });
+  liste.addEventListener("change", function (e) {
+    if (e.target.name && e.target.name.indexOf("visible_") === 0) e.target.closest(".perso-bloc").classList.toggle("masque", !e.target.checked);
+    if (e.target.name === "donnees_actions") e.target.closest(".perso-action").classList.toggle("eteinte", !e.target.checked);
+  });
+  liste.addEventListener("dragstart", function (e) {
+    if (e.target.closest && e.target.closest("input, select")) { e.preventDefault(); return; }
+    enCours = e.target.closest(".perso-bloc"); if (!enCours) return;
+    enCours.classList.add("glisse"); e.dataTransfer.effectAllowed = "move"; e.dataTransfer.setData("text/plain", enCours.dataset.code);
+  });
+  liste.addEventListener("dragover", function (e) {
+    var cible = e.target.closest(".perso-bloc");
+    if (!enCours || !cible || cible === enCours) return;
+    e.preventDefault();
+    var r = cible.getBoundingClientRect();
+    liste.insertBefore(enCours, e.clientY > r.top + r.height / 2 ? cible.nextElementSibling : cible);
+  });
+  liste.addEventListener("drop", function (e) { e.preventDefault(); });
+  liste.addEventListener("dragend", function () { if (enCours) enCours.classList.remove("glisse"); enCours = null; fleches(); });
+  fleches();
+})();
+</script>
+{% endblock %}

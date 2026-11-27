@@ -242,6 +242,22 @@ class NoteRapide(models.Model):
         return f"Notes de {self.utilisateur}"
 
 
+class PreferencesAccueil(models.Model):
+    """Page d'accueil personnalisée : ordre, place et affichage des blocs, données choisies dans chaque bloc (un réglage par
+    utilisateur, lu et complété par patrimoine/accueil.py)."""
+
+    utilisateur = models.OneToOneField("auth.User", on_delete=models.CASCADE, related_name="preferences_accueil")
+    reglages = models.JSONField(default=dict, blank=True)
+    modifie_le = models.DateTimeField("modifié le", auto_now=True)
+
+    class Meta:
+        verbose_name = "préférences de l'accueil"
+        verbose_name_plural = "préférences de l'accueil"
+
+    def __str__(self):
+        return f"Accueil de {self.utilisateur}"
+
+
 class AbonnementAgenda(models.Model):
     """Lien secret d'abonnement à l'agenda d'un utilisateur : le téléphone ou Google Agenda le relit tout seul.
 

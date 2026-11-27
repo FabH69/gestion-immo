@@ -16,7 +16,7 @@ def generer_si_besoin():
         return 0
     from .models import Echeance
 
-    n = Echeance.generer_pour_mois(aujourdhui.replace(day=1))
+    n = Echeance.rattraper(aujourdhui) + Echeance.generer_pour_mois(aujourdhui.replace(day=1))
     _dernier_jour[base] = aujourdhui
     return n
 

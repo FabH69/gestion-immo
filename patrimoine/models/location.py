@@ -172,13 +172,13 @@ class Bail(models.Model):
         auto = lambda e: all(p.notes.startswith(self.PAIEMENT_SUPPOSE) for p in e.paiements.all())
         suivant = (Bail.objects.filter(lot_id=self.lot_id, date_debut__gt=self.date_debut).exclude(pk=self.pk)
                    .order_by("date_debut").first())
-        for e in self.echeances.filter(periode__gt=self.date_fin).order_by("periode"):
+        for e in self.echeances.filter(periode__gt=self.date_fin, nature="loyer").order_by("periode"):
             if auto(e):
                 e.delete()
                 faits.append(f"{e.periode:%m/%Y} retiré")
                 continue
             fin_mois = e.periode.replace(day=calendar.monthrange(e.periode.year, e.periode.month)[1])
-            autre = suivant.echeances.filter(periode=e.periode).first() if suivant and suivant.date_debut <= fin_mois else None
+            autre = suivant.echeances.filter(periode=e.periode, nature="loyer").first() if suivant and suivant.date_debut <= fin_mois else None
             if suivant and suivant.date_debut <= fin_mois and (autre is None or (not autre.ajustee and auto(autre))):
                 if autre:
                     autre.delete()
@@ -187,7 +187,7 @@ class Bail(models.Model):
                 faits.append(f"{e.periode:%m/%Y} encaissé rattaché au locataire suivant")
             else:
                 a_verifier.append(f"{e.periode:%m/%Y}")
-        e = self.echeances.filter(periode=self.date_fin.replace(day=1)).first()
+        e = self.echeances.filter(periode=self.date_fin.replace(day=1), nature="loyer").first()
         if e and not e.ajustee:
             paiements = list(e.paiements.all())
             if not paiements:
@@ -217,11 +217,19 @@ class Bail(models.Model):
 
     def loyer_au(self, jour):
         """Loyer HC en vigueur à une date : dernière révision appliquée avant cette date, sinon loyer initial."""
-        appliquees = self.revisions.filter(appliquee=True)
-        revision = appliquees.filter(date_effet__lte=jour).order_by("-date_effet").first()
+        deja = getattr(self, "_prefetched_objects_cache", {}).get("revisions")
+        if deja is not None:  # révisions chargées d'avance (prefetch_related("revisions")) : pas de requête par mois
+            appliquees = [r for r in deja if r.appliquee]
+            avant = [r for r in appliquees if r.date_effet <= jour]
+            apres = [r for r in appliquees if r.date_effet > jour]
+            revision = max(avant, key=lambda r: r.date_effet) if avant else None
+            suivante = min(apres, key=lambda r: r.date_effet) if apres else None
+        else:
+            appliquees = self.revisions.filter(appliquee=True)
+            revision = appliquees.filter(date_effet__lte=jour).order_by("-date_effet").first()
+            suivante = None if revision else appliquees.filter(date_effet__gt=jour).order_by("date_effet").first()
         if revision:
             return revision.nouveau_loyer
-        suivante = appliquees.filter(date_effet__gt=jour).order_by("date_effet").first()
         if suivante:
             return suivante.ancien_loyer
         # sans révision enregistrée : loyer initial avant la dernière révision connue, loyer actuel ensuite

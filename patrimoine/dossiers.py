@@ -176,16 +176,17 @@ def a_faire(annee):
         n = a_saisir(d).count()
         if n:
             lignes.append({"titre": d["titre"], "detail": f"{d['sous_titre']} · {d['cerfa']}",
-                           "texte": f"{n} facture{'s' if n > 1 else ''} à saisir", "url": resume_liens(d, annee)["lien_a_saisir"]})
+                           "texte": f"{n} facture{'s' if n > 1 else ''} à saisir", "url": resume_liens(d, annee)["lien_a_saisir"],
+                           "genre": "factures"})
     hors = compta.a_codifier().exclude(bien_id__in=ids_dossiers).count()
     if hors:
         lignes.append({"titre": "Bien hors dossier", "detail": "Régime fiscal à vérifier dans les Réglages fiscaux",
-                       "texte": f"{hors} facture{'s' if hors > 1 else ''}", "url": reverse("regimes_fiscaux")})
+                       "texte": f"{hors} facture{'s' if hors > 1 else ''}", "url": reverse("regimes_fiscaux"), "genre": "hors_dossier"})
     if annee < timezone.localdate().year:
         for d in liste:
             c = declarations.carte(d["formulaire"], d["proprietaire"], d["titre"], d["sous_titre"], d["cerfa"], annee)
             emprunts = next((e for e in c["etapes"] if e["libelle"] == "Emprunts"), None)
             if not c["declaree"] and emprunts and emprunts["etat"] == "ko":
                 lignes.append({"titre": d["titre"], "detail": f"Prêts {annee} · {d['cerfa']}",
-                               "texte": emprunts["texte"], "url": emprunts["url"], "retour": True})
+                               "texte": emprunts["texte"], "url": emprunts["url"], "retour": True, "genre": "attestations"})
     return lignes

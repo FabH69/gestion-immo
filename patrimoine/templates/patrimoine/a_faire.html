@@ -51,7 +51,7 @@
         <td class="type"><span class="categorie">{{ i.categorie }}</span></td>
         <th scope="row">{% if i.important %}<span class="etoile" title="Rappel important">★</span> {% endif %}<a href="{{ i.url }}">{{ i.titre }}</a>{% if i.detail %}<div class="detail">{{ i.detail }}</div>{% endif %}
           {% if i.stop and i.cochable %}<form method="post" action="{{ i.stop }}" class="ne-plus-rappeler">{% csrf_token %}<input type="hidden" name="next" value="{{ ici }}"><button type="submit" onclick="return confirm('Ne plus rappeler pour ce bail ? Vous pourrez réactiver le rappel sur la fiche du bail.')">Ne plus rappeler</button></form>{% endif %}</th>
-        <td class="liens">{% if i.genre == "loyers" %}<a href="{% url 'relances_impayes' %}">Relancer</a>{% elif i.genre == "revisions" %}<a href="{{ i.url }}">Réviser</a>{% else %}{% if i.agenda %}<a href="{{ i.agenda }}" title="Ajouter à mon agenda" aria-label="Ajouter « {{ i.titre }} » à mon agenda">📅</a> {% endif %}<a href="{{ i.url }}">Ouvrir</a>{% endif %}</td>
+        <td class="liens">{% if i.genre == "loyers" %}{% if i.encaisser %}<a href="{{ i.encaisser }}&amp;next={{ ici|urlencode }}">Encaisser</a> {% endif %}<a href="{% url 'relances_impayes' %}">Relancer</a>{% elif i.genre == "revisions" %}<a href="{{ i.url }}">Réviser</a>{% else %}{% if i.agenda %}<a href="{{ i.agenda }}" title="Ajouter à mon agenda" aria-label="Ajouter « {{ i.titre }} » à mon agenda">📅</a> {% endif %}<a href="{{ i.url }}">Ouvrir</a>{% endif %}</td>
       </tr>
       {% empty %}
       <tr><td colspan="5" style="padding:16px;color:var(--body-quiet-color)">{% if vue == "fait" %}Rien de fait ces {{ historique_jours }} derniers jours.{% else %}Rien à faire sur cette période.{% endif %}</td></tr>

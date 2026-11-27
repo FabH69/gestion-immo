@@ -1,0 +1,27 @@
+{% extends "admin/base_site.html" %}
+{% load tableau_bord %}
+{% block breadcrumbs %}<div class="breadcrumbs"><a href="{% url 'admin:index' %}">Accueil</a> › <a href="{% url 'admin:patrimoine_versement_changelist' %}">Paiements reçus</a> › Remettre à la date d'échéance</div>{% endblock %}
+{% block extrastyle %}{{ block.super }}<style>
+.carte { background: var(--body-bg); border: 1px solid var(--hairline-color); border-radius: 12px; box-shadow: 0 1px 6px rgba(16,24,40,.06); padding: 16px 18px; margin-bottom: 18px; max-width: 900px; }
+.aide { font-size: .85rem; color: var(--body-quiet-color); line-height: 1.55; }
+table.ech { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
+table.ech td, table.ech th { padding: 6px; border-bottom: 1px solid var(--hairline-color); text-align: left; }
+table.ech .m { text-align: right; }
+</style>{% endblock %}
+{% block content %}
+<form method="post">{% csrf_token %}
+<div class="carte">
+  <p class="aide">Chaque loyer ci-dessous prend la date d'échéance de son mois. Un paiement reçu qui réglait plusieurs mois est séparé en un paiement par mois (même mode, même note). Une sauvegarde de la base est faite juste avant.</p>
+  {% for v in versements %}<input type="hidden" name="{{ action_checkbox_name }}" value="{{ v.pk }}">{% endfor %}
+  <input type="hidden" name="action" value="dater_a_l_echeance">
+  <input type="hidden" name="appliquer" value="1">
+  <button type="submit" class="button default">Redater {{ changements|length }} loyer{{ changements|length|pluralize }}</button>
+  <a class="button annuler" href="{% url 'admin:patrimoine_versement_changelist' %}">Annuler</a>
+</div>
+<div class="carte">
+  <table class="ech"><tr><th>Logement</th><th>Loyer de</th><th class="m">Montant</th><th>Date actuelle</th><th>Nouvelle date</th></tr>
+  {% for c in changements %}<tr><td>{{ c.versement.bail.lot }}</td><td>{{ c.echeance.periode|date:"m/Y" }}</td><td class="m">{{ c.paiement.montant|euros:2 }}</td><td>{{ c.ancienne|date:"d/m/Y" }}</td><td><b>{{ c.nouvelle|date:"d/m/Y" }}</b></td></tr>{% endfor %}
+  </table>
+</div>
+</form>
+{% endblock %}

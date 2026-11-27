@@ -1,0 +1,7 @@
+{% load tableau_bord %}{% boutons_actions_rapides as boutons %}<div class="module carte actions-rapides">
+  <h2>Actions rapides<a class="lien-carte" href="{% url 'personnaliser_accueil' %}#bloc-actions">Choisir</a></h2>
+  <div class="actions-rapides-liste">
+    {% for b in boutons %}<a class="button" href="{{ b.url }}">{{ b.libelle }}</a>
+    {% empty %}<span class="carte-vide" style="padding:0">Aucune action choisie : <a href="{% url 'personnaliser_accueil' %}#bloc-actions">choisir</a>.</span>{% endfor %}
+  </div>
+</div>

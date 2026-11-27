@@ -14,7 +14,7 @@
       {% for l in bb.lots %}
       <tr>
         <td class="libelle lot">{% if l.lot.designation|lower != bb.bien.nom|lower %}{{ bb.bien.nom }} – {% endif %}{{ l.lot.designation }}</td>
-        {% for v in l.mois %}<td>{% if v %}{% if liens %}<a class="montant-lien" href="{% url 'etat_loyers_detail' %}?lot={{ l.lot.pk|unlocalize }}&amp;annee={{ annee|unlocalize }}&amp;mois={{ forloop.counter }}" title="Ouvrir le loyer pour le modifier">{{ v|floatformat:"2g" }}</a>{% else %}{{ v|floatformat:"2g" }}{% endif %}{% else %}–{% endif %}</td>{% endfor %}
+        {% for v in l.mois %}<td>{% if v %}{% if liens %}<a class="montant-lien" href="{% url 'etat_loyers_detail' %}?lot={{ l.lot.pk|unlocalize }}&amp;annee={{ annee|unlocalize }}&amp;mois={{ forloop.counter }}{% if vue == 'regles' %}&amp;vue=regles{% endif %}" title="Ouvrir le loyer pour le modifier">{{ v|floatformat:"2g" }}</a>{% else %}{{ v|floatformat:"2g" }}{% endif %}{% else %}–{% endif %}</td>{% endfor %}
         <td class="fort">{{ l.total|floatformat:"2g" }}</td><td>{{ l.loyers_hc|floatformat:"2g" }}</td><td>{{ l.charges|floatformat:"2g" }}</td>
       </tr>
       {% endfor %}
@@ -32,7 +32,7 @@
       <td class="fort">{{ bp.sous_total.total|floatformat:"2g" }}</td><td>{{ bp.sous_total.loyers_hc|floatformat:"2g" }}</td><td>{{ bp.sous_total.charges|floatformat:"2g" }}</td>
     </tr>
   {% empty %}
-    <tr><td colspan="16" class="vide">Aucun loyer encaissé sur cette période.</td></tr>
+    <tr><td colspan="16" class="vide">Aucun loyer {% if vue == 'regles' %}réglé{% else %}encaissé{% endif %} sur cette période.</td></tr>
   {% endfor %}
   </tbody>
   {% if proprietaires %}

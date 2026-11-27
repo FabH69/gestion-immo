@@ -1,0 +1,60 @@
+{% extends "admin/base_site.html" %}
+{% load tableau_bord %}
+{% block breadcrumbs %}<div class="breadcrumbs"><a href="{% url 'admin:index' %}">Accueil</a> › <a href="{% url 'relances_impayes' %}">Relances d'impayés</a> › Compléter avec Excel</div>{% endblock %}
+{% block extrastyle %}{{ block.super }}<style>
+.carte { background: var(--body-bg); border: 1px solid var(--hairline-color); border-radius: 12px; box-shadow: 0 1px 6px rgba(16,24,40,.06); padding: 16px 18px; margin-bottom: 18px; max-width: 1000px; }
+.carte h2 { margin: 0 0 8px; font-size: 1.1rem; }
+.carte.erreur { border-color: #f04438; }
+.etape { display: inline-flex; align-items: center; justify-content: center; width: 24px; height: 24px; border-radius: 50%; background: var(--primary); color: #fff; font-weight: 700; font-size: .85rem; margin-right: 8px; }
+.aide { font-size: .88rem; color: var(--body-quiet-color); line-height: 1.55; }
+.actions { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-top: 10px; }
+table.apercu { width: 100%; border-collapse: collapse; font-size: .88rem; }
+table.apercu td, table.apercu th { padding: 7px 6px; border-bottom: 1px solid var(--hairline-color); text-align: left; vertical-align: top; }
+table.apercu .m { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.ignoree { color: var(--body-quiet-color); }
+@media (max-width: 640px) { table.apercu .facultatif { display: none; } }
+</style>{% endblock %}
+{% block content %}
+{% if lecture and lecture.erreurs %}
+<div class="carte erreur">
+  <h2>Rien n'a été enregistré : {{ lecture.erreurs|length }} ligne{{ lecture.erreurs|length|pluralize }} à corriger</h2>
+  <p class="aide">Corrigez ces lignes dans votre fichier{% if nom_fichier %} « {{ nom_fichier }} »{% endif %}, enregistrez-le, puis importez-le à nouveau. Le numéro est celui affiché à gauche dans Excel.</p>
+  <table class="apercu"><tr><th>Ligne</th><th>Problème</th></tr>
+  {% for n, message in lecture.erreurs %}<tr><td class="m">{{ n|default:"—" }}</td><td>{{ message|capfirst }}</td></tr>{% endfor %}</table>
+</div>
+{% elif lecture %}
+<div class="carte">
+  <h2>Aperçu : {{ lecture.a_enregistrer|length }} paiement{{ lecture.a_enregistrer|length|pluralize }} reçu{{ lecture.a_enregistrer|length|pluralize }} à enregistrer ({{ lecture.total|euros:2 }})</h2>
+  {% if lecture.lignes %}
+  <table class="apercu">
+    <tr><th>Logement</th><th class="facultatif">Locataire</th><th>Mois</th><th class="m">Reste dû</th><th>Reçu le</th><th class="m">Montant</th><th class="facultatif">Mode</th><th>Résultat</th></tr>
+    {% for l in lecture.lignes %}<tr{% if l.ignoree %} class="ignoree"{% endif %}>
+      <td>{{ l.logement }}</td><td class="facultatif">{{ l.locataires }}</td><td>{{ l.mois|date:"m/Y" }}</td><td class="m">{{ l.du|euros:2 }}</td>
+      <td>{{ l.date|date:"d/m/Y" }}</td><td class="m">{{ l.montant|euros:2 }}</td><td class="facultatif">{{ l.mode_libelle }}</td><td>{{ l.resultat }}</td></tr>{% endfor %}
+  </table>
+  {% else %}<p class="aide">Aucune ligne remplie dans ce fichier : remplissez la date et le montant des loyers payés.</p>{% endif %}
+  <div class="actions">
+    {% if lecture.a_enregistrer %}<form method="post">{% csrf_token %}<input type="hidden" name="etape" value="valider"><button type="submit" class="button default">Enregistrer ces paiements</button></form>{% endif %}
+    <a class="button annuler" href="{% url 'completer_impayes' %}">Annuler</a>
+  </div>
+</div>
+{% endif %}
+
+<div class="carte">
+  <h2><span class="etape">1</span>Télécharger les loyers à compléter</h2>
+  <p class="aide">Une ligne par loyer encore dû{% if nb_a_completer is not None %} ({{ nb_a_completer }} aujourd'hui){% endif %}, y compris les mois sans loyer dans l'appli. Les lignes en vert sont pré-remplies avec votre ancien suivi : vérifiez-les.</p>
+  <div class="actions"><a class="button default" href="{% url 'impayes_excel' %}">Télécharger les impayés (Excel)</a></div>
+</div>
+<div class="carte">
+  <h2><span class="etape">2</span>Remplir la date et le montant de chaque loyer payé</h2>
+  <p class="aide">Laissez vides les loyers qui n'ont pas été payés. Mode : Virement si vide. Ne modifiez pas la colonne « Réf. ».</p>
+</div>
+<div class="carte">
+  <h2><span class="etape">3</span>Importer le fichier complété</h2>
+  <p class="aide">Vous verrez d'abord un aperçu : rien n'est enregistré avant de valider. Chaque ligne devient un paiement reçu (« Paiements reçus »).</p>
+  <form method="post" enctype="multipart/form-data" class="actions">{% csrf_token %}
+    <input type="file" name="fichier" accept=".xlsx" required>
+    <button type="submit" class="button">Voir l'aperçu</button>
+  </form>
+</div>
+{% endblock %}

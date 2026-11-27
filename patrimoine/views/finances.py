@@ -23,9 +23,10 @@ def etat_loyers_encaisses(request):
     proprietaire = None
     if request.GET.get("proprietaire"):
         proprietaire = get_object_or_404(Proprietaire, pk=request.GET["proprietaire"])
-    etat = loyers_encaisses(annee, proprietaire)
+    vue = "regles" if request.GET.get("vue") == "regles" else "encaissements"
+    etat = loyers_encaisses(annee, proprietaire, vue)
     suffixe = slugify(proprietaire.nom) if proprietaire else "tous"
-    nom_fichier = f"loyers-encaisses-{annee}-{suffixe}"
+    nom_fichier = f"{'loyers-regles' if vue == 'regles' else 'loyers-encaisses'}-{annee}-{suffixe}"
     format_ = request.GET.get("format")
 
     if format_ == "csv":
@@ -43,7 +44,17 @@ def etat_loyers_encaisses(request):
         response = HttpResponse(HTML(string=html).write_pdf(), content_type="application/pdf")
         response["Content-Disposition"] = f'attachment; filename="{nom_fichier}.pdf"'
         return response
-    return render(request, "patrimoine/etat_loyers.html", {**admin.site.each_context(request), **contexte, "liens": True, "title": f"Loyers encaissés en {annee}" + (f" – {proprietaire.nom}" if proprietaire else "")})
+    contexte["annees_a_encaisser"] = annees_loyers_a_encaisser(proprietaire)
+    return render(request, "patrimoine/etat_loyers.html", {**admin.site.each_context(request), **contexte, "liens": True, "title": f"{'Loyers réglés' if vue == 'regles' else 'Loyers encaissés'} en {annee}" + (f" – {proprietaire.nom}" if proprietaire else "")})
+
+
+def annees_loyers_a_encaisser(proprietaire=None):
+    """Années passées dont au moins un loyer déjà exigible n'est pas entièrement encaissé (ni soldé par une remise)."""
+    echeances = Echeance.objects.exclude(statut=Echeance.Statut.PAYE).filter(
+        date_exigibilite__lte=timezone.localdate(), periode__year__lt=timezone.localdate().year)
+    if proprietaire:
+        echeances = echeances.filter(bail__lot__bien__proprietaire=proprietaire)
+    return sorted({d.year for d in echeances.dates("periode", "year")}, reverse=True)
 
 
 @staff_member_required
@@ -56,7 +67,11 @@ def etat_loyers_detail(request):
     from ..models import EncaissementHistorique
 
     lot, annee, mois = int(request.GET["lot"]), int(request.GET["annee"]), int(request.GET["mois"])
-    ids = list(Echeance.objects.filter(bail__lot_id=lot, paiements__date__year=annee, paiements__date__month=mois)
+    if request.GET.get("vue") == "regles":  # vue « loyers réglés » : le loyer de ce mois-là
+        echeances = Echeance.objects.filter(bail__lot_id=lot, periode__year=annee, periode__month=mois, paiements__isnull=False)
+    else:
+        echeances = Echeance.objects.filter(bail__lot_id=lot, paiements__date__year=annee, paiements__date__month=mois)
+    ids = list(echeances
                .distinct().order_by("periode").values_list("pk", flat=True))
     if len(ids) == 1:
         return redirect("admin:patrimoine_echeance_change", ids[0])

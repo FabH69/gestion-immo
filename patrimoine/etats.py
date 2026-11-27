@@ -19,12 +19,25 @@ def _ajouter(cible, source):
         cible[cle] += source[cle]
 
 
-def loyers_encaisses(annee, proprietaire=None):
-    """Encaissements de l'année civile (date de paiement), regroupés propriétaire > bien > lot.
+def _mois(paiement, regles):
+    """Mois (1-12) où placer un paiement : celui du loyer réglé, ou celui de la réception."""
+    return paiement.echeance.periode.month if regles else paiement.date.month
 
+
+def loyers_encaisses(annee, proprietaire=None, vue="encaissements"):
+    """Loyers de l'année civile, regroupés propriétaire > bien > lot.
+
+    vue « encaissements » (par défaut, celle de la déclaration) : chaque paiement compte au mois où il est reçu.
+    vue « regles » : chaque paiement compte au mois du loyer qu'il règle ; un virement qui paie deux mois
+    apparaît donc sur les deux mois. Les totaux de l'année peuvent différer (loyer de décembre payé en janvier…).
     Chaque paiement est réparti entre loyer HC et charges au prorata de l'échéance qu'il règle.
     """
-    paiements = Paiement.objects.filter(date__year=annee).select_related("echeance__bail__lot__bien__proprietaire")
+    regles = vue == "regles"
+    if regles:
+        paiements = Paiement.objects.filter(echeance__periode__year=annee)
+    else:
+        paiements = Paiement.objects.filter(date__year=annee)
+    paiements = paiements.select_related("echeance__bail__lot__bien__proprietaire")
     if proprietaire:
         paiements = paiements.filter(echeance__bail__lot__bien__proprietaire=proprietaire)
 
@@ -33,14 +46,14 @@ def loyers_encaisses(annee, proprietaire=None):
         e = p.echeance
         ligne = par_lot[e.bail.lot]
         part_hc = (p.montant * e.loyer_hc / e.total).quantize(CENTIME, ROUND_HALF_UP) if e.total else p.montant
-        ligne["mois"][p.date.month - 1] += p.montant
+        ligne["mois"][_mois(p, regles) - 1] += p.montant
         ligne["total"] += p.montant
         ligne["loyers_hc"] += part_hc
         ligne["charges"] += p.montant - part_hc
 
     # loyers repris d'un ancien suivi : comptés pour les mois sans paiement enregistré dans l'appli
     from .models import EncaissementHistorique
-    deja = {(p.echeance.bail.lot_id, p.date.month) for p in paiements}
+    deja = {(p.echeance.bail.lot_id, _mois(p, regles)) for p in paiements}
     historiques = EncaissementHistorique.objects.filter(mois__year=annee).select_related("lot__bien__proprietaire")
     if proprietaire:
         historiques = historiques.filter(lot__bien__proprietaire=proprietaire)
@@ -68,7 +81,7 @@ def loyers_encaisses(annee, proprietaire=None):
         bloc_p["biens"] = list(bloc_p["biens"].values())
         _ajouter(total, bloc_p["sous_total"])
         blocs.append(bloc_p)
-    return {"annee": annee, "proprietaires": blocs, "total": total, "mois": MOIS}
+    return {"annee": annee, "proprietaires": blocs, "total": total, "mois": MOIS, "vue": "regles" if regles else "encaissements"}
 
 
 def endettement(a_date, proprietaire=None):

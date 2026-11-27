@@ -14,12 +14,74 @@ from ..models import EncaissementHistorique, Bail, Echeance, MouvementDepot, Rev
 from .communs import euros_liste
 
 
+def url_encaisser(echeance, retour=""):
+    """Adresse du formulaire « Encaisser » prérempli pour ce loyer : son reste dû, aujourd'hui, par virement."""
+    from urllib.parse import urlencode
+
+    params = {"bail": echeance.bail_id, "echeance": echeance.pk, "montant": f"{max(echeance.reste_du, Decimal(0)):.2f}"}
+    if retour:
+        params["next"] = retour
+    return reverse("admin:patrimoine_echeance_virement") + "?" + urlencode(params)
+
+
+def libelle_echeance(e):
+    return f"régularisation des charges {e.periode:%m/%Y}" if e.est_regularisation else f"{e.periode:%m/%Y}"
+
+
 @admin.register(EncaissementHistorique)
 class EncaissementHistoriqueAdmin(admin.ModelAdmin):
-    list_display = ["mois", "lot", "montant", "charges", "note"]
+    """Loyers repris d'un ancien suivi. Enregistrer une ligne la transforme en paiement reçu du locataire de ce mois-là
+    (réparti sur les loyers qu'elle couvre) : il n'y a ainsi qu'une seule liste des encaissements, « Paiements reçus ».
+    Les lignes qui restent ici sont celles qu'on n'a pas pu rattacher (aucun bail ce mois-là, ou paiement déjà saisi)."""
+    list_display = ["mois", "lot", "montant", "charges", "note", "pas_repris"]
     list_filter = ["lot__bien__proprietaire"]
     date_hierarchy = "mois"
     navigation_par = "mois"
+    actions = ["reprendre", "reprendre_bail_suivant"]
+
+    @admin.display(description="pourquoi elle est encore ici")
+    def pas_repris(self, obj):
+        from ..reprise_historique import raison
+
+        return raison(obj) or "peut être reprise"
+
+    def _reprendre(self, request, queryset, bail_suivant):
+        from ..reprise_historique import convertir
+
+        n, laissees = convertir(queryset, bail_suivant=bail_suivant)
+        if n:
+            self.message_user(request, f"{n} ligne(s) reprise(s) dans « Paiements reçus ».", messages.SUCCESS)
+        for h, raison in laissees:
+            self.message_user(request, f"{h.lot} – {h.mois:%m/%Y} gardée : {raison}.", messages.WARNING)
+
+    @admin.action(description="Reprendre dans « Paiements reçus »")
+    def reprendre(self, request, queryset):
+        self._reprendre(request, queryset, False)
+
+    @admin.action(description="Rattacher au locataire suivant du lot et reprendre (mois avant la date d'entrée saisie)")
+    def reprendre_bail_suivant(self, request, queryset):
+        self._reprendre(request, queryset, True)
+
+    def save_model(self, request, obj, form, change):
+        super().save_model(request, obj, form, change)
+        from ..reprise_historique import convertir
+
+        n, laissees = convertir(EncaissementHistorique.objects.filter(pk=obj.pk))
+        if n:
+            self.message_user(request, f"{obj.montant} € de {obj.mois:%m/%Y} enregistrés comme paiement reçu du locataire "
+                                       "(voir « Paiements reçus »).", messages.SUCCESS)
+        for _, raison in laissees:
+            self.message_user(request, f"Gardé dans l'historique : {raison}.", messages.WARNING)
+
+    def response_add(self, request, obj, post_url_continue=None):
+        if not EncaissementHistorique.objects.filter(pk=obj.pk).exists():
+            return redirect("admin:patrimoine_versement_changelist")
+        return super().response_add(request, obj, post_url_continue)
+
+    def response_change(self, request, obj):
+        if not EncaissementHistorique.objects.filter(pk=obj.pk).exists():
+            return redirect("admin:patrimoine_versement_changelist")
+        return super().response_change(request, obj)
 
 
 class EcheanceStatutFilter(admin.SimpleListFilter):
@@ -46,12 +108,19 @@ class EcheanceStatutFilter(admin.SimpleListFilter):
 
 
 class PaiementInline(admin.TabularInline):
+    """Paiements du loyer, en lecture : on encaisse par le bouton « Encaisser » ; pour corriger, on ouvre le paiement reçu."""
     model = Paiement
     fields = ["date", "montant", "mode", "notes", "part_de_virement"]
-    readonly_fields = ["part_de_virement"]
-    extra = 1
+    readonly_fields = fields
+    extra = 0
+    can_delete = False
+    verbose_name = "paiement"
+    verbose_name_plural = "paiements de ce loyer"
 
-    @admin.display(description="virement")
+    def has_add_permission(self, request, obj=None):
+        return False
+
+    @admin.display(description="paiement reçu")
     def part_de_virement(self, obj):
         if not obj or not obj.versement_id:
             return "–"
@@ -61,13 +130,21 @@ class PaiementInline(admin.TabularInline):
 
 
 class VirementForm(forms.Form):
-    """Étape 1 de « Encaisser un virement » : qui a payé, quand, combien."""
+    """Étape 1 de « Encaisser » : qui a payé, quand, combien, comment."""
     bail = forms.ModelChoiceField(label="Locataire et logement", queryset=Bail.objects.none())
     date = forms.DateField(label="Date de réception", widget=forms.DateInput(attrs={"type": "date"}, format="%Y-%m-%d"))
     montant = forms.DecimalField(label="Montant reçu (€)", max_digits=10, decimal_places=2, min_value=Decimal("0.01"))
     mode = forms.ChoiceField(label="Mode", choices=Paiement.Mode.choices, initial=Paiement.Mode.VIREMENT)
+    part_depot = forms.DecimalField(label="Dont dépôt de garantie (€)", required=False, max_digits=10, decimal_places=2,
+                                    min_value=0, help_text="Seulement si ce paiement comprend le dépôt de garantie")
     notes = forms.CharField(label="Note (facultatif)", required=False, max_length=255,
-                            widget=forms.TextInput(attrs={"placeholder": "ex. virement octobre + novembre"}))
+                            widget=forms.TextInput(attrs={"placeholder": "ex. part CAF de novembre"}))
+
+    def clean(self):
+        d = super().clean()
+        if d.get("montant") and (d.get("part_depot") or 0) > d["montant"]:
+            self.add_error("part_depot", "Le dépôt ne peut pas dépasser le montant reçu.")
+        return d
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -126,8 +203,9 @@ class EcheanceAdmin(admin.ModelAdmin):
     search_fields = ["bail__lot__designation", "bail__lot__bien__nom", "bail__locataires__nom", "bail__locataires__prenom"]
     date_hierarchy = "periode"
     navigation_par = "mois"
-    readonly_fields = ["statut", "document"]
-    fields = ["bail", "periode", ("loyer_hc", "charges"), "date_exigibilite", "statut", "document"]
+    readonly_fields = ["statut", "document", "encaisser"]
+    fields = ["bail", "nature", "periode", ("loyer_hc", "charges"), "date_exigibilite", ("remise", "motif_remise"), "statut",
+              "document", "encaisser"]
     inlines = [PaiementInline]
     actions = ["modifier", "marquer_paye"]
     change_list_template = "admin/patrimoine/echeance/change_list.html"
@@ -143,35 +221,47 @@ class EcheanceAdmin(admin.ModelAdmin):
         ] + super().get_urls()
 
     def encaisser_view(self, request, pk):
-        """Bouton « Encaisser » d'une ligne : enregistre le reste dû comme payé aujourd'hui, par virement."""
-        if request.method != "POST":
-            return redirect("admin:patrimoine_echeance_change", pk)
+        """Ancienne adresse du bouton « Encaisser » : ouvre le formulaire d'encaissement prérempli pour ce loyer."""
         e = Echeance.objects.get(pk=pk)
-        if e.reste_du > 0:
-            Paiement.objects.create(echeance=e, date=timezone.localdate(), montant=e.reste_du)
-            self.message_user(request, f"{e} : {e.total} € encaissés aujourd'hui (virement). Pour un autre mode ou une autre date, ouvrez le loyer.",
-                              messages.SUCCESS)
-        # retour à la liste telle qu'elle était (filtres, période)
+        return redirect(url_encaisser(e, request.GET.get("next") or request.META.get("HTTP_REFERER") or ""))
+
+    @staticmethod
+    def _retour_sur(request, retour):
         from django.utils.http import url_has_allowed_host_and_scheme
 
-        retour = request.POST.get("retour") or request.META.get("HTTP_REFERER") or ""
-        if not url_has_allowed_host_and_scheme(retour, allowed_hosts={request.get_host()}):
-            retour = "admin:patrimoine_echeance_changelist"
-        return redirect(retour)
+        return retour if retour and url_has_allowed_host_and_scheme(retour, allowed_hosts={request.get_host()}) else ""
 
     def virement_view(self, request):
-        """« Encaisser un virement » : un montant reçu réparti sur un ou plusieurs loyers, du plus ancien au plus récent ;
-        la répartition proposée peut être corrigée, et ce qui dépasse reste en avance pour les loyers suivants."""
+        """« Encaisser » : la seule façon d'enregistrer un paiement. Un montant reçu est réparti sur un ou plusieurs loyers
+        (le loyer choisi d'abord, puis du plus ancien au plus récent) ; la répartition proposée peut être corrigée, une part
+        peut aller au dépôt de garantie, et ce qui dépasse reste en avance pour les loyers suivants.
+        Depuis le bouton « Encaisser » d'un loyer, le formulaire arrive prérempli et la répartition est déjà affichée :
+        un clic sur « Valider » suffit."""
         if not self.has_add_permission(request):
             raise PermissionDenied
-        etape = request.POST.get("etape") if request.method == "POST" else None
+        prerempli = request.method == "GET" and request.GET.get("bail") and request.GET.get("montant")
+        if request.method == "POST":
+            etape, donnees = request.POST.get("etape"), request.POST
+        elif prerempli:
+            etape = "repartir"
+            donnees = {"bail": request.GET["bail"], "montant": request.GET["montant"], "mode": request.GET.get("mode", "virement"),
+                       "date": request.GET.get("date") or timezone.localdate().isoformat(), "notes": "", "part_depot": ""}
+        else:
+            etape, donnees = None, None
         initial = {"date": timezone.localdate(), "bail": request.GET.get("bail")}
-        form = VirementForm(request.POST if etape else None, initial=initial)
-        contexte = {**self.admin_site.each_context(request), "title": "Encaisser un virement", "opts": self.model._meta, "form": form}
+        form = VirementForm(donnees if etape else None, initial=initial)
+        source = request.POST if request.method == "POST" else request.GET
+        priorite = Echeance.objects.filter(pk=source.get("echeance")).first() if (source.get("echeance") or "").isdigit() else None
+        retour = self._retour_sur(request, source.get("next", ""))
+        contexte = {**self.admin_site.each_context(request), "title": "Encaisser un paiement", "opts": self.model._meta, "form": form,
+                    "echeance_choisie": priorite, "retour": retour}
         if not etape or not form.is_valid():
             return render(request, "admin/patrimoine/echeance/virement.html", contexte)
         d = form.cleaned_data
-        proposee = Versement.repartition_proposee(d["bail"], d["montant"])
+        depot = d.get("part_depot") or Decimal(0)
+        if priorite is not None and priorite.bail_id != d["bail"].pk:
+            priorite = None
+        proposee = Versement.repartition_proposee(d["bail"], d["montant"] - depot, priorite=priorite)
         lignes, erreurs = [], []
         for e, part in proposee:
             if etape == "valider":
@@ -185,18 +275,23 @@ class EcheanceAdmin(admin.ModelAdmin):
                     erreurs.append(f"{e.periode:%m/%Y} : la part doit être entre 0 et le reste dû ({e.reste_du} €).")
             lignes.append({"echeance": e, "part": part})
         total = sum((l["part"] for l in lignes), Decimal(0))
-        if total > d["montant"]:
-            erreurs.append(f"Les parts ({total} €) dépassent le montant reçu ({d['montant']} €).")
+        if total + depot > d["montant"]:
+            erreurs.append(f"Les parts ({total + depot} €) dépassent le montant reçu ({d['montant']} €).")
         if etape == "valider" and not erreurs:
-            v = Versement.objects.create(bail=d["bail"], date=d["date"], montant=d["montant"], mode=d["mode"], notes=d["notes"])
+            v = Versement.objects.create(bail=d["bail"], date=d["date"], montant=d["montant"], mode=d["mode"], notes=d["notes"],
+                                         part_depot=depot)
             v.repartir([(l["echeance"], l["part"]) for l in lignes])
-            mois = ", ".join(f"{l['echeance'].periode:%m/%Y}" for l in lignes if l["part"] > 0) or "aucun loyer"
+            v.enregistrer_depot()
+            mois = ", ".join(libelle_echeance(l["echeance"]) for l in lignes if l["part"] > 0) or "aucun loyer"
             texte = f"{d['montant']} € encaissés le {d['date']:%d/%m/%Y}, répartis sur : {mois}."
+            if depot:
+                texte += f" Dépôt de garantie : {depot} €."
             if v.avance > 0:
                 texte += f" Avance gardée pour les prochains loyers : {v.avance} €."
             self.message_user(request, texte, messages.SUCCESS)
-            return redirect(reverse("admin:patrimoine_echeance_changelist") + f"?bail={d['bail'].pk}&reglement=tous")
-        contexte.update({"lignes": lignes, "total": total, "avance": d["montant"] - total, "erreurs": erreurs, "repartir": True,
+            return redirect(retour or reverse("admin:patrimoine_echeance_changelist") + f"?bail={d['bail'].pk}&reglement=tous")
+        contexte.update({"lignes": lignes, "total": total, "avance": d["montant"] - total - depot, "erreurs": erreurs, "repartir": True,
+                         "depot": depot,
                          "avance_existante": sum((v.avance for v in d["bail"].versements.all()), Decimal(0))})
         return render(request, "admin/patrimoine/echeance/virement.html", contexte)
 
@@ -227,11 +322,12 @@ class EcheanceAdmin(admin.ModelAdmin):
             lignes = list(cl.queryset.prefetch_related("paiements"))
             du = sum((e.total for e in lignes), Decimal(0))
             paye = sum((sum((p.montant for p in e.paiements.all()), Decimal(0)) for e in lignes), Decimal(0))
+            remises = sum((e.remise for e in lignes), Decimal(0))
             jour = timezone.localdate()
             retard = [e for e in lignes if e.statut != Echeance.Statut.PAYE and e.date_exigibilite < jour]
             reponse.context_data["resume"] = {
-                "du": du, "paye": paye, "reste": du - paye, "nb": len(lignes),
-                "retard": sum((e.total - sum((p.montant for p in e.paiements.all()), Decimal(0)) for e in retard), Decimal(0)),
+                "du": du, "paye": paye, "reste": du - paye - remises, "nb": len(lignes),
+                "retard": sum((e.total - e.remise - sum((p.montant for p in e.paiements.all()), Decimal(0)) for e in retard), Decimal(0)),
                 "nb_retard": len(retard),
             }
             params = request.GET.copy()
@@ -263,7 +359,19 @@ class EcheanceAdmin(admin.ModelAdmin):
     @admin.display(description="locataire et logement", ordering="bail__lot__bien__nom")
     def locataire_et_logement(self, obj):
         noms = [str(l) for l in obj.bail.locataires.all()]
+        if obj.est_regularisation:
+            return format_html('<span class="cellule-personne"><span><b>{}</b><small>{} · <span class="pill">Régularisation des charges</span></small></span></span>',
+                               ", ".join(noms) or "–", obj.bail.lot)
         return format_html('<span class="cellule-personne"><span><b>{}</b><small>{}</small></span></span>', ", ".join(noms) or "–", obj.bail.lot)
+
+    @admin.display(description="encaisser")
+    def encaisser(self, obj):
+        if not obj.pk:
+            return "–"
+        if obj.reste_du <= 0:
+            return "Rien à encaisser : ce loyer est soldé."
+        return format_html('<a class="button" href="{}">Encaisser</a> <span class="help">Ouvre le formulaire prérempli avec le reste dû ({} €).</span>',
+                           url_encaisser(obj, reverse("admin:patrimoine_echeance_change", args=[obj.pk])), obj.reste_du)
 
     @admin.display(description="échéance", ordering="date_exigibilite")
     def echeance_le(self, obj):
@@ -271,21 +379,24 @@ class EcheanceAdmin(admin.ModelAdmin):
 
     @admin.display(description="")
     def actions_ligne(self, obj):
-        libelle = {"paye": "Quittance", "partiel": "Reçu PDF"}.get(obj.statut, "Avis PDF")
+        # libellé d'après le document réel : un loyer soldé par une remise sans être payé en entier n'a pas de quittance
+        paye = self._paye(obj)
+        libelle = ("Quittance" if obj.statut == "paye" and paye >= obj.total else
+                   "Reçu PDF" if obj.statut == "partiel" or (obj.statut == "paye" and paye > 0) else "Avis PDF")
         pdf = format_html('<a class="lien-action" href="{}" target="_blank">{}</a>', reverse("document_echeance", args=[obj.pk]), libelle)
         if obj.statut == "paye":
             return pdf
         if obj.date_exigibilite < timezone.localdate():
             pdf = format_html('{} <a class="lien-action" href="{}?bail={}">Relancer</a>', pdf, reverse("relances_impayes"), obj.bail_id)
-        # pas de formulaire dans la cellule : la liste est déjà un formulaire (un formulaire imbriqué casse le premier bouton) ;
-        # le bouton envoie le formulaire de la liste, avec son jeton, vers l'adresse d'encaissement de la ligne
-        return format_html('<button type="submit" class="bouton-encaisser" formmethod="post" formaction="{}" formnovalidate '
-                           'title="Enregistrer le paiement du reste dû, aujourd\'hui, par virement">Encaisser</button>{}',
-                           reverse("admin:patrimoine_echeance_encaisser", args=[obj.pk]), pdf)
+        # un simple lien vers le formulaire d'encaissement prérempli (reste dû, aujourd'hui, virement) : un clic pour valider
+        retour = reverse("admin:patrimoine_echeance_changelist") + (f"?{self._requete}" if getattr(self, "_requete", "") else "")
+        return format_html('<a class="bouton-encaisser" href="{}" title="Encaisser le reste dû ({} €) : date, montant et mode modifiables">'
+                           'Encaisser</a>{}', url_encaisser(obj, retour), obj.reste_du, pdf)
 
     def get_changelist_instance(self, request):
         from django.middleware.csrf import get_token
         self._csrf = get_token(request)
+        self._requete = request.GET.urlencode()
         return super().get_changelist_instance(request)
 
     @admin.display(description="lot", ordering="bail__lot__bien__nom")
@@ -309,12 +420,14 @@ class EcheanceAdmin(admin.ModelAdmin):
 
     @admin.display(description="reste dû")
     def reste(self, obj):
-        reste = obj.total - self._paye(obj)
+        reste = obj.total - self._paye(obj) - obj.remise
         return format_html("<b>{}</b>", euros_liste(reste)) if reste else "–"
 
     @admin.display(description="statut", ordering="statut")
     def statut_colore(self, obj):
         if obj.statut == "paye":
+            if obj.remise:
+                return format_html('<span class="pill ok" title="Soldé avec une remise de {} €">✓ Soldé (remise)</span>', obj.remise)
             return format_html('<span class="pill ok">✓ Payé</span>')
         retard = (timezone.localdate() - obj.date_exigibilite).days
         libelle = "Partiel" if obj.statut == "partiel" else "À payer"
@@ -364,11 +477,16 @@ class EcheanceAdmin(admin.ModelAdmin):
             "action_checkbox_name": admin.helpers.ACTION_CHECKBOX_NAME,
         })
 
-    @admin.action(description="Tout encaisser (virement, aujourd'hui)")
+    @admin.action(description="Tout encaisser (virement, à la date d'échéance de chaque loyer)")
     def marquer_paye(self, request, queryset):
+        """Un paiement reçu par loyer coché, du reste dû, daté de l'échéance du loyer (aujourd'hui si elle n'est pas passée) :
+        des loyers anciens cochés ensemble gardent chacun leur date, pour les états et les déclarations."""
         n = 0
         for e in queryset.exclude(statut=Echeance.Statut.PAYE):
-            Paiement.objects.create(echeance=e, date=timezone.localdate(), montant=e.reste_du)
+            if e.reste_du <= 0:
+                continue
+            v = Versement.objects.create(bail=e.bail, date=min(e.date_exigibilite, timezone.localdate()), montant=e.reste_du)
+            v.repartir([(e, e.reste_du)])
             n += 1
         self.message_user(request, f"{n} échéance(s) marquée(s) comme payée(s).", messages.SUCCESS)
 
@@ -391,17 +509,128 @@ class VersementPaiementInline(admin.TabularInline):
                            f"{obj.echeance.periode:%m/%Y}")
 
 
+class VersementForm(forms.ModelForm):
+    """Corriger un paiement reçu : l'annuler (erreur, chèque impayé, prélèvement rejeté) ou rembourser l'avance au locataire."""
+
+    class Meta:
+        model = Versement
+        fields = ["notes", "rembourse", "date_remboursement", "annule", "motif_annulation"]
+        widgets = {"date_remboursement": forms.DateInput(attrs={"type": "date"}, format="%Y-%m-%d")}
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        if "rembourse" in self.fields:
+            self.fields["rembourse"].required = False
+
+    def clean(self):
+        d = super().clean()
+        v = self.instance
+        if "rembourse" in d and d["rembourse"] is None:
+            d["rembourse"] = Decimal(0)
+        rembourse = d.get("rembourse") or Decimal(0)
+        if rembourse < 0:
+            self.add_error("rembourse", "Le montant remboursé doit être positif.")
+        disponible = v.montant - v.montant_reparti - (v.part_depot or 0)
+        if not d.get("annule") and rembourse > disponible:
+            self.add_error(None, f"Vous ne pouvez rembourser que l'avance non utilisée : {disponible} € au plus.")
+        if rembourse and not d.get("date_remboursement"):
+            d["date_remboursement"] = timezone.localdate()
+        if d.get("annule") and not v.annule and not (d.get("motif_annulation") or "").strip():
+            self.add_error(None, "Indiquez pourquoi ce paiement est annulé (ex. chèque sans provision).")
+        return d
+
+
 @admin.register(Versement)
 class VersementAdmin(admin.ModelAdmin):
-    """Virements reçus : chacun montre sa répartition sur les loyers et l'avance qui reste. Le supprimer retire toutes ses parts."""
-    list_display = ["date", "locataire_et_logement", "montant_recu", "reparti", "avance_restante", "mode"]
+    """Paiements reçus : chacun montre sa répartition sur les loyers, sa part de dépôt et l'avance qui reste.
+    On le corrige ici : annulation (les loyers redeviennent à payer) ou remboursement de l'avance au locataire."""
+    form = VersementForm
+    list_display = ["date", "locataire_et_logement", "montant_recu", "reparti", "avance_restante", "mode", "etat"]
     list_filter = [BailEcheanceFilter]
     filtres_en_liste = ("bail",)
     date_hierarchy = "date"
     search_fields = ["bail__lot__designation", "bail__lot__bien__nom", "bail__locataires__nom", "bail__locataires__prenom", "notes"]
-    fields = ["bail", "date", "montant", "mode", "notes", "avance_restante"]
-    readonly_fields = ["bail", "date", "montant", "mode", "avance_restante"]
+    fieldsets = [
+        (None, {"fields": ["bail", "date", "montant", "mode", "part_depot", "notes", "avance_restante"]}),
+        ("Rembourser l'avance au locataire", {"fields": [("rembourse", "date_remboursement")],
+                                              "description": "Si le locataire a trop payé et que vous lui rendez la différence, "
+                                                             "au lieu de la garder pour ses prochains loyers."}),
+        ("Annuler ce paiement", {"fields": [("annule", "motif_annulation")],
+                                 "description": "Erreur de saisie, chèque sans provision, prélèvement rejeté : le paiement reste "
+                                                "dans l'historique, mais les loyers qu'il réglait redeviennent à payer."}),
+    ]
     inlines = [VersementPaiementInline]
+    actions = ["affecter_avance", "dater_a_l_echeance"]
+
+    @admin.action(description="Affecter aux loyers impayés (du plus ancien au plus récent)")
+    def affecter_avance(self, request, queryset):
+        """La partie d'un paiement reçu qui ne règle encore aucun loyer (avance) règle les loyers impayés de son bail,
+        du plus ancien au plus récent. Aperçu avant de valider."""
+        propositions = []
+        for v in queryset.filter(annule=False).select_related("bail__lot__bien").order_by("date", "pk"):
+            avance = v.avance
+            if avance > 0:
+                parts = [(e, p) for e, p in Versement.repartition_proposee(v.bail, avance) if p > 0]
+                if parts:
+                    propositions.append((v, avance, parts))
+        if request.POST.get("appliquer"):
+            n = 0
+            for v, avance, _ in propositions:
+                parts = [(e, p) for e, p in Versement.repartition_proposee(v.bail, v.avance) if p > 0]  # recalcul : un paiement précédent a pu régler un loyer
+                v.repartir(parts)
+                n += len(parts)
+            self.message_user(request, f"{n} loyer(s) réglé(s) avec les paiements reçus cochés.", messages.SUCCESS)
+            return None
+        if not propositions:
+            self.message_user(request, "Rien à affecter : ces paiements règlent déjà des loyers en entier, ou le locataire "
+                                       "n'a plus de loyer impayé.", messages.INFO)
+            return None
+        return render(request, "admin/patrimoine/versement/affecter.html", {
+            **self.admin_site.each_context(request), "title": "Affecter les paiements reçus aux loyers impayés",
+            "opts": self.model._meta, "propositions": propositions, "versements": queryset,
+            "action_checkbox_name": admin.helpers.ACTION_CHECKBOX_NAME,
+        })
+
+    @admin.action(description="Remettre chaque loyer à sa date d'échéance")
+    def dater_a_l_echeance(self, request, queryset):
+        """Paiements saisis tous à la même date (ex. le jour de la saisie) : chaque loyer réglé prend la date d'échéance de
+        son mois. Un paiement qui règle plusieurs loyers est séparé en un paiement par loyer. Aperçu avant de valider."""
+        from ..recaler_dates import appliquer, proposer
+
+        changements = proposer(queryset)
+        if request.POST.get("appliquer"):
+            from .. import sauvegarde
+
+            try:
+                sauvegarde.creer()
+            except Exception:
+                pass  # la sauvegarde ne doit pas bloquer la correction
+            n = appliquer(changements)
+            self.message_user(request, f"{n} loyer(s) remis à leur date d'échéance.", messages.SUCCESS)
+            return None
+        if not changements:
+            self.message_user(request, "Rien à changer : chaque loyer est déjà à sa date d'échéance.", messages.INFO)
+            return None
+        return render(request, "admin/patrimoine/versement/dater.html", {
+            **self.admin_site.each_context(request), "title": "Remettre chaque loyer à sa date d'échéance",
+            "opts": self.model._meta, "changements": changements, "versements": queryset,
+            "action_checkbox_name": admin.helpers.ACTION_CHECKBOX_NAME,
+        })
+
+    def get_readonly_fields(self, request, obj=None):
+        lecture = ["bail", "date", "montant", "mode", "part_depot", "avance_restante"]
+        if obj and obj.annule:
+            lecture += ["rembourse", "date_remboursement", "annule", "motif_annulation"]
+        return lecture
+
+    def save_model(self, request, obj, form, change):
+        annuler = change and "annule" in form.changed_data and obj.annule
+        if annuler:
+            obj.annule = False  # annuler() retire les parts puis enregistre l'annulation
+        super().save_model(request, obj, form, change)
+        if annuler:
+            obj.annuler(obj.motif_annulation)
+            self.message_user(request, "Paiement annulé : les loyers qu'il réglait sont de nouveau à payer.", messages.WARNING)
 
     def get_queryset(self, request):
         return super().get_queryset(request).select_related("bail__lot__bien").prefetch_related("bail__locataires", "paiements")
@@ -424,8 +653,21 @@ class VersementAdmin(admin.ModelAdmin):
 
     @admin.display(description="avance restante")
     def avance_restante(self, obj):
-        avance = obj.montant - sum((p.montant for p in obj.paiements.all()), Decimal(0))
+        if obj.annule:
+            return "–"
+        avance = obj.montant - sum((p.montant for p in obj.paiements.all()), Decimal(0)) - obj.part_depot - obj.rembourse
         return format_html("<b>{}</b>", euros_liste(avance)) if avance else "–"
+
+    @admin.display(description="")
+    def etat(self, obj):
+        if obj.annule:
+            return format_html('<span class="pill rouge" title="{}">Annulé</span>', obj.motif_annulation)
+        morceaux = []
+        if obj.part_depot:
+            morceaux.append(format_html('<span class="pill">Dépôt {}</span>', euros_liste(obj.part_depot)))
+        if obj.rembourse:
+            morceaux.append(format_html('<span class="pill orange">Remboursé {}</span>', euros_liste(obj.rembourse)))
+        return format_html(" ".join(["{}"] * len(morceaux)), *morceaux) if morceaux else ""
 
 
 class DepotEnCoursFilter(admin.SimpleListFilter):

@@ -37,10 +37,10 @@ class EcheanceTests(TestCase):
     def test_statut_suit_les_paiements(self):
         Echeance.generer_pour_mois(date(2026, 10, 1))
         e = Echeance.objects.get()
-        p = Paiement.objects.create(echeance=e, date=date(2026, 10, 5), montant=Decimal("300"))
+        p = Paiement.recu(echeance=e, date=date(2026, 10, 5), montant=Decimal("300"))
         e.refresh_from_db()
         self.assertEqual(e.statut, Echeance.Statut.PARTIEL)
-        Paiement.objects.create(echeance=e, date=date(2026, 10, 10), montant=Decimal("350"))
+        Paiement.recu(echeance=e, date=date(2026, 10, 10), montant=Decimal("350"))
         e.refresh_from_db()
         self.assertEqual(e.statut, Echeance.Statut.PAYE)
         p.delete()
@@ -50,7 +50,7 @@ class EcheanceTests(TestCase):
     def test_pdf_quittance(self):
         Echeance.generer_pour_mois(date(2026, 10, 1))
         e = Echeance.objects.get()
-        Paiement.objects.create(echeance=e, date=date(2026, 10, 5), montant=e.total)
+        Paiement.recu(echeance=e, date=date(2026, 10, 5), montant=e.total)
         self.client.force_login(User.objects.create_superuser("admin", "a@example.com", "x"))
         r = self.client.get(f"/echeances/{e.pk}/document.pdf")
         self.assertEqual(r.status_code, 200)
@@ -71,7 +71,7 @@ class EtatLoyersTests(TestCase):
         for e in Echeance.objects.all():
             # Le loyer de décembre est encaissé en janvier : il compte pour l'année suivante.
             jour = date(2025, 11, 3) if e.periode.month == 11 else date(2026, 1, 4)
-            Paiement.objects.create(echeance=e, date=jour, montant=e.total)
+            Paiement.recu(echeance=e, date=jour, montant=e.total)
         self.client.force_login(User.objects.create_superuser("admin", "a@example.com", "x"))
 
     def test_totaux_par_date_d_encaissement(self):
@@ -84,6 +84,44 @@ class EtatLoyersTests(TestCase):
         self.assertEqual(etat["total"]["charges"], Decimal("100"))
         self.assertEqual(loyers_encaisses(2026)["total"]["mois"][0], Decimal("1100"))
 
+    def test_vue_loyers_regles_au_mois_du_loyer(self):
+        from .etats import loyers_encaisses
+
+        etat = loyers_encaisses(2025, vue="regles")
+        self.assertEqual(etat["vue"], "regles")
+        # le loyer de décembre, payé le 4 janvier 2026, reste en décembre 2025
+        self.assertEqual(etat["total"]["mois"][10], Decimal("1100"))
+        self.assertEqual(etat["total"]["mois"][11], Decimal("1100"))
+        self.assertEqual(etat["total"]["total"], Decimal("2200"))
+        self.assertEqual(loyers_encaisses(2026, vue="regles")["total"]["total"], 0)
+        # la vue encaissements (celle de la déclaration) ne change pas
+        self.assertEqual(loyers_encaisses(2025)["total"]["total"], Decimal("1100"))
+
+    def test_virement_de_deux_mois_reparti_sur_les_deux_loyers(self):
+        from .etats import loyers_encaisses
+
+        lot = Lot.objects.create(bien=Bien.objects.get(nom="Bien SCI A"), designation="Garage")
+        bail = Bail.objects.create(lot=lot, type=Bail.Type.NU, date_debut=date(2025, 1, 1), loyer_hc=Decimal("65"))
+        for mois in (1, 2):
+            e = Echeance.objects.create(bail=bail, periode=date(2025, mois, 1), loyer_hc=Decimal("65"), date_exigibilite=date(2025, mois, 1))
+            Paiement.recu(echeance=e, date=date(2025, 1, 10), montant=Decimal("65"))  # un seul virement de 130 €
+
+        def ligne(etat):
+            return next(l for bp in etat["proprietaires"] for bb in bp["biens"] for l in bb["lots"] if l["lot"] == lot)
+
+        self.assertEqual(ligne(loyers_encaisses(2025))["mois"][:2], [Decimal("130"), 0])
+        self.assertEqual(ligne(loyers_encaisses(2025, vue="regles"))["mois"][:2], [Decimal("65"), Decimal("65")])
+        page = self.client.get("/etats/loyers-encaisses/", {"annee": 2025, "vue": "regles"}).content.decode()
+        self.assertIn("Loyers réglés en 2025", page)
+        self.assertIn("&amp;vue=regles", page)
+        self.assertIn("vue=regles&format=csv", page)
+        # le clic sur le montant de février ouvre le loyer de février
+        fevrier = Echeance.objects.get(bail=bail, periode=date(2025, 2, 1))
+        r = self.client.get("/etats/loyers-encaisses/detail/", {"lot": lot.pk, "annee": 2025, "mois": 2, "vue": "regles"})
+        self.assertRedirects(r, f"/admin/patrimoine/echeance/{fevrier.pk}/change/", fetch_redirect_response=False)
+        r = self.client.get("/etats/loyers-encaisses/", {"annee": 2025, "vue": "regles", "format": "csv"})
+        self.assertIn("loyers-regles-2025", r["Content-Disposition"])
+
     def test_filtre_proprietaire_et_exports(self):
         r = self.client.get("/etats/loyers-encaisses/", {"annee": 2025, "proprietaire": self.sci.pk})
         self.assertEqual(r.status_code, 200)
@@ -94,6 +132,31 @@ class EtatLoyersTests(TestCase):
         self.assertIn("1100,00", contenu)
         r = self.client.get("/etats/loyers-encaisses/", {"annee": 2025, "format": "pdf"})
         self.assertEqual(r["Content-Type"], "application/pdf")
+
+    def test_annees_en_boutons_tant_que_loyers_a_encaisser(self):
+        """Année en cours + années passées avec un loyer non encaissé en boutons ; les autres dans une liste déroulante."""
+        t = timezone.localdate().year
+        lot = Lot.objects.create(bien=Bien.objects.get(nom="Bien SCI A"), designation="Cave")
+        bail = Bail.objects.create(lot=lot, type=Bail.Type.NU, date_debut=date(t - 3, 1, 1), loyer_hc=Decimal("40"))
+        Echeance.objects.create(bail=bail, periode=date(t - 2, 12, 1), loyer_hc=Decimal("40"), date_exigibilite=date(t - 2, 12, 1))
+        paye = Echeance.objects.create(bail=bail, periode=date(t - 3, 6, 1), loyer_hc=Decimal("40"), date_exigibilite=date(t - 3, 6, 1))
+        Paiement.recu(echeance=paye, date=date(t - 3, 6, 2), montant=Decimal("40"))
+        paye.mettre_a_jour_statut()
+
+        page = self.client.get("/etats/loyers-encaisses/").content.decode()
+        self.assertIn(f">{t} (en cours)</a>", page)
+        self.assertIn(f">{t - 2} (à encaisser)</a>", page)
+        self.assertNotIn(f"{t - 3} (à encaisser)", page)
+        self.assertIn("Autres années", page)
+        self.assertIn(f">{t - 3}</option>", page)
+        self.assertNotIn(f">{t - 2}</option>", page)
+        # le loyer est encaissé : l'année passe dans la liste déroulante
+        e = Echeance.objects.get(bail=bail, periode=date(t - 2, 12, 1))
+        Paiement.recu(echeance=e, date=date(t - 1, 1, 5), montant=Decimal("40"))
+        e.mettre_a_jour_statut()
+        page = self.client.get("/etats/loyers-encaisses/").content.decode()
+        self.assertNotIn("(à encaisser)", page)
+        self.assertIn(f">{t - 2}</option>", page)
 
 
 class ChangementLocataireTests(TestCase):
@@ -584,13 +647,13 @@ class RappelsEtRevisionTests(TestCase):
         from .models import Echeance, Paiement
 
         e = Echeance.objects.create(bail=self.bail, periode=date(2026, 2, 1), loyer_hc=600, charges=50, date_exigibilite=date(2026, 2, 5))
-        Paiement.objects.create(echeance=e, date=date(2026, 2, 6), montant=650)
+        Paiement.recu(echeance=e, date=date(2026, 2, 6), montant=650)
         page = self.client.get("/etats/loyers-encaisses/?annee=2026")
         self.assertContains(page, f"lot={self.bail.lot_id}&amp;annee=2026&amp;mois=2")
         r = self.client.get(f"/etats/loyers-encaisses/detail/?lot={self.bail.lot_id}&annee=2026&mois=2")
         self.assertEqual(r["Location"], f"/admin/patrimoine/echeance/{e.pk}/change/")
         e2 = Echeance.objects.create(bail=self.bail, periode=date(2026, 3, 1), loyer_hc=600, charges=50, date_exigibilite=date(2026, 3, 5))
-        Paiement.objects.create(echeance=e2, date=date(2026, 2, 27), montant=650)
+        Paiement.recu(echeance=e2, date=date(2026, 2, 27), montant=650)
         r = self.client.get(f"/etats/loyers-encaisses/detail/?lot={self.bail.lot_id}&annee=2026&mois=2")
         liste = self.client.get(r["Location"])
         self.assertEqual(liste.status_code, 200)
@@ -637,6 +700,29 @@ class CandidatureEtGarantTests(TestCase):
         filtre = self.client.get(f"/admin/patrimoine/candidature/?bien={autre_bien.pk}").content.decode()
         self.assertIn("Tom Martin", filtre)
         self.assertNotIn("Léa Durand", filtre)
+
+    def test_fenetre_actions_lignes_cochees(self):
+        """Dossiers de candidature cochés : fenêtre d'actions en bas (ouvrir, retenir, ne pas retenir, supprimer après confirmation)."""
+        from .models import Candidature
+
+        c = Candidature.objects.create(lot=self.lot, statut="recue", prenom="Léa", nom="Durand")
+        self.client.force_login(User.objects.create_superuser("admin", "a@example.com", "x"))
+        page = self.client.get("/admin/patrimoine/candidature/").content.decode()
+        self.assertIn('id="fenetre-selection"', page)
+        self.assertIn('id="fenetre-selection-annuler"', page)
+        self.assertIn("Ouvrir le dossier", page)
+        self.assertIn("/admin/patrimoine/candidature/999999999/change/", page)
+        for action in ("retenir", "refuser", "delete_selected"):
+            self.assertIn(f'value="{action}"', page)
+        # « Ne pas retenir » depuis la fenêtre
+        r = self.client.post("/admin/patrimoine/candidature/", {"action": "refuser", "_selected_action": [c.pk]}, follow=True)
+        self.assertContains(r, "1 dossier passé en « non retenue ».")
+        self.assertEqual(Candidature.objects.get(pk=c.pk).statut, Candidature.Statut.REFUSEE)
+        # supprimer : rien n'est supprimé sans la confirmation (« post »), puis suppression une fois confirmé
+        self.client.post("/admin/patrimoine/candidature/", {"action": "delete_selected", "_selected_action": [c.pk]})
+        self.assertTrue(Candidature.objects.filter(pk=c.pk).exists())
+        self.client.post("/admin/patrimoine/candidature/", {"action": "delete_selected", "post": "yes", "_selected_action": [c.pk]})
+        self.assertFalse(Candidature.objects.filter(pk=c.pk).exists())
 
     def test_retenir_et_preparer_le_bail(self):
         from urllib.parse import parse_qs, urlparse
@@ -1475,7 +1561,7 @@ class LmnpTests(TestCase):
         for m in mois:
             e = Echeance.objects.create(bail=bail, periode=date(annee, m, 1), loyer_hc=650, charges=50,
                                         date_exigibilite=date(annee, m, 5))
-            Paiement.objects.create(echeance=e, date=date(annee, m, 5), montant=Decimal("700"))
+            Paiement.recu(echeance=e, date=date(annee, m, 5), montant=Decimal("700"))
 
     def test_paiements_completes_par_le_suivi_repris(self):
         # suivi repris de janvier à septembre, paiements saisis dans l'appli d'octobre à décembre : les 12 mois comptent
@@ -1692,7 +1778,7 @@ class FiltreLoyersTests(TestCase):
             bail.locataires.add(Locataire.objects.create(nom=nom.upper()))
         Echeance.generer_pour_mois(date(2026, 10, 1))
         e = Echeance.objects.get(bail__lot__designation="Paye")
-        Paiement.objects.create(echeance=e, date=date(2026, 10, 2), montant=e.total)
+        Paiement.recu(echeance=e, date=date(2026, 10, 2), montant=e.total)
         self.client.force_login(User.objects.create_superuser("admin", "a@example.com", "x"))
         page = self.client.get("/admin/patrimoine/echeance/").content.decode()
         self.assertIn("<b>ATTENTE</b>", page)
@@ -1805,12 +1891,17 @@ class NouveauLookTests(TestCase):
         Echeance.generer_pour_mois(date(2026, 10, 1))
         e = Echeance.objects.get()
         liste = self.client.get("/admin/patrimoine/echeance/?periode__year=2026").content.decode()
-        self.assertIn(f'formaction="/admin/patrimoine/echeance/{e.pk}/encaisser/"', liste)
+        # le bouton ouvre le formulaire d'encaissement prérempli (reste dû) ; un clic sur « Valider » suffit
+        self.assertIn(f"/admin/patrimoine/echeance/virement/?bail={e.bail_id}&amp;echeance={e.pk}&amp;montant=500.00", liste)
         self.assertNotIn("form-encaisser", liste)  # pas de formulaire imbriqué dans celui de la liste (1er bouton inopérant)
-        self.client.post(f"/admin/patrimoine/echeance/{e.pk}/encaisser/")
+        r = self.client.get(f"/admin/patrimoine/echeance/virement/?bail={e.bail_id}&echeance={e.pk}&montant=500.00")
+        self.assertContains(r, f'name="part-{e.pk}" value="500,00"')
+        self.client.post("/admin/patrimoine/echeance/virement/", {"etape": "valider", "bail": e.bail_id, "echeance": e.pk,
+                         "date": "2026-10-06", "montant": "500", "mode": "virement", "notes": "", f"part-{e.pk}": "500"})
         e.refresh_from_db()
         self.assertEqual(e.statut, Echeance.Statut.PAYE)
         self.assertEqual(e.paiements.get().montant, 500)
+        self.assertIsNotNone(e.paiements.get().versement)  # visible dans « Paiements reçus »
 
 
 class AFaireTests(TestCase):
@@ -1953,7 +2044,7 @@ class LocatairePartiTests(TestCase):
             e = Echeance.objects.create(bail=self.ancien, periode=date(2026, m, 1), loyer_hc=Decimal("600"), charges=0,
                                         date_exigibilite=date(2026, m, 1))
             if m in (1, 2, 3):
-                Paiement.objects.create(echeance=e, date=e.date_exigibilite, montant=600,
+                Paiement.recu(echeance=e, date=e.date_exigibilite, montant=600,
                                         notes="Repris du suivi Excel" if m == 3 else "Supposé réglé (rattrapage 2026)")
 
     def test_depart_retire_les_loyers_suivants(self):
@@ -2052,7 +2143,7 @@ class ReductionTemporaireTests(TestCase):
                                    loyer_hc=Decimal("600"), charges=Decimal("50"))
         for m in (1, 2, 3, 4):
             Echeance.generer_pour_mois(date(2026, m, 1))
-        Paiement.objects.create(echeance=bail.echeances.get(periode=date(2026, 1, 1)), date=date(2026, 1, 5), montant=650)
+        Paiement.recu(echeance=bail.echeances.get(periode=date(2026, 1, 1)), date=date(2026, 1, 5), montant=650)
         bail.reduction_montant, bail.reduction_debut, bail.reduction_fin = Decimal("100"), date(2026, 1, 1), date(2026, 3, 15)
         bail.save()
         loyers = {e.periode.month: e.loyer_hc for e in bail.echeances.all()}
@@ -2073,7 +2164,7 @@ class Annexe2072Tests(TestCase):
         bail = Bail.objects.create(lot=lot_a, type=Bail.Type.NU, date_debut=date(2024, 1, 1), loyer_hc=Decimal("500"), charges=Decimal("50"))
         for m in (1, 2):
             Echeance.generer_pour_mois(date(2025, m, 1))
-            Paiement.objects.create(echeance=bail.echeances.get(periode=date(2025, m, 1)), date=date(2025, m, 5), montant=550)
+            Paiement.recu(echeance=bail.echeances.get(periode=date(2025, m, 1)), date=date(2025, m, 5), montant=550)
         PieceComptable.objects.create(bien=self.bien, date=date(2025, 3, 1), libelle="Taxe foncière", montant=Decimal("800"), ligne="12")
         PieceComptable.objects.create(bien=self.bien, date=date(2024, 12, 20), date_paiement=date(2025, 1, 10), libelle="Chaudière",
                                       montant=Decimal("1200"), ligne="9b")
@@ -2129,7 +2220,7 @@ class EnvoyerQuittanceTests(TestCase):
         for mois in (9, 10):
             Echeance.generer_pour_mois(date(2026, mois, 1))
         self.payee = Echeance.objects.get(periode=date(2026, 9, 1))
-        Paiement.objects.create(echeance=self.payee, date=date(2026, 9, 3), montant=self.payee.total)
+        Paiement.recu(echeance=self.payee, date=date(2026, 9, 3), montant=self.payee.total)
 
     def test_page_choix(self):
         r = self.client.get("/quittances/envoyer/")
@@ -2305,8 +2396,8 @@ class RelancesTests(TestCase):
         for mois in (8, 9, 10):
             Echeance.generer_pour_mois(date(2026, mois, 1))
         e = Echeance.objects.get(periode=date(2026, 8, 1))
-        Paiement.objects.create(echeance=e, date=date(2026, 8, 3), montant=e.total)
-        Paiement.objects.create(echeance=Echeance.objects.get(periode=date(2026, 9, 1)), date=date(2026, 9, 3), montant=Decimal("400"))
+        Paiement.recu(echeance=e, date=date(2026, 8, 3), montant=e.total)
+        Paiement.recu(echeance=Echeance.objects.get(periode=date(2026, 9, 1)), date=date(2026, 9, 3), montant=Decimal("400"))
 
     def test_impayes_et_niveaux(self):
         from . import relances
@@ -3445,7 +3536,8 @@ class VirementRepartiTests(TestCase):
         for mois in (9, 10, 11):
             Echeance.generer_pour_mois(date(2026, mois, 1))
         self.sept, self.oct, self.nov = Echeance.objects.order_by("periode")
-        Paiement.objects.create(echeance=self.sept, date=date(2026, 9, 5), montant=Decimal("800"))
+        Paiement.recu(echeance=self.sept, date=date(2026, 9, 5), montant=Decimal("800"))
+        self.v0 = self.sept.paiements.get().versement
 
     def _envoyer(self, etape, montant, parts=None):
         donnees = {"etape": etape, "bail": self.bail.pk, "date": "2026-11-12", "montant": montant, "mode": "virement", "notes": ""}
@@ -3458,16 +3550,17 @@ class VirementRepartiTests(TestCase):
 
     def test_page_et_apercu(self):
         r = self.client.get("/admin/patrimoine/echeance/")
-        self.assertContains(r, "Encaisser un virement")
+        self.assertContains(r, "Encaisser un paiement")
+        self.assertContains(r, "Paiements reçus")
         r = self._envoyer("repartir", "1600")
         self.assertContains(r, f'name="part-{self.oct.pk}" value="800,00"')
         self.assertContains(r, f'name="part-{self.nov.pk}" value="800,00"')
-        self.assertEqual(self.Versement.objects.count(), 0)  # rien n'est enregistré avant de valider
+        self.assertEqual(self.Versement.objects.exclude(pk=self.v0.pk).count(), 0)  # rien n'est enregistré avant de valider
 
     def test_un_virement_regle_deux_mois(self):
         r = self._envoyer("valider", "1600", {f"part-{self.oct.pk}": "800", f"part-{self.nov.pk}": "800,00"})
         self.assertEqual(r.status_code, 302)
-        v = self.Versement.objects.get()
+        v = self.Versement.objects.exclude(pk=self.v0.pk).get()
         self.assertEqual(v.paiements.count(), 2)
         self.assertEqual(v.avance, 0)
         for e in (self.oct, self.nov):
@@ -3494,22 +3587,22 @@ class VirementRepartiTests(TestCase):
         self.assertContains(r, "entre 0 et le reste dû")
         r = self._envoyer("valider", "500", {f"part-{self.oct.pk}": "400", f"part-{self.nov.pk}": "400"})
         self.assertContains(r, "dépassent le montant reçu")
-        self.assertEqual(self.Versement.objects.count(), 0)
+        self.assertEqual(self.Versement.objects.exclude(pk=self.v0.pk).count(), 0)
 
     def test_trop_percu_garde_en_avance_puis_impute(self):
         self._envoyer("valider", "2000", {f"part-{self.oct.pk}": "800", f"part-{self.nov.pk}": "800"})
-        v = self.Versement.objects.get()
+        v = self.Versement.objects.exclude(pk=self.v0.pk).get()
         self.assertEqual(v.avance, Decimal("400"))
         Echeance.generer_pour_mois(date(2026, 12, 1))
         dec = Echeance.objects.get(periode=date(2026, 12, 1))
         self.assertEqual(dec.statut, Echeance.Statut.PARTIEL)
         self.assertEqual(dec.montant_paye, Decimal("400"))
-        self.assertEqual(self.Versement.objects.get().avance, 0)
+        self.assertEqual(self.Versement.objects.exclude(pk=self.v0.pk).get().avance, 0)
         r = self.client.get("/admin/patrimoine/versement/")
         self.assertContains(r, "Durand")
 
     def test_recu_paiement_partiel(self):
-        Paiement.objects.create(echeance=self.oct, date=date(2026, 10, 8), montant=Decimal("300"))
+        Paiement.recu(echeance=self.oct, date=date(2026, 10, 8), montant=Decimal("300"))
         from .views.loyers import pdf_echeance
 
         self.oct.refresh_from_db()
@@ -3883,7 +3976,7 @@ class RegimesFiscauxTests(TestCase):
         for mois, jour in ((3, 4), (1, 5), (2, 3)):  # créés dans le désordre
             e = Echeance.objects.create(bail=bail, periode=date(2025, mois, 1), loyer_hc=600, charges=50,
                                         date_exigibilite=date(2025, mois, 1))
-            Paiement.objects.create(echeance=e, date=date(2025, mois, jour), montant=Decimal("650"))
+            Paiement.recu(echeance=e, date=date(2025, mois, jour), montant=Decimal("650"))
         page = self.client.get(f"/comptabilite/2072/?sci={self.sci.pk}&annee=2025").content.decode()
         # une sous-ligne par loyer, avec le mois et le locataire, du 1er janvier au 31 décembre, bail en provisions : montant hors charges
         self.assertRegex(page, r"(?s)▸</button>1</td>.*?05/01/2025 · loyer de janvier 2025 · M. Jean DUPONT \(Apt 1er\) · hors provisions de charges.*?600,00"
@@ -3901,7 +3994,7 @@ class RegimesFiscauxTests(TestCase):
         for mois in (1, 2):
             e = Echeance.objects.create(bail=bail, periode=date(2025, mois, 1), loyer_hc=560, charges=10,
                                         date_exigibilite=date(2025, mois, 1))
-            Paiement.objects.create(echeance=e, date=date(2025, mois, 2), montant=Decimal("570"))
+            Paiement.recu(echeance=e, date=date(2025, mois, 2), montant=Decimal("570"))
         from .annexe2072 import colonne
 
         self.assertEqual(colonne(a, 2025)["valeurs"]["1"], Decimal("1140"))  # forfait : charges comprises
@@ -4556,6 +4649,165 @@ class BlocComptaAccueilTests(TestCase):
         self.assertNotIn("Comptabilité à faire", self.client.get("/admin/").content.decode())
 
 
+class PersonnaliserAccueilTests(TestCase):
+    """Accueil personnalisable : ordre, place et affichage des blocs, données choisies, par utilisateur."""
+
+    def setUp(self):
+        self.admin = User.objects.create_superuser("admin", "a@example.com", "x")
+        self.client.force_login(self.admin)
+
+    def _accueil(self):
+        return self.client.get("/admin/").content.decode()
+
+    def _enregistrer(self, ordre, masques=(), places=None, donnees=None, action="enregistrer"):
+        from . import accueil
+
+        post = {"ordre": ordre, "action": action}
+        for code in ordre:
+            if code not in masques:
+                post[f"visible_{code}"] = "1"
+            post[f"place_{code}"] = (places or {}).get(code, dict((c, p) for c, _, p, _ in accueil.BLOCS)[code])
+            for c, *_ in dict((c, d) for c, _, _, d in accueil.BLOCS)[code] or []:
+                post.setdefault(f"proposees_{code}", []).append(c)
+            post[f"donnees_{code}"] = (donnees or {}).get(code, [c for c, *_ in dict((c, d) for c, _, _, d in accueil.BLOCS)[code] or []])
+        return self.client.post(reverse("personnaliser_accueil"), post)
+
+    def test_accueil_d_origine_et_lien(self):
+        page = self._accueil()
+        for texte in ("Personnaliser l'accueil", "Encaissé en", "Comptabilité à faire", "Actions rapides", "Notes rapides", "À faire"):
+            self.assertIn(texte, page)
+        self.assertLess(page.index("Encaissé en"), page.index("Comptabilité à faire"))
+        ecran = self.client.get(reverse("personnaliser_accueil")).content.decode()
+        self.assertIn("Chiffres clés", ecran)
+        self.assertIn("Revenir à la présentation d'origine", ecran)
+
+    def test_ordre_et_masquage(self):
+        r = self._enregistrer(["notes", "actions", "chiffres", "compta", "a_faire"], masques=["compta"],
+                              places={"notes": "largeur"}, action="voir")
+        self.assertRedirects(r, reverse("admin:index"))
+        page = self._accueil()
+        self.assertNotIn("Comptabilité à faire", page)
+        self.assertLess(page.index("Notes rapides"), page.index("Actions rapides"))
+        self.assertLess(page.index("Actions rapides"), page.index("Encaissé en"))
+
+    def test_donnees_choisies(self):
+        self._enregistrer(["chiffres", "compta", "a_faire", "actions", "notes"],
+                          donnees={"chiffres": ["crd"], "actions": ["quittance"]})
+        page = self._accueil()
+        self.assertIn("Capital restant dû locatif", page)
+        self.assertNotIn("Encaissé en", page)
+        self.assertNotIn("Cash-flow locatif", page)
+        self.assertIn("Créer une quittance", page)
+        self.assertNotIn("Encaisser un loyer", page)
+
+    def test_types_a_faire(self):
+        Rappel.objects.create(titre="Ramoner", date=timezone.localdate(), categorie="Entretien")
+        self.assertIn("Ramoner", self._accueil())
+        self._enregistrer(["chiffres", "compta", "a_faire", "actions", "notes"], donnees={"a_faire": ["loyers"]})
+        self.assertNotIn("Ramoner", self._accueil())
+
+    def test_compta_lignes_choisies(self):
+        from .models import PieceComptable
+
+        moi = Proprietaire.objects.create(nom="Fabien", type=Proprietaire.Type.NOM_PROPRE)
+        sans = Bien.objects.create(proprietaire=moi, nom="Garage", regime_fiscal="nu", option_fiscale="micro", adresse="2 rue",
+                                   code_postal="69000", ville="Lyon")
+        PieceComptable.objects.create(bien=sans, libelle="Importée")
+        self.assertIn("Bien hors dossier", self._accueil())
+        self._enregistrer(["chiffres", "compta", "a_faire", "actions", "notes"], donnees={"compta": ["factures"]})
+        page = self._accueil()
+        self.assertNotIn("Bien hors dossier", page)
+        self.assertIn("Rien à faire", page)
+
+    def test_propre_a_chaque_utilisateur_et_retour_origine(self):
+        self._enregistrer(["chiffres", "compta", "a_faire", "actions", "notes"], masques=["notes"])
+        self.assertNotIn("Notes rapides", self._accueil())
+        autre = User.objects.create_superuser("autre", "b@example.com", "x")
+        self.client.force_login(autre)
+        self.assertIn("Notes rapides", self._accueil())
+        self.client.force_login(self.admin)
+        self.client.post(reverse("personnaliser_accueil"), {"action": "origine"})
+        self.assertIn("Notes rapides", self._accueil())
+
+    def test_tout_masque(self):
+        self._enregistrer(["chiffres", "compta", "a_faire", "actions", "notes"],
+                          masques=["chiffres", "compta", "a_faire", "actions", "notes"])
+        self.assertIn("Tous les blocs sont masqués", self._accueil())
+
+    def test_reglages_abimes_ou_incomplets(self):
+        from . import accueil
+
+        r = accueil.normaliser({"blocs": [{"code": "inconnu"}, {"code": "notes", "place": "nulle_part"}, {"code": "notes"},
+                                          {"code": "chiffres", "donnees": ["crd", "faux"]}]})
+        codes = [b["code"] for b in r["blocs"]]
+        self.assertEqual(codes[:2], ["notes", "chiffres"])
+        self.assertEqual(sorted(codes), sorted(c for c, *_ in accueil.BLOCS))
+        self.assertEqual(r["blocs"][0]["place"], accueil.DROITE)
+        self.assertEqual(r["blocs"][1]["donnees"], ["crd"])
+
+    def test_actions_rapides_ordre_libelle_et_nouvelles(self):
+        post = {"ordre": ["actions"], "visible_actions": "1", "place_actions": "droite", "action": "enregistrer",
+                "proposees_actions": ["rappel", "quittance", "encaisser", "bail"],
+                "donnees_actions": ["rappel", "quittance", "bail"],
+                "libelle_actions_quittance": "  Quittance   du mois ", "libelle_actions_rappel": ""}
+        self.client.post(reverse("personnaliser_accueil"), post)
+        page = self._accueil()
+        bloc = page[page.index("Actions rapides"):page.index("Notes rapides")]
+        self.assertIn(reverse("admin:patrimoine_rappel_add"), bloc)
+        self.assertIn(reverse("admin:patrimoine_bail_add"), bloc)
+        self.assertIn("Quittance du mois", bloc)
+        self.assertNotIn("Créer une quittance", bloc)
+        self.assertNotIn("Encaisser un loyer", bloc)
+        self.assertLess(bloc.index("Ajouter un rappel"), bloc.index("Quittance du mois"))
+        self.assertLess(bloc.index("Quittance du mois"), bloc.index("Nouveau bail"))
+        # l'écran garde l'ordre choisi et le nom personnalisé
+        ecran = self.client.get(reverse("personnaliser_accueil")).content.decode()
+        self.assertLess(ecran.index('value="rappel"'), ecran.index('value="quittance"'))
+        self.assertIn('value="Quittance du mois"', ecran)
+        self.assertIn("Nouvelle réservation courte durée", ecran)
+
+    def test_actions_d_origine_et_encaisser(self):
+        page = self._accueil()
+        bloc = page[page.index("Actions rapides"):page.index("Notes rapides")]
+        self.assertIn(reverse("admin:patrimoine_echeance_virement"), bloc)  # « Encaisser » : la seule façon d'enregistrer un paiement
+        self.assertNotIn("Nouveau bail", bloc)
+
+    def test_actions_selon_droits(self):
+        from . import accueil, droits
+
+        user = User.objects.create_user("lecteur", password="x", is_staff=True)
+        droits.appliquer(user, {"loyers": droits.CONSULTATION, "compta": droits.MODIFICATION})
+        self.client.force_login(user)
+        accueil.enregistrer(user, {"blocs": [{"code": "actions", "donnees": ["encaisser", "quittance", "facture_import", "bail"]}]})
+        page = self._accueil()
+        bloc = page[page.index("Actions rapides"):]
+        self.assertIn("Créer une quittance", bloc)
+        self.assertIn("Ajouter des factures", bloc)
+        self.assertNotIn("Encaisser un loyer", bloc)  # loyers en consultation seulement
+        self.assertNotIn("Nouveau bail", bloc)
+
+    def test_droits_limites(self):
+        from . import droits
+
+        user = User.objects.create_user("aide", password="x", is_staff=True)
+        droits.appliquer(user, {"loyers": droits.MODIFICATION})
+        self.client.force_login(user)
+        ecran = self.client.get(reverse("personnaliser_accueil")).content.decode()
+        self.assertNotIn("Comptabilité à faire", ecran)
+        self.assertNotIn("Cash-flow", ecran)
+        self.assertIn("Loyers encaissés du mois", ecran)
+        # le bloc compta, non proposé, garde son réglage
+        self.client.post(reverse("personnaliser_accueil"), {"ordre": ["notes", "chiffres", "actions"], "visible_notes": "1",
+                                                            "place_notes": "gauche", "action": "enregistrer"})
+        from . import accueil
+        r = accueil.reglages(user)
+        self.assertEqual([b["code"] for b in r["blocs"]][:3], ["notes", "chiffres", "actions"])
+        self.assertTrue(next(b for b in r["blocs"] if b["code"] == "compta")["visible"])
+        page = self.client.get("/admin/").content.decode()
+        self.assertIn("Notes rapides", page)
+        self.assertNotIn("Encaissé en", page)
+
+
 class FacturesAjouterRecurrentesTests(TestCase):
     """Factures et dépenses : menu « + Ajouter », dépenses récurrentes, colonne « Déclaration », règles par fournisseur."""
 
@@ -5152,7 +5404,7 @@ class DeclarationRevenusTests(TestCase):
         bail = Bail.objects.create(lot=lot_a, type=Bail.Type.NU, date_debut=date(2024, 1, 1), loyer_hc=Decimal("500"), charges=Decimal("50"))
         for m in (1, 2):
             Echeance.generer_pour_mois(date(2025, m, 1))
-            Paiement.objects.create(echeance=bail.echeances.get(periode=date(2025, m, 1)), date=date(2025, m, 5), montant=550)
+            Paiement.recu(echeance=bail.echeances.get(periode=date(2025, m, 1)), date=date(2025, m, 5), montant=550)
         PieceComptable.objects.create(bien=immeuble, date=date(2025, 3, 1), libelle="Taxe foncière", montant=Decimal("800"), ligne="12")
         PieceComptable.objects.create(bien=immeuble, date=date(2025, 4, 1), libelle="Chaudière", montant=Decimal("1200"), ligne="9b")
         self.pollionnay = Bien.objects.create(proprietaire=self.moi, nom="Pollionnay", regime_fiscal="nu", **commun)
@@ -5194,7 +5446,7 @@ class DeclarationRevenusTests(TestCase):
         lot = Lot.objects.create(bien=self.pollionnay, designation="Maison")
         bail = Bail.objects.create(lot=lot, type=Bail.Type.NU, date_debut=date(2025, 1, 1), loyer_hc=Decimal("3240"), charges=0)
         Echeance.generer_pour_mois(date(2025, 1, 1))
-        P.objects.create(echeance=bail.echeances.get(periode=date(2025, 1, 1)), date=date(2025, 1, 5), montant=3240)
+        P.recu(echeance=bail.echeances.get(periode=date(2025, 1, 1)), date=date(2025, 1, 5), montant=3240)
         self.assertEqual(dr.resultat_foncier(2025)["4BA"], 2500)
         dr.enregistrer_stock("foncier", 2024, {2015: Decimal("400"), 2016: Decimal("1000"), 2020: Decimal("3000")})
         t = dr.aide(2025)
@@ -5327,7 +5579,7 @@ class DetailParLotTests(TestCase):
         for mois in (1, 2, 3):
             Echeance.generer_pour_mois(date(2025, mois, 1))
             e = Echeance.objects.get(bail=bail, periode=date(2025, mois, 1))
-            Paiement.objects.create(echeance=e, date=date(2025, mois, 5 if lot == getattr(self, "appart", None) else 20), montant=e.total)
+            Paiement.recu(echeance=e, date=date(2025, mois, 5 if lot == getattr(self, "appart", None) else 20), montant=e.total)
         return bail
 
     def test_sous_lignes_groupees_par_lot_avec_sous_total(self):

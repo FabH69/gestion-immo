@@ -376,6 +376,14 @@ a.ligne-carte:hover { background: var(--selected-bg); text-decoration: none; }
 .avatar-rond { display: grid; place-items: center; flex: none; width: 34px; height: 34px; border-radius: 50%; background: var(--selected-bg); color: var(--primary); font-weight: 600; font-size: 12px; }
 .carte-vide { padding: 14px 16px; color: var(--body-quiet-color); margin: 0; }
 .dashboard .a-faire { margin-bottom: 0 !important; }
+/* Accueil personnalisable : blocs rangés en sections (pleine largeur ou deux colonnes) */
+.entete-accueil { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 4px 12px; }
+.lien-personnaliser { margin-left: auto; display: inline-flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 500;
+  white-space: nowrap; padding: 6px 12px; border: 1px solid var(--hairline-color); border-radius: 999px; background: var(--body-bg); }
+.lien-personnaliser:hover { border-color: var(--primary); text-decoration: none; }
+.accueil .colonne-accueil > .module, .accueil .section-accueil > .module { margin-bottom: 20px !important; }
+.colonne-accueil .kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+@media (min-width: 1201px) { .section-accueil .kpis { grid-template-columns: none; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); } }
 @media (max-width: 1200px) { .kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 @media (max-width: 1023px) { .grille-accueil { grid-template-columns: minmax(0, 1fr); } .kpi-v { font-size: 21px; } .kpis { gap: 10px; } .kpi { padding: 12px 14px; } }
 
