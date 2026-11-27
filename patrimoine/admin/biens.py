@@ -392,6 +392,11 @@ class LotAdmin(FicheMixin, admin.ModelAdmin):
         return form
 
     list_display = ["designation", "bien_nom", "type_lot", "surface", "exploitation_pill", "locataire_actuel", "loyer_actuel"]
+
+    def get_queryset(self, request):
+        from django.db.models import Prefetch
+        return super().get_queryset(request).select_related("bien").prefetch_related(
+            Prefetch("baux", queryset=Bail.objects.filter(actif=True).prefetch_related("locataires"), to_attr="baux_actifs_charges"))
     list_filter = [VenduFilter, "bien__proprietaire"]
     search_fields = ["designation", "bien__nom"]
     inlines = [BailInline, PhotoInline]
