@@ -560,7 +560,36 @@ class VersementAdmin(admin.ModelAdmin):
                                                 "dans l'historique, mais les loyers qu'il réglait redeviennent à payer."}),
     ]
     inlines = [VersementPaiementInline]
-    actions = ["dater_a_l_echeance"]
+    actions = ["affecter_avance", "dater_a_l_echeance"]
+
+    @admin.action(description="Affecter aux loyers impayés (du plus ancien au plus récent)")
+    def affecter_avance(self, request, queryset):
+        """La partie d'un paiement reçu qui ne règle encore aucun loyer (avance) règle les loyers impayés de son bail,
+        du plus ancien au plus récent. Aperçu avant de valider."""
+        propositions = []
+        for v in queryset.filter(annule=False).select_related("bail__lot__bien").order_by("date", "pk"):
+            avance = v.avance
+            if avance > 0:
+                parts = [(e, p) for e, p in Versement.repartition_proposee(v.bail, avance) if p > 0]
+                if parts:
+                    propositions.append((v, avance, parts))
+        if request.POST.get("appliquer"):
+            n = 0
+            for v, avance, _ in propositions:
+                parts = [(e, p) for e, p in Versement.repartition_proposee(v.bail, v.avance) if p > 0]  # recalcul : un paiement précédent a pu régler un loyer
+                v.repartir(parts)
+                n += len(parts)
+            self.message_user(request, f"{n} loyer(s) réglé(s) avec les paiements reçus cochés.", messages.SUCCESS)
+            return None
+        if not propositions:
+            self.message_user(request, "Rien à affecter : ces paiements règlent déjà des loyers en entier, ou le locataire "
+                                       "n'a plus de loyer impayé.", messages.INFO)
+            return None
+        return render(request, "admin/patrimoine/versement/affecter.html", {
+            **self.admin_site.each_context(request), "title": "Affecter les paiements reçus aux loyers impayés",
+            "opts": self.model._meta, "propositions": propositions, "versements": queryset,
+            "action_checkbox_name": admin.helpers.ACTION_CHECKBOX_NAME,
+        })
 
     @admin.action(description="Remettre chaque loyer à sa date d'échéance")
     def dater_a_l_echeance(self, request, queryset):

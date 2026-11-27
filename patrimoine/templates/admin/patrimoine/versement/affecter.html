@@ -1,0 +1,31 @@
+{% extends "admin/base_site.html" %}
+{% load tableau_bord %}
+{% block breadcrumbs %}<div class="breadcrumbs"><a href="{% url 'admin:index' %}">Accueil</a> › <a href="{% url 'admin:patrimoine_versement_changelist' %}">Paiements reçus</a> › Affecter aux loyers</div>{% endblock %}
+{% block extrastyle %}{{ block.super }}<style>
+.carte { background: var(--body-bg); border: 1px solid var(--hairline-color); border-radius: 12px; box-shadow: 0 1px 6px rgba(16,24,40,.06); padding: 16px 18px; margin-bottom: 18px; max-width: 900px; }
+.aide { font-size: .85rem; color: var(--body-quiet-color); line-height: 1.55; }
+table.ech { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
+table.ech td, table.ech th { padding: 6px; border-bottom: 1px solid var(--hairline-color); text-align: left; vertical-align: top; }
+table.ech .m { text-align: right; white-space: nowrap; }
+</style>{% endblock %}
+{% block content %}
+<form method="post">{% csrf_token %}
+<div class="carte">
+  <p class="aide">La partie de chaque paiement qui ne règle encore aucun loyer va sur les loyers impayés du même locataire, du plus ancien au plus récent. Ce qui reste après reste en avance.</p>
+  {% for v in versements %}<input type="hidden" name="{{ action_checkbox_name }}" value="{{ v.pk }}">{% endfor %}
+  <input type="hidden" name="action" value="affecter_avance">
+  <input type="hidden" name="appliquer" value="1">
+  <button type="submit" class="button default">Affecter</button>
+  <a class="button annuler" href="{% url 'admin:patrimoine_versement_changelist' %}">Annuler</a>
+</div>
+{% for v, avance, parts in propositions %}
+<div class="carte">
+  <b>{{ v.bail.lot }}</b> – {% for l in v.bail.locataires.all %}{{ l }}{% if not forloop.last %}, {% endif %}{% endfor %}<br>
+  <span class="aide">Paiement du {{ v.date|date:"d/m/Y" }} de {{ v.montant|euros:2 }}, dont {{ avance|euros:2 }} pas encore affectés</span>
+  <table class="ech"><tr><th>Loyer de</th><th class="m">Reste dû</th><th class="m">Réglé par ce paiement</th></tr>
+  {% for e, part in parts %}<tr><td>{{ e.periode|date:"m/Y" }}{% if e.est_regularisation %} (régularisation){% endif %}</td><td class="m">{{ e.reste_du|euros:2 }}</td><td class="m"><b>{{ part|euros:2 }}</b></td></tr>{% endfor %}
+  </table>
+</div>
+{% endfor %}
+</form>
+{% endblock %}
