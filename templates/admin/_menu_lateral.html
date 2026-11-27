@@ -6,7 +6,7 @@
       {% for l in g.liens %}
         <div class="menu-bloc{% if l.actif %} ouvert{% endif %}">
         <a href="{{ l.url }}" class="menu-entree{% if l.actif %} actif{% endif %}">{{ l.icone }}<span>{{ l.libelle }}</span>{% if l.pastille %}<span class="menu-pastille{% if l.pastille_douce %} douce{% endif %}"{% if l.pastille_titre %} title="{{ l.pastille_titre }}"{% endif %}>{{ l.pastille }}</span>{% endif %}</a>
-        {% if l.sous %}<div class="menu-sous menu-sous-survol">{% for s in l.sous %}<a href="{{ s.url }}"{% if s.actif %} class="actif"{% endif %}>{{ s.libelle }}</a>{% endfor %}</div>{% endif %}
+        {% if l.sous %}<div class="menu-sous menu-sous-survol">{% for s in l.sous %}<a href="{{ s.url }}"{% if s.actif %} class="actif"{% endif %}>{{ s.libelle }}{% if s.aide %}<span class="menu-aide" role="button" tabindex="0" aria-label="Aide : {{ s.libelle }}" data-aide="{{ s.aide }}">?</span>{% endif %}</a>{% endfor %}</div>{% endif %}
         </div>
       {% endfor %}
     {% endfor %}
@@ -20,6 +20,34 @@
   </div>
 </aside>
 <div id="voile-menu" onclick="document.body.classList.remove('menu-ouvert')"></div>
+<div class="menu-aide-texte" id="menu-aide-texte" role="tooltip"></div>
+<script>
+/* « ? » du menu : l'explication s'ouvre au survol ou au focus ; un toucher ou un clic l'ouvre sans suivre le lien. */
+(function () {
+  var bulle = document.getElementById("menu-aide-texte"), epingle = null;
+  if (!bulle) return;
+  function montrer(q) {
+    bulle.textContent = q.getAttribute("data-aide");
+    bulle.classList.add("visible");
+    var r = q.getBoundingClientRect(), b = bulle.getBoundingClientRect(), marge = 8;
+    bulle.style.left = Math.max(marge, Math.min(r.right + 8, window.innerWidth - b.width - marge)) + "px";
+    bulle.style.top = Math.max(marge, Math.min(r.top - 6, window.innerHeight - b.height - marge)) + "px";
+  }
+  function cacher() { bulle.classList.remove("visible"); epingle = null; }
+  document.querySelectorAll(".menu-aide").forEach(function (q) {
+    q.addEventListener("mouseenter", function () { montrer(q); });
+    q.addEventListener("mouseleave", function () { if (epingle !== q) cacher(); });
+    q.addEventListener("focus", function () { montrer(q); });
+    q.addEventListener("blur", function () { if (epingle !== q) cacher(); });
+    q.addEventListener("click", function (e) {
+      e.preventDefault(); e.stopPropagation();
+      if (epingle === q) { cacher(); } else { montrer(q); epingle = q; }
+    });
+    q.addEventListener("keydown", function (e) { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); q.click(); } if (e.key === "Escape") cacher(); });
+  });
+  document.addEventListener("click", function (e) { if (epingle && !e.target.closest(".menu-aide")) cacher(); });
+})();
+</script>
 <script>
 /* Le menu latéral garde sa position d'une page à l'autre, et la rubrique ouverte (ses sous-menus) reste visible. */
 (function () {

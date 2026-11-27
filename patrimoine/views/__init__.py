@@ -84,3 +84,4 @@ from .gerer_lcd import lcd_accueil, lcd_calendrier, lcd_calendriers  # noqa: F40
 from .essai import essai_demo, essai_entrer, essai_reinitialiser, essai_sortir  # noqa: F401
 from .import_excel import completer_impayes, impayes_excel, import_excel_page, modele_import_excel  # noqa: F401
 from .maison import ma_maison, maison_entretien_fait  # noqa: F401,E402
+from .banque import encaisser_mois, releve  # noqa: F401
