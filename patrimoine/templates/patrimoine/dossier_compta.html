@@ -1,6 +1,8 @@
 {% extends "admin/base_site.html" %}
 {% load tableau_bord %}
-{% block extrastyle %}{{ block.super }}<style>{% include "patrimoine/_style_dossiers.css" %}</style>{% endblock %}
+{% block extrastyle %}{{ block.super }}<style>{% include "patrimoine/_style_dossiers.css" %}
+{% include "patrimoine/_bouton_bloquer_bien.css" %}
+.bloquer-bien-d form.bloquer-bien { justify-content: flex-start; }</style>{% endblock %}
 {% block content_title %}{% endblock %}
 {% block breadcrumbs %}<div class="breadcrumbs"><a href="{% url 'admin:index' %}">Accueil</a> › <a href="{% url 'compta_accueil' %}">Comptabilité</a> › {{ d.titre }}</div>{% endblock %}
 {% block content %}
@@ -53,6 +55,13 @@
       <button type="submit" class="button">Cocher</button>
     </form>
     <p class="petit-d">Cocher verrouille la saisie {{ annee }} de ce dossier.</p>
+    {% if peut_bloquer %}
+    <div class="bloquer-bien-d">
+      {% if bien_choisi %}<p class="petit-d" style="margin:12px 0 4px"><b>{{ bien_choisi.nom }}</b> seulement :</p>
+      {% include "patrimoine/_bouton_bloquer_bien.html" with bien=bien_choisi blocage=blocage_bien %}
+      {% else %}<p class="petit-d" style="margin-top:10px">{% if nb_bloques %}🔒 {{ nb_bloques }} bien{{ nb_bloques|pluralize }} sur {{ biens_dossier|length }} bloqué{{ nb_bloques|pluralize }}. {% endif %}Pour figer un seul immeuble terminé, choisissez-le dans le filtre « Bien » ou utilisez le bouton au-dessus de sa colonne sur la 2072.</p>{% endif %}
+    </div>
+    {% endif %}
     {% endif %}
   </aside>
 </div>

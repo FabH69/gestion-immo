@@ -48,6 +48,7 @@ from .courte_duree import _comparaison_lcd, suivi_lcd  # noqa: F401
 from .finances import (  # noqa: F401
     _decimal_saisi,
     annexe_2072,
+    bloquer_saisie_bien,
     biens_lmnp,
     document_amortissement,
     etat_endettement,

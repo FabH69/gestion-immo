@@ -9,6 +9,7 @@
 .annexe-2072 tr.sous td { border-top-style: dotted; border-bottom-style: dotted; }
 .annexe-2072 td.num { white-space: nowrap; }
 .legende { color: var(--body-quiet-color); font-size: 12.5px; }
+{% include "patrimoine/_bouton_bloquer_bien.css" %}
 </style>{% endblock %}
 {% block breadcrumbs %}{% include "patrimoine/_fil_compta.html" with page_fil="Annexe 2072-S-A1" %}{% endblock %}
 {% block content %}
@@ -29,8 +30,9 @@
 <div class="etat-scroll">{% include "patrimoine/_cadre_i_2072.html" %}</div>
 {% if not tous_les_biens %}<p class="legende" style="color:#b54708">Attention : le cadre I ne totalise que les immeubles cochés. Cochez-les tous pour la déclaration.</p>{% endif %}
 <p class="legende">« Votre part » = montant de la SCI × votre % de détention (réglé sur la fiche du propriétaire). Il sert uniquement à reporter votre quote-part dans votre déclaration personnelle.</p>
+<p class="legende">🔒 « Bloquer la saisie » au-dessus d'un immeuble fige ses factures {{ annee }} et les attestations de ses prêts, pendant que vous finissez les autres. La date de transmission se coche une seule fois pour la SCI, sur la page <a href="{% url 'declarations' %}?annee={{ annee }}">Déclarations</a>.</p>
 {% include "patrimoine/_rappel_forfait.html" with ligne_loyers="1" ligne_ancre="1" %}
 {% include "patrimoine/_barre_deplier.html" %}
-<div class="etat-scroll depliable">{% include "patrimoine/_annexe_2072_tableau.html" with depliable=True %}</div>
+<div class="etat-scroll depliable">{% include "patrimoine/_annexe_2072_tableau.html" with depliable=True boutons_verrou=True %}</div>
 {% include "patrimoine/_lignes_depliables.html" %}
 {% endblock %}

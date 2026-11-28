@@ -4,7 +4,7 @@
   <thead>
     <tr><th rowspan="3" colspan="2" class="recettes">RECETTES</th><th colspan="6" class="centre">Immeubles</th></tr>
     <tr><th colspan="6" class="centre">Montant en €</th></tr>
-    <tr>{% for c in page.colonnes %}<th class="immeuble">{{ c.bien.nom }}<small>{{ c.bien.adresse }}{% if c.bien.ville %}, {{ c.bien.code_postal }} {{ c.bien.ville }}{% endif %}</small></th>{% endfor %}{% for v in page.vides %}<th class="immeuble">IV …</th>{% endfor %}</tr>
+    <tr>{% for c in page.colonnes %}<th class="immeuble">{{ c.bien.nom }}<small>{{ c.bien.adresse }}{% if c.bien.ville %}, {{ c.bien.code_postal }} {{ c.bien.ville }}{% endif %}</small>{% if boutons_verrou %}{% include "patrimoine/_bouton_bloquer_bien.html" with bien=c.bien blocage=c.blocage %}{% endif %}</th>{% endfor %}{% for v in page.vides %}<th class="immeuble">IV …</th>{% endfor %}</tr>
   </thead>
   {% if not depliable %}<tbody>{% endif %}
     {% for l in page.lignes %}

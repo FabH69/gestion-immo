@@ -350,8 +350,8 @@ class AttestationPret(models.Model):
         for a in (avant, self):
             d = a.declaration_qui_verrouille() if a else None
             if d:
-                raise ValidationError(f"{d.libelle_court} {d.annee} déclarée le {d.date_declaration:%d/%m/%Y} : l'attestation "
-                                      f"{a.annee} ne peut plus changer. Décochez « Déclaration effectuée » sur la page Déclarations.")
+                raise ValidationError(f"{d.motif} : l'attestation {a.annee} ne peut plus changer. Pour la corriger, "
+                                      f"{d.comment_debloquer}.")
 
 
 class AnneeCloturee(models.Model):
@@ -414,14 +414,65 @@ class DeclarationFaite(models.Model):
     def biens(self):
         return biens_du_formulaire(self.formulaire, self.proprietaire_id)
 
+    @property
+    def motif(self):
+        return f"{self.libelle_court} {self.annee} déclarée le {self.date_declaration:%d/%m/%Y}"
+
+    comment_debloquer = "décochez « Déclaration effectuée » sur la page Comptabilité › Déclarations"
+
     @classmethod
-    def verrous(cls):
-        """{année: {id de bien: déclaration}} pour les déclarations cochées (une requête par formulaire déclaré)."""
+    def verrous(cls, blocages=True):
+        """{année: {id de bien: verrou}} : déclarations cochées (une requête par formulaire déclaré) et, si blocages,
+        saisies bloquées bien par bien (SaisieBloquee). La déclaration l'emporte quand un bien a les deux."""
         res = {}
+        if blocages:
+            for b in SaisieBloquee.objects.filter(active=True).select_related("bien"):
+                res.setdefault(b.annee, {})[b.bien_id] = b
         for d in cls.objects.filter(active=True).select_related("proprietaire"):
             for pk in d.biens().values_list("pk", flat=True):
                 res.setdefault(d.annee, {})[pk] = d
         return res
+
+
+class SaisieBloquee(models.Model):
+    """Saisie d'une année bloquée pour un seul bien (ex. un immeuble de la SCI terminé pendant qu'on finit les autres) :
+    ses factures et les attestations de ses prêts ne peuvent plus changer. La date de transmission reste sur la
+    déclaration de la SCI (DeclarationFaite). Débloquer garde la ligne dans l'historique."""
+
+    annee = models.PositiveSmallIntegerField("année des revenus")
+    bien = models.ForeignKey(Bien, on_delete=models.CASCADE, related_name="saisies_bloquees")
+    active = models.BooleanField("bloque la saisie", default=True)
+    bloquee_le = models.DateTimeField("bloquée le", auto_now_add=True)
+    debloquee_le = models.DateTimeField("débloquée le", null=True, blank=True)
+
+    class Meta:
+        verbose_name = "saisie bloquée (par bien)"
+        verbose_name_plural = "saisies bloquées (par bien)"
+        ordering = ["-annee", "bien", "-bloquee_le"]
+
+    def __str__(self):
+        return self.motif
+
+    @property
+    def motif(self):
+        return f"Saisie {self.annee} de {self.bien.nom} bloquée"
+
+    comment_debloquer = "cliquez sur « Débloquer » au-dessus de ce bien sur l'annexe 2072 ou sur son dossier comptable"
+
+    @classmethod
+    def bloquees(cls, annee):
+        """{id de bien: blocage actif} pour l'année."""
+        return {b.bien_id: b for b in cls.objects.filter(annee=annee, active=True)}
+
+    @classmethod
+    def bloquer(cls, bien, annee):
+        return cls.objects.filter(bien=bien, annee=annee, active=True).first() or cls.objects.create(bien=bien, annee=annee)
+
+    @classmethod
+    def debloquer(cls, bien, annee):
+        from django.utils import timezone
+
+        return cls.objects.filter(bien=bien, annee=annee, active=True).update(active=False, debloquee_le=timezone.now())
 
 
 class DeficitReporte(models.Model):
@@ -620,14 +671,15 @@ class PieceComptable(models.Model):
             return f"L'année {self.annee} est clôturée"
         d = self.declaration_qui_verrouille(declares)
         if d:
-            return f"{d.libelle_court} {d.annee} déclarée le {d.date_declaration:%d/%m/%Y}"
+            return d.motif
         return None
 
     def comment_deverrouiller(self, fermees=None, declares=None):
         fermees = AnneeCloturee.annees() if fermees is None else fermees
         if self.annee in fermees:
             return f"Pour la corriger, déverrouillez d'abord l'année {self.annee} dans la liste des factures."
-        return "Pour la corriger, décochez « Déclaration effectuée » sur la page Comptabilité › Déclarations."
+        d = self.declaration_qui_verrouille(declares)
+        return f"Pour la corriger, {d.comment_debloquer if d else DeclarationFaite.comment_debloquer}."
 
     def est_verrouillee(self, fermees=None, declares=None):
         """Vrai si la facture est comptée dans une année clôturée ou dans un cerfa déclaré."""
