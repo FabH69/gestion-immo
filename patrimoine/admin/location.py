@@ -346,8 +346,12 @@ def refaire_repartition_historique(modeladmin, request, lots):
     lots = list(lots)
     n = reconstruire(lots=lots)
     for e in nettoyer_hors_bail(lots):
-        modeladmin.message_user(request, f"{e.bail} : loyer de {e.periode:%m/%Y} gardé hors des dates du bail, car un vrai "
-                                         "paiement le règle. À vérifier.", messages.WARNING)
+        for p in e.paiements.select_related("versement"):
+            lien = reverse("admin:patrimoine_versement_change", args=[p.versement_id])
+            modeladmin.message_user(request, format_html(
+                "{} : loyer de {} en dehors des dates du bail, réglé par un paiement de {} € du {} que l'historique ne "
+                "couvre pas. <a href=\"{}\">Ouvrir ce paiement</a> pour l'annuler s'il n'a pas été reçu.",
+                e.bail, f"{e.periode:%m/%Y}", p.montant, f"{p.date:%d/%m/%Y}", lien), messages.WARNING)
     noms = ", ".join(sorted({str(l.designation) for l in lots})) or "ces logements"
     if n:
         modeladmin.message_user(request, f"Répartition de l'historique refaite pour {noms} : {n} paiement(s) repris réparti(s) "
