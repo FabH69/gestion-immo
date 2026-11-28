@@ -248,6 +248,12 @@ def compta_accueil(request):
         "declarees": DeclarationFaite.objects.filter(annee=annee - 1, active=True).select_related("proprietaire"),
         "lien_import": reverse("admin:patrimoine_piececomptable_import"),
     }
+    if acces is None or acces.get("loyers"):
+        from ..models import LigneReleve
+
+        # Banque (relevé et rapprochement) : rangée avec la comptabilité, accessible aussi depuis cette page
+        contexte["lien_releve"] = reverse("releve_banque")
+        contexte["releve_a_traiter"] = LigneReleve.objects.filter(statut=LigneReleve.Statut.A_TRAITER, compte__actif=True).count()
     return render(request, "patrimoine/compta_accueil.html",
                   {**admin.site.each_context(request), **contexte, "title": "Mes dossiers comptables"})
 
