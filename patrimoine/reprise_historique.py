@@ -9,7 +9,8 @@ Une ligne est laissée telle quelle quand aucun bail ne couvre le mois, ou quand
 ce lot ce mois-là (les états et déclarations l'ignorent déjà dans ce cas : la convertir compterait deux fois).
 Pour un mois antérieur au premier bail saisi (bail enregistré avec une date d'entrée trop tardive), l'action
 « Rattacher au locataire suivant » de l'historique force le rattachement au bail qui suit. Une ligne à 0 € est
-simplement retirée : rien n'a été reçu ce mois-là.
+simplement retirée : rien n'a été reçu ce mois-là. Le mois d'un changement de locataire, le montant unique du mois
+règle d'abord le loyer du locataire sortant (au prorata), le reste va au nouveau.
 
 Pendant la reprise seulement, un mois payé presque entièrement (écart d'au plus 5 % : ancien loyer avant une révision
 non saisie, arrondi) est soldé par une remise « Écart de reprise de l'historique », visible sur le loyer : le loyer
@@ -96,12 +97,39 @@ def raisons(historiques):
     return resultat
 
 
+def _partager_changement_de_locataire(v, bail, mois, touches):
+    """Mois de changement de locataire : l'ancien suivi n'a qu'un montant pour le logement (136 € du locataire sortant
+    + 560 € du nouveau = 696 €). Le loyer du mois de chaque bail sorti ce mois-là est réglé d'abord, par un paiement reçu
+    à son nom ; seul le reste va au nouveau locataire (sinon le surplus part en avance et décale tous ses mois)."""
+    from .models import Paiement, Versement
+
+    fin = mois.replace(day=calendar.monthrange(mois.year, mois.month)[1])
+    sortants = (bail.lot.baux.exclude(pk=bail.pk).filter(date_debut__lte=fin, date_fin__gte=mois, date_fin__lte=fin)
+                .order_by("date_debut", "pk"))
+    for autre in sortants:
+        if v.montant <= 0:
+            break
+        e = _echeance(autre, mois)
+        part = min(e.reste_du, v.montant)
+        if part <= 0:
+            continue
+        sortant = Versement.objects.create(bail=autre, date=v.date, montant=part, mode=v.mode, notes=v.notes)
+        Paiement.objects.create(echeance=e, versement=sortant, date=v.date, montant=part, mode=v.mode, notes=v.notes)
+        touches[e.pk] = e
+        v.montant -= part
+        v.save(update_fields=["montant"])
+
+
 def _repartir(v, bail, mois, limite, touches):
     """Le montant règle d'abord le loyer de son propre mois, puis les loyers plus anciens restés impayés (paiement en
     retard : rien en janvier, 130 € en février règlent février puis janvier), puis les mois suivants (130 € pour 65 €
     en janvier : janvier et février). Comme le bouton « Encaisser ». Le loyer n'est jamais modifié pour coller au paiement."""
     from .models import Echeance, Paiement
 
+    _partager_changement_de_locataire(v, bail, mois, touches)
+    if v.montant <= 0:  # tout était au locataire sortant
+        v.delete()
+        return
     reste = Decimal(v.montant)
 
     def payer(e):
