@@ -6,7 +6,7 @@ from django.db import migrations
 class Migration(migrations.Migration):
 
     dependencies = [
-        ("patrimoine", "0085_comptes_bancaires_biens"),
+        ("patrimoine", "0086_remboursements_vente"),
         ("patrimoine", "0085_pret_objet_lots"),
     ]
 
