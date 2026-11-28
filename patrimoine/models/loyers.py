@@ -181,6 +181,7 @@ class ModePaiement(models.TextChoices):
     CHEQUE = "cheque", "Chèque"
     ESPECES = "especes", "Espèces"
     CAF = "caf", "CAF / APL"
+    AGENCE = "agence", "Encaissé par l'agence"
 
 
 class Versement(models.Model):

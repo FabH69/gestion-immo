@@ -7,7 +7,7 @@ from django.contrib import admin, messages
 from django.urls import reverse
 from django.utils.html import format_html, format_html_join
 
-from ..models import Syndic, Bail, Bien, PhotoLot, Lot, Proprietaire
+from ..models import AgenceGestion, Syndic, Bail, Bien, PhotoLot, Lot, Proprietaire
 from .communs import euros_liste
 from .fiche import FicheMixin
 
@@ -102,6 +102,36 @@ class ProprietaireAdmin(admin.ModelAdmin):
         vendus = sum(1 for b in biens if b.vendu)
         en_cours = len(biens) - vendus
         return f"{en_cours} (+ {vendus} vendu{'s' if vendus > 1 else ''})" if vendus else en_cours
+
+
+@admin.register(AgenceGestion)
+class AgenceGestionAdmin(admin.ModelAdmin):
+    """Agences de gestion : leurs biens et le récap annuel à saisir, propriétaire par propriétaire."""
+    list_display = ["nom", "ville", "telephone", "contact_nom", "liste_biens", "recaps"]
+    search_fields = ["nom", "ville", "contact_nom"]
+    fieldsets = [
+        (None, {"fields": ["nom", "mot_releve", "adresse", ("code_postal", "ville"), ("email", "telephone"), "contact_nom"]}),
+        (None, {"fields": ["notes"]}),
+    ]
+
+    def get_queryset(self, request):
+        return super().get_queryset(request).prefetch_related("biens__proprietaire")
+
+    @admin.display(description="biens gérés")
+    def liste_biens(self, obj):
+        return ", ".join(b.nom for b in obj.biens.all()) or "–"
+
+    @admin.display(description="récap annuel")
+    def recaps(self, obj):
+        from django.utils import timezone
+
+        aujourdhui = timezone.localdate()
+        annee = aujourdhui.year - (1 if aujourdhui.month <= 6 else 0)
+        proprietaires = sorted({b.proprietaire for b in obj.biens.all()}, key=lambda p: p.nom)
+        if not proprietaires:
+            return "–"
+        return format_html_join(" · ", '<a class="button" href="{}">Récap {} – {}</a>',
+                                ((reverse("recap_agence", args=[obj.pk, p.pk, annee]), annee, p.nom) for p in proprietaires))
 
 
 @admin.register(Syndic)
@@ -346,6 +376,12 @@ class BienAdmin(admin.ModelAdmin):
                              "Si l'une des cases est cochée, le bail contient le paragraphe « zone tendue » : les chiffres "
                              "(loyer de référence, complément, loyer du précédent locataire) se saisissent dans chaque bail.")}),
         ("Usage", {"classes": ["cases-a-cocher"], "fields": ["residence_principale"]}),
+        ("Gestion confiée à une agence", {"fields": [("agence", "agence_depuis")],
+                                          "description": format_html(
+                                              "L'agence encaisse les loyers et vous vire un <b>acompte</b> chaque mois, puis régularise "
+                                              "en fin d'année. Les loyers du bien sont marqués <b>encaissés par l'agence</b> à leur "
+                                              "échéance (jamais à relancer) ; en fin d'année, saisissez son récap depuis "
+                                              "Comptabilité › Banque › Agences de gestion.")}),
         ("Vente", {"classes": ["cases-a-cocher"], "fields": [("vendu", "date_vente", "prix_vente")],
                    "description": "Un bien vendu (et tous ses lots) n'est plus proposé pour les baux, candidatures et annonces, "
                                   "mais reste dans les états des loyers. La date de vente est facultative."}),
@@ -376,6 +412,12 @@ class BienAdmin(admin.ModelAdmin):
             # case décochée : on annule ce que la vente du bien avait fait (sans toucher aux lots vendus à part)
             lots = obj.lots.filter(date_vente=avant["date_vente"]) if avant["date_vente"] else obj.lots.filter(date_vente__isnull=True)
             lots.update(vendu=False, date_vente=None)
+        if obj.agence_id:
+            from ..agence import encaisser_loyers_agence
+
+            n = encaisser_loyers_agence()
+            if n:
+                messages.info(request, f"{n} loyer(s) échu(s) de ce bien marqué(s) « encaissé par l'agence » {obj.agence}.")
         from .. import vente
 
         for niveau, texte in vente.synchroniser(obj):

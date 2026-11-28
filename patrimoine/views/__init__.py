@@ -85,3 +85,4 @@ from .essai import essai_demo, essai_entrer, essai_reinitialiser, essai_sortir  
 from .import_excel import completer_impayes, impayes_excel, import_excel_page, modele_import_excel  # noqa: F401
 from .maison import ma_maison, maison_entretien_fait, maison_fiche, maison_fiches  # noqa: F401,E402
 from .banque import encaisser_mois, releve  # noqa: F401
+from .agence import recap_agence  # noqa: F401,E402

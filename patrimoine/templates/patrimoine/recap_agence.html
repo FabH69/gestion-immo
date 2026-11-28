@@ -1,0 +1,67 @@
+{% extends "admin/base_site.html" %}
+{% load tableau_bord %}
+{% block breadcrumbs %}<div class="breadcrumbs"><a href="{% url 'admin:index' %}">Accueil</a> › <a href="{% url 'admin:patrimoine_agencegestion_changelist' %}">Agences de gestion</a> › Récap {{ annee }}</div>{% endblock %}
+{% block content %}
+<p class="bq-intro">L'agence encaisse les loyers et vous vire un <b>acompte</b> chaque mois. En fin d'année, recopiez ici son récapitulatif : les <b>loyers bruts</b> encaissés par l'agence et les <b>charges</b> qu'elle a payées (dont sa facture de gestion) partent dans les déclarations {{ annee }} ; le <b>solde</b> est comparé au virement de régularisation.</p>
+<div class="bq-barre">
+  <a class="bq-onglet" href="{{ precedent }}">◀ {{ annee|add:"-1" }}</a>
+  <span class="bq-onglet actif">{{ annee }}</span>
+  <a class="bq-onglet" href="{{ suivant }}">{{ annee|add:"1" }} ▶</a>
+  <span class="espace"></span>
+  {% if recap.applique_le %}<span class="bq-etat ok">Appliqué le {{ recap.applique_le|date:"d/m/Y" }}</span>{% else %}<span class="bq-etat gris">Pas encore saisi</span>{% endif %}
+</div>
+<div class="bq-chiffres">
+  <div class="bq-chiffre"><span>Loyers encaissés</span><b class="bq-credit">{{ bilan.loyers|euros:2 }}</b></div>
+  <div class="bq-chiffre"><span>Charges + honoraires</span><b class="bq-debit">{{ bilan.frais|euros:2 }}</b></div>
+  <div class="bq-chiffre"><span>Acomptes versés</span><b>{{ bilan.acomptes|euros:2 }}</b></div>
+  <div class="bq-chiffre"><span>Solde calculé</span><b>{{ bilan.solde_calcule|euros:2 }}</b></div>
+</div>
+{% if recap.pk %}
+<div class="bq-carte">
+  {% if bilan.ecart_solde %}<p><span class="bq-etat rouge">Écart de {{ bilan.ecart_solde|euros:2 }}</span> entre le solde annoncé par l'agence ({{ bilan.solde_annonce|euros:2 }}) et le solde calculé ({{ bilan.solde_calcule|euros:2 }}).</p>
+  {% elif bilan.solde_annonce is not None %}<p><span class="bq-etat ok">Solde juste</span> le solde annoncé par l'agence ({{ bilan.solde_annonce|euros:2 }}) est celui calculé.</p>{% endif %}
+  {% if bilan.nb_acomptes_releve %}<p>{% if bilan.ecart_acomptes %}<span class="bq-etat orange">Écart de {{ bilan.ecart_acomptes|euros:2 }}</span>{% else %}<span class="bq-etat ok">Acomptes justes</span>{% endif %} {{ bilan.nb_acomptes_releve }} acompte(s) reçu(s) sur le relevé de banque en {{ annee }} : {{ bilan.acomptes_releve|euros:2 }}.</p>{% endif %}
+  {% if recap.ligne_solde %}<p><span class="bq-etat ok">Virement reçu</span> solde rapproché de la ligne du {{ recap.ligne_solde.date|date:"d/m/Y" }} ({{ recap.ligne_solde.montant|euros:2 }}) du <a href="{{ releve }}?compte={{ recap.ligne_solde.compte_id }}&onglet=faites">relevé de banque</a>.</p>
+  {% elif bilan.solde_annonce %}<p><span class="bq-etat gris">Virement de régularisation attendu</span> il sera reconnu dans le relevé de banque (nom de l'agence + montant du solde).</p>{% endif %}
+  {% if bilan.non_encaisses %}<p><span class="bq-etat rouge">{{ bilan.non_encaisses|length }} loyer(s) non encaissé(s) par l'agence</span> {% for e, m in bilan.non_encaisses %}{{ e.bail.lot }} {{ e.periode|date:"m/Y" }} ({{ m|euros:2 }}){% if not forloop.last %} · {% endif %}{% endfor %}. Ils sont repassés en impayé : <a href="{% url 'relances_impayes' %}">voir les impayés</a>.</p>{% endif %}
+</div>
+{% endif %}
+<form method="post" enctype="multipart/form-data">{% csrf_token %}
+<div class="bq-carte"><h2>1. Loyers encaissés par l'agence</h2>
+<p class="bq-regle">Préremplis avec le loyer dû. Mettez le montant du récap ; <b>0</b> si l'agence ne l'a pas encaissé : le loyer redevient impayé.</p>
+{% if groupes %}<table class="bq-table">
+<thead><tr><th>Mois</th><th class="m">Dû</th><th class="m">Encaissé par l'agence</th><th>État</th></tr></thead>
+<tbody>{% for g in groupes %}<tr><td colspan="4"><b>{{ g.bail.lot }}</b> <small>{{ g.noms }}</small></td></tr>
+{% for l in g.lignes %}<tr>
+  <td>{{ l.e.periode|date:"F Y"|capfirst }}{% if l.e.est_regularisation %} · régularisation des charges{% endif %}</td>
+  <td class="m">{{ l.du|euros:2 }}</td>
+  <td class="m"><input type="text" inputmode="decimal" name="loyer-{{ l.e.pk }}" value="{{ l.valeur|stringformat:'.2f' }}" size="9" style="text-align:right" aria-label="Encaissé {{ l.e.periode|date:'m/Y' }} {{ g.bail.lot }}"{% if not peut_modifier %} disabled{% endif %}></td>
+  <td>{% if l.impaye %}<span class="bq-etat rouge">Impayé</span>{% elif l.manque %}<span class="bq-etat orange">Partiel</span>{% else %}<span class="bq-etat bleu">Encaissé par l'agence</span>{% endif %}</td>
+</tr>{% endfor %}{% endfor %}</tbody></table>
+{% else %}<p class="bq-intro">Aucun loyer en {{ annee }} pour les biens confiés à {{ agence }} ({% for b in biens %}{{ b }}{% if not forloop.last %}, {% endif %}{% empty %}aucun bien : choisissez l'agence sur la fiche du bien{% endfor %}).</p>{% endif %}
+</div>
+<div class="bq-carte"><h2>2. Charges payées par l'agence et facture de gestion</h2>
+<p class="bq-regle">Chaque ligne devient une dépense du bien, payée le 31/12/{{ annee }}. Honoraires de gestion : ligne 6 de la 2072 (ligne 221 de la 2044) ou rubrique « Commission » en LMNP et en société.</p>
+<input type="hidden" name="nb_charges" value="{{ nb_charges }}">
+<table class="bq-table"><thead><tr>{% if biens|length > 1 %}<th>Bien</th>{% endif %}<th>Nature</th><th>Objet</th><th>Ligne ou rubrique</th><th class="m">Montant</th></tr></thead><tbody>
+{% for x in charges %}<tr>
+  {% if biens|length > 1 %}<td><select name="charge-{{ forloop.counter0 }}-bien">{% for b in biens %}<option value="{{ b.pk }}"{% if b == x.c.bien %} selected{% endif %}>{{ b }}</option>{% endfor %}</select></td>{% else %}<input type="hidden" name="charge-{{ forloop.counter0 }}-bien" value="{{ biens.0.pk }}">{% endif %}
+  <td><select name="charge-{{ forloop.counter0 }}-nature">{% for code, lib in natures %}<option value="{{ code }}"{% if code == x.c.nature %} selected{% endif %}>{{ lib }}</option>{% endfor %}</select></td>
+  <td><input type="text" name="charge-{{ forloop.counter0 }}-libelle" value="{{ x.c.libelle }}" placeholder="ex. taxe foncière, appel de fonds syndic"></td>
+  <td><select name="charge-{{ forloop.counter0 }}-code">{% for code, lib in x.codes %}<option value="{{ code }}"{% if code == x.c.code %} selected{% endif %}>{{ lib }}</option>{% endfor %}</select></td>
+  <td class="m"><input type="text" inputmode="decimal" name="charge-{{ forloop.counter0 }}-montant" value="{% if x.c.montant is not None %}{{ x.c.montant|stringformat:'.2f' }}{% endif %}" size="9" style="text-align:right"></td>
+</tr>{% endfor %}</tbody></table>
+</div>
+<div class="bq-carte"><h2>3. Acomptes et solde</h2>
+<div class="grille" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px">
+  <div><label>Total des acomptes versés selon l'agence (€)</label><br><input type="text" inputmode="decimal" name="acomptes" value="{% if recap.acomptes is not None %}{{ recap.acomptes|stringformat:'.2f' }}{% endif %}" placeholder="{% if bilan.nb_acomptes_releve %}relevé : {{ bilan.acomptes_releve|stringformat:'.2f' }}{% endif %}"></div>
+  <div><label>Solde annoncé par l'agence (€)</label><br><input type="text" inputmode="decimal" name="solde_annonce" value="{% if recap.solde_annonce is not None %}{{ recap.solde_annonce|stringformat:'.2f' }}{% endif %}" placeholder="négatif si à rendre"></div>
+  <div><label>Date du virement de régularisation</label><br><input type="date" name="date_solde" value="{{ recap.date_solde|date:'Y-m-d' }}"></div>
+  <div><label>Récap de l'agence (PDF)</label><br>{% if recap.fichier %}<a href="{{ recap.fichier.url }}" target="_blank">📄 ouvrir</a> {% endif %}<input type="file" name="fichier" accept=".pdf,image/*"></div>
+</div>
+<p><label>Notes</label><br><textarea name="notes" rows="2" style="width:100%">{{ recap.notes }}</textarea></p>
+<p class="bq-regle">Solde calculé = loyers encaissés − charges − honoraires − acomptes. Positif : l'agence vous doit ce montant ; négatif : vous le lui devez.</p>
+</div>
+{% if peut_modifier %}<p><button type="submit" class="button default">Enregistrer et appliquer le récap</button></p>{% endif %}
+</form>
+{% endblock %}

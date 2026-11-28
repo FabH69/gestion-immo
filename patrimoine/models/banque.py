@@ -11,7 +11,7 @@ import unicodedata
 
 from django.db import models
 
-from .biens import Bien, Proprietaire
+from .biens import AgenceGestion, Bien, Proprietaire
 from .finances import PieceComptable, Pret
 from .location import Bail
 from .loyers import Versement
@@ -154,6 +154,7 @@ class LigneReleve(models.Model):
         PRET = "pret", "Échéance de prêt"
         DEPENSE = "depense", "Dépense créée"
         TRESORERIE = "tresorerie", "Mouvement de trésorerie"
+        AGENCE = "agence", "Acompte ou solde de l'agence"
         VENTE = "vente", "Vente d'un bien (notaire)"
         IGNORE = "ignore", "Ignorée"
 
@@ -174,6 +175,9 @@ class LigneReleve(models.Model):
     bien = models.ForeignKey(Bien, on_delete=models.SET_NULL, null=True, blank=True, related_name="lignes_releve",
                              help_text="Virement du notaire : bien vendu")
     associe = models.CharField("associé", max_length=120, blank=True, help_text="Mouvement de trésorerie : qui a apporté ou repris l'argent")
+    agence = models.ForeignKey(AgenceGestion, on_delete=models.SET_NULL, null=True, blank=True, related_name="lignes_releve",
+                               verbose_name="agence", help_text="Virement d'une agence de gestion : acompte mensuel ou solde du récap "
+                                                                "annuel (trésorerie, pas un loyer)")
     cree = models.BooleanField("créé par le rapprochement", default=False, editable=False,
                                help_text="Le paiement ou la dépense a été créé en validant cette ligne : dérapprocher le supprime")
     date_paiement_avant = models.DateField(null=True, blank=True, editable=False,

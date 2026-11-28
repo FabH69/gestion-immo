@@ -30,7 +30,7 @@ def _decaler(mois, n):
 
 
 def _mode_habituel(bail):
-    dernier = bail.versements.filter(annule=False).exclude(mode="caf").order_by("-date", "-pk").first()
+    dernier = bail.versements.filter(annule=False).exclude(mode__in=("caf", "agence")).order_by("-date", "-pk").first()
     return dernier.mode if dernier else "virement"
 
 
@@ -80,7 +80,8 @@ def encaisser_mois(request):
         if reste <= 0:
             dates = [p.versement.date if p.versement_id else p.date for p in paiements]
             avance = bool(dates) and max(dates) < e.periode
-            etat = ("bleu", "Payé d'avance") if avance else ("ok", f"Reçu le {max(dates):%d/%m}" if dates else "Soldé (remise)")
+            agence = any(p.versement_id and p.versement.mode == "agence" for p in paiements)
+            etat = ("bleu", "Encaissé par l'agence") if agence else ("bleu", "Payé d'avance") if avance else ("ok", f"Reçu le {max(dates):%d/%m}" if dates else "Soldé (remise)")
         elif paye:
             etat = ("orange", f"Partiel : {paye:.2f} € reçus".replace(".", ","))
         elif e.date_exigibilite < aujourdhui:
@@ -136,6 +137,10 @@ def _choix_manuel(request, ligne, ctx):
             return rapprochement.vente_du_bien(ligne, bien)
     if nature == "tresorerie":
         return P("tresorerie", rapprochement.VERIFIER, "Mouvement de trésorerie", associe=request.POST.get("associe", "").strip() or "Associé")
+    if nature == "agence":
+        agence = next((a for a in ctx.agences if str(a.pk) == request.POST.get("agence")), None)
+        if agence:
+            return P("agence", rapprochement.VERIFIER, f"Acompte de l'agence {agence}", agence=agence)
     if nature == "ignore":
         return P("ignore", rapprochement.VERIFIER, "Ignorer")
     return None
@@ -232,7 +237,7 @@ def releve(request):
     contexte.update({
         "onglets": [(c, t, len(compte_onglets[c])) for c, t in ONGLETS], "onglet": onglet, "lignes": compte_onglets.get(onglet, []),
         "nb_sures": len(compte_onglets["sures"]), "sans_justificatif": sans_justificatif, "imports": compte.imports.all()[:5],
-        "baux": ctx.baux, "prets": ctx.prets, "biens": ctx.biens, "tous_les_biens": ctx.tous_les_biens,
+        "baux": ctx.baux, "prets": ctx.prets, "biens": ctx.biens, "tous_les_biens": ctx.tous_les_biens, "agences": ctx.agences,
         "biens_vendus": [b for b in ctx.biens if b.vendu],
         "factures": sorted(ctx.pieces, key=lambda p: p.date or date.min, reverse=True)[:200],
         "comptes_courants": rapprochement.comptes_courants(compte.proprietaire),

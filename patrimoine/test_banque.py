@@ -75,7 +75,7 @@ class EncaisserLeMoisTests(Base):
 
     def test_menu_avec_aides(self):
         r = self.client.get(self.URL)
-        self.assertContains(r, 'class="menu-aide"', count=4)
+        self.assertContains(r, 'class="menu-aide"', count=5)
         self.assertContains(r, "Mode saisie : un mois à l&#x27;écran")
 
     def test_releve_accessible_depuis_l_accueil_compta(self):
