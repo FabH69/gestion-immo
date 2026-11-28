@@ -14,6 +14,7 @@ from ..models import (
     ModeleDocument,
     mois_depot_maximum,
     Bail,
+    Lot,
     Garant,
     EtatDesLieux,
     MouvementDepot,
@@ -338,9 +339,28 @@ class BailForm(forms.ModelForm):
         return donnees
 
 
+def refaire_repartition_historique(modeladmin, request, lots):
+    """Action commune (baux, paiements reçus) : refait la répartition des loyers repris de l'historique de ces logements."""
+    from ..reprise_historique import reconstruire
+
+    lots = list(lots)
+    n = reconstruire(lots=lots)
+    noms = ", ".join(sorted({str(l.designation) for l in lots})) or "ces logements"
+    if n:
+        modeladmin.message_user(request, f"Répartition de l'historique refaite pour {noms} : {n} paiement(s) repris réparti(s) "
+                                         "à nouveau, avec les baux et loyers tels qu'ils sont saisis maintenant.", messages.SUCCESS)
+    else:
+        modeladmin.message_user(request, f"Aucun paiement repris de l'historique pour {noms} : rien à refaire.", messages.INFO)
+
+
 @admin.register(Bail)
 class BailAdmin(FicheMixin, LotsALouerMixin, admin.ModelAdmin):
     form = BailForm
+    actions = ["refaire_historique"]
+
+    @admin.action(description="Refaire la répartition de l'historique (logements cochés, après une correction des baux)")
+    def refaire_historique(self, request, queryset):
+        refaire_repartition_historique(self, request, Lot.objects.filter(baux__in=queryset).distinct())
     onglets = [
         ("general", "Général", [None, "Clauses particulières"], []),
         ("argent", "Argent", ["Conditions financières", "Réduction temporaire", "Garantie"], ["MouvementDepotInline"]),

@@ -176,17 +176,22 @@ def _retirer_soldes(echeances):
         e.save(update_fields=["remise", "motif_remise"])
 
 
-def reconstruire(aujourdhui=None):
+def reconstruire(aujourdhui=None, lots=None):
     """Refait la répartition des paiements déjà repris de l'historique (première version : répartition en chaîne depuis
-    le premier mois, qui décalait un petit reste dû de mois en mois). Les paiements à 0 € sont retirés."""
+    le premier mois, qui décalait un petit reste dû de mois en mois). Les paiements à 0 € sont retirés.
+    lots : seulement ces logements (bouton « Refaire la répartition de l'historique »), après une correction des baux.
+    Chaque mois repris revient d'abord en un seul paiement, rattaché au bail en place ce mois-là (un locataire ajouté
+    ou une date d'entrée corrigée sont pris en compte), puis il est réparti à nouveau."""
     from .models import Versement
 
     limite = (aujourdhui or date.today()).replace(day=1)
-    repris = list(Versement.objects.filter(notes__startswith=NOTE).select_related("bail").order_by("bail_id", "date", "pk"))
+    qs = Versement.objects.filter(notes__startswith=NOTE, annule=False, part_depot=0, rembourse=0)
+    if lots is not None:
+        qs = qs.filter(bail__lot__in=lots)
     from .models import Echeance
 
-    echeances = Echeance.objects.filter(paiements__versement__in=repris).distinct()
-    ids = list(echeances.values_list("pk", flat=True))
+    ids = list(Echeance.objects.filter(paiements__versement__in=qs).distinct().values_list("pk", flat=True))
+    repris = _regrouper_par_mois(list(qs.select_related("bail__lot").order_by("date", "pk")))  # par date : du plus ancien au plus récent
     for v in repris:
         v.paiements.all().delete()  # le statut des loyers est recalculé à chaque suppression
     echeances = Echeance.objects.filter(pk__in=ids)
@@ -205,6 +210,29 @@ def reconstruire(aujourdhui=None):
         _repartir(v, v.bail, v.date.replace(day=1), limite, touches)
     _solder_ecarts(touches)
     return len(repris)
+
+
+def _regrouper_par_mois(repris):
+    """Un mois repris de l'historique = un montant pour le logement : les parts déjà séparées (locataire sortant /
+    entrant) sont remises ensemble, sur le bail en place ce mois-là (le plus récent), avant d'être réparties à nouveau."""
+    groupes = {}
+    for v in repris:
+        groupes.setdefault((v.bail.lot_id, v.date), []).append(v)
+    gardes = []
+    for (_, jour), vs in groupes.items():
+        mois = jour.replace(day=1)
+        bail = _bail_du_mois(vs[0].bail.lot, mois) or vs[0].bail  # mois sans bail (rattaché au suivant) : inchangé
+        v = next((x for x in vs if x.bail_id == bail.pk), vs[0])
+        total = sum((x.montant for x in vs), Decimal(0))
+        for autre in vs:
+            if autre is not v:
+                autre.paiements.all().delete()
+                autre.delete()
+        if (v.bail_id, v.montant) != (bail.pk, total):
+            v.bail, v.montant = bail, total
+            v.save(update_fields=["bail", "montant"])
+        gardes.append(v)
+    return gardes
 
 
 def convertir(historiques=None, aujourdhui=None, bail_suivant=False):

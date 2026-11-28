@@ -88,3 +88,60 @@ class PaiementRepartiTests(TestCase):
             ("02/04/2025 · loyer de avril 2025 · DURAND (T2)", D("564")),
             ("20/04/2025 · loyer de avril 2025 (136,00 €) et mai 2025 (700,00 €) · DURAND (T2)", D("836")),
         ])
+
+
+class RefaireRepartitionTests(TestCase):
+    """Bouton « Refaire la répartition de l'historique » (Baux et Paiements reçus), après une correction des baux."""
+
+    def setUp(self):
+        from django.contrib.auth.models import User
+
+        self.client.force_login(User.objects.create_superuser("admin", "a@a.fr", "x"))
+        proprio = Proprietaire.objects.create(nom="SCI SP", type=Proprietaire.Type.SCI_IR)
+        self.bien = Bien.objects.create(proprietaire=proprio, nom="Saint Pierre", adresse="1 rue", code_postal="69000", ville="Lyon")
+        self.lot = Lot.objects.create(bien=self.bien, designation="Saint Pierre 2")
+        # loyer mal saisi (569 € au lieu de 680 €) : 111 € de trop chaque mois, rangés sur le mois suivant
+        self.lassus = Bail.objects.create(lot=self.lot, type=Bail.Type.NU, date_debut=date(2024, 11, 1), date_fin=date(2025, 4, 6),
+                                          actif=False, loyer_hc=D("569"), charges=D("0"), jour_echeance=1)
+        self.lassus.locataires.add(Locataire.objects.create(nom="LASSUS"))
+        self.voldoire = Bail.objects.create(lot=self.lot, type=Bail.Type.NU, date_debut=date(2025, 4, 7), loyer_hc=D("700"),
+                                            charges=D("0"), jour_echeance=1)
+        self.voldoire.locataires.add(Locataire.objects.create(nom="VOLDOIRE", prenom="Marina"))
+        lignes = [(2024, 12, "680"), (2025, 1, "680"), (2025, 2, "680"), (2025, 3, "680"), (2025, 4, "696")]
+        lignes += [(2025, m, "700") for m in range(5, 13)]
+        for a, m, montant in lignes:
+            EncaissementHistorique.objects.create(lot=self.lot, mois=date(a, m, 1), montant=D(montant))
+        convertir(aujourdhui=date(2026, 1, 15))
+
+    def recu(self, bail):
+        return {e.periode: e.montant_paye for e in bail.echeances.all() if e.montant_paye}
+
+    def test_loyer_corrige_puis_bouton_sur_le_bail_en_cours_du_logement(self):
+        self.assertEqual(self.recu(self.lassus)[date(2025, 4, 1)], D("113.80"))  # avant : avril au prorata de 569 €
+        Bail.objects.filter(pk=self.lassus.pk).update(loyer_hc=D("680"), loyer_initial=D("680"))
+        r = self.client.post("/admin/patrimoine/bail/", {"action": "refaire_historique", "_selected_action": [self.voldoire.pk]},
+                             follow=True)
+        self.assertContains(r, "Répartition de l&#x27;historique refaite pour Saint Pierre 2")
+        self.assertEqual(self.recu(self.lassus), {date(2025, 1, 1): D("680"), date(2025, 2, 1): D("680"), date(2025, 3, 1): D("680"),
+                                                  date(2025, 4, 1): D("136"), date(2024, 12, 1): D("680")})
+        self.assertEqual(self.recu(self.voldoire), {date(2025, 4, 1): D("560"), **{date(2025, m, 1): D("700") for m in range(5, 13)}})
+        for e in Echeance.objects.all():
+            self.assertLessEqual(e.paiements.count(), 1, e)
+        self.assertEqual(Versement.objects.filter(bail=self.lassus, date=date(2025, 4, 1)).get().montant, D("136"))
+        self.assertEqual(sum(v.montant for v in Versement.objects.all()), D("680") + 3 * D("680") + D("696") + 8 * D("700"))
+
+    def test_locataire_ajoute_entre_temps_bouton_sur_les_paiements(self):
+        # un autre locataire a occupé le logement de janvier à mars : Lassus sort fin décembre
+        Bail.objects.filter(pk=self.lassus.pk).update(date_fin=date(2024, 12, 31))
+        Echeance.objects.filter(bail=self.lassus, periode__gte=date(2025, 1, 1)).delete()
+        autre = Bail.objects.create(lot=self.lot, type=Bail.Type.NU, date_debut=date(2025, 1, 1), date_fin=date(2025, 4, 6),
+                                    actif=False, loyer_hc=D("680"), charges=D("0"), jour_echeance=1)
+        autre.locataires.add(Locataire.objects.create(nom="MARTIN"))
+        r = self.client.post("/admin/patrimoine/versement/", {"action": "refaire_historique",
+                                                             "_selected_action": [Versement.objects.first().pk]}, follow=True)
+        self.assertContains(r, "Répartition de l&#x27;historique refaite")
+        self.assertEqual(self.recu(autre), {date(2025, 1, 1): D("680"), date(2025, 2, 1): D("680"), date(2025, 3, 1): D("680"),
+                                            date(2025, 4, 1): D("136")})
+        self.assertEqual(self.recu(self.voldoire)[date(2025, 4, 1)], D("560"))
+        self.assertEqual(self.recu(self.lassus), {date(2024, 12, 1): D("569")})  # son loyer n'a pas été corrigé ici
+        self.assertFalse(Versement.objects.filter(bail=self.lassus, date__year=2025).exists())

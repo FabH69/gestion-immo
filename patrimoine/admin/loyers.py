@@ -10,7 +10,7 @@ from django.urls import path, reverse
 from django.utils import timezone
 from django.utils.html import format_html
 
-from ..models import EncaissementHistorique, Bail, CompteBancaire, Echeance, LigneReleve, MouvementDepot, RegleRapprochement, RevisionLoyer, Paiement, Proprietaire, Versement
+from ..models import EncaissementHistorique, Bail, Lot, CompteBancaire, Echeance, LigneReleve, MouvementDepot, RegleRapprochement, RevisionLoyer, Paiement, Proprietaire, Versement
 from .communs import euros_liste
 
 
@@ -566,7 +566,13 @@ class VersementAdmin(admin.ModelAdmin):
                                                 "dans l'historique, mais les loyers qu'il réglait redeviennent à payer."}),
     ]
     inlines = [VersementPaiementInline]
-    actions = ["affecter_avance", "dater_a_l_echeance"]
+    actions = ["affecter_avance", "dater_a_l_echeance", "refaire_historique"]
+
+    @admin.action(description="Refaire la répartition de l'historique (logements des paiements cochés)")
+    def refaire_historique(self, request, queryset):
+        from .location import refaire_repartition_historique
+
+        refaire_repartition_historique(self, request, Lot.objects.filter(baux__versements__in=queryset).distinct())
 
     @admin.action(description="Affecter aux loyers impayés (du plus ancien au plus récent)")
     def affecter_avance(self, request, queryset):
