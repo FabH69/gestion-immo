@@ -9,8 +9,7 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
 
     dependencies = [
-        ("patrimoine", "0085_pret_objet_lots"),
-        ("patrimoine", "0086_remboursements_vente"),
+        ("patrimoine", "0087_fusion_vente_et_prets"),
     ]
 
     operations = [
