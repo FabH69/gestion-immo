@@ -129,6 +129,21 @@ class Bien(models.Model):
         help_text="Logement que vous habitez (non loué) : ses prêts sont présentés à part du locatif.")
     vendu = models.BooleanField("bien vendu", default=False)
     date_vente = models.DateField("date de vente", null=True, blank=True)
+    prix_vente = models.DecimalField("prix de vente (€)", max_digits=12, decimal_places=2, null=True, blank=True,
+                                     help_text="Prix de l'acte, sans les remboursements de l'acquéreur. Facultatif.")
+    # remboursements de l'acquéreur à la vente (décompte du notaire) : déduits des charges de l'année de la vente
+    remb_taxe_fonciere = models.DecimalField("prorata de taxe foncière (€)", max_digits=10, decimal_places=2, null=True, blank=True)
+    remb_copro = models.DecimalField("prorata de charges de copropriété (€)", max_digits=10, decimal_places=2, null=True, blank=True)
+    remb_autres = models.DecimalField("autres remboursements (€)", max_digits=10, decimal_places=2, null=True, blank=True)
+    remb_autres_libelle = models.CharField("objet des autres remboursements", max_length=150, blank=True,
+                                           help_text="Ex. fioul laissé dans la cuve")
+
+    @property
+    def total_remboursements(self):
+        """Remboursements de l'acquéreur saisis sur la fiche (taxe foncière, copropriété, autres)."""
+        from decimal import Decimal
+
+        return sum((m for m in (self.remb_taxe_fonciere, self.remb_copro, self.remb_autres) if m), Decimal("0.00"))
 
     @property
     def est_maison(self):
