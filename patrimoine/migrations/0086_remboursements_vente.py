@@ -7,7 +7,7 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
 
     dependencies = [
-        ("patrimoine", "0084_comptes_bancaires_releves"),
+        ("patrimoine", "0085_comptes_bancaires_biens"),
     ]
 
     operations = [
