@@ -154,6 +154,7 @@ class LigneReleve(models.Model):
         PRET = "pret", "Échéance de prêt"
         DEPENSE = "depense", "Dépense créée"
         TRESORERIE = "tresorerie", "Mouvement de trésorerie"
+        VENTE = "vente", "Vente d'un bien (notaire)"
         IGNORE = "ignore", "Ignorée"
 
     compte = models.ForeignKey(CompteBancaire, on_delete=models.CASCADE, related_name="lignes")
@@ -170,6 +171,8 @@ class LigneReleve(models.Model):
     piece = models.ForeignKey(PieceComptable, on_delete=models.SET_NULL, null=True, blank=True, related_name="lignes_releve",
                               verbose_name="facture")
     pret = models.ForeignKey(Pret, on_delete=models.SET_NULL, null=True, blank=True, related_name="lignes_releve", verbose_name="prêt")
+    bien = models.ForeignKey(Bien, on_delete=models.SET_NULL, null=True, blank=True, related_name="lignes_releve",
+                             help_text="Virement du notaire : bien vendu")
     associe = models.CharField("associé", max_length=120, blank=True, help_text="Mouvement de trésorerie : qui a apporté ou repris l'argent")
     cree = models.BooleanField("créé par le rapprochement", default=False, editable=False,
                                help_text="Le paiement ou la dépense a été créé en validant cette ligne : dérapprocher le supprime")

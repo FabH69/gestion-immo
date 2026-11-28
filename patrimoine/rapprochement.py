@@ -13,7 +13,7 @@ from datetime import timedelta
 from decimal import Decimal
 
 from django.db import transaction
-from django.db.models import Prefetch, Q
+from django.db.models import Prefetch, Q, prefetch_related_objects
 
 from .models import (Bail, CompteBancaire, Echeance, LigneReleve, ModePaiement, PieceComptable, Pret,
                      RegleRapprochement, Versement, normaliser)
@@ -49,6 +49,7 @@ class Proposition:
     fournisseur: str = ""
     regle: object = None
     choix: list = field(default_factory=list)  # plusieurs baux possibles : à choisir
+    ventilation: list = field(default_factory=list)  # virement du notaire : [(prix ou remboursement, montant)]
 
     @property
     def validable(self):
@@ -93,6 +94,7 @@ class Contexte:
         self.regles = list(RegleRapprochement.objects.filter(compte=compte).select_related("bail__lot__bien", "bien", "pret"))
         autres = CompteBancaire.objects.exclude(pk=compte.pk)
         self.autres_lignes = list(LigneReleve.objects.filter(compte__in=autres).select_related("compte"))
+        prefetch_related_objects(biens, "immobilisations")  # prix de vente connu (virement du notaire)
         self.biens = biens
 
     def bail(self, pk):
@@ -114,7 +116,7 @@ def proposer(ligne, ctx):
     if p:
         return p
     if ligne.montant > 0:
-        return _loyer(ligne, ctx) or _interets(ligne) or Proposition()
+        return _vente(ligne, ctx) or _loyer(ligne, ctx) or _interets(ligne) or Proposition()
     return _rejet(ligne, ctx) or _pret(ligne, ctx) or _facture(ligne, ctx) or _frais(ligne, ctx) or Proposition()
 
 
@@ -243,6 +245,37 @@ def _interets(ligne):
     return None
 
 
+def vente_du_bien(ligne, bien, certitude=VERIFIER, pourquoi=""):
+    """Virement du notaire pour la vente de ce bien : réparti entre le prix et les remboursements de l'acquéreur
+    saisis sur la fiche du bien (le prix est le reste du virement)."""
+    from . import vente
+
+    parts, ecart = vente.ventilation(bien, ligne.montant)
+    notes = []
+    if len(parts) == 1:
+        notes.append("aucun remboursement de l'acquéreur saisi sur la fiche du bien")
+    if ecart:
+        notes.append(f"écart de {_e(ecart)} avec le prix saisi (prêt remboursé ou frais retenus par le notaire ?)")
+    return Proposition("vente", certitude, f"Virement du notaire : vente de {bien}", " ; ".join([x for x in [pourquoi] + notes if x]),
+                       bien=bien, ventilation=parts)
+
+
+def _vente(ligne, ctx):
+    """Argent reçu peu avant ou après la date de vente d'un bien : prix + remboursements, ou libellé du notaire."""
+    from . import vente
+
+    proches = vente.biens_vendus_proches(ctx.biens, ligne.date)
+    if not proches:
+        return None
+    notaire = bool(vente.MOTS_NOTAIRE & set(ligne.texte.split()))
+    exacts = [b for b in proches if vente.prix_connu(b) is not None and vente.prix_connu(b) + b.total_remboursements == ligne.montant]
+    if len(exacts) == 1:
+        return vente_du_bien(ligne, exacts[0], SURE if notaire else VERIFIER, "prix de vente + remboursements de l'acquéreur")
+    if notaire and len(proches) == 1:
+        return vente_du_bien(ligne, proches[0], VERIFIER, "virement d'un notaire près de la date de vente")
+    return None
+
+
 def _rejet(ligne, ctx):
     mots = set(ligne.texte.split())
     if not mots & {"REJET", "IMPAYE", "RETOUR", "ANNULATION"}:
@@ -335,6 +368,16 @@ def appliquer(ligne, p):
         ligne.pret = p.pret
     elif p.nature == "tresorerie":
         ligne.associe = p.associe[:120]
+    elif p.nature == "vente":
+        from . import vente
+
+        # trésorerie (2044, 2072) : les remboursements comptent l'année où le notaire les verse
+        for piece in vente.pieces(p.bien):
+            if not piece.est_verrouillee():
+                piece.date_paiement = ligne.date
+                piece.save(update_fields=["date_paiement"])
+        ligne.bien = p.bien
+        ligne.note = vente.texte_ventilation(p.ventilation)[:255]
     elif p.nature == "ignore":
         ligne.statut = LigneReleve.Statut.IGNOREE
     ligne.save()
@@ -351,6 +394,13 @@ def derapprocher(ligne):
         elif v.annule and v.motif_annulation.startswith("Rejet bancaire"):
             v.annule, v.motif_annulation = False, ""
             v.save(update_fields=["annule", "motif_annulation"])
+    if ligne.nature == "vente" and ligne.bien_id:
+        from . import vente
+
+        for piece in vente.pieces(ligne.bien):
+            if piece.date_paiement == ligne.date and not piece.est_verrouillee():
+                piece.date_paiement = None
+                piece.save(update_fields=["date_paiement"])
     if ligne.piece_id:
         if ligne.cree:
             ligne.piece.delete()
@@ -358,7 +408,7 @@ def derapprocher(ligne):
             ligne.piece.date_paiement = ligne.date_paiement_avant
             ligne.piece.save(update_fields=["date_paiement"])
     LigneReleve.objects.filter(pk=ligne.pk).update(statut=LigneReleve.Statut.A_TRAITER, nature="", versement=None, piece=None, pret=None,
-                                                   associe="", cree=False, date_paiement_avant=None)
+                                                   bien=None, note="", associe="", cree=False, date_paiement_avant=None)
 
 
 class PieceRefusee(Exception):

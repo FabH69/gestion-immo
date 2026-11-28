@@ -560,6 +560,10 @@ class PieceComptable(models.Model):
     recurrence = models.ForeignKey("DepenseRecurrente", null=True, blank=True, on_delete=models.SET_NULL, related_name="pieces",
                                    editable=False, verbose_name="dépense récurrente",
                                    help_text="Créée automatiquement par cette dépense récurrente")
+    remboursement_vente = models.CharField(
+        "remboursement de l'acquéreur", max_length=8, blank=True, editable=False,
+        choices=[("tf", "Prorata de taxe foncière"), ("copro", "Prorata de charges de copropriété"), ("autre", "Autre remboursement")],
+        help_text="Créée depuis la fiche du bien vendu : montant négatif, déduit des charges de l'année de la vente")
     piece_mere = models.ForeignKey("self", null=True, blank=True, on_delete=models.CASCADE, related_name="parts", editable=False,
                                    verbose_name="facture scindée",
                                    help_text="Part d'une facture scindée sur plusieurs rubriques ou plusieurs biens "

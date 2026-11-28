@@ -130,6 +130,10 @@ def _choix_manuel(request, ligne, ctx):
         if bien:
             return P("depense", rapprochement.VERIFIER, "Dépense", bien=bien, fournisseur=request.POST.get("fournisseur", "").strip(),
                      rubrique=request.POST.get("rubrique", ""))
+    if nature == "vente":
+        bien = next((b for b in ctx.biens if str(b.pk) == request.POST.get("bien_vendu")), None)
+        if bien and ligne.montant > 0:
+            return rapprochement.vente_du_bien(ligne, bien)
     if nature == "tresorerie":
         return P("tresorerie", rapprochement.VERIFIER, "Mouvement de trésorerie", associe=request.POST.get("associe", "").strip() or "Associé")
     if nature == "ignore":
@@ -209,7 +213,7 @@ def releve(request):
                 messages.success(request, f"Ligne du {ligne.date:%d/%m/%Y} rapprochée : {p.titre}.")
         return redirect(retour)
     ctx = rapprochement.Contexte(compte)
-    toutes = list(compte.lignes.select_related("versement__bail__lot", "piece__bien", "pret").order_by("-date", "-pk"))
+    toutes = list(compte.lignes.select_related("versement__bail__lot", "piece__bien", "pret", "bien").order_by("-date", "-pk"))
     a_traiter = [l for l in toutes if l.statut == LigneReleve.Statut.A_TRAITER]
     for l in a_traiter:
         l.prop = rapprochement.proposer(l, ctx)
@@ -229,6 +233,7 @@ def releve(request):
         "onglets": [(c, t, len(compte_onglets[c])) for c, t in ONGLETS], "onglet": onglet, "lignes": compte_onglets.get(onglet, []),
         "nb_sures": len(compte_onglets["sures"]), "sans_justificatif": sans_justificatif, "imports": compte.imports.all()[:5],
         "baux": ctx.baux, "prets": ctx.prets, "biens": ctx.biens, "tous_les_biens": ctx.tous_les_biens,
+        "biens_vendus": [b for b in ctx.biens if b.vendu],
         "factures": sorted(ctx.pieces, key=lambda p: p.date or date.min, reverse=True)[:200],
         "comptes_courants": rapprochement.comptes_courants(compte.proprietaire),
         "fin_exercice": rapprochement.fin_exercice(compte.proprietaire, annee) if compte.engagement else None,
