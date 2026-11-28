@@ -209,7 +209,40 @@ def reconstruire(aujourdhui=None, lots=None):
             continue
         _repartir(v, v.bail, v.date.replace(day=1), limite, touches)
     _solder_ecarts(touches)
+    if lots is not None:
+        nettoyer_hors_bail(lots)
     return len(repris)
+
+
+def nettoyer_hors_bail(lots):
+    """Loyers d'un bail tombant hors de ses dates (date de fin avancée, locataire ajouté entre-temps) : retirés quand
+    rien de réel ne les règle (aucun paiement, ou seulement un « Supposé réglé » d'un ancien rattrapage, qui est
+    retiré avec). Le mois de départ ou d'entrée resté à payer repasse au prorata. Renvoie les loyers gardés parce
+    qu'un vrai paiement les règle (à vérifier)."""
+    from .models import Bail, Echeance
+
+    suppose = Bail.PAIEMENT_SUPPOSE
+    gardes = []
+    for bail in Bail.objects.filter(lot__in=lots):
+        debut = bail.date_debut.replace(day=1)
+        hors = bail.echeances.filter(nature=Echeance.Nature.LOYER, periode__lt=debut)
+        if bail.date_fin:
+            hors = hors | bail.echeances.filter(nature=Echeance.Nature.LOYER, periode__gt=bail.date_fin)
+        for e in hors.prefetch_related("paiements__versement"):
+            paiements = list(e.paiements.all())
+            if any(not (p.notes or "").startswith(suppose) for p in paiements):
+                gardes.append(e)
+                continue
+            versements = {p.versement for p in paiements}
+            e.delete()
+            for v in versements:
+                if not v.paiements.exists() and (v.notes or "").startswith(suppose):
+                    v.delete()
+        # « Supposé réglé » dont le loyer a déjà été retiré (départ saisi plus tôt) : ce n'est pas de l'argent reçu
+        bail.versements.filter(notes__startswith=suppose, paiements__isnull=True).delete()
+        for e in bail.echeances.filter(nature=Echeance.Nature.LOYER, paiements__isnull=True):
+            e.actualiser_loyer()  # mois d'entrée ou de départ : prorata avec les dates corrigées
+    return gardes
 
 
 def _regrouper_par_mois(repris):
