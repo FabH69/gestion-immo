@@ -8,7 +8,7 @@ from django.urls import reverse
 from django.utils import timezone
 
 from .. import edl as logique
-from ..documents import ELEMENTS_PIECE
+from ..modele_edl import elements_pour
 from ..models import Bail, ElementEDL, EtatDesLieux, PhotoEDL
 
 CHAMPS_COMPTEURS = ["compteur_electricite", "compteur_gaz", "compteur_eau_froide", "compteur_eau_chaude", "nb_cles", "observations"]
@@ -110,7 +110,7 @@ def edl_saisie(request, pk):
                 if edl.elements.filter(piece=nouvelle).exists():
                     messages.warning(request, f"La pièce « {nouvelle} » existe déjà.")
                 else:
-                    for nom in ELEMENTS_PIECE:
+                    for nom in elements_pour(nouvelle):
                         logique.ajouter_element(edl, nouvelle, nom)
                     messages.success(request, f"Pièce « {nouvelle} » ajoutée à la fin.")
                 return redirect(f"{url}?etape=0")

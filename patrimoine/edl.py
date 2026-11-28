@@ -9,7 +9,7 @@ from django.db import transaction
 from django.db.models import F
 from django.utils import timezone
 
-from .documents import ELEMENTS_PIECE, INVENTAIRE_MEUBLE
+from .documents import INVENTAIRE_MEUBLE
 from .models import Bail, ElementEDL, PhotoEDL
 
 PIECE_INVENTAIRE = "Inventaire du mobilier"
@@ -22,7 +22,7 @@ def est_meuble(bail):
 
 @transaction.atomic
 def preparer(edl):
-    """Crée la liste des éléments à la première ouverture : celle de l'entrée pour une sortie, sinon pièces du lot × éléments habituels."""
+    """Crée la liste des éléments à la première ouverture : celle de l'entrée pour une sortie, sinon le modèle généré par la configuration du logement."""
     if edl.elements.exists():
         return
     entree = edl.edl_entree()
@@ -31,9 +31,11 @@ def preparer(edl):
             ElementEDL.objects.create(edl=edl, piece=e.piece, ordre=e.ordre, nom=e.nom, quantite=e.quantite,
                                       etat_entree=e.etat, commentaire_entree=e.commentaire, element_entree=e)
         return
+    from .modele_edl import modele
+
     ordre = 0
-    for piece in edl.bail.lot.liste_pieces():
-        for nom in ELEMENTS_PIECE:
+    for piece, elements in modele(edl.bail.lot):
+        for nom in elements:
             ordre += 1
             ElementEDL.objects.create(edl=edl, piece=piece, ordre=ordre, nom=nom)
     if est_meuble(edl.bail):

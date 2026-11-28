@@ -32,7 +32,7 @@
 
 <h2>Détail pièce par pièce</h2>
 <div class="legende">État : TB = très bon · B = bon · U = usagé · M = mauvais. Préciser dans « Observations » les défauts constatés (taches, trous, rayures, fonctionnement) et le numéro des photos.</div>
-{% for piece in pieces %}
+{% for piece, elements in pieces %}
 <div class="piece">
 <h3>{{ forloop.counter }}. {{ piece }}</h3>
 <table class="grille">

@@ -5,7 +5,8 @@ from django.shortcuts import get_object_or_404, redirect, render
 from django.template.loader import render_to_string
 from django.utils import timezone
 
-from ..documents import ELEMENTS_PIECE, INVENTAIRE_MEUBLE, duree_texte
+from .. import modele_edl
+from ..documents import INVENTAIRE_MEUBLE, duree_texte
 from ..models import Bail, EtatDesLieux, Garant, MouvementDepot
 from .communs import _contexte_bail, _pdf, _reponse_docx
 
@@ -60,8 +61,7 @@ def _rendu_edl(bail, edl):
     contexte = _contexte_bail(bail)
     contexte.update(
         edl=edl,
-        pieces=bail.lot.liste_pieces(),
-        elements=ELEMENTS_PIECE,
+        pieces=modele_edl.modele(bail.lot),
         meuble=bail.lot.meuble or bail.type in (Bail.Type.MEUBLE, Bail.Type.ETUDIANT, Bail.Type.MOBILITE),
         inventaire=INVENTAIRE_MEUBLE,
     )

@@ -19,6 +19,26 @@
           envoyer();
         });
       });
+      // Ordinateur : glisser-déposer des photos sur un élément les envoie comme le bouton « Importer des photos »
+      form.querySelectorAll(".carte").forEach(function (carte) {
+        var champ = carte.querySelector(".bouton-photo.importer input[type=file]");
+        if (!champ) return;
+        carte.addEventListener("dragover", function (e) {
+          if (!e.dataTransfer || Array.prototype.indexOf.call(e.dataTransfer.types, "Files") < 0) return;
+          e.preventDefault(); carte.classList.add("depot-actif");
+        });
+        carte.addEventListener("dragleave", function (e) { if (!carte.contains(e.relatedTarget)) carte.classList.remove("depot-actif"); });
+        carte.addEventListener("drop", function (e) {
+          carte.classList.remove("depot-actif");
+          if (!e.dataTransfer || !e.dataTransfer.files.length) return;
+          e.preventDefault();
+          var images = new DataTransfer();
+          Array.prototype.forEach.call(e.dataTransfer.files, function (f) { if (/^image\//.test(f.type)) images.items.add(f); });
+          if (!images.files.length) { alert("Déposez des photos (fichiers image)."); return; }
+          champ.files = images.files;
+          champ.dispatchEvent(new Event("change"));
+        });
+      });
       var saut = document.getElementById("saut-etape");
       if (saut) saut.addEventListener("change", function () {
         var aller = form.querySelector("input[name=aller]");

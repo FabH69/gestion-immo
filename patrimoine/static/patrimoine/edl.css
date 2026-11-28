@@ -34,6 +34,16 @@
 .edl .bouton-photo { display: inline-flex; align-items: center; justify-content: center; gap: 6px; width: 92px; height: 92px; border: 2px dashed var(--border-color); border-radius: var(--radius-sm); color: var(--primary); font-size: .8rem; font-weight: 600; cursor: pointer; text-align: center; flex-direction: column; }
 .edl .bouton-photo input { position: absolute; width: 1px; height: 1px; opacity: 0; }
 .edl .bouton-photo .icone { font-size: 1.5rem; line-height: 1; }
+.edl .bouton-photo small { font-weight: 400; font-size: .7rem; color: var(--body-quiet-color); }
+.edl .bouton-photo .texte-pc { display: none; }
+/* Ordinateur (souris) : pas d'appareil photo à ouvrir, on importe ou on glisse les fichiers */
+@media (hover: hover) and (pointer: fine) {
+  .edl .bouton-photo.camera { display: none; }
+  .edl .bouton-photo.importer { width: 132px; }
+  .edl .bouton-photo .texte-pc { display: inline; }
+  .edl .bouton-photo .texte-tel { display: none; }
+}
+.edl .carte.depot-actif { outline: 3px dashed var(--primary); outline-offset: 2px; }
 .edl .ajout { display: flex; gap: 8px; margin: 6px 0 18px; }
 .edl .ajout input { flex: 1; }
 .edl .edl-nav { display: flex; gap: 10px; justify-content: space-between; position: sticky; bottom: 0; background: var(--body-bg); padding: 10px 0; border-top: 1px solid var(--hairline-color); }

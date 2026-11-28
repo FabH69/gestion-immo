@@ -156,9 +156,16 @@ def _documents_bail(bail):
     if bail.lot.meuble or bail.type in TYPES_MEUBLES:
         edl += [("Inventaire du mobilier – entrée (PDF)", reverse("document_inventaire", args=[bail.pk, "entree"]), True),
                 ("Inventaire du mobilier – sortie (PDF)", reverse("document_inventaire", args=[bail.pk, "sortie"]), True)]
-    for e in bail.etats_des_lieux.order_by("date"):
+    tous = list(bail.etats_des_lieux.order_by("date", "pk"))
+    for e in tous:
         edl.append((f"État des lieux d'{'entrée' if e.type == 'entree' else 'sortie'} du {e.date:%d/%m/%Y}", reverse("document_edl", args=[e.pk]), True))
-    edl.append(("Saisir un état des lieux…", reverse("admin:patrimoine_etatdeslieux_add") + f"?bail={bail.pk}", False))
+    saisie = []  # en tête du menu : la saisie sur téléphone ou PC, avec les photos
+    for type_edl, libelle in (("entree", "d'entrée"), ("sortie", "de sortie")):
+        en_cours = max((e for e in tous if e.type == type_edl and e.signe_le is None), key=lambda e: e.pk, default=None)
+        texte = (f"Reprendre l'état des lieux {libelle} du {en_cours.date:%d/%m/%Y}" if en_cours and en_cours.date
+                 else f"Faire l'état des lieux {libelle} (pièce par pièce, photos)")
+        saisie.append((texte, reverse("edl_commencer", args=[bail.pk, type_edl]), False))
+    edl = saisie + edl
     word = []
     for m in ModeleDocument.objects.filter(actif=True):
         if not m.convient(bail) or (m.type == ModeleDocument.Type.CAUTION and not bail.garants.exists()):
