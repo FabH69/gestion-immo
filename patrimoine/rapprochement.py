@@ -65,8 +65,10 @@ class Contexte:
     def __init__(self, compte):
         self.compte = compte
         p = compte.proprietaire
+        biens = list(compte.biens_geres())  # plusieurs comptes pour un même titulaire : seulement les biens de ce compte
+        self.tous_les_biens = compte.tous_les_biens
         non_payees = Echeance.objects.exclude(statut=Echeance.Statut.PAYE).order_by("periode", "nature").prefetch_related("paiements")
-        self.baux = list(Bail.objects.filter(lot__bien__proprietaire=p).select_related("lot__bien")
+        self.baux = list(Bail.objects.filter(lot__bien__in=biens).select_related("lot__bien")
                          .prefetch_related("locataires", "garants", Prefetch("echeances", queryset=non_payees, to_attr="non_payees")))
         for b in self.baux:
             b.noms = set()
@@ -81,14 +83,17 @@ class Contexte:
         for v in self.versements + self.versements_relies:
             v.bail = par_pk[v.bail_id]  # le même objet que dans self.baux : noms et loyers non soldés déjà chargés
         pieces_reliees = LigneReleve.objects.exclude(piece=None).values("piece_id")
-        self.pieces = list(PieceComptable.objects.filter(bien__proprietaire=p, montant__isnull=False, piece_mere=None)
+        self.pieces = list(PieceComptable.objects.filter(bien__in=biens, montant__isnull=False, piece_mere=None)
                            .exclude(pk__in=pieces_reliees).select_related("bien"))
-        self.prets = list(Pret.objects.filter(Q(proprietaire=p) | Q(bien__proprietaire=p)).distinct())
+        prets = Pret.objects.filter(Q(proprietaire=p) | Q(bien__proprietaire=p))
+        if not self.tous_les_biens:  # prêt d'un autre bien : sur un autre compte ; prêt sans bien : gardé
+            prets = prets.filter(Q(bien__in=biens) | Q(bien=None))
+        self.prets = list(prets.distinct())
         self._echeances_pret = {}
         self.regles = list(RegleRapprochement.objects.filter(compte=compte).select_related("bail__lot__bien", "bien", "pret"))
         autres = CompteBancaire.objects.exclude(pk=compte.pk)
         self.autres_lignes = list(LigneReleve.objects.filter(compte__in=autres).select_related("compte"))
-        self.biens = list(p.biens.all())
+        self.biens = biens
 
     def bail(self, pk):
         return next((b for b in self.baux if b.pk == pk), None)
