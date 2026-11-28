@@ -34,7 +34,7 @@
       {% if l.versement %} : paiement de {{ l.versement.bail.lot }} ({{ l.versement.montant|euros:2 }}{% if l.versement.annule %}, annulé{% endif %}) <a href="{% url 'admin:patrimoine_versement_change' l.versement.pk %}">voir</a>{% endif %}
       {% if l.piece %} : {{ l.piece }} <a href="{% url 'admin:patrimoine_piececomptable_change' l.piece.pk %}">voir</a>{% if l.piece.fichier %} <a href="{{ l.piece.fichier.url }}" target="_blank" title="Ouvrir le justificatif">📄 pièce</a>{% endif %}{% endif %}
       {% if l.a_justifier %}<span class="bq-etat orange">Sans justificatif</span>{% endif %}
-      {% if l.pret %} : {{ l.pret }}{% endif %}{% if l.associe %} : {{ l.associe }} ({% if l.montant > 0 %}apport{% else %}remboursement{% endif %}){% endif %}
+      {% if l.pret %} : {{ l.pret }}{% endif %}{% if l.associe %} : {{ l.associe }} ({% if l.montant > 0 %}apport{% else %}remboursement{% endif %}){% endif %}{% if l.agence %} : {{ l.agence }}{% endif %}
       {% if peut_modifier %}<form method="post" class="boutons">{% csrf_token %}<input type="hidden" name="ligne" value="{{ l.pk }}"><button class="button" name="action" value="derapprocher" title="Remet la ligne à traiter ; un paiement ou une dépense créés par cette ligne sont supprimés">Dérapprocher</button></form>{% endif %}
       {% if peut_modifier and l.joindre %}<form method="post" enctype="multipart/form-data" class="bq-joindre">{% csrf_token %}<input type="hidden" name="ligne" value="{{ l.pk }}"><input type="hidden" name="action" value="joindre">{% if l.statut == "a_traiter" and biens|length > 1 %}<select name="bien" title="Bien de la dépense créée si la ligne n'est pas une facture déjà saisie"><option value="">bien…</option>{% for b in biens %}<option value="{{ b.pk }}"{% if b == l.prop.bien %} selected{% endif %}>{{ b }}</option>{% endfor %}</select>{% endif %}<label class="button" title="{% if l.statut == 'a_traiter' %}Crée la dépense (montant et date du relevé, fournisseur lu dans le PDF) avec la pièce jointe{% else %}Joint le fichier à la facture de cette ligne{% endif %}">📎 Joindre la pièce<input type="file" name="piece" accept=".pdf,.xml,image/*" onchange="this.form.submit()"></label></form>{% endif %}
     </div>
@@ -54,12 +54,14 @@
               <option value="pret"{% if l.prop.nature == "pret" %} selected{% endif %}>une échéance de prêt</option>
               <option value="depense"{% if l.prop.nature == "depense" %} selected{% endif %}>une dépense à créer</option>{% endif %}
               <option value="tresorerie"{% if l.prop.nature == "tresorerie" %} selected{% endif %}>un mouvement de trésorerie (associé)</option>
+              {% if agences %}<option value="agence"{% if l.prop.nature == "agence" %} selected{% endif %}>un acompte de l'agence de gestion</option>{% endif %}
               <option value="ignore"{% if l.prop.nature == "ignore" %} selected{% endif %}>à ignorer (hors gestion)</option></select></div>
             {% if l.montant > 0 %}<div><label>Bail (loyer)</label><select name="bail"><option value="">–</option>{% for b in baux %}<option value="{{ b.pk }}"{% if b == l.prop.bail %} selected{% endif %}>{{ b.lot }} – {% for x in b.locataires.all %}{{ x }}{% if not forloop.last %}, {% endif %}{% endfor %}{% if not b.actif %} (terminé){% endif %}</option>{% endfor %}</select></div>
             {% else %}<div><label>Facture</label><select name="piece"><option value="">–</option>{% for f in factures %}<option value="{{ f.pk }}"{% if f == l.prop.piece %} selected{% endif %}>{{ f }}</option>{% endfor %}</select></div>
             <div><label>Prêt</label><select name="pret"><option value="">–</option>{% for p in prets %}<option value="{{ p.pk }}"{% if p == l.prop.pret %} selected{% endif %}>{{ p }}</option>{% endfor %}</select></div>
             <div><label>Dépense : bien</label><select name="bien"><option value="">–</option>{% for b in biens %}<option value="{{ b.pk }}"{% if b == l.prop.bien %} selected{% endif %}>{{ b }}</option>{% endfor %}</select></div>
             <div><label>Dépense : fournisseur</label><input type="text" name="fournisseur" value="{{ l.prop.fournisseur }}"></div>{% endif %}
+            {% if agences %}<div><label>Agence de gestion</label><select name="agence">{% for a in agences %}<option value="{{ a.pk }}"{% if a == l.prop.agence %} selected{% endif %}>{{ a }}</option>{% endfor %}</select></div>{% endif %}
             <div><label>Trésorerie : associé</label><input type="text" name="associe" value="{{ l.prop.associe }}" placeholder="nom de l'associé"></div>
             <div><label><input type="checkbox" name="retenir" value="1"> Retenir : si le libellé contient</label><input type="text" name="motif" value="{{ l.libelle|truncatechars:30 }}"></div>
           </div>

@@ -54,6 +54,7 @@ urlpatterns = [
     path("impayes/relancer/", views.relances_impayes, name="relances_impayes"),
     path("loyers/encaisser-le-mois/", views.encaisser_mois, name="encaisser_mois"),
     path("loyers/releve-de-banque/", views.releve, name="releve_banque"),
+    path("loyers/agence/<int:agence>/<int:proprietaire>/<int:annee>/", views.recap_agence, name="recap_agence"),
     path("impayes/completer/", views.completer_impayes, name="completer_impayes"),
     path("impayes/completer/loyers-a-completer.xlsx", views.impayes_excel, name="impayes_excel"),
     path("impayes/<int:pk>/lettre.pdf", views.lettre_relance, name="lettre_relance"),

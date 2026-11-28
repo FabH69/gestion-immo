@@ -87,6 +87,39 @@ class Syndic(models.Model):
         return f"{self.nom} ({self.ville})" if self.ville else self.nom
 
 
+class AgenceGestion(models.Model):
+    """Agence immobilière à qui la gestion d'un bien est confiée : elle encaisse les loyers, paie certaines charges,
+    verse un acompte chaque mois et régularise en fin d'année avec un récapitulatif."""
+
+    nom = models.CharField(max_length=150)
+    mot_releve = models.CharField(
+        "mot du relevé de banque", max_length=100, blank=True,
+        help_text="Mot qui figure dans le libellé de ses virements sur votre relevé (ex. « FONCIA » ou « AGENCE DU PARC »). "
+                  "Sans ce mot, l'appli cherche le nom de l'agence.")
+    contact_nom = models.CharField("gestionnaire", max_length=150, blank=True)
+    email = models.EmailField("e-mail", blank=True)
+    telephone = models.CharField("téléphone", max_length=20, blank=True)
+    adresse = models.CharField(max_length=255, blank=True)
+    code_postal = models.CharField("code postal", max_length=10, blank=True)
+    ville = models.CharField(max_length=100, blank=True)
+    notes = models.TextField(blank=True)
+
+    class Meta:
+        verbose_name = "agence de gestion"
+        verbose_name_plural = "agences de gestion"
+        ordering = ["nom"]
+
+    def __str__(self):
+        return self.nom
+
+    @property
+    def motifs_releve(self):
+        """Textes normalisés cherchés dans le libellé du relevé : le mot choisi, sinon le nom de l'agence."""
+        from .banque import normaliser
+
+        return [m for m in (normaliser(self.mot_releve), normaliser(self.nom)) if m]
+
+
 def _chemin_photo_bien(instance, nom):
     return f"photos/biens/{nom}"
 
@@ -127,6 +160,14 @@ class Bien(models.Model):
     residence_principale = models.BooleanField(
         "résidence principale", default=False,
         help_text="Logement que vous habitez (non loué) : ses prêts sont présentés à part du locatif.")
+    agence = models.ForeignKey(
+        AgenceGestion, on_delete=models.PROTECT, null=True, blank=True, related_name="biens", verbose_name="géré par l'agence",
+        help_text="Gestion confiée à une agence : ses loyers sont marqués « encaissés par l'agence » à leur échéance (jamais en "
+                  "retard ni à relancer), ses virements mensuels sont des acomptes, et le récap annuel de l'agence donne les "
+                  "loyers et les charges à déclarer.")
+    agence_depuis = models.DateField(
+        "gestion par l'agence depuis le", null=True, blank=True,
+        help_text="Les loyers à partir de ce mois sont encaissés par l'agence. Vide : tous les loyers non payés du bien.")
     vendu = models.BooleanField("bien vendu", default=False)
     date_vente = models.DateField("date de vente", null=True, blank=True)
 

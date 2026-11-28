@@ -2,7 +2,7 @@
 
 Rangé par métier : communs.py, biens.py, location.py, loyers.py, relocation.py, courte_duree.py, finances.py, outils.py."""
 from .communs import _ajouter_mois, _chemin_piece, stockage_prive  # noqa: F401
-from .biens import _chemin_photo, Bien, Lot, PhotoLot, Proprietaire, Syndic  # noqa: F401
+from .biens import _chemin_photo, AgenceGestion, Bien, Lot, PhotoLot, Proprietaire, Syndic  # noqa: F401
 from .location import (  # noqa: F401
     Bail,
     DocumentLocataire,
@@ -31,3 +31,4 @@ from .finances import _chemin_facture, AnneeCloturee, AttestationPret, Declarati
 from .outils import AbonnementAgenda, ControleIgnore, JournalFait, ModeleDocument, NoteRapide, ParametresMail, PreferencesAccueil, Rappel, SiteUtile  # noqa: F401
 from .immobilisations import Immobilisation, ReportAmortissements  # noqa: F401
 from .banque import CompteBancaire, ImportReleve, LigneReleve, normaliser, RegleRapprochement  # noqa: F401
+from .agence import ChargeRecapAgence, LigneRecapAgence, RecapAgence  # noqa: F401

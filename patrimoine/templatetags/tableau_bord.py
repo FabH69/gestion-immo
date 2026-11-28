@@ -261,6 +261,8 @@ AIDES_MENU = {
                         "prêts, frais et apports d'associés ; vous validez les lignes sûres d'un coup.",
     "Comptes bancaires": "Un compte par compte en banque, avec sa façon d'être suivi : saisie ou relevé de banque. La règle fiscale "
                          "(trésorerie pour la 2044 et la 2072, engagement pour l'IS et la 2031) est déduite du propriétaire.",
+    "Agences de gestion": "Biens confiés à une agence qui vous vire un acompte chaque mois : leurs loyers sont encaissés par "
+                          "l'agence, et son récap de fin d'année donne les loyers bruts, les charges et le solde.",
     "Paiements reçus": "Tous les paiements enregistrés, quelle que soit la façon de les saisir : leur répartition sur les loyers, "
                        "l'avance qui reste, l'annulation d'un paiement rejeté.",
 }
@@ -293,8 +295,10 @@ def _menu_compta():
             ("saisie", "Toutes les factures", factures, [factures, conciergerie, recurrentes], sous_saisie),
             ("evolution", "Évolution des dépenses", r("evolution_depenses"), [r("evolution_depenses")], []),
             # banque : relevés et rapprochement (loyers, factures, prêts, apports d'associés), rangés avec la comptabilité
-            ("banque", "Banque", r("releve_banque"), [r("releve_banque"), r("admin:patrimoine_comptebancaire_changelist")],
-             [("Relevé de banque", r("releve_banque")), ("Comptes bancaires", r("admin:patrimoine_comptebancaire_changelist"))]),
+            ("banque", "Banque", r("releve_banque"), [r("releve_banque"), r("admin:patrimoine_comptebancaire_changelist"),
+                                                      r("admin:patrimoine_agencegestion_changelist"), "/loyers/agence/"],
+             [("Relevé de banque", r("releve_banque")), ("Comptes bancaires", r("admin:patrimoine_comptebancaire_changelist")),
+              ("Agences de gestion", r("admin:patrimoine_agencegestion_changelist"))]),
             ("regimes", "Réglages fiscaux", r("regimes_fiscaux"), [r("regimes_fiscaux")], [])]
 
 

@@ -23,6 +23,7 @@ from .biens import (  # noqa: F401
     PhotoInline,
     ProprietaireAdmin,
     SyndicAdmin,
+    AgenceGestionAdmin,
     VenduFilter,
 )
 from .location import (  # noqa: F401

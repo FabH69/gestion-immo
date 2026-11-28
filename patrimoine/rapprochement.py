@@ -4,6 +4,8 @@ Ordre des règles :
 1. règle apprise (« si le libellé contient … ») ;
 2. virement entre deux comptes de l'appli (même montant de sens opposé, à 3 jours près) ;
 3. nom d'un associé du compte : mouvement de trésorerie (apport ou remboursement en compte courant) ;
+3 bis. nom d'une agence de gestion d'un bien du propriétaire : acompte mensuel ou solde du récap annuel (trésorerie,
+   jamais un loyer : les loyers de ces biens sont déjà encaissés par l'agence) ;
 4. argent reçu : loyer (nom du locataire dans le libellé + montant), part CAF, paiement déjà saisi à relier ;
    argent sorti : rejet d'un paiement de loyer, échéance de prêt, facture du même montant, frais bancaires.
 Certitude : « sûre » (validable en lot), « à vérifier » (un clic après lecture), « aucune » (choisir à la main).
@@ -15,8 +17,8 @@ from decimal import Decimal
 from django.db import transaction
 from django.db.models import Prefetch, Q
 
-from .models import (Bail, CompteBancaire, Echeance, LigneReleve, ModePaiement, PieceComptable, Pret,
-                     RegleRapprochement, Versement, normaliser)
+from .models import (AgenceGestion, Bail, CompteBancaire, Echeance, LigneReleve, ModePaiement, PieceComptable, Pret,
+                     RecapAgence, RegleRapprochement, Versement, normaliser)
 
 SURE, VERIFIER, AUCUNE = "sure", "verifier", "aucune"
 MOTS_VIDES = {"MME", "MR", "MLLE", "MONSIEUR", "MADAME", "M", "OU", "ET", "LES", "DES", "DE", "DU", "LA", "LE", "SCI", "SARL",
@@ -48,6 +50,8 @@ class Proposition:
     rubrique: str = ""
     fournisseur: str = ""
     regle: object = None
+    agence: object = None
+    recap: object = None  # récap annuel d'agence dont la ligne est le solde
     choix: list = field(default_factory=list)  # plusieurs baux possibles : à choisir
 
     @property
@@ -75,7 +79,8 @@ class Contexte:
             for g in b.garants.all():
                 b.noms |= {m for m in _mots(getattr(g, "nom", "")) if len(m) >= 3 and m not in MOTS_VIDES}
         relies = LigneReleve.objects.exclude(versement=None).values("versement_id")
-        self.versements = list(Versement.objects.filter(bail__in=self.baux, annule=False).exclude(pk__in=relies))
+        self.versements = list(Versement.objects.filter(bail__in=self.baux, annule=False).exclude(pk__in=relies)
+                               .exclude(mode=ModePaiement.AGENCE))  # encaissé par l'agence : jamais sur le relevé
         self.versements_relies = list(Versement.objects.filter(bail__in=self.baux, annule=False, pk__in=relies))
         par_pk = {b.pk: b for b in self.baux}
         for v in self.versements + self.versements_relies:
@@ -89,6 +94,8 @@ class Contexte:
         autres = CompteBancaire.objects.exclude(pk=compte.pk)
         self.autres_lignes = list(LigneReleve.objects.filter(compte__in=autres).select_related("compte"))
         self.biens = list(p.biens.all())
+        self.agences = list(AgenceGestion.objects.filter(biens__proprietaire=p).distinct())
+        self.recaps = list(RecapAgence.objects.filter(proprietaire=p, ligne_solde=None).exclude(solde_annonce=None).select_related("agence"))
 
     def bail(self, pk):
         return next((b for b in self.baux if b.pk == pk), None)
@@ -105,7 +112,7 @@ def proposer(ligne, ctx):
             p = _depuis_regle(ligne, regle, ctx)
             if p:
                 return p
-    p = _virement_interne(ligne, ctx) or _associe(ligne, ctx)
+    p = _virement_interne(ligne, ctx) or _associe(ligne, ctx) or _agence(ligne, ctx)
     if p:
         return p
     if ligne.montant > 0:
@@ -147,6 +154,26 @@ def _associe(ligne, ctx):
         if set(nom.split()) <= mots:
             return Proposition("tresorerie", SURE, f"{ligne.sens_tresorerie} en compte courant : {nom.title()}",
                                "nom d'un associé du compte dans le libellé ; ni recette ni charge", associe=nom.title())
+    return None
+
+
+def _agence(ligne, ctx):
+    texte = f" {ligne.texte} "
+    for agence in ctx.agences:
+        if not any(f" {m} " in texte for m in agence.motifs_releve):
+            continue
+        for r in ctx.recaps:
+            if r.agence_id == agence.pk and r.solde_annonce == ligne.montant and (
+                    r.date_solde is None or abs((r.date_solde - ligne.date).days) <= 31):
+                sens = "versé par l'agence" if ligne.montant > 0 else "rendu à l'agence"
+                return Proposition("agence", SURE, f"Solde du récap {r.annee} {sens} : {agence}",
+                                   "nom de l'agence + montant du solde de son récap annuel", agence=agence, recap=r)
+        if ligne.montant > 0:
+            return Proposition("agence", SURE, f"Acompte de l'agence {agence}",
+                               "nom de l'agence dans le libellé ; les loyers de ses biens sont déjà encaissés par l'agence, "
+                               "l'acompte n'est pas un loyer (trésorerie)", agence=agence)
+        return Proposition("agence", VERIFIER, f"Versement à l'agence {agence}",
+                           "nom de l'agence ; si c'est une facture à part, choisissez « une facture déjà saisie »", agence=agence)
     return None
 
 
@@ -330,6 +357,11 @@ def appliquer(ligne, p):
         ligne.pret = p.pret
     elif p.nature == "tresorerie":
         ligne.associe = p.associe[:120]
+    elif p.nature == "agence":
+        ligne.agence = p.agence
+        if p.recap:
+            ligne.save()
+            RecapAgence.objects.filter(pk=p.recap.pk).update(ligne_solde=ligne)
     elif p.nature == "ignore":
         ligne.statut = LigneReleve.Statut.IGNOREE
     ligne.save()
@@ -352,8 +384,9 @@ def derapprocher(ligne):
         else:
             ligne.piece.date_paiement = ligne.date_paiement_avant
             ligne.piece.save(update_fields=["date_paiement"])
+    RecapAgence.objects.filter(ligne_solde=ligne).update(ligne_solde=None)
     LigneReleve.objects.filter(pk=ligne.pk).update(statut=LigneReleve.Statut.A_TRAITER, nature="", versement=None, piece=None, pret=None,
-                                                   associe="", cree=False, date_paiement_avant=None)
+                                                   associe="", agence=None, cree=False, date_paiement_avant=None)
 
 
 class PieceRefusee(Exception):

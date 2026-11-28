@@ -16,7 +16,10 @@ def generer_si_besoin():
         return 0
     from .models import Echeance
 
+    from .agence import encaisser_loyers_agence
+
     n = Echeance.rattraper(aujourdhui) + Echeance.generer_pour_mois(aujourdhui.replace(day=1))
+    encaisser_loyers_agence(aujourdhui)  # biens gérés par une agence : loyers échus encaissés par l'agence
     _dernier_jour[base] = aujourdhui
     return n
 
