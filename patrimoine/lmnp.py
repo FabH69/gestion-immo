@@ -102,12 +102,18 @@ def bilan_lot(lot, annee):
         manuelles = list(ChargeLMNP.objects.filter(lot=lot, annee=annee, categorie=ChargeLMNP.Categorie.AMORTISSEMENT))
         return _resultat(lot, recettes, charges, manuelles, _dotations(lot, annee))
 
+    # prêts du bien : seulement la part de ce lot (lots financés cochés sur le prêt, sinon prorata de la surface des lots
+    # du bien), pour ne pas compter les intérêts une fois par lot
     interets = assurance = ZERO
     for pret in lot.bien.prets.all():
+        part = pret.part_du_lot(lot)
+        if not part:
+            continue
         for e in pret.echeancier():
             if e["date"].year == annee:
-                interets += e["interets"]
-                assurance += e["assurance"] or ZERO
+                interets += e["interets"] * part
+                assurance += (e["assurance"] or ZERO) * part
+    interets, assurance = interets.quantize(Decimal("0.01")), assurance.quantize(Decimal("0.01"))
     if interets:
         charges.append(_ligne("Intérêts d'emprunt", interets, "Prêts"))
     if assurance:

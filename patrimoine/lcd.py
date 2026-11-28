@@ -224,6 +224,7 @@ def suivi_annuel(lot, annee):
     parametres = getattr(lot, "parametres_lcd", None)
     charges = list(lot.charges_lcd.all())
     prets = list(lot.bien.prets.all())
+    echeanciers = {p_.pk: p_.echeancier() for p_ in prets}
     for m in mois:
         premier, dernier = date(annee, m["mois"], 1), date(annee, m["mois"], m["jours"])
         p = m["plateformes"].values()
@@ -247,7 +248,9 @@ def suivi_annuel(lot, annee):
         m["gestion"] = m["conciergerie"] + m["menage"] + m["consommables"]
         m["charges_detail"] = [(c.libelle, c.montant_mensuel) for c in charges if c.active_en(premier, dernier)]
         m["charges"] = sum((v for _, v in m["charges_detail"]), zero)
-        m["pret"] = sum((l["mensualite"] + l["assurance"] for p_ in prets for l in p_.echeancier() if premier <= l["date"] <= dernier), zero)
+        # part du lot dans chaque prêt du bien (lots financés cochés sur le prêt, sinon prorata de la surface)
+        m["pret"] = sum(((l["mensualite"] + l["assurance"]) * p_.part_du_lot(lot) for p_ in prets for l in echeanciers[p_.pk]
+                         if premier <= l["date"] <= dernier), zero).quantize(Decimal("0.01"))
         m["resultat"] = m["net"] - m["gestion"] - m["charges"]
         m["cash_flow"] = m["resultat"] - m["pret"]
     return mois
