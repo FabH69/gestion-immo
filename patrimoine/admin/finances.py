@@ -18,8 +18,8 @@ class AttestationsFormSet(forms.BaseInlineFormSet):
         for f in self.deleted_forms:
             d = f.instance.declaration_qui_verrouille() if f.instance.pk else None
             if d:
-                raise forms.ValidationError(f"{d.libelle_court} {d.annee} déclarée le {d.date_declaration:%d/%m/%Y} : l'attestation "
-                                            f"{f.instance.annee} ne peut pas être supprimée. Décochez d'abord « Déclaration effectuée ».")
+                raise forms.ValidationError(f"{d.motif} : l'attestation {f.instance.annee} ne peut pas être supprimée. "
+                                            f"Pour la supprimer, {d.comment_debloquer}.")
 
 
 class AttestationPretInline(admin.TabularInline):
@@ -260,6 +260,13 @@ def filtre_verrouillees(qs, fermees=None):
     for annee, biens in DeclarationFaite.verrous().items():
         q |= Q(bien_id__in=list(biens)) & (Q(date_paiement__year=annee) | Q(date_paiement__isnull=True, date__year=annee))
     return qs.filter(q)
+
+
+def lien_deblocage(verrou):
+    """Page où lever un verrou : Déclarations pour un cerfa déclaré, annexe 2072 (ce bien coché) pour une saisie bloquée."""
+    if isinstance(verrou, DeclarationFaite):
+        return reverse("declarations") + f"?annee={verrou.annee}"
+    return reverse("annexe_2072") + f"?sci={verrou.bien.proprietaire_id}&annee={verrou.annee}&bien={verrou.bien_id}"
 
 
 def lien_annee(piece):
@@ -899,10 +906,10 @@ class PieceComptableAdmin(admin.ModelAdmin):
             for d in doublons:
                 messages.warning(request, format_html("Facture déjà présente, non importée. {}", d))
             fermees = AnneeCloturee.annees()
-            if fermees or DeclarationFaite.objects.filter(active=True).exists():
+            if fermees or DeclarationFaite.verrous():
                 bloquees = filtre_verrouillees(PieceComptable.objects.filter(pk__in=nouvelles), fermees)
                 for p in bloquees:
-                    messages.warning(request, f"« {p.libelle} » est datée du {p.date:%d/%m/%Y}, dans une saisie verrouillée ({p.annee}, année clôturée ou déclaration effectuée) : "
+                    messages.warning(request, f"« {p.libelle} » est datée du {p.date:%d/%m/%Y}, dans une saisie verrouillée ({p.annee}, année clôturée, déclaration effectuée ou saisie du bien bloquée) : "
                                               "indiquez sa date de paiement si elle a été payée plus tard, sinon elle ne pourra pas "
                                               f"être enregistrée tant que {p.annee} reste verrouillée.")
             anciennes = PieceComptable.objects.filter(pk__in=nouvelles, date_paiement__isnull=True,
@@ -957,7 +964,7 @@ class PieceComptableAdmin(admin.ModelAdmin):
     def valider_preremplies(self, request, queryset):
         fermees = AnneeCloturee.annees()
         a_valider = queryset.filter(preremplie=True)
-        if fermees or DeclarationFaite.objects.filter(active=True).exists():
+        if fermees or DeclarationFaite.verrous():
             bloquees = filtre_verrouillees(a_valider, fermees)
             if bloquees.exists():
                 messages.warning(request, f"{bloquees.count()} pièce(s) d'une année clôturée non validée(s) : indiquez leur date de "
@@ -1194,6 +1201,6 @@ class PieceComptableAdmin(admin.ModelAdmin):
         if motif:
             d = piece.declaration_qui_verrouille()
             extra_context.update({"annee_verrouillee": piece.annee, "motif_verrou": motif,
-                                  "lien_annee": reverse("declarations") + f"?annee={piece.annee}" if d else lien_annee(piece),
-                                  "par_declaration": bool(d)})
+                                  "lien_annee": lien_deblocage(d) if d else lien_annee(piece),
+                                  "par_declaration": isinstance(d, DeclarationFaite), "par_bien": d is not None and not isinstance(d, DeclarationFaite)})
         return super().changeform_view(request, object_id, form_url, extra_context)

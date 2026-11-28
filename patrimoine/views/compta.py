@@ -278,11 +278,17 @@ def dossier_compta(request, code):
         if dossier["formulaire"] == "2072":  # « Voir la 2072 » : seul ce bien coché, les autres restent cochables
             r["lien"] += f"&bien={bien.pk}"
     url = reverse("dossier_compta", args=[code])
-    contexte = {"annee": annee, "annees": _annees(), "d": r, "dossiers": dossiers.tous(), "aujourdhui": timezone.localdate(),
+    from ..models import SaisieBloquee
+
+    bloquees = SaisieBloquee.bloquees(annee) if dossier["formulaire"] == "2072" else {}
+    contexte = {"blocage_bien": bloquees.get(bien.pk) if bien else None, "peut_bloquer": dossier["formulaire"] == "2072",
+                "nb_bloques": sum(1 for b in biens_dossier if b.pk in bloquees),
+                "annee": annee, "annees": _annees(), "d": r, "dossiers": dossiers.tous(), "aujourdhui": timezone.localdate(),
                 "pieces": pieces.order_by("-date_paiement", "-date", "-pk")[:15], "nb_pieces": pieces.count(),
                 "biens_dossier": biens_dossier, "bien_choisi": bien,
                 "filtre_biens": [{"libelle": "Tous les biens", "url": f"{url}?annee={annee}", "actif": bien is None}]
-                + [{"libelle": b.nom, "url": f"{url}?annee={annee}&bien={b.pk}", "actif": b == bien} for b in biens_dossier],
+                + [{"libelle": ("🔒 " if b.pk in bloquees else "") + b.nom, "url": f"{url}?annee={annee}&bien={b.pk}", "actif": b == bien}
+                   for b in biens_dossier],
                 "lien_saisie": r["lien_factures"] + (f"&bien={bien.pk}" if bien else ""),
                 "onglets": dossiers.onglets(dossier, "accueil", annee), "libelle_regime": dossier["titre"],
                 "retour": request.get_full_path()}

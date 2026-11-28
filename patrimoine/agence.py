@@ -191,8 +191,7 @@ def _verifier_verrous(biens, annee):
     for b in biens:
         if b.pk in declares:
             d = declares[b.pk]
-            raise RecapRefuse(f"{d.libelle_court} {annee} déclarée le {d.date_declaration:%d/%m/%Y} pour {b} : décochez "
-                              "« Déclaration effectuée » sur la page Comptabilité › Déclarations pour appliquer le récap")
+            raise RecapRefuse(f"{d.motif} pour {b} : {d.comment_debloquer} pour appliquer le récap")
 
 
 @transaction.atomic

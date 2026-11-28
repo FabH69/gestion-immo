@@ -47,6 +47,7 @@ a.pill-decl:hover { text-decoration: underline; }
     <ul class="etapes">
       {% for e in c.etapes %}<li><span>{{ forloop.counter }}. {{ e.libelle }}</span>{% if e.url %}<a href="{% avec_retour e.url %}" class="pill-decl {{ e.etat }}">{{ e.texte }}</a>{% else %}<span class="pill-decl {{ e.etat }}">{{ e.texte }}</span>{% endif %}</li>{% endfor %}
     </ul>
+    {% if c.biens_bloques and not c.declaree %}<p class="petit">🔒 Saisie bloquée : {{ c.biens_bloques|join:", " }} ({{ c.biens_bloques|length }} sur {{ c.nb_biens }})</p>{% endif %}
     <div class="actions">
       <a href="{{ c.lien }}" class="button{% if c.pret_a_declarer %} default{% endif %}" style="text-align:center">{{ c.libelle_lien }}</a>
       {% if c.declaree %}

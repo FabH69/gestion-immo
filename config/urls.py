@@ -77,6 +77,7 @@ urlpatterns = [
     path("maison/fiches/", views.maison_fiches, name="maison_fiches"),
     path("maison/fiches/<slug:slug>/", views.maison_fiche, name="maison_fiche"),
     path("comptabilite/2072/", views.annexe_2072, name="annexe_2072"),
+    path("comptabilite/bloquer-bien/", views.bloquer_saisie_bien, name="bloquer_saisie_bien"),
     path("comptabilite/2044/", views.recap_2044, name="recap_2044"),
     path("comptabilite/regimes-fiscaux/", views.regimes_fiscaux, name="regimes_fiscaux"),
     path("comptabilite/lmnp/", views.compta_recap, {"regime": "lmnp"}, name="compta_lmnp"),

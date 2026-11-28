@@ -1,0 +1,4 @@
+form.bloquer-bien { margin: 6px 0 0; font-weight: normal; display: flex; flex-wrap: wrap; gap: 4px 8px; align-items: center; justify-content: center; }
+form.bloquer-bien .button { padding: 3px 10px; font-size: 12px; }
+form.bloquer-bien.bloque .etat { color: #b54708; font-size: 12px; }
+form.bloquer-bien button.lien { background: none; border: 0; padding: 0; color: var(--link-fg); text-decoration: underline; cursor: pointer; font-size: 12px; }
