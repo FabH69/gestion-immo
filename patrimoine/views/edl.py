@@ -110,7 +110,7 @@ def edl_saisie(request, pk):
                 if edl.elements.filter(piece=nouvelle).exists():
                     messages.warning(request, f"La pièce « {nouvelle} » existe déjà.")
                 else:
-                    for nom in elements_pour(nouvelle):
+                    for nom in elements_pour(nouvelle, (edl.bail.lot.configuration or {}).get("equipements")):
                         logique.ajouter_element(edl, nouvelle, nom)
                     messages.success(request, f"Pièce « {nouvelle} » ajoutée à la fin.")
                 return redirect(f"{url}?etape=0")
