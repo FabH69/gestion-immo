@@ -187,6 +187,18 @@ def releve(request):
         if action == "derapprocher":
             rapprochement.derapprocher(ligne)
             messages.success(request, f"Ligne du {ligne.date:%d/%m/%Y} remise à traiter.")
+        elif action == "joindre":
+            f = request.FILES.get("piece")
+            bien = next((b for b in ctx.biens if str(b.pk) == request.POST.get("bien")), None)
+            if not f:
+                messages.error(request, "Choisissez le fichier du justificatif (PDF ou photo).")
+            else:
+                try:
+                    piece = rapprochement.joindre_piece(ligne, f, bien)
+                except rapprochement.PieceRefusee as e:
+                    messages.error(request, f"Pièce non jointe : {e}.")
+                else:
+                    messages.success(request, f"Justificatif joint à la ligne du {ligne.date:%d/%m/%Y} : {piece}.")
         elif action in ("valider", "choisir") and ligne.statut == LigneReleve.Statut.A_TRAITER:
             p = rapprochement.proposer(ligne, ctx) if action == "valider" else _choix_manuel(request, ligne, ctx)
             if p is None or not p.validable:
@@ -209,10 +221,13 @@ def releve(request):
     paires = rapprochement.allers_retours([l for l in toutes if l.nature == "tresorerie" or (getattr(l, "prop", None) and l.prop.nature == "tresorerie")])
     for l in toutes:
         l.retour = paires.get(l.pk)
+        l.a_justifier = rapprochement.a_justifier(l)
+        l.joindre = rapprochement.peut_joindre(l) and not (l.piece_id and l.piece.fichier)
+    sans_justificatif = sum(1 for l in toutes if l.a_justifier)
     annee = int(request.GET.get("annee") or (timezone.localdate().year - (1 if timezone.localdate().month <= 4 else 0)))
     contexte.update({
         "onglets": [(c, t, len(compte_onglets[c])) for c, t in ONGLETS], "onglet": onglet, "lignes": compte_onglets.get(onglet, []),
-        "nb_sures": len(compte_onglets["sures"]), "imports": compte.imports.all()[:5],
+        "nb_sures": len(compte_onglets["sures"]), "sans_justificatif": sans_justificatif, "imports": compte.imports.all()[:5],
         "baux": ctx.baux, "prets": ctx.prets, "biens": ctx.biens,
         "factures": sorted(ctx.pieces, key=lambda p: p.date or date.min, reverse=True)[:200],
         "comptes_courants": rapprochement.comptes_courants(compte.proprietaire),

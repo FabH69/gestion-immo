@@ -276,6 +276,117 @@ class RapprochementDepensesTests(Base):
         self.assertEqual(self.proposer(self.ligne("CB MAGASIN BRICOLAGE", "-54.90")).certitude, rapprochement.AUCUNE)
 
 
+
+FACTURE_FICTIVE = ("PLOMBERIE DUPONT SARL\n12 rue des Artisans 69000 Lyon\nFacture n° 2026-118 du 02/11/2026\n"
+                   "Remplacement chauffe-eau, travaux de réparation\nTotal TTC 154,00 €")
+
+
+class JustificatifTests(Base):
+    """📎 Joindre la pièce sur une sortie d'argent du relevé."""
+    URL = "/loyers/releve-de-banque/"
+
+    def setUp(self):
+        super().setUp()
+        import tempfile
+
+        from django.test import override_settings
+
+        self._dossier = tempfile.TemporaryDirectory()
+        self._reglage = override_settings(PRIVE_ROOT=self._dossier.name)
+        self._reglage.enable()
+
+    def tearDown(self):
+        self._reglage.disable()
+        self._dossier.cleanup()
+        super().tearDown()
+
+    def pdf(self, contenu=b"%PDF-1.4 fictif"):
+        return SimpleUploadedFile("facture-plombier.pdf", contenu, content_type="application/pdf")
+
+    def joindre(self, ligne, fichier, **extra):
+        return self.client.post(f"{self.URL}?compte={self.compte.pk}", {"action": "joindre", "ligne": ligne.pk, "piece": fichier, **extra},
+                                follow=True)
+
+    def test_ligne_non_reconnue_cree_la_depense_avec_la_piece_lue_dans_le_pdf(self):
+        l = self.ligne("CB PLOMBERIE 0211", "-154.00", date(2026, 11, 9))
+        with mock.patch("patrimoine.lecture_factures.texte_pdf", return_value=FACTURE_FICTIVE):
+            r = self.joindre(l, self.pdf())
+        self.assertContains(r, "Justificatif joint")
+        piece = PieceComptable.objects.get()
+        self.assertEqual((piece.montant, piece.fournisseur, piece.ligne), (D("154.00"), "PLOMBERIE DUPONT SARL", "9"))
+        self.assertEqual((piece.date, piece.date_paiement), (date(2026, 11, 2), date(2026, 11, 9)))  # facture / paiement
+        self.assertTrue(piece.fichier and piece.empreinte)
+        l.refresh_from_db()
+        self.assertEqual((l.statut, l.nature, l.piece, l.cree), ("rapprochee", "depense", piece, True))
+
+    def test_photo_sans_lecture_garde_le_libelle_du_releve(self):
+        l = self.ligne("CB BRICO DEPOT", "-37.50")
+        self.joindre(l, SimpleUploadedFile("ticket.jpg", b"\xff\xd8 photo fictive", content_type="image/jpeg"))
+        piece = PieceComptable.objects.get()
+        self.assertEqual((piece.montant, piece.fournisseur, piece.date), (D("37.50"), "CB BRICO DEPOT", date(2026, 11, 8)))
+        self.assertTrue(piece.fichier.name.endswith("ticket.jpg"))
+
+    def test_ligne_deja_rapprochee_le_fichier_va_dans_sa_facture(self):
+        f = PieceComptable.objects.create(bien=self.bien, date=date(2026, 10, 28), fournisseur="EDF", montant=D("86.40"), ligne="6")
+        l = self.ligne("PRLV SEPA EDF FACT 1045", "-86.40", date(2026, 11, 12))
+        rapprochement.appliquer(l, self.proposer(l))
+        r = self.client.get(f"{self.URL}?compte={self.compte.pk}&onglet=faites")
+        self.assertContains(r, "Sans justificatif")
+        self.assertContains(r, "1 sortie sans justificatif")
+        self.assertContains(r, "📎 Joindre la pièce")
+        self.joindre(l, self.pdf())
+        f.refresh_from_db()
+        self.assertTrue(f.fichier)
+        self.assertEqual(PieceComptable.objects.count(), 1)
+        r = self.client.get(f"{self.URL}?compte={self.compte.pk}&onglet=faites")
+        self.assertNotContains(r, "Sans justificatif")
+        self.assertContains(r, "📄 pièce")
+
+    def test_facture_proposee_rapprochee_avec_la_piece(self):
+        f = PieceComptable.objects.create(bien=self.bien, date=date(2026, 10, 28), fournisseur="EDF", montant=D("86.40"), ligne="6")
+        l = self.ligne("PRLV SEPA EDF FACT 1045", "-86.40", date(2026, 11, 12))
+        self.joindre(l, self.pdf())
+        f.refresh_from_db()
+        l.refresh_from_db()
+        self.assertEqual((l.piece, l.nature, f.date_paiement), (f, "facture", date(2026, 11, 12)))
+        self.assertTrue(f.fichier)
+
+    def test_meme_fichier_deja_importe_relie_sans_doublon(self):
+        contenu = b"%PDF-1.4 facture deja importee"
+        f = PieceComptable.objects.create(bien=self.bien, date=date(2026, 11, 2), fournisseur="Plombier", montant=D("154"), ligne="9",
+                                          fichier=self.pdf(contenu))
+        l = self.ligne("CB PLOMBERIE 0211", "-154.00")
+        self.joindre(l, self.pdf(contenu))
+        l.refresh_from_db()
+        self.assertEqual((PieceComptable.objects.count(), l.piece, l.nature), (1, f, "facture"))
+
+    def test_plusieurs_biens_il_faut_choisir_le_bien(self):
+        autre = Bien.objects.create(proprietaire=self.proprio, nom="Les Roses", adresse="2 rue", code_postal="69000", ville="Lyon")
+        l = self.ligne("CB BRICO DEPOT", "-37.50")
+        r = self.joindre(l, self.pdf())
+        self.assertContains(r, "choisissez le bien")
+        self.assertFalse(PieceComptable.objects.exists())
+        self.joindre(l, self.pdf(), bien=autre.pk)
+        self.assertEqual(PieceComptable.objects.get().bien, autre)
+
+    def test_pas_de_trombone_sur_les_entrees_ni_les_prets(self):
+        entree = self.ligne("VIR DURAND JEAN", "840.00")
+        self.assertFalse(rapprochement.peut_joindre(entree))
+        r = self.joindre(entree, self.pdf())
+        self.assertContains(r, "Pièce non jointe")
+        pret = Pret.objects.create(proprietaire=self.proprio, bien=self.bien, banque="Banque", reference="P9", montant=D("10000"),
+                                   taux=D("2"), duree_mois=120, date_premiere_echeance=date(2026, 1, 5))
+        l = self.ligne("ECHEANCE PRET", "-505.90")
+        rapprochement.appliquer(l, rapprochement.Proposition("pret", rapprochement.VERIFIER, "Prêt", pret=pret))
+        self.assertFalse(rapprochement.peut_joindre(l))
+
+    def test_derapprocher_une_depense_creee_avec_sa_piece(self):
+        l = self.ligne("CB BRICO DEPOT", "-37.50")
+        self.joindre(l, self.pdf())
+        rapprochement.derapprocher(LigneReleve.objects.get())
+        self.assertFalse(PieceComptable.objects.exists())
+
+
 class TresorerieTests(Base):
     def test_apport_et_remboursement_associe_aller_retour(self):
         a = self.ligne("VIR M MARTIN PAUL RENFLOUEMENT", "1000", date(2026, 11, 2))
