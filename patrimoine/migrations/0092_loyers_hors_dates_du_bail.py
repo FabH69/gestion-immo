@@ -16,7 +16,7 @@ def nettoyer(apps, schema_editor):
 class Migration(migrations.Migration):
 
     dependencies = [
-        ("patrimoine", "0090_saisie_bloquee_par_bien"),
+        ("patrimoine", "0091_merge_20261128_1745"),
     ]
 
     operations = [
