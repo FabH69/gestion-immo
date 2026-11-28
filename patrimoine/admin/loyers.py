@@ -722,6 +722,8 @@ class MouvementDepotAdmin(admin.ModelAdmin):
     def proprietaire(self, obj):
         return obj.bail.lot.bien.proprietaire
     list_filter = [DepotEnCoursFilter, "bail__lot__bien__proprietaire"]
+    # le filtre par propriétaire se choisit en cliquant sur les cartes de totaux en haut (pas de pastilles)
+    filtres_par_cartes = ("bail__lot__bien__proprietaire__id__exact",)
     search_fields = ["bail__lot__designation", "bail__locataires__nom", "bail__locataires__prenom"]
     date_hierarchy = "date"
     change_list_template = "admin/patrimoine/mouvementdepot/change_list.html"
