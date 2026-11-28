@@ -5648,3 +5648,40 @@ class BiensVendusFicheProprietaireTests(TestCase):
     def test_liste_des_proprietaires(self):
         page = self.client.get(reverse("admin:patrimoine_proprietaire_changelist")).content.decode()
         self.assertIn("1 (+ 2 vendus)", page)
+
+
+class DepotsFiltreParCartesTests(TestCase):
+    """Dépôts de garantie : plus de pastilles par propriétaire, les cartes de totaux du haut servent de filtre."""
+
+    def setUp(self):
+        self.client.force_login(User.objects.create_superuser("admin", "a@a.fr", "x"))
+        self.p1 = Proprietaire.objects.create(nom="SCI ALFAB", type=Proprietaire.Type.SCI_IR)
+        self.p2 = Proprietaire.objects.create(nom="H-INVEST", type=Proprietaire.Type.SCI_IR)
+        for proprio, lot, montant in ((self.p1, "Garage Z", 65), (self.p2, "Studio Y", 1200)):
+            bien = Bien.objects.create(proprietaire=proprio, nom=lot, adresse="1 rue", code_postal="69000", ville="Lyon")
+            bail = Bail.objects.create(lot=Lot.objects.create(bien=bien, designation=lot), type=Bail.Type.NU,
+                                       date_debut=date(2025, 1, 1), loyer_hc=500, depot_garantie=montant)
+            MouvementDepot.objects.create(bail=bail, date=date(2025, 1, 1), montant=montant)
+        self.url = "/admin/patrimoine/mouvementdepot/"
+        self.param = "bail__lot__bien__proprietaire__id__exact"
+
+    def test_plus_de_pastilles_proprietaire(self):
+        page = self.client.get(self.url).content.decode()
+        self.assertNotIn(f'{self.param}={self.p1.pk}" class="chip', page)
+        self.assertNotIn('aria-label="Propriétaire"', page)
+        self.assertIn("Restituées", page)  # les autres filtres restent
+
+    def test_cartes_cliquables_et_carte_active(self):
+        page = self.client.get(self.url).content.decode()
+        self.assertIn(f"?{self.param}={self.p1.pk}", page)
+        self.assertRegex(page, r'class="kpi actif"[^>]*title="Afficher tous les propriétaires"')  # Total actif par défaut
+        page = self.client.get(f"{self.url}?{self.param}={self.p1.pk}").content.decode()
+        self.assertRegex(page, r'class="kpi actif"[^>]*title="Afficher seulement SCI ALFAB"')
+        self.assertNotRegex(page, r'class="kpi actif"[^>]*title="Afficher tous')
+        self.assertIn("Garage Z", page)
+        self.assertNotIn("Studio Y", page)
+
+    def test_carte_total_garde_les_autres_filtres(self):
+        page = self.client.get(f"{self.url}?en_cours=oui&{self.param}={self.p2.pk}").content.decode()
+        self.assertRegex(page.replace("&amp;", "&"), r'href="\?en_cours=oui"[^>]*title="Afficher tous les propriétaires"')
+        self.assertIn("Effacer les filtres", page)

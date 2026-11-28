@@ -564,8 +564,9 @@ def euros(valeur, decimales=0):
 @register.simple_tag
 def filtres_haut(cl):
     """Filtres d'une liste à afficher en haut : boutons quand il y a peu de choix, sinon liste déroulante.
-    Les filtres nommés dans `filtres_caches` de l'admin restent actifs mais ne s'affichent pas."""
-    caches = set(getattr(cl.model_admin, "filtres_caches", ()))
+    Les filtres nommés dans `filtres_caches` de l'admin restent actifs mais ne s'affichent pas ;
+    ceux de `filtres_par_cartes` non plus (on les choisit en cliquant sur les cartes de totaux), mais « Effacer » les retire."""
+    caches = set(getattr(cl.model_admin, "filtres_caches", ())) | set(getattr(cl.model_admin, "filtres_par_cartes", ()))
     en_liste = set(getattr(cl.model_admin, "filtres_en_liste", ()))
     filtres = []
     for spec in cl.filter_specs:
@@ -593,6 +594,20 @@ def filtres_haut(cl):
                         "tous": choix[0]["actif"], "avec_titre": any(c["libelle"] in ("Oui", "Non") for c in choix), "droite": chemin.split("__")[-1] == "proprietaire" or getattr(spec, "a_droite", False)})
     return filtres
 
+
+
+@register.simple_tag
+def lien_carte_filtre(cl, parametre, valeur=None):
+    """Lien d'une carte de totaux qui filtre la liste (garde les autres filtres) ; sans valeur : retire ce filtre."""
+    retire = [parametre, "p"]
+    return cl.get_query_string({parametre: valeur} if valeur is not None else {}, remove=retire if valeur is None else ["p"])
+
+
+@register.simple_tag
+def valeur_filtre(cl, parametre):
+    """Valeur actuelle d'un filtre de la liste (texte), ou "" s'il n'est pas choisi."""
+    v = cl.params.get(parametre, "")
+    return str(v[-1] if isinstance(v, list) else v)
 
 
 @register.simple_tag
