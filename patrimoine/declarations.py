@@ -11,7 +11,7 @@ from django.urls import reverse
 from django.utils import timezone
 
 from . import compta
-from .models import AttestationPret, DeclarationFaite, Echeance, Pret, Proprietaire, biens_du_formulaire
+from .models import AttestationPret, DeclarationFaite, Echeance, Pret, Proprietaire, SaisieBloquee, biens_du_formulaire
 
 REGIME_DU_FORMULAIRE = {"2044": "foncier", "2072": "foncier", "2031": "lmnp", "societe": "societe"}
 
@@ -118,10 +118,12 @@ def carte(formulaire, proprietaire, titre, sous_titre, cerfa, annee, acces=None)
     else:
         statut = ("ok", "Prête")
     url, libelle_lien = _lien_formulaire(formulaire, proprietaire, annee, acces)
+    bloques = sorted(b.bien.nom for b in SaisieBloquee.objects.filter(annee=annee, active=True, bien_id__in=ids).select_related("bien")) \
+        if formulaire == "2072" else []
     return {"formulaire": formulaire, "proprietaire": proprietaire, "titre": titre, "sous_titre": sous_titre, "cerfa": cerfa,
             "nb_biens": len(ids), "biens": list(biens.order_by("nom").values_list("nom", flat=True)), "etapes": etapes,
             "statut": statut, "declaree": declaree, "historique": historique, "lien": url, "libelle_lien": libelle_lien,
-            "pret_a_declarer": statut[0] == "ok"}
+            "pret_a_declarer": statut[0] == "ok", "biens_bloques": bloques}
 
 
 def cartes(annee, acces=None):

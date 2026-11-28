@@ -89,7 +89,7 @@ class ImmobilisationAdmin(admin.ModelAdmin):
         if immo:
             annee = timezone.localdate().year
             lignes = amortissements.plan(immo)
-            declares = DeclarationFaite.verrous()
+            declares = DeclarationFaite.verrous(blocages=False)
             for l in lignes:
                 l["declaree"] = not l["reprise"] and bool(declares.get(l["annee"], {}).get(immo.bien_id))
                 l["courante"] = l["annee"] == annee
@@ -104,7 +104,7 @@ class ImmobilisationAdmin(admin.ModelAdmin):
     def save_model(self, request, obj, form, change):
         super().save_model(request, obj, form, change)
         if change and any(c in form.changed_data for c in CHAMPS_DU_PLAN):
-            declares = DeclarationFaite.verrous()
+            declares = DeclarationFaite.verrous(blocages=False)
             touchees = sorted({l["annee"] for l in amortissements.plan(obj) if not l["reprise"]
                                and declares.get(l["annee"], {}).get(obj.bien_id)})
             if touchees:

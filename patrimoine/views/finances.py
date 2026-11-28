@@ -233,6 +233,35 @@ def biens_lmnp(request):
 
 
 @staff_member_required
+def bloquer_saisie_bien(request):
+    """Bouton « Bloquer la saisie » / « Débloquer » d'un seul bien pour une année (annexe 2072, dossier comptable).
+    La date de transmission reste sur la déclaration de la SCI (« Déclaration effectuée le … »)."""
+    from django.http import Http404
+    from django.utils.http import url_has_allowed_host_and_scheme
+
+    from ..models import Bien, SaisieBloquee
+
+    if request.method != "POST":
+        raise Http404
+    bien = get_object_or_404(Bien, pk=request.POST.get("bien"))
+    try:
+        annee = int(request.POST.get("annee", ""))
+    except ValueError:
+        raise Http404
+    if request.POST.get("action") == "debloquer":
+        SaisieBloquee.debloquer(bien, annee)
+        messages.success(request, f"Saisie {annee} de {bien.nom} débloquée : ses factures sont de nouveau modifiables.")
+    else:
+        SaisieBloquee.bloquer(bien, annee)
+        messages.success(request, f"Saisie {annee} de {bien.nom} bloquée : ses factures et les attestations de ses prêts "
+                                  "ne peuvent plus changer. Les autres biens restent modifiables.")
+    retour = request.POST.get("retour", "")
+    if not url_has_allowed_host_and_scheme(retour, allowed_hosts={request.get_host()}):
+        retour = reverse("annexe_2072") + f"?sci={bien.proprietaire_id}&annee={annee}"
+    return redirect(retour)
+
+
+@staff_member_required
 def annexe_2072(request):
     """Annexe 2072-S-A1-SD pré-remplie : SCI, immeubles et année au choix ; détail des sources sous le tableau."""
     from django.db.models import Q
@@ -253,6 +282,11 @@ def annexe_2072(request):
                 "biens_sci": biens_sci, "biens": biens, "choisis": [b.pk for b in biens], **annexe2072.annexe(biens, annee)}
     contexte["cadre_i"] = annexe2072.part_personnelle(contexte["resultat"], sci.pourcentage_detention if sci else 100)
     contexte["tous_les_biens"] = len(biens) == len(biens_sci)
+    from ..models import SaisieBloquee
+
+    bloquees = SaisieBloquee.bloquees(annee)
+    for c in contexte["colonnes"]:  # bouton « Bloquer la saisie » au-dessus de chaque immeuble (écran seulement)
+        c["blocage"] = bloquees.get(c["bien"].pk)
     if request.GET.get("format") == "pdf":
         return _pdf(render_to_string("patrimoine/annexe_2072_pdf.html", contexte), f"2072-S-A1 {annee} {sci.nom if sci else ''}")
     from .compta import onglets
