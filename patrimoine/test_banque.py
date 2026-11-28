@@ -452,3 +452,75 @@ class RegleFiscaleTests(Base):
         with mock.patch("django.utils.timezone.localdate", return_value=date(2027, 2, 1)):
             r = self.client.get(f"/loyers/releve-de-banque/?compte={self.compte.pk}&annee=2026")
         self.assertContains(r, "Au 31/12/2026")
+
+
+class PlusieursComptesTests(Base):
+    """Un même propriétaire, deux comptes : chacun ne rapproche que les biens qui lui sont rattachés."""
+
+    def setUp(self):
+        super().setUp()
+        self.bien2 = Bien.objects.create(proprietaire=self.proprio, nom="Les Roses", adresse="2 rue", code_postal="69000", ville="Lyon")
+        b = Bail.objects.create(lot=Lot.objects.create(bien=self.bien2, designation="Maison"), type=Bail.Type.NU, date_debut=date(2026, 1, 1),
+                                loyer_hc=D("950"), charges=D("0"), jour_echeance=3)
+        b.locataires.add(Locataire.objects.create(nom="Bernardin", prenom="Luc"))
+        self.bail2 = b
+        Echeance.generer_pour_mois(date(2026, 11, 1))
+        self.compte2 = CompteBancaire.objects.create(proprietaire=self.proprio, nom="Compte Roses", mode=CompteBancaire.Mode.RELEVE)
+        self.compte2.biens.add(self.bien2)
+        self.compte.biens.add(self.bien)
+
+    def test_sans_bien_coche_tous_les_biens(self):
+        self.compte.biens.clear()
+        self.assertTrue(self.compte.tous_les_biens)
+        self.assertEqual(set(self.compte.biens_geres()), {self.bien, self.bien2})
+
+    def test_loyer_limite_aux_biens_du_compte(self):
+        ctx = rapprochement.Contexte(self.compte)
+        self.assertNotIn(self.bail2, ctx.baux)
+        self.assertEqual(ctx.biens, [self.bien])
+        p = rapprochement.proposer(self.ligne("VIR BERNARDIN LUC LOYER", "950"), ctx)
+        self.assertNotEqual(p.nature, "loyer")  # loyer des Roses : pas sur le compte des Lilas
+        p = rapprochement.proposer(self.ligne("VIR BERNARDIN LUC LOYER", "950", compte=self.compte2), rapprochement.Contexte(self.compte2))
+        self.assertEqual(p.nature, "loyer")
+        self.assertEqual(p.bail, self.bail2)
+
+    def test_facture_et_pret_limites(self):
+        f1 = PieceComptable.objects.create(bien=self.bien, fournisseur="Plombier Lilas", montant=D("120"), date=date(2026, 11, 2))
+        f2 = PieceComptable.objects.create(bien=self.bien2, fournisseur="Plombier Roses", montant=D("120"), date=date(2026, 11, 2))
+        pret_roses = Pret.objects.create(proprietaire=self.proprio, bien=self.bien2, banque="Banque", reference="R1", montant=D("100000"),
+                                         taux=D("2"), duree_mois=240, date_premiere_echeance=date(2025, 1, 5))
+        pret_general = Pret.objects.create(proprietaire=self.proprio, banque="Banque", reference="T1", montant=D("10000"),
+                                           taux=D("2"), duree_mois=60, date_premiere_echeance=date(2025, 1, 5))
+        ctx = rapprochement.Contexte(self.compte)
+        self.assertEqual(ctx.pieces, [f1])
+        self.assertEqual(set(ctx.prets), {pret_general})
+        ctx2 = rapprochement.Contexte(self.compte2)
+        self.assertEqual(ctx2.pieces, [f2])
+        self.assertEqual(set(ctx2.prets), {pret_roses, pret_general})
+
+    def test_reglages_refusent_un_bien_d_un_autre_titulaire(self):
+        autre = Proprietaire.objects.create(nom="M. Autre")
+        bien_autre = Bien.objects.create(proprietaire=autre, nom="Ailleurs", adresse="3 rue", code_postal="69000", ville="Lyon")
+        url = f"/admin/patrimoine/comptebancaire/{self.compte2.pk}/change/"
+        r = self.client.get(url)
+        self.assertContains(r, "biens gérés sur ce compte")
+        self.assertContains(r, f'name="biens" value="{self.bien2.pk}"')
+        self.assertNotContains(r, f'name="biens" value="{bien_autre.pk}"')
+        donnees = {"proprietaire": self.proprio.pk, "nom": "Compte Roses", "mode": "releve", "biens": [self.bien2.pk, bien_autre.pk],
+                   "actif": "on", "regles-TOTAL_FORMS": 0, "regles-INITIAL_FORMS": 0}
+        r = self.client.post(url, donnees)
+        self.assertEqual(r.status_code, 200)  # refusé : formulaire réaffiché
+        donnees["biens"] = [self.bien.pk, self.bien2.pk]
+        r = self.client.post(url, donnees)
+        self.assertEqual(r.status_code, 302, getattr(r, "context", None) and r.context["adminform"].form.errors)
+        self.assertEqual(set(self.compte2.biens.all()), {self.bien, self.bien2})
+
+    def test_liste_et_releve_montrent_les_biens(self):
+        r = self.client.get("/admin/patrimoine/comptebancaire/")
+        self.assertContains(r, "Les Roses")
+        self.compte.biens.clear()
+        self.assertContains(self.client.get("/admin/patrimoine/comptebancaire/"), "Tous ses biens")
+        r = self.client.get(f"/loyers/releve-de-banque/?compte={self.compte2.pk}")
+        self.assertContains(r, "Biens : Les Roses")
+        r = self.client.get(f"/loyers/releve-de-banque/?compte={self.compte.pk}")
+        self.assertContains(r, "tous ceux de SCI Lilas")

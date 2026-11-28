@@ -10,6 +10,7 @@
 <div class="bq-barre">
   <form method="get"><select name="compte" onchange="this.form.submit()">{% for c in comptes %}<option value="{{ c.pk }}"{% if c == compte %} selected{% endif %}>{{ c }}{% if c.mode == "saisie" %} – mode saisie{% endif %}</option>{% endfor %}</select></form>
   <span class="bq-etat {% if compte.engagement %}bleu{% else %}ok{% endif %}" title="{{ compte.logique_explication }}">{{ compte.logique_libelle }}</span>
+  <span class="bq-regle" title="Le relevé ne propose que les loyers, factures et prêts de ces biens. À changer dans « Réglages du compte ».">Biens : {% if tous_les_biens %}tous ceux de {{ compte.proprietaire }}{% else %}{{ biens|join:", " }}{% endif %}</span>
   <span class="espace"></span>
   <a class="button" href="{% url 'admin:patrimoine_comptebancaire_change' compte.pk %}">Réglages du compte</a>
 </div>

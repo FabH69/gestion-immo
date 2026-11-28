@@ -46,6 +46,11 @@ class CompteBancaire(models.Model):
         "noms des associés", max_length=255, blank=True,
         help_text="Séparés par des virgules. Un virement de ou vers ces noms est proposé comme apport ou remboursement "
                   "en compte courant d'associé (jamais une recette ni une charge).")
+    biens = models.ManyToManyField(
+        Bien, blank=True, related_name="comptes_bancaires", verbose_name="biens gérés sur ce compte",
+        help_text="Cochez les biens dont les loyers, factures et prêts passent par ce compte : le relevé ne propose que "
+                  "ceux-là. Rien de coché : tous les biens du titulaire. Un même propriétaire peut avoir plusieurs comptes, "
+                  "chacun pour un ou plusieurs biens.")
     actif = models.BooleanField(default=True)
     notes = models.TextField(blank=True)
 
@@ -60,6 +65,15 @@ class CompteBancaire(models.Model):
     @property
     def chiffres_iban(self):
         return re.sub(r"\D", "", self.iban or "")
+
+    def biens_geres(self):
+        """Biens dont le relevé de ce compte est rapproché : ceux cochés, sinon tous ceux du titulaire."""
+        coches = self.biens.filter(proprietaire_id=self.proprietaire_id) if self.pk else Bien.objects.none()
+        return coches if coches.exists() else self.proprietaire.biens.all()
+
+    @property
+    def tous_les_biens(self):
+        return not (self.pk and self.biens.filter(proprietaire_id=self.proprietaire_id).exists())
 
     @property
     def liste_associes(self):
