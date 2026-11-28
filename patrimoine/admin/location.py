@@ -341,10 +341,13 @@ class BailForm(forms.ModelForm):
 
 def refaire_repartition_historique(modeladmin, request, lots):
     """Action commune (baux, paiements reçus) : refait la répartition des loyers repris de l'historique de ces logements."""
-    from ..reprise_historique import reconstruire
+    from ..reprise_historique import nettoyer_hors_bail, reconstruire
 
     lots = list(lots)
     n = reconstruire(lots=lots)
+    for e in nettoyer_hors_bail(lots):
+        modeladmin.message_user(request, f"{e.bail} : loyer de {e.periode:%m/%Y} gardé hors des dates du bail, car un vrai "
+                                         "paiement le règle. À vérifier.", messages.WARNING)
     noms = ", ".join(sorted({str(l.designation) for l in lots})) or "ces logements"
     if n:
         modeladmin.message_user(request, f"Répartition de l'historique refaite pour {noms} : {n} paiement(s) repris réparti(s) "

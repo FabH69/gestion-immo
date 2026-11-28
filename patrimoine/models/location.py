@@ -174,7 +174,11 @@ class Bail(models.Model):
                    .order_by("date_debut").first())
         for e in self.echeances.filter(periode__gt=self.date_fin, nature="loyer").order_by("periode"):
             if auto(e):
+                versements = [p.versement for p in e.paiements.all()]
                 e.delete()
+                for v in versements:  # paiement seulement « supposé » : il ne reste pas en avance
+                    if not v.paiements.exists():
+                        v.delete()
                 faits.append(f"{e.periode:%m/%Y} retiré")
                 continue
             fin_mois = e.periode.replace(day=calendar.monthrange(e.periode.year, e.periode.month)[1])

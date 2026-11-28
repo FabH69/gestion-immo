@@ -145,3 +145,45 @@ class RefaireRepartitionTests(TestCase):
         self.assertEqual(self.recu(self.voldoire)[date(2025, 4, 1)], D("560"))
         self.assertEqual(self.recu(self.lassus), {date(2024, 12, 1): D("569")})  # son loyer n'a pas été corrigé ici
         self.assertFalse(Versement.objects.filter(bail=self.lassus, date__year=2025).exists())
+
+
+class BailTermineTests(TestCase):
+    """Saint Pierre 2 réel : Lassus est parti le 30/06/2024 (saisi d'abord au 06/04/2025), Klobodanovic entre-temps.
+    Après correction des baux et « Refaire la répartition », Lassus n'a plus de loyer après son départ ni d'impayé."""
+
+    def test_loyers_apres_le_depart_retires(self):
+        from .models import Bail as B
+
+        proprio = Proprietaire.objects.create(nom="SCI ALFAB", type=Proprietaire.Type.SCI_IR)
+        bien = Bien.objects.create(proprietaire=proprio, nom="Saint Pierre", adresse="1 rue", code_postal="69000", ville="Lyon")
+        lot = Lot.objects.create(bien=bien, designation="Saint Pierre 2")
+        lassus = Bail.objects.create(lot=lot, type=Bail.Type.NU, date_debut=date(2021, 6, 30), date_fin=date(2025, 4, 6),
+                                     actif=False, loyer_hc=D("569"), charges=D("0"), jour_echeance=1)
+        lassus.locataires.add(Locataire.objects.create(nom="LASSUS"))
+        voldoire = Bail.objects.create(lot=lot, type=Bail.Type.NU, date_debut=date(2025, 4, 7), loyer_hc=D("700"),
+                                       charges=D("0"), jour_echeance=1)
+        for m in range(1, 13):
+            EncaissementHistorique.objects.create(lot=lot, mois=date(2024, m, 1), montant=D("569" if m <= 6 else "680"))
+        for m, montant in [(1, "680"), (2, "680"), (3, "680"), (4, "696")] + [(m, "700") for m in range(5, 13)]:
+            EncaissementHistorique.objects.create(lot=lot, mois=date(2025, m, 1), montant=D(montant))
+        convertir(aujourdhui=date(2026, 1, 15))
+        # ancien rattrapage : avril de Lassus « supposé réglé » au prorata (113,80 €), sans argent reçu
+        avril = lassus.echeances.get(periode=date(2025, 4, 1))
+        avril.paiements.all().delete()
+        Paiement.recu(avril, date(2025, 4, 1), avril.total, notes=B.PAIEMENT_SUPPOSE + " (rattrapage 2026)")
+        # Fabien corrige : Lassus parti le 30/06/2024, Klobodanovic du 01/07/2024 au 06/04/2025 à 680 €
+        lassus.date_fin = date(2024, 6, 30)
+        lassus.save()
+        klobo = Bail.objects.create(lot=lot, type=Bail.Type.NU, date_debut=date(2024, 7, 1), date_fin=date(2025, 4, 6),
+                                    actif=False, loyer_hc=D("680"), charges=D("0"), jour_echeance=1)
+        klobo.locataires.add(Locataire.objects.create(nom="KLOBODANOVIC"))
+        reconstruire(aujourdhui=date(2026, 1, 15), lots=[lot])
+        self.assertFalse(lassus.echeances.filter(periode__gt=date(2024, 6, 30)).exists())
+        self.assertEqual(sum((e.reste_du for e in lassus.echeances.all()), D(0)), 0)  # plus d'impayé fictif
+        self.assertFalse(Versement.objects.filter(notes__startswith=B.PAIEMENT_SUPPOSE).exists())
+        lignes = loyers_detailles(bien, 2025)
+        self.assertFalse(any("LASSUS" in l["libelle"] for l in lignes))
+        self.assertEqual(sum(l["montant"] for l in lignes), 3 * D("680") + D("696") + 8 * D("700"))
+        self.assertEqual({e.periode.month: e.montant_paye for e in klobo.echeances.filter(periode__year=2025)},
+                         {1: D("680"), 2: D("680"), 3: D("680"), 4: D("136")})
+        self.assertEqual(voldoire.echeances.get(periode=date(2025, 4, 1)).montant_paye, D("560"))
