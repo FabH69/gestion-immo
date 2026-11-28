@@ -78,6 +78,16 @@ class EncaisserLeMoisTests(Base):
         self.assertContains(r, 'class="menu-aide"', count=4)
         self.assertContains(r, "Mode saisie : un mois à l&#x27;écran")
 
+    def test_banque_rangee_avec_la_comptabilite(self):
+        from .templatetags.tableau_bord import _menu
+
+        groupes = {titre: [l[1] for l in liens] for titre, liens in _menu()}
+        self.assertIn("Banque", groupes["Comptabilité"])
+        loyers = next(l for titre, liens in _menu() for l in liens if l[1] == "Loyers")
+        self.assertEqual([s[0] for s in loyers[4]][:2], ["Encaisser le mois", "Paiements reçus"])
+        r = self.client.get("/loyers/releve-de-banque/")
+        self.assertContains(r, "Comptabilité</a> › Banque › Relevé de banque")
+
 
 class LectureRelevesTests(TestCase):
     def test_ofx(self):

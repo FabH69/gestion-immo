@@ -206,9 +206,8 @@ def _menu():
             ("locataires", "Locataires", a("locataire"), [a("locataire")], []),
             ("baux", "Baux", a("bail"), [a("bail")], [("États des lieux", a("etatdeslieux")), ("Garants", a("garant"))]),
             ("loyers", "Loyers", a("echeance"), [a("echeance"), a("versement"), r("relances_impayes"), a("revisionloyer"), a("mouvementdepot"),
-                                                 r("encaisser_mois"), r("releve_banque"), a("comptebancaire")],
-             [("Encaisser le mois", r("encaisser_mois")), ("Relevé de banque", r("releve_banque")), ("Comptes bancaires", a("comptebancaire")),
-              ("Paiements reçus", a("versement")), ("Relances d'impayés", r("relances_impayes")), ("Révisions de loyer", a("revisionloyer")),
+                                                 r("encaisser_mois")],
+             [("Encaisser le mois", r("encaisser_mois")), ("Paiements reçus", a("versement")), ("Relances d'impayés", r("relances_impayes")), ("Révisions de loyer", a("revisionloyer")),
               ("Dépôts de garantie", a("mouvementdepot"))]),
         ]),
         ("Location", [
@@ -293,6 +292,9 @@ def _menu_compta():
     return [("dossiers", "Mes dossiers", r("compta_accueil"), prefixes, sous_dossiers + [("Toutes les déclarations", r("declarations")), ("Ma déclaration de revenus", r("declaration_revenus"))]),
             ("saisie", "Toutes les factures", factures, [factures, conciergerie, recurrentes], sous_saisie),
             ("evolution", "Évolution des dépenses", r("evolution_depenses"), [r("evolution_depenses")], []),
+            # banque : relevés et rapprochement (loyers, factures, prêts, apports d'associés), rangés avec la comptabilité
+            ("banque", "Banque", r("releve_banque"), [r("releve_banque"), r("admin:patrimoine_comptebancaire_changelist")],
+             [("Relevé de banque", r("releve_banque")), ("Comptes bancaires", r("admin:patrimoine_comptebancaire_changelist"))]),
             ("regimes", "Réglages fiscaux", r("regimes_fiscaux"), [r("regimes_fiscaux")], [])]
 
 
@@ -348,7 +350,7 @@ def menu_lateral(context):
     module_du_lien = {"biens": "biens", "locataires": "locataires", "baux": "baux", "loyers": "loyers",
                       "candidatures": "relocation", "annonces": "relocation", "cles": "relocation", "lcd": "lcd",
                       "encaissements": "finances", "prets": "finances", "maison": "finances", "etats": "etats",
-                      "dossiers": "compta", "saisie": "compta", "evolution": "compta", "regimes": "compta",
+                      "dossiers": "compta", "saisie": "compta", "banque": "loyers", "evolution": "compta", "regimes": "compta",
                       "rappels": "outils"}
     groupes, actif_trouve = [], False
     for titre, liens in _menu():

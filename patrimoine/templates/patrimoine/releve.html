@@ -1,6 +1,6 @@
 {% extends "admin/base_site.html" %}
 {% load tableau_bord %}
-{% block breadcrumbs %}<div class="breadcrumbs"><a href="{% url 'admin:index' %}">Accueil</a> › <a href="{% url 'admin:patrimoine_echeance_changelist' %}">Loyers</a> › Relevé de banque</div>{% endblock %}
+{% block breadcrumbs %}<div class="breadcrumbs"><a href="{% url 'admin:index' %}">Accueil</a> › <a href="{% url 'compta_accueil' %}">Comptabilité</a> › Banque › Relevé de banque</div>{% endblock %}
 {% block content %}
 {% if not compte %}
 <div class="bq-carte"><p>Aucun compte bancaire pour l'instant. Créez-en un, choisissez « Relevé de banque » comme façon de le suivre, puis revenez importer son relevé.</p>
