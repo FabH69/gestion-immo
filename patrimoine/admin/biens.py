@@ -10,7 +10,8 @@ from django.utils.html import format_html, format_html_join
 from ..models import AgenceGestion, Syndic, Bail, Bien, PhotoLot, Lot, Proprietaire
 from .communs import euros_liste
 from .fiche import FicheMixin
-from ..modele_edl import CODES as CODES_PIECES, TYPES_PIECES, nettoyer as nettoyer_config
+from ..modele_edl import (CODES as CODES_PIECES, EQUIPEMENTS, PAR_DEFAUT, PLAQUES, TYPES_PIECES, nettoyer as nettoyer_config,
+                          nettoyer_equipements)
 
 
 class BienInline(admin.TabularInline):
@@ -188,6 +189,29 @@ def _champ_config(libelle):
                               widget=forms.NumberInput(attrs={"class": "nombre-piece", "inputmode": "numeric", "min": 0, "max": 20, "placeholder": "0"}))
 
 
+_NOM_PIECE = {code: nom for code, nom, _, _, _ in TYPES_PIECES}
+
+
+def _champs_equipements():
+    """eq__<type>__<code> : une case par équipement (cuisine : plus le type de plaques et le nombre de feux)."""
+    champs = {}
+    for type_piece, liste in EQUIPEMENTS.items():
+        for code, libelle, _ in liste:
+            champs[f"eq__{type_piece}__{code}"] = forms.BooleanField(label=f"{_NOM_PIECE[type_piece]} : {libelle[0].lower()}{libelle[1:]}", required=False)
+    champs["eq__cuisine__plaques_type"] = forms.ChoiceField(label="type de plaques", choices=PLAQUES, required=False)
+    champs["eq__cuisine__feux"] = forms.IntegerField(label="nombre de feux", required=False, min_value=0, max_value=10,
+                                                     widget=forms.NumberInput(attrs={"class": "nombre-piece", "inputmode": "numeric", "min": 0, "max": 10}))
+    return champs
+
+
+def _lignes_equipements():
+    lignes = [("eq__cuisine__plaques", "eq__cuisine__plaques_type", "eq__cuisine__feux")]
+    for type_piece, liste in EQUIPEMENTS.items():
+        noms = [f"eq__{type_piece}__{code}" for code, _, _ in liste if (type_piece, code) != ("cuisine", "plaques")]
+        lignes += [tuple(noms[i:i + 3]) for i in range(0, len(noms), 3)]
+    return lignes
+
+
 class _LotFormBase(forms.ModelForm):
     """La configuration du logement (nombre de chambres, de salles de bains, de WC, garage, cave…) est rangée dans un seul champ."""
 
@@ -201,15 +225,32 @@ class _LotFormBase(forms.ModelForm):
         for code in CODES_PIECES:
             if f"config_{code}" in self.fields:
                 self.fields[f"config_{code}"].initial = configuration.get(code)
+        equipements = configuration.get("equipements") or {}
+        for nom, champ in self.fields.items():
+            if nom.startswith("eq__"):
+                _, type_piece, code = nom.split("__")
+                reglage = equipements.get(type_piece)
+                champ.initial = (code in PAR_DEFAUT.get(type_piece, ())) if reglage is None else reglage.get(code)
 
     def clean(self):
         donnees = super().clean()
         if any(f"config_{code}" in self.fields for code in CODES_PIECES):
-            self.instance.configuration = nettoyer_config({code: donnees.get(f"config_{code}") for code in CODES_PIECES})
+            configuration = nettoyer_config({code: donnees.get(f"config_{code}") for code in CODES_PIECES})
+            if any(nom.startswith("eq__") for nom in self.fields):
+                brut = {}
+                for nom in self.fields:
+                    if nom.startswith("eq__"):
+                        _, type_piece, code = nom.split("__")
+                        brut.setdefault(type_piece, {})[code] = donnees.get(nom)
+                configuration["equipements"] = nettoyer_equipements(brut)
+            elif (self.instance.configuration or {}).get("equipements"):
+                configuration["equipements"] = self.instance.configuration["equipements"]
+            self.instance.configuration = configuration
         return donnees
 
 
-LotForm = type("LotForm", (_LotFormBase,), {f"config_{code}": _champ_config(libelle) for code, _, libelle, _, _ in TYPES_PIECES})
+LotForm = type("LotForm", (_LotFormBase,), {**{f"config_{code}": _champ_config(libelle) for code, _, libelle, _, _ in TYPES_PIECES},
+                                             **_champs_equipements()})
 
 
 class BienForm(forms.ModelForm):
@@ -480,7 +521,7 @@ class LotAdmin(FicheMixin, admin.ModelAdmin):
     onglets = [
         ("general", "Général", [None, "Notes"], []),
         ("caracteristiques", "Caractéristiques", ["Caractéristiques (reprises dans le bail)", "Chaudière gaz", "Compteurs"], []),
-        ("configuration", "Pièces et état des lieux", ["Configuration du logement (état des lieux)"], []),
+        ("configuration", "Pièces et état des lieux", ["Configuration du logement (état des lieux)", "Équipements par pièce (état des lieux)"], []),
         ("relocation", "Location et photos", ["Location et annonce"], ["PhotoInline"]),
         ("baux", "Baux", [], ["BailInline"]),
         ("vente", "Vente", ["Vente"], []),
@@ -558,9 +599,13 @@ class LotAdmin(FicheMixin, admin.ModelAdmin):
         ("Chaudière gaz", {"fields": [("chaudiere_gaz", "date_entretien_chaudiere")]}),
         ("Location et annonce", {"fields": ["loyer_propose", ("classe_ges", "energie_annee"), ("energie_min", "energie_max"), "outils_relocation"]}),
         ("Configuration du logement (état des lieux)", {
-            "fields": [tuple(f"config_{c}" for c in CODES_PIECES[i:i + 3]) for i in range(0, len(CODES_PIECES), 3)] + ["pieces", "modele_edl"],
+            "fields": [tuple(f"config_{c}" for c in CODES_PIECES[i:i + 3]) for i in range(0, len(CODES_PIECES), 3)] + ["pieces"],
             "description": "Indiquez le nombre de chaque pièce : l'état des lieux (sur téléphone et en PDF) reprend ces pièces, "
                            "avec pour chacune les éléments à contrôler (évier et hotte en cuisine, cuvette et chasse d'eau aux WC…)."}),
+        ("Équipements par pièce (état des lieux)", {
+            "fields": _lignes_equipements() + ["modele_edl"],
+            "description": "Cochez les équipements présents : ils s'ajoutent aux éléments classiques de la pièce dans l'état des lieux "
+                           "(ex. « Plaques de cuisson (gaz, 4 feux) »). Le réglage vaut pour toutes les pièces du même type."}),
         ("Compteurs", {"fields": ["pdl"]}),
         ("Vente", {"fields": [("vendu", "date_vente")]}),
         ("Notes", {"fields": ["notes"]}),

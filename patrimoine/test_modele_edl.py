@@ -79,7 +79,7 @@ class ModeleEtatDesLieuxTests(TestCase):
         r = self.client.post(url, donnees)
         self.assertEqual(r.status_code, 302, r.context and r.context["adminform"].form.errors)
         self.lot.refresh_from_db()
-        self.assertEqual(self.lot.configuration, {"chambre": 2, "wc": 1, "garage": 1})
+        self.assertEqual({k: v for k, v in self.lot.configuration.items() if k != "equipements"}, {"chambre": 2, "wc": 1, "garage": 1})
         page = self.client.get(url).content.decode()
         self.assertIn('name="config_chambre" value="2"', page)
         self.assertIn("Porte de garage", page)  # aperçu du modèle
@@ -104,3 +104,69 @@ class ModeleEtatDesLieuxTests(TestCase):
         champs = page.count(f'name="photos-{element.pk}"')
         self.assertEqual(champs, 2)  # appareil photo (capture) + import (galerie ou fichiers, plusieurs à la fois)
         self.assertIn(f'accept="image/*" multiple data-element="{element.pk}"', page)
+
+
+class EquipementsParPieceTests(TestCase):
+    def setUp(self):
+        self.client.force_login(User.objects.create_superuser("admin", "a@a.fr", "x"))
+        proprio = Proprietaire.objects.create(nom="SCI Équip", type=Proprietaire.Type.SCI_IR)
+        self.bien = Bien.objects.create(nom="Apt", proprietaire=proprio, adresse="3 rue", code_postal="69000", ville="Lyon")
+        self.lot = Lot.objects.create(bien=self.bien, designation="T3", configuration={"cuisine": 1, "sejour": 1, "chambre": 2, "salle_bain": 1})
+
+    def test_sans_reglage_les_equipements_courants(self):
+        modele = dict(modele_edl.modele(self.lot))
+        self.assertEqual(modele["Cuisine"][-3:], ["Plaques de cuisson", "Hotte", "Four"])
+        self.assertEqual(modele["Séjour"][-1], "Radiateur")
+        self.assertEqual(modele["Chambre 2"][-2:], ["Placard / penderie", "Radiateur"])
+        self.assertIn("Sèche-serviettes", modele["Salle de bains"])
+        self.assertIn("Sol", modele["Cuisine"])  # les éléments classiques restent
+
+    def test_equipements_coches_et_plaques_detaillees(self):
+        self.lot.configuration["equipements"] = modele_edl.nettoyer_equipements({
+            "cuisine": {"plaques": True, "plaques_type": "gaz", "feux": "4", "hotte": True, "four": False, "lave_vaisselle": True},
+            "chambre": {"placard": True, "radiateur": False}, "sejour": {"radiateur": True},
+            "salle_bain": {"miroir": True, "seche_serviette": True}, "inconnu": {"x": True}})
+        modele = dict(modele_edl.modele(self.lot))
+        self.assertIn("Plaques de cuisson (gaz, 4 feux)", modele["Cuisine"])
+        self.assertIn("Lave-vaisselle", modele["Cuisine"])
+        self.assertNotIn("Four", modele["Cuisine"])
+        self.assertIn("Placard / penderie", modele["Chambre 1"])
+        self.assertNotIn("Radiateur", modele["Chambre 1"])
+        self.assertNotIn("Chauffage / radiateur", modele["Chambre 1"])
+        self.assertEqual(modele["Salle de bains"][-2:], ["Miroir", "Sèche-serviettes"])
+        self.assertNotIn("inconnu", self.lot.configuration["equipements"])
+
+    def test_fiche_du_logement_enregistre_les_equipements(self):
+        url = f"/admin/patrimoine/lot/{self.lot.pk}/change/"
+        reponse = self.client.get(url)
+        page = reponse.content.decode()
+        self.assertIn("Équipements par pièce", page)
+        self.assertIn('name="eq__cuisine__hotte" id="id_eq__cuisine__hotte" checked', page)  # coché par défaut
+        form = reponse.context["adminform"].form
+        donnees = {k: v for k, v in form.initial.items() if v not in (None, False, "") and not isinstance(v, (list, dict)) and not k.startswith("eq__")}
+        donnees = {k: ("on" if v is True else v) for k, v in donnees.items()}
+        donnees.update({"bien": self.bien.pk, "designation": "T3", "type": "appartement", "exploitation": "longue",
+                        "config_cuisine": "1", "config_chambre": "1",
+                        "eq__cuisine__plaques": "on", "eq__cuisine__plaques_type": "induction", "eq__cuisine__feux": "3", "eq__cuisine__four": "on",
+                        "eq__chambre__radiateur": "on",
+                        "baux-TOTAL_FORMS": "0", "baux-INITIAL_FORMS": "0", "photos-TOTAL_FORMS": "0", "photos-INITIAL_FORMS": "0"})
+        r = self.client.post(url, donnees)
+        self.assertEqual(r.status_code, 302, r.context and r.context["adminform"].form.errors)
+        self.lot.refresh_from_db()
+        self.assertEqual(self.lot.configuration["cuisine"], 1)
+        self.assertEqual(self.lot.configuration["equipements"]["cuisine"]["plaques_type"], "induction")
+        modele = dict(modele_edl.modele(self.lot))
+        self.assertEqual(modele["Cuisine"][-2:], ["Plaques de cuisson (induction, 3 feux)", "Four"])
+        self.assertEqual(modele["Chambre"][-1], "Radiateur")
+        self.assertNotIn("Placard / penderie", modele["Chambre"])
+        self.assertIn("Plaques de cuisson (induction, 3 feux)", self.client.get(url).content.decode())
+
+    def test_etat_des_lieux_et_pdf_reprennent_les_equipements(self):
+        self.lot.configuration["equipements"] = {"cuisine": {"plaques": True, "plaques_type": "electrique", "feux": 2}}
+        self.lot.save()
+        bail = Bail.objects.create(lot=self.lot, type=Bail.Type.NU, date_debut=date(2025, 1, 1), loyer_hc=700)
+        bail.locataires.add(Locataire.objects.create(nom="ROUX", prenom="Ana"))
+        self.client.post(f"/baux/{bail.pk}/etat-des-lieux/entree/", {"signataire_bailleur": "SCI"})
+        edl = EtatDesLieux.objects.get()
+        self.assertIn("Plaques de cuisson (électriques, 2 feux)", [e.nom for e in dict(logique.pieces(edl))["Cuisine"]])
+        self.assertEqual(self.client.get(f"/baux/{bail.pk}/etat-des-lieux-entree.pdf").status_code, 200)
