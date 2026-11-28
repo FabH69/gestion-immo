@@ -78,6 +78,12 @@ class EncaisserLeMoisTests(Base):
         self.assertContains(r, 'class="menu-aide"', count=4)
         self.assertContains(r, "Mode saisie : un mois à l&#x27;écran")
 
+    def test_releve_accessible_depuis_l_accueil_compta(self):
+        self.ligne("CB BRICO DEPOT", "-37.50")
+        r = self.client.get("/comptabilite/")
+        self.assertContains(r, "/loyers/releve-de-banque/")
+        self.assertContains(r, "Relevé de banque (1 à traiter)")
+
     def test_banque_rangee_avec_la_comptabilite(self):
         from .templatetags.tableau_bord import _menu
 
