@@ -214,14 +214,24 @@ def reconstruire(aujourdhui=None, lots=None):
     return len(repris)
 
 
+MOTIF_DOUBLON = "Doublon de l'historique repris : loyer en dehors des dates du bail"
+
+
 def nettoyer_hors_bail(lots):
-    """Loyers d'un bail tombant hors de ses dates (date de fin avancée, locataire ajouté entre-temps) : retirés quand
-    rien de réel ne les règle (aucun paiement, ou seulement un « Supposé réglé » d'un ancien rattrapage, qui est
-    retiré avec). Le mois de départ ou d'entrée resté à payer repasse au prorata. Renvoie les loyers gardés parce
-    qu'un vrai paiement les règle (à vérifier)."""
-    from .models import Bail, Echeance
+    """Loyers d'un bail tombant hors de ses dates (date de fin avancée, locataire ajouté entre-temps) : retirés avec ce
+    qui les règle quand ce n'est pas de l'argent reçu en plus de l'ancien suivi :
+    - rien, un « Supposé réglé » d'un ancien rattrapage, ou une avance imputée : retirés ;
+    - un paiement saisi à part (« Tout encaisser », « ✓ Reçu »…) pour un mois que l'historique repris couvre déjà pour
+      ce logement : c'est un doublon (l'historique dit ce qui a été reçu ce mois-là), il est annulé (gardé dans
+      l'historique des paiements, avec le motif) ;
+    - un paiement d'un mois que l'historique ne couvre pas : gardé, à vérifier.
+    Le mois de départ ou d'entrée resté à payer repasse au prorata. Renvoie les loyers gardés (à vérifier)."""
+    from .models import Bail, Echeance, Versement
 
     suppose = Bail.PAIEMENT_SUPPOSE
+    automatique = lambda p: (p.notes or "").startswith((suppose, "Avance du")) or (p.versement.notes or "").startswith(suppose)
+    mois_repris = {(lot_id, d.year, d.month) for lot_id, d in Versement.objects.filter(
+        notes__startswith=NOTE, annule=False, bail__lot__in=lots).values_list("bail__lot_id", "date")}
     gardes = []
     for bail in Bail.objects.filter(lot__in=lots):
         debut = bail.date_debut.replace(day=1)
@@ -230,13 +240,21 @@ def nettoyer_hors_bail(lots):
             hors = hors | bail.echeances.filter(nature=Echeance.Nature.LOYER, periode__gt=bail.date_fin)
         for e in hors.prefetch_related("paiements__versement"):
             paiements = list(e.paiements.all())
-            if any(not (p.notes or "").startswith(suppose) for p in paiements):
+            reels = [p for p in paiements if not automatique(p)]
+            doublons = [p for p in reels if (bail.lot_id, p.date.year, p.date.month) in mois_repris]
+            if len(doublons) < len(reels):
                 gardes.append(e)
                 continue
             versements = {p.versement for p in paiements}
+            for v in {p.versement for p in doublons}:
+                if all(x.echeance_id == e.pk for x in v.paiements.all()):
+                    v.annuler(MOTIF_DOUBLON)
+                else:
+                    v.paiements.filter(echeance=e).delete()
             e.delete()
             for v in versements:
-                if not v.paiements.exists() and (v.notes or "").startswith(suppose):
+                v.refresh_from_db()
+                if not v.annule and not v.paiements.exists() and (v.notes or "").startswith(suppose):
                     v.delete()
         # « Supposé réglé » dont le loyer a déjà été retiré (départ saisi plus tôt) : ce n'est pas de l'argent reçu
         bail.versements.filter(notes__startswith=suppose, paiements__isnull=True).delete()

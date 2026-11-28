@@ -152,6 +152,12 @@ class BailTermineTests(TestCase):
     Après correction des baux et « Refaire la répartition », Lassus n'a plus de loyer après son départ ni d'impayé."""
 
     def test_loyers_apres_le_depart_retires(self):
+        self.verifier(suppose=True)
+
+    def test_paiement_tout_encaisser_en_double_annule(self):
+        self.verifier(suppose=False)
+
+    def verifier(self, suppose):
         from .models import Bail as B
 
         proprio = Proprietaire.objects.create(nom="SCI ALFAB", type=Proprietaire.Type.SCI_IR)
@@ -170,7 +176,11 @@ class BailTermineTests(TestCase):
         # ancien rattrapage : avril de Lassus « supposé réglé » au prorata (113,80 €), sans argent reçu
         avril = lassus.echeances.get(periode=date(2025, 4, 1))
         avril.paiements.all().delete()
-        Paiement.recu(avril, date(2025, 4, 1), avril.total, notes=B.PAIEMENT_SUPPOSE + " (rattrapage 2026)")
+        if suppose:
+            Paiement.recu(avril, date(2025, 4, 1), avril.total, notes=B.PAIEMENT_SUPPOSE + " (rattrapage 2026)")
+        else:  # « Tout encaisser » coché sur ce loyer : paiement sans note, daté de l'échéance
+            v = Versement.objects.create(bail=lassus, date=date(2025, 4, 1), montant=avril.reste_du)
+            v.repartir([(avril, avril.reste_du)])
         # Fabien corrige : Lassus parti le 30/06/2024, Klobodanovic du 01/07/2024 au 06/04/2025 à 680 €
         lassus.date_fin = date(2024, 6, 30)
         lassus.save()
@@ -181,6 +191,9 @@ class BailTermineTests(TestCase):
         self.assertFalse(lassus.echeances.filter(periode__gt=date(2024, 6, 30)).exists())
         self.assertEqual(sum((e.reste_du for e in lassus.echeances.all()), D(0)), 0)  # plus d'impayé fictif
         self.assertFalse(Versement.objects.filter(notes__startswith=B.PAIEMENT_SUPPOSE).exists())
+        if not suppose:
+            v.refresh_from_db()
+            self.assertTrue(v.annule)  # gardé dans l'historique des paiements, mais ne compte plus
         lignes = loyers_detailles(bien, 2025)
         self.assertFalse(any("LASSUS" in l["libelle"] for l in lignes))
         self.assertEqual(sum(l["montant"] for l in lignes), 3 * D("680") + D("696") + 8 * D("700"))
