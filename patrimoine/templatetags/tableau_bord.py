@@ -260,7 +260,8 @@ AIDES_MENU = {
     "Relevé de banque": "Mode relevé : importez le relevé de la banque (OFX, CSV, CAMT ou PDF). L'appli propose loyers, factures, "
                         "prêts, frais et apports d'associés ; vous validez les lignes sûres d'un coup.",
     "Comptes bancaires": "Un compte par compte en banque, avec sa façon d'être suivi : saisie ou relevé de banque. La règle fiscale "
-                         "(trésorerie pour la 2044 et la 2072, engagement pour l'IS et la 2031) est déduite du propriétaire.",
+                         "(trésorerie pour la 2044 et la 2072, engagement pour l'IS et la 2031) est déduite du propriétaire. Un même "
+                         "propriétaire peut avoir plusieurs comptes : cochez sur chacun les biens qu'il gère.",
     "Paiements reçus": "Tous les paiements enregistrés, quelle que soit la façon de les saisir : leur répartition sur les loyers, "
                        "l'avance qui reste, l'annulation d'un paiement rejeté.",
 }

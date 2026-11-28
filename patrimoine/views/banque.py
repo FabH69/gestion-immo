@@ -228,7 +228,7 @@ def releve(request):
     contexte.update({
         "onglets": [(c, t, len(compte_onglets[c])) for c, t in ONGLETS], "onglet": onglet, "lignes": compte_onglets.get(onglet, []),
         "nb_sures": len(compte_onglets["sures"]), "sans_justificatif": sans_justificatif, "imports": compte.imports.all()[:5],
-        "baux": ctx.baux, "prets": ctx.prets, "biens": ctx.biens,
+        "baux": ctx.baux, "prets": ctx.prets, "biens": ctx.biens, "tous_les_biens": ctx.tous_les_biens,
         "factures": sorted(ctx.pieces, key=lambda p: p.date or date.min, reverse=True)[:200],
         "comptes_courants": rapprochement.comptes_courants(compte.proprietaire),
         "fin_exercice": rapprochement.fin_exercice(compte.proprietaire, annee) if compte.engagement else None,

@@ -769,14 +769,57 @@ class RegleRapprochementInline(admin.TabularInline):
     verbose_name_plural = "règles apprises (créées en cochant « Retenir » sur le relevé ; modifiables ici)"
 
 
+class BiensDuCompteField(forms.ModelMultipleChoiceField):
+    def label_from_instance(self, obj):
+        return f"{obj} – {obj.proprietaire}"
+
+
+class CompteBancaireForm(forms.ModelForm):
+    biens = BiensDuCompteField(queryset=None, required=False, widget=forms.CheckboxSelectMultiple, label="biens gérés sur ce compte",
+                               help_text=CompteBancaire._meta.get_field("biens").help_text)
+
+    class Meta:
+        model = CompteBancaire
+        fields = "__all__"
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        from ..models import Bien
+
+        qs = Bien.objects.select_related("proprietaire").order_by("proprietaire__nom", "nom")
+        if self.instance.pk:  # seulement les biens du titulaire (un autre titulaire choisi : contrôlé à l'enregistrement)
+            qs = qs.filter(proprietaire_id=self.instance.proprietaire_id) | qs.filter(pk__in=self.instance.biens.values("pk"))
+        self.fields["biens"].queryset = qs
+
+    def clean(self):
+        donnees = super().clean()
+        titulaire, biens = donnees.get("proprietaire"), donnees.get("biens")
+        if titulaire and biens:
+            autres = [str(b) for b in biens if b.proprietaire_id != titulaire.pk]
+            if autres:
+                self.add_error("biens", f"Ces biens n'appartiennent pas à {titulaire} : {', '.join(autres)}. "
+                                        "Cochez seulement des biens du titulaire du compte.")
+        return donnees
+
+
 @admin.register(CompteBancaire)
 class CompteBancaireAdmin(admin.ModelAdmin):
-    """Comptes bancaires : chacun choisit sa façon d'être suivi (saisie ou relevé de banque)."""
-    list_display = ["nom", "proprietaire", "banque", "mode_court", "regle_fiscale", "lignes_a_traiter"]
+    """Comptes bancaires : chacun choisit sa façon d'être suivi (saisie ou relevé de banque). Un même titulaire peut en
+    avoir plusieurs, chacun pour un ou plusieurs de ses biens."""
+    form = CompteBancaireForm
+    list_display = ["nom", "proprietaire", "biens_du_compte", "banque", "mode_court", "regle_fiscale", "lignes_a_traiter"]
     list_filter = ["mode", "proprietaire"]
-    fields = ["proprietaire", "nom", "banque", "iban", "mode", "associes", "regle_fiscale_detail", "actif", "notes"]
+    fields = ["proprietaire", "nom", "banque", "iban", "biens", "mode", "associes", "regle_fiscale_detail", "actif", "notes"]
     readonly_fields = ["regle_fiscale_detail"]
     inlines = [RegleRapprochementInline]
+
+    def get_queryset(self, request):
+        return super().get_queryset(request).select_related("proprietaire").prefetch_related("biens")
+
+    @admin.display(description="biens")
+    def biens_du_compte(self, obj):
+        biens = [b for b in obj.biens.all() if b.proprietaire_id == obj.proprietaire_id]
+        return ", ".join(b.nom for b in biens) if biens else "Tous ses biens"
 
     @admin.display(description="suivi")
     def mode_court(self, obj):
