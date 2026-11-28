@@ -1027,7 +1027,7 @@ class PretSansAssuranceTests(TestCase):
         donnees = {"proprietaire": p.proprietaire_id, "banque": p.banque, "reference": "", "type": p.type, "montant": p.montant,
                    "taux": p.taux, "duree_mois": p.duree_mois, "date_premiere_echeance": "10/10/2025",
                    "assurance_mensuelle": p.assurance_mensuelle, "taux_assurance": p.taux_assurance or "", "notes": "",
-                   "attestations-TOTAL_FORMS": 0, "attestations-INITIAL_FORMS": 0, "_save": "1", **valeurs}
+                   "lots_finances-TOTAL_FORMS": 0, "lots_finances-INITIAL_FORMS": 0, "attestations-TOTAL_FORMS": 0, "attestations-INITIAL_FORMS": 0, "_save": "1", **valeurs}
         reponse = self.client.post(f"/admin/patrimoine/pret/{p.pk}/change/", donnees, follow=True)
         self.pret.refresh_from_db()
         return reponse

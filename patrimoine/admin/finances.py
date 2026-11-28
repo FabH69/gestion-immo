@@ -8,7 +8,7 @@ from django.utils import timezone
 from django.utils.html import format_html
 
 from .. import amortissements, compta
-from ..models import AnneeCloturee, AttestationPret, DeclarationFaite, DepenseRecurrente, Immobilisation, PieceComptable, Bien, Pret, Proprietaire
+from ..models import AnneeCloturee, AttestationPret, DeclarationFaite, DepenseRecurrente, Immobilisation, PieceComptable, Bien, Pret, PretLot, Proprietaire
 from .communs import euros_liste
 
 
@@ -32,15 +32,70 @@ class AttestationPretInline(admin.TabularInline):
                            "l'échéancier dans la 2044 et l'annexe 2072)")
 
 
+class LotsFinancesFormSet(forms.BaseInlineFormSet):
+    """Lots d'un même bien, celui du prêt ; % tous vides (prorata de la surface) ou tous remplis avec un total de 100."""
+
+    def clean(self):
+        super().clean()
+        lignes = [f.cleaned_data for f in self.forms
+                  if f.cleaned_data and not f.cleaned_data.get("DELETE") and f.cleaned_data.get("lot")]
+        if not lignes:
+            return
+        bien = self.instance.bien
+        if bien is None:
+            raise forms.ValidationError("Choisissez d'abord le bien financé : les lots financés sont des lots de ce bien.")
+        autres = [l["lot"].designation for l in lignes if l["lot"].bien_id != bien.pk]
+        if autres:
+            raise forms.ValidationError(f"{', '.join(autres)} : pas un lot de {bien.nom}, le bien du prêt.")
+        parts = [l.get("part") for l in lignes]
+        if any(p is not None for p in parts):
+            if any(p is None for p in parts):
+                raise forms.ValidationError("Remplissez la part de chaque lot, ou laissez-les toutes vides pour répartir au "
+                                            "prorata de la surface.")
+            if sum(parts) != 100:
+                raise forms.ValidationError(f"Le total des parts fait {sum(parts):g} % au lieu de 100 %.".replace(".", ","))
+
+
+class PretLotInline(admin.TabularInline):
+    model = PretLot
+    formset = LotsFinancesFormSet
+    extra = 0
+    fields = ["lot", "part"]
+    verbose_name = "lot financé"
+    verbose_name_plural = ("Lots financés (facultatif) : aucun lot = le prêt finance tout le bien, réparti entre ses lots au "
+                           "prorata de la surface. Cochez les lots si le prêt ne finance qu'une partie du bien (ex. travaux "
+                           "d'un appartement) ; parts vides = prorata de la surface de ces lots.")
+
+    def get_formset(self, request, obj=None, **kwargs):
+        formset = super().get_formset(request, obj, **kwargs)
+        champ = formset.form.base_fields.get("lot")
+        if champ is not None:
+            from ..models import Lot
+
+            champ.queryset = Lot.objects.filter(bien=obj.bien) if obj and obj.bien_id else Lot.objects.select_related("bien")
+        return formset
+
+
+class PretACompleterFilter(admin.SimpleListFilter):
+    title = "à compléter"
+    parameter_name = "a_completer"
+
+    def lookups(self, request, model_admin):
+        return [("oui", "Objet financé à compléter")]
+
+    def queryset(self, request, queryset):
+        return queryset.filter(objet="") if self.value() == "oui" else queryset
+
+
 @admin.register(Pret)
 class PretAdmin(admin.ModelAdmin):
-    inlines = [AttestationPretInline]
-    list_display = ["fiche_pret", "proprietaire", "bien", "taux_affiche", "mensualite", "fin", "restant_du", "amortissement"]
+    inlines = [PretLotInline, AttestationPretInline]
+    list_display = ["fiche_pret", "proprietaire", "bien", "objet_finance", "taux_affiche", "mensualite", "fin", "restant_du", "amortissement"]
     list_display_links = ["fiche_pret"]
-    list_filter = ["proprietaire"]
+    list_filter = ["proprietaire", PretACompleterFilter]
     readonly_fields = ["calculs"]
     fieldsets = [
-        (None, {"fields": ["proprietaire", "bien", "banque", ("reference", "type")]}),
+        (None, {"fields": ["proprietaire", "bien", "banque", ("reference", "type"), "objet"]}),
         ("Conditions", {"fields": [("montant", "taux", "duree_mois"), "date_premiere_echeance", "assurance_mensuelle", "taux_assurance"]}),
         ("Recalage sur la banque", {"fields": [("capital_constate", "capital_constate_le")],
                                      "description": "Facultatif : capital restant dû indiqué par la banque à une date, si le calcul s'en écarte."}),
@@ -48,6 +103,24 @@ class PretAdmin(admin.ModelAdmin):
         ("Notes", {"fields": ["notes"]}),
     ]
     change_list_template = "admin/patrimoine/pret/change_list.html"
+
+    @admin.display(description="objet financé", ordering="objet")
+    def objet_finance(self, obj):
+        if obj.a_completer:
+            return format_html('<span class="pill orange">À compléter</span>')
+        return format_html("{}<br><small>{}</small>", obj.get_objet_display(), obj.lots_finances_libelle)
+
+    def get_queryset(self, request):
+        return super().get_queryset(request).select_related("proprietaire", "bien").prefetch_related("lots_finances__lot", "bien__lots")
+
+    def changelist_view(self, request, extra_context=None):
+        nb = Pret.objects.filter(objet="").count()
+        if nb and request.GET.get("a_completer") != "oui":
+            messages.warning(request, format_html(
+                '{} prêt{} à compléter : indiquez l\'objet financé (achat, travaux…) et, si le prêt ne finance qu\'une partie '
+                'du bien, les lots financés. <a href="?a_completer=oui">Voir les prêts à compléter</a>',
+                nb, "s" if nb > 1 else ""))
+        return super().changelist_view(request, extra_context)
 
     @admin.display(description="taux")
     def taux_affiche(self, obj):
