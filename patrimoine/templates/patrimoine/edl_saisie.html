@@ -68,7 +68,8 @@
       <label class="visuellement-cache" for="c{{ e.pk }}">Commentaire</label><textarea id="c{{ e.pk }}" name="commentaire-{{ e.pk }}" rows="1" placeholder="Commentaire (taches, trous, rayures…)">{{ e.commentaire }}</textarea>
       <div class="photos">
         {% for p in e.photos.all %}<figure><a href="{% url 'fichier_prive' p.image.name %}" target="_blank"><img src="{% url 'fichier_prive' p.image.name %}" alt="Photo {{ forloop.counter }} de {{ e.nom }}" loading="lazy"></a><figcaption>{{ p.recue_le|date:"d/m H:i:s" }}</figcaption><button type="submit" name="action" value="photo_supprimer:{{ p.pk }}" title="Supprimer la photo" aria-label="Supprimer la photo" data-confirm="Supprimer cette photo ?">×</button></figure>{% endfor %}
-        <label class="bouton-photo"><span class="icone" aria-hidden="true">📷</span>Photo<input type="file" name="photos-{{ e.pk }}" accept="image/*" capture="environment" multiple data-element="{{ e.pk }}"></label>
+        <label class="bouton-photo camera" title="Ouvre l'appareil photo du téléphone"><span class="icone" aria-hidden="true">📷</span>Prendre une photo<input type="file" name="photos-{{ e.pk }}" accept="image/*" capture="environment" data-element="{{ e.pk }}"></label>
+        <label class="bouton-photo importer" title="Choisir des photos déjà prises (galerie du téléphone ou fichiers du PC), plusieurs à la fois"><span class="icone" aria-hidden="true">🖼️</span><span class="texte-tel">Importer</span><span class="texte-pc">Importer des photos</span><small class="texte-pc">ou glissez-les ici</small><input type="file" name="photos-{{ e.pk }}" accept="image/*" multiple data-element="{{ e.pk }}"></label>
       </div>
     </div>
     {% endfor %}

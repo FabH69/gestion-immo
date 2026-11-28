@@ -373,9 +373,14 @@ class Lot(models.Model):
     energie_annee = models.PositiveSmallIntegerField("année de référence des prix de l'énergie", null=True, blank=True, help_text="ex. 2023, indiquée sur le DPE")
     equipements = models.TextField("équipements", blank=True, help_text="Cuisine équipée, interphone, fibre…")
     annexes = models.TextField("annexes privatives", blank=True, help_text="Cave, parking, jardin…")
+    configuration = models.JSONField(
+        "configuration du logement", default=dict, blank=True,
+        help_text="{type de pièce: nombre}, ex. {\"chambre\": 2, \"wc\": 1} : génère le modèle de l'état des lieux (pièces et éléments à contrôler)",
+    )
     pieces = models.TextField(
-        "pièces (pour l'état des lieux)", blank=True,
-        help_text="Une pièce par ligne. Si vide, une liste standard est proposée selon le nombre de pièces.",
+        "autres pièces (pour l'état des lieux)", blank=True,
+        help_text="Une pièce par ligne. Elles s'ajoutent aux pièces de la configuration ; sans configuration, cette liste est utilisée telle quelle "
+                  "(et si elle est vide, une liste standard est proposée selon le nombre de pièces).",
     )
     pdl = models.CharField("n° PDL électricité", max_length=20, blank=True)
     exploitation = models.CharField(
@@ -449,8 +454,14 @@ class Lot(models.Model):
         return bail.loyer_cc if bail else None
 
     def liste_pieces(self):
-        if self.pieces.strip():
-            return [p.strip() for p in self.pieces.splitlines() if p.strip()]
+        from ..modele_edl import pieces_configurees
+
+        autres = [p.strip() for p in self.pieces.splitlines() if p.strip()]
+        configurees = pieces_configurees(self.configuration)
+        if configurees:
+            return configurees + [p for p in autres if p not in configurees]
+        if autres:
+            return autres
         if self.type in (self.Type.PARKING, self.Type.CAVE):
             return [self.get_type_display()]
         if self.type in (self.Type.LOCAL_COMMERCIAL, self.Type.BUREAU):

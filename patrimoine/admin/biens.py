@@ -10,6 +10,7 @@ from django.utils.html import format_html, format_html_join
 from ..models import AgenceGestion, Syndic, Bail, Bien, PhotoLot, Lot, Proprietaire
 from .communs import euros_liste
 from .fiche import FicheMixin
+from ..modele_edl import CODES as CODES_PIECES, TYPES_PIECES, nettoyer as nettoyer_config
 
 
 class BienInline(admin.TabularInline):
@@ -180,6 +181,35 @@ class VenduFilter(admin.SimpleListFilter):
         if valeur == "oui":
             return queryset.filter(vendu)
         return queryset
+
+
+def _champ_config(libelle):
+    return forms.IntegerField(label=libelle, required=False, min_value=0, max_value=20,
+                              widget=forms.NumberInput(attrs={"class": "nombre-piece", "inputmode": "numeric", "min": 0, "max": 20, "placeholder": "0"}))
+
+
+class _LotFormBase(forms.ModelForm):
+    """La configuration du logement (nombre de chambres, de salles de bains, de WC, garage, cave…) est rangée dans un seul champ."""
+
+    class Meta:
+        model = Lot
+        exclude = ["configuration"]
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        configuration = self.instance.configuration or {}
+        for code in CODES_PIECES:
+            if f"config_{code}" in self.fields:
+                self.fields[f"config_{code}"].initial = configuration.get(code)
+
+    def clean(self):
+        donnees = super().clean()
+        if any(f"config_{code}" in self.fields for code in CODES_PIECES):
+            self.instance.configuration = nettoyer_config({code: donnees.get(f"config_{code}") for code in CODES_PIECES})
+        return donnees
+
+
+LotForm = type("LotForm", (_LotFormBase,), {f"config_{code}": _champ_config(libelle) for code, _, libelle, _, _ in TYPES_PIECES})
 
 
 class BienForm(forms.ModelForm):
@@ -449,7 +479,8 @@ class BienAdmin(admin.ModelAdmin):
 class LotAdmin(FicheMixin, admin.ModelAdmin):
     onglets = [
         ("general", "Général", [None, "Notes"], []),
-        ("caracteristiques", "Caractéristiques", ["Caractéristiques (reprises dans le bail)", "Chaudière gaz", "Compteurs", "État des lieux"], []),
+        ("caracteristiques", "Caractéristiques", ["Caractéristiques (reprises dans le bail)", "Chaudière gaz", "Compteurs"], []),
+        ("configuration", "Pièces et état des lieux", ["Configuration du logement (état des lieux)"], []),
         ("relocation", "Location et photos", ["Location et annonce"], ["PhotoInline"]),
         ("baux", "Baux", [], ["BailInline"]),
         ("vente", "Vente", ["Vente"], []),
@@ -476,7 +507,19 @@ class LotAdmin(FicheMixin, admin.ModelAdmin):
     list_filter = [VenduFilter, "bien__proprietaire"]
     search_fields = ["designation", "bien__nom"]
     inlines = [BailInline, PhotoInline]
-    readonly_fields = ["outils_relocation", "verification_dpe"]
+    form = LotForm
+    readonly_fields = ["outils_relocation", "verification_dpe", "modele_edl"]
+
+    @admin.display(description="modèle d'état des lieux")
+    def modele_edl(self, obj):
+        from ..modele_edl import modele
+
+        if not obj or not obj.pk:
+            return "Enregistrez le logement pour voir le modèle."
+        lignes = format_html_join("", "<li><strong>{}</strong> <span class='help'>({})</span></li>",
+                                  ((p, ", ".join(els)) for p, els in modele(obj)))
+        return format_html("<ol class='modele-edl'>{}</ol><p class='help'>Modèle repris par chaque nouvel état des lieux d'entrée "
+                           "(une sortie reprend les pièces de son entrée). Pendant la saisie, on peut encore ajouter ou retirer une pièce ou un élément.</p>", lignes)
 
     @admin.display(description="vérification")
     def verification_dpe(self, obj):
@@ -514,7 +557,10 @@ class LotAdmin(FicheMixin, admin.ModelAdmin):
                                                    "description": "Le régime de copropriété, les équipements communs et la zone tendue se règlent sur la fiche du bien."}),
         ("Chaudière gaz", {"fields": [("chaudiere_gaz", "date_entretien_chaudiere")]}),
         ("Location et annonce", {"fields": ["loyer_propose", ("classe_ges", "energie_annee"), ("energie_min", "energie_max"), "outils_relocation"]}),
-        ("État des lieux", {"fields": ["pieces"]}),
+        ("Configuration du logement (état des lieux)", {
+            "fields": [tuple(f"config_{c}" for c in CODES_PIECES[i:i + 3]) for i in range(0, len(CODES_PIECES), 3)] + ["pieces", "modele_edl"],
+            "description": "Indiquez le nombre de chaque pièce : l'état des lieux (sur téléphone et en PDF) reprend ces pièces, "
+                           "avec pour chacune les éléments à contrôler (évier et hotte en cuisine, cuvette et chasse d'eau aux WC…)."}),
         ("Compteurs", {"fields": ["pdl"]}),
         ("Vente", {"fields": [("vendu", "date_vente")]}),
         ("Notes", {"fields": ["notes"]}),
