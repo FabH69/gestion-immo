@@ -9,7 +9,8 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
 
     dependencies = [
-        ("patrimoine", "0085_comptes_bancaires_biens"),
+        ("patrimoine", "0085_pret_objet_lots"),
+        ("patrimoine", "0086_remboursements_vente"),
     ]
 
     operations = [
@@ -91,6 +92,7 @@ class Migration(migrations.Migration):
                     ("depense", "Dépense créée"),
                     ("tresorerie", "Mouvement de trésorerie"),
                     ("agence", "Acompte ou solde de l'agence"),
+                    ("vente", "Vente d'un bien (notaire)"),
                     ("ignore", "Ignorée"),
                 ],
                 max_length=12,

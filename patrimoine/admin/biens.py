@@ -27,11 +27,13 @@ class BienInline(admin.TabularInline):
     def vente(self, obj):
         if not obj.pk or not obj.vendu:
             return "–"
-        # prix connu : prix de cession saisi sur les immobilisations sorties pour « Vente du bien »
-        prix = [i.prix_cession for i in obj.immobilisations.all() if i.motif_sortie == "vente_bien" and i.prix_cession is not None]
+        from ..vente import prix_connu
+
+        # prix connu : prix de vente de la fiche, sinon prix de cession des immobilisations sorties pour « Vente du bien »
+        prix = prix_connu(obj)
         texte = "Vendu" + (f" le {obj.date_vente:%d/%m/%Y}" if obj.date_vente else "")
-        if prix:
-            texte += f" – {euros_liste(sum(prix))}"
+        if prix is not None:
+            texte += f" – {euros_liste(prix)}"
         return format_html('<span class="pill gris">{}</span>', texte)
 
 
@@ -226,7 +228,7 @@ class BienAdmin(admin.ModelAdmin):
     list_filter = [VenduFilter, "proprietaire", "regime_fiscal"]
 
     class Media:
-        js = ["patrimoine/regime_impose.js"]
+        js = ["patrimoine/regime_impose.js", "patrimoine/vente.js"]
 
     @admin.display(description="régime fiscal", ordering="regime_fiscal")
     def regime(self, obj):
@@ -380,9 +382,18 @@ class BienAdmin(admin.ModelAdmin):
                                               "en fin d'année. Les loyers du bien sont marqués <b>encaissés par l'agence</b> à leur "
                                               "échéance (jamais à relancer) ; en fin d'année, saisissez son récap depuis "
                                               "Comptabilité › Banque › Agences de gestion.")}),
-        ("Vente", {"classes": ["cases-a-cocher"], "fields": [("vendu", "date_vente")],
+        ("Vente", {"classes": ["cases-a-cocher"], "fields": [("vendu", "date_vente", "prix_vente")],
                    "description": "Un bien vendu (et tous ses lots) n'est plus proposé pour les baux, candidatures et annonces, "
                                   "mais reste dans les états des loyers. La date de vente est facultative."}),
+        ("Remboursements de l'acquéreur", {
+            "classes": ["remboursements-vente"],
+            "fields": [("remb_taxe_fonciere", "remb_copro"), ("remb_autres", "remb_autres_libelle")],
+            "description": format_html(
+                "Recopiez le décompte du notaire : en plus du prix, l'acquéreur vous rembourse sa part de taxe foncière et de "
+                "charges de copropriété. Ces montants sont <b>déduits des charges de l'année de la vente</b> (taxe foncière, "
+                "copropriété) dans la 2044, la 2072 ou le récapitulatif LMNP / société. Ce ne sont ni des loyers ni une partie "
+                "du prix. Dans le relevé de banque, le virement global du notaire se répartit tout seul entre prix et "
+                "remboursements.")}),
         ("Notes", {"fields": ["notes"]}),
     ]
 
@@ -407,6 +418,10 @@ class BienAdmin(admin.ModelAdmin):
             n = encaisser_loyers_agence()
             if n:
                 messages.info(request, f"{n} loyer(s) échu(s) de ce bien marqué(s) « encaissé par l'agence » {obj.agence}.")
+        from .. import vente
+
+        for niveau, texte in vente.synchroniser(obj):
+            (messages.warning if niveau == "warning" else messages.info)(request, texte)
         from ..rappels import rappel_import_lcd
 
         for lot in obj.lots.all():

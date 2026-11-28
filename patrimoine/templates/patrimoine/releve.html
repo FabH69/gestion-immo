@@ -35,6 +35,7 @@
       {% if l.versement %} : paiement de {{ l.versement.bail.lot }} ({{ l.versement.montant|euros:2 }}{% if l.versement.annule %}, annulé{% endif %}) <a href="{% url 'admin:patrimoine_versement_change' l.versement.pk %}">voir</a>{% endif %}
       {% if l.piece %} : {{ l.piece }} <a href="{% url 'admin:patrimoine_piececomptable_change' l.piece.pk %}">voir</a>{% if l.piece.fichier %} <a href="{{ l.piece.fichier.url }}" target="_blank" title="Ouvrir le justificatif">📄 pièce</a>{% endif %}{% endif %}
       {% if l.a_justifier %}<span class="bq-etat orange">Sans justificatif</span>{% endif %}
+      {% if l.nature == "vente" and l.bien %} : <a href="{% url 'admin:patrimoine_bien_change' l.bien.pk %}">{{ l.bien }}</a>{% if l.note %}<span class="pourquoi">{{ l.note }}</span>{% endif %}{% endif %}
       {% if l.pret %} : {{ l.pret }}{% endif %}{% if l.associe %} : {{ l.associe }} ({% if l.montant > 0 %}apport{% else %}remboursement{% endif %}){% endif %}{% if l.agence %} : {{ l.agence }}{% endif %}
       {% if peut_modifier %}<form method="post" class="boutons">{% csrf_token %}<input type="hidden" name="ligne" value="{{ l.pk }}"><button class="button" name="action" value="derapprocher" title="Remet la ligne à traiter ; un paiement ou une dépense créés par cette ligne sont supprimés">Dérapprocher</button></form>{% endif %}
       {% if peut_modifier and l.joindre %}<form method="post" enctype="multipart/form-data" class="bq-joindre">{% csrf_token %}<input type="hidden" name="ligne" value="{{ l.pk }}"><input type="hidden" name="action" value="joindre">{% if l.statut == "a_traiter" and biens|length > 1 %}<select name="bien" title="Bien de la dépense créée si la ligne n'est pas une facture déjà saisie"><option value="">bien…</option>{% for b in biens %}<option value="{{ b.pk }}"{% if b == l.prop.bien %} selected{% endif %}>{{ b }}</option>{% endfor %}</select>{% endif %}<label class="button" title="{% if l.statut == 'a_traiter' %}Crée la dépense (montant et date du relevé, fournisseur lu dans le PDF) avec la pièce jointe{% else %}Joint le fichier à la facture de cette ligne{% endif %}">📎 Joindre la pièce<input type="file" name="piece" accept=".pdf,.xml,image/*" onchange="this.form.submit()"></label></form>{% endif %}
@@ -42,6 +43,7 @@
   {% else %}
     <div class="bq-prop {{ l.prop.certitude }}">{% if l.prop.certitude == "sure" %}✓{% elif l.prop.certitude == "verifier" %}⚠{% else %}?{% endif %} <b>{{ l.prop.titre }}</b>
       {% if l.prop.pourquoi %}<span class="pourquoi">{{ l.prop.pourquoi }}</span>{% endif %}
+      {% if l.prop.ventilation %}<span class="pourquoi">{% for libelle, m in l.prop.ventilation %}{{ libelle }} : {{ m|euros:2 }}{% if not forloop.last %} · {% endif %}{% endfor %}{% if l.prop.bien %} · <a href="{% url 'admin:patrimoine_bien_change' l.prop.bien.pk %}">saisir les remboursements</a>{% endif %}</span>{% endif %}
       {% if l.prop.parts %}<span class="pourquoi">{% for e, p in l.prop.parts %}{{ e.periode|date:"m/Y" }} : {{ p|euros:2 }}{% if not forloop.last %} · {% endif %}{% endfor %}</span>{% endif %}
       {% if peut_modifier %}<div class="boutons">
         {% if l.prop.validable %}<form method="post">{% csrf_token %}<input type="hidden" name="ligne" value="{{ l.pk }}"><button class="button bq-recu" name="action" value="valider">✓ Valider</button></form>{% endif %}
@@ -50,7 +52,8 @@
           <form method="post">{% csrf_token %}<input type="hidden" name="ligne" value="{{ l.pk }}"><input type="hidden" name="action" value="choisir">
           <div class="grille">
             <div><label>C'est…</label><select name="nature">
-              {% if l.montant > 0 %}<option value="loyer"{% if l.prop.nature == "loyer" %} selected{% endif %}>un loyer</option>{% else %}
+              {% if l.montant > 0 %}<option value="loyer"{% if l.prop.nature == "loyer" %} selected{% endif %}>un loyer</option>
+              {% if biens_vendus %}<option value="vente"{% if l.prop.nature == "vente" %} selected{% endif %}>le virement du notaire (vente d'un bien)</option>{% endif %}{% else %}
               <option value="facture"{% if l.prop.nature == "facture" %} selected{% endif %}>une facture déjà saisie</option>
               <option value="pret"{% if l.prop.nature == "pret" %} selected{% endif %}>une échéance de prêt</option>
               <option value="depense"{% if l.prop.nature == "depense" %} selected{% endif %}>une dépense à créer</option>{% endif %}
@@ -58,6 +61,7 @@
               {% if agences %}<option value="agence"{% if l.prop.nature == "agence" %} selected{% endif %}>un acompte de l'agence de gestion</option>{% endif %}
               <option value="ignore"{% if l.prop.nature == "ignore" %} selected{% endif %}>à ignorer (hors gestion)</option></select></div>
             {% if l.montant > 0 %}<div><label>Bail (loyer)</label><select name="bail"><option value="">–</option>{% for b in baux %}<option value="{{ b.pk }}"{% if b == l.prop.bail %} selected{% endif %}>{{ b.lot }} – {% for x in b.locataires.all %}{{ x }}{% if not forloop.last %}, {% endif %}{% endfor %}{% if not b.actif %} (terminé){% endif %}</option>{% endfor %}</select></div>
+            {% if biens_vendus %}<div><label>Vente : bien vendu</label><select name="bien_vendu"><option value="">–</option>{% for b in biens_vendus %}<option value="{{ b.pk }}"{% if b == l.prop.bien %} selected{% endif %}>{{ b }}{% if b.date_vente %} (vendu le {{ b.date_vente|date:"d/m/Y" }}){% endif %}</option>{% endfor %}</select></div>{% endif %}
             {% else %}<div><label>Facture</label><select name="piece"><option value="">–</option>{% for f in factures %}<option value="{{ f.pk }}"{% if f == l.prop.piece %} selected{% endif %}>{{ f }}</option>{% endfor %}</select></div>
             <div><label>Prêt</label><select name="pret"><option value="">–</option>{% for p in prets %}<option value="{{ p.pk }}"{% if p == l.prop.pret %} selected{% endif %}>{{ p }}</option>{% endfor %}</select></div>
             <div><label>Dépense : bien</label><select name="bien"><option value="">–</option>{% for b in biens %}<option value="{{ b.pk }}"{% if b == l.prop.bien %} selected{% endif %}>{{ b }}</option>{% endfor %}</select></div>

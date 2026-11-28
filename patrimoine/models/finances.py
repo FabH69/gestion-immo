@@ -15,11 +15,19 @@ class Pret(models.Model):
         AMORTISSABLE = "amortissable", "Amortissable (mensualités constantes)"
         IN_FINE = "in_fine", "In fine (intérêts seuls, capital à la fin)"
 
+    class Objet(models.TextChoices):
+        ACHAT = "achat", "Achat du bien"
+        TRAVAUX = "travaux", "Travaux"
+        ACHAT_TRAVAUX = "achat_travaux", "Achat et travaux"
+        AUTRE = "autre", "Autre"
+
     proprietaire = models.ForeignKey(Proprietaire, on_delete=models.PROTECT, related_name="prets", verbose_name="emprunteur")
     bien = models.ForeignKey(Bien, on_delete=models.SET_NULL, null=True, blank=True, related_name="prets", help_text="Bien financé (facultatif)")
     banque = models.CharField(max_length=100)
     reference = models.CharField("n° de prêt", max_length=50, blank=True)
     type = models.CharField(max_length=15, choices=Type.choices, default=Type.AMORTISSABLE)
+    objet = models.CharField("objet financé", max_length=15, choices=Objet.choices, blank=True,
+                             help_text="Ce que le prêt a financé. Vide = prêt à compléter.")
     montant = models.DecimalField("capital emprunté (€)", max_digits=12, decimal_places=2)
     taux = models.DecimalField("taux nominal annuel (%)", max_digits=5, decimal_places=3)
     duree_mois = models.PositiveSmallIntegerField("durée (mois)")
@@ -205,6 +213,49 @@ class Pret(models.Model):
             ligne = l
         return ligne["mensualite"] + ligne["assurance"]
 
+    @property
+    def a_completer(self):
+        return not self.objet
+
+    def parts_par_lot(self):
+        """Part de chaque lot dans le prêt (fractions qui font 1), {lot_id: Decimal}. Lots cochés dans « Lots financés »
+        avec leur % saisi, sinon au prorata de la surface (parts égales s'il manque une surface). Aucun lot coché : tous
+        les lots du bien. Mise en cache sur l'objet."""
+        if hasattr(self, "_parts"):
+            return self._parts
+        choisis = list(self.lots_finances.all()) if self.pk else []
+        if choisis:
+            lots = [c.lot for c in choisis]
+            pourcents = [c.part for c in choisis]
+        else:
+            lots = list(self.bien.lots.all()) if self.bien_id else []
+            pourcents = [None] * len(lots)
+        if not lots:
+            self._parts = {}
+        elif all(p is not None for p in pourcents) and sum(pourcents):
+            total = sum(pourcents)
+            self._parts = {l.pk: Decimal(p) / total for l, p in zip(lots, pourcents)}
+        elif all(l.surface for l in lots):
+            total = sum(l.surface for l in lots)
+            self._parts = {l.pk: l.surface / total for l in lots}
+        else:
+            self._parts = {l.pk: Decimal(1) / len(lots) for l in lots}
+        return self._parts
+
+    def part_du_lot(self, lot):
+        """Fraction du prêt (intérêts, assurance, échéances) qui revient à ce lot (0 si le prêt ne le finance pas)."""
+        lot_id = getattr(lot, "pk", lot)
+        return self.parts_par_lot().get(lot_id, Decimal(0))
+
+    @property
+    def lots_finances_libelle(self):
+        """« Tout le bien » ou « Apt 1er (60 %), Garage (40 %) »."""
+        choisis = list(self.lots_finances.all()) if self.pk else []
+        if not choisis:
+            return "Tout le bien" if self.bien_id else "–"
+        parts = self.parts_par_lot()
+        return ", ".join(f"{c.lot.designation} ({parts.get(c.lot_id, 0) * 100:.0f} %)" for c in choisis)
+
     def montants_declares(self, annee):
         """Intérêts et assurance à déclarer pour l'année : l'attestation de la banque si elle est saisie, sinon l'échéancier.
         Renvoie aussi la source : "attestation", "banque" (tableau importé) ou "estimation" (échéancier calculé)."""
@@ -222,6 +273,23 @@ class Pret(models.Model):
             "capital": sum((l["capital"] for l in lignes), Decimal(0)),
             "assurance": sum((l["assurance"] for l in lignes), Decimal(0)),
         }
+
+
+class PretLot(models.Model):
+    """Lot financé par un prêt, avec sa part en %. Sans aucune ligne, le prêt finance tout le bien."""
+
+    pret = models.ForeignKey(Pret, on_delete=models.CASCADE, related_name="lots_finances", verbose_name="prêt")
+    lot = models.ForeignKey("Lot", on_delete=models.CASCADE, related_name="prets_finances")
+    part = models.DecimalField("part (%)", max_digits=5, decimal_places=2, null=True, blank=True,
+                               help_text="Vide sur toutes les lignes : répartition au prorata de la surface des lots.")
+
+    class Meta:
+        verbose_name = "lot financé"
+        verbose_name_plural = "lots financés"
+        constraints = [models.UniqueConstraint(fields=["pret", "lot"], name="pret_lot_unique")]
+
+    def __str__(self):
+        return f"{self.pret} › {self.lot}"
 
 
 class LigneEcheancier(models.Model):
@@ -492,6 +560,10 @@ class PieceComptable(models.Model):
     recurrence = models.ForeignKey("DepenseRecurrente", null=True, blank=True, on_delete=models.SET_NULL, related_name="pieces",
                                    editable=False, verbose_name="dépense récurrente",
                                    help_text="Créée automatiquement par cette dépense récurrente")
+    remboursement_vente = models.CharField(
+        "remboursement de l'acquéreur", max_length=8, blank=True, editable=False,
+        choices=[("tf", "Prorata de taxe foncière"), ("copro", "Prorata de charges de copropriété"), ("autre", "Autre remboursement")],
+        help_text="Créée depuis la fiche du bien vendu : montant négatif, déduit des charges de l'année de la vente")
     piece_mere = models.ForeignKey("self", null=True, blank=True, on_delete=models.CASCADE, related_name="parts", editable=False,
                                    verbose_name="facture scindée",
                                    help_text="Part d'une facture scindée sur plusieurs rubriques ou plusieurs biens "
