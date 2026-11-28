@@ -356,6 +356,80 @@ def derapprocher(ligne):
                                                    associe="", cree=False, date_paiement_avant=None)
 
 
+class PieceRefusee(Exception):
+    pass
+
+
+def a_justifier(ligne):
+    """Sortie d'argent rapprochée d'une facture ou d'une dépense qui n'a pas encore son justificatif."""
+    return ligne.montant < 0 and ligne.statut == LigneReleve.Statut.RAPPROCHEE and bool(ligne.piece_id) and not ligne.piece.fichier
+
+
+def peut_joindre(ligne):
+    """📎 possible : sortie déjà reliée à une facture, ou sortie encore à traiter (la dépense est alors créée)."""
+    if ligne.montant >= 0:
+        return False
+    return bool(ligne.piece_id) if ligne.statut == LigneReleve.Statut.RAPPROCHEE else ligne.statut == LigneReleve.Statut.A_TRAITER
+
+
+def _lire_justificatif(fichier, bien):
+    """Fournisseur et codification lus dans le PDF (comme l'import des factures) ; {} pour une photo ou un PDF scanné."""
+    from . import compta
+    from .lecture_factures import analyser, texte_pdf
+
+    if not fichier.name.lower().endswith(".pdf"):
+        return {}
+    par_rubrique = bien.comptabilite in compta.PAR_RUBRIQUE
+    lu = analyser(texte_pdf(fichier), par_rubrique=par_rubrique)
+    lu.update(compta.code_du_fournisseur(lu.get("fournisseur"), par_rubrique))
+    return lu
+
+
+@transaction.atomic
+def joindre_piece(ligne, fichier, bien=None):
+    """📎 Joint le justificatif à une sortie d'argent du relevé et renvoie la facture.
+    - ligne déjà rapprochée d'une facture ou d'une dépense : le fichier va dans cette facture ;
+    - ligne à traiter : si la proposition est une facture déjà saisie, elle est rapprochée ; sinon la dépense est créée
+      (montant et date du relevé, fournisseur et codification lus dans le PDF), avec le fichier joint.
+    Le même fichier déjà enregistré comme facture non reliée : la ligne est rapprochée de cette facture."""
+    if not peut_joindre(ligne):
+        raise PieceRefusee("on ne joint une pièce qu'à une sortie d'argent reliée à une facture ou encore à traiter")
+    empreinte = PieceComptable.calculer_empreinte(fichier)
+    proprietaire = ligne.compte.proprietaire
+    if ligne.statut == LigneReleve.Statut.RAPPROCHEE:
+        piece = ligne.piece
+    else:
+        deja = PieceComptable.objects.filter(empreinte=empreinte, bien__proprietaire=proprietaire, lignes_releve__isnull=True).first()
+        if deja:
+            appliquer(ligne, Proposition("facture", VERIFIER, f"Facture {deja}", piece=deja))
+            return deja
+        ctx = Contexte(ligne.compte)
+        p = proposer(ligne, ctx)
+        if p.nature == "facture" and p.piece and p.piece.fichier:
+            raise PieceRefusee(f"cette sortie correspond à la facture {p.piece}, qui a déjà son justificatif : validez-la")
+        if p.nature == "facture" and p.piece:
+            appliquer(ligne, p)
+            piece = p.piece
+        else:
+            bien = bien or p.bien or (ctx.biens[0] if len(ctx.biens) == 1 else None)
+            if bien is None:
+                raise PieceRefusee("choisissez le bien de cette dépense")
+            lu = _lire_justificatif(fichier, bien)
+            regle = p.regle if p.nature == "depense" else None
+            appliquer(ligne, Proposition("depense", VERIFIER, "Dépense", bien=bien,
+                                         fournisseur=(regle and p.fournisseur) or lu.get("fournisseur") or p.fournisseur,
+                                         rubrique=(regle and p.rubrique) or lu.get("rubrique") or lu.get("ligne") or p.rubrique))
+            piece = ligne.piece
+            d = lu.get("date")
+            if d and ligne.date - timedelta(days=366) <= d <= ligne.date:
+                piece.date = d  # date de la facture (engagement) ; la date de paiement reste celle du relevé
+    if piece.fichier:
+        raise PieceRefusee(f"la facture {piece} a déjà son justificatif")
+    piece.fichier, piece.empreinte = fichier, empreinte
+    piece.save(update_fields=["fichier", "empreinte", "date"])
+    return piece
+
+
 def importer(compte, nom, contenu):
     """Lit le fichier et ajoute les lignes nouvelles ; renvoie (ImportReleve, releve lu)."""
     from collections import Counter

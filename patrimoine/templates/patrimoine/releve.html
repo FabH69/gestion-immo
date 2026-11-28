@@ -21,6 +21,7 @@
   {% if imports %}<p class="bq-regle" style="margin:8px 0 0">Derniers imports : {% for i in imports %}{{ i.fichier }} ({{ i.importe_le|date:"d/m/Y" }}, {{ i.nb_nouvelles }} nouvelle(s){% if i.controle %} – {{ i.controle }}{% endif %}){% if not forloop.last %} · {% endif %}{% endfor %}</p>{% endif %}
 </form>
 {% endif %}
+{% if sans_justificatif %}<p class="bq-regle">📎 <span class="bq-etat orange">{{ sans_justificatif }} sortie{{ sans_justificatif|pluralize }} sans justificatif</span> : ouvrez « Déjà rapprochées » et joignez la facture (PDF ou photo prise avec le téléphone).</p>{% endif %}
 <div class="bq-barre">{% for code, titre, n in onglets %}<a class="bq-onglet{% if code == onglet %} actif{% endif %}" href="?compte={{ compte.pk }}&onglet={{ code }}">{{ titre }} ({{ n }})</a>{% endfor %}</div>
 <div class="bq-carte">
 {% if lignes %}
@@ -31,9 +32,11 @@
   <td>{% if l.statut != "a_traiter" %}
     <div class="bq-prop"><b>{{ l.get_nature_display }}</b>
       {% if l.versement %} : paiement de {{ l.versement.bail.lot }} ({{ l.versement.montant|euros:2 }}{% if l.versement.annule %}, annulé{% endif %}) <a href="{% url 'admin:patrimoine_versement_change' l.versement.pk %}">voir</a>{% endif %}
-      {% if l.piece %} : {{ l.piece }} <a href="{% url 'admin:patrimoine_piececomptable_change' l.piece.pk %}">voir</a>{% endif %}
+      {% if l.piece %} : {{ l.piece }} <a href="{% url 'admin:patrimoine_piececomptable_change' l.piece.pk %}">voir</a>{% if l.piece.fichier %} <a href="{{ l.piece.fichier.url }}" target="_blank" title="Ouvrir le justificatif">📄 pièce</a>{% endif %}{% endif %}
+      {% if l.a_justifier %}<span class="bq-etat orange">Sans justificatif</span>{% endif %}
       {% if l.pret %} : {{ l.pret }}{% endif %}{% if l.associe %} : {{ l.associe }} ({% if l.montant > 0 %}apport{% else %}remboursement{% endif %}){% endif %}
       {% if peut_modifier %}<form method="post" class="boutons">{% csrf_token %}<input type="hidden" name="ligne" value="{{ l.pk }}"><button class="button" name="action" value="derapprocher" title="Remet la ligne à traiter ; un paiement ou une dépense créés par cette ligne sont supprimés">Dérapprocher</button></form>{% endif %}
+      {% if peut_modifier and l.joindre %}<form method="post" enctype="multipart/form-data" class="bq-joindre">{% csrf_token %}<input type="hidden" name="ligne" value="{{ l.pk }}"><input type="hidden" name="action" value="joindre">{% if l.statut == "a_traiter" and biens|length > 1 %}<select name="bien" title="Bien de la dépense créée si la ligne n'est pas une facture déjà saisie"><option value="">bien…</option>{% for b in biens %}<option value="{{ b.pk }}"{% if b == l.prop.bien %} selected{% endif %}>{{ b }}</option>{% endfor %}</select>{% endif %}<label class="button" title="{% if l.statut == 'a_traiter' %}Crée la dépense (montant et date du relevé, fournisseur lu dans le PDF) avec la pièce jointe{% else %}Joint le fichier à la facture de cette ligne{% endif %}">📎 Joindre la pièce<input type="file" name="piece" accept=".pdf,.xml,image/*" onchange="this.form.submit()"></label></form>{% endif %}
     </div>
   {% else %}
     <div class="bq-prop {{ l.prop.certitude }}">{% if l.prop.certitude == "sure" %}✓{% elif l.prop.certitude == "verifier" %}⚠{% else %}?{% endif %} <b>{{ l.prop.titre }}</b>
@@ -41,6 +44,7 @@
       {% if l.prop.parts %}<span class="pourquoi">{% for e, p in l.prop.parts %}{{ e.periode|date:"m/Y" }} : {{ p|euros:2 }}{% if not forloop.last %} · {% endif %}{% endfor %}</span>{% endif %}
       {% if peut_modifier %}<div class="boutons">
         {% if l.prop.validable %}<form method="post">{% csrf_token %}<input type="hidden" name="ligne" value="{{ l.pk }}"><button class="button bq-recu" name="action" value="valider">✓ Valider</button></form>{% endif %}
+        {% if peut_modifier and l.joindre %}<form method="post" enctype="multipart/form-data" class="bq-joindre">{% csrf_token %}<input type="hidden" name="ligne" value="{{ l.pk }}"><input type="hidden" name="action" value="joindre">{% if l.statut == "a_traiter" and biens|length > 1 %}<select name="bien" title="Bien de la dépense créée si la ligne n'est pas une facture déjà saisie"><option value="">bien…</option>{% for b in biens %}<option value="{{ b.pk }}"{% if b == l.prop.bien %} selected{% endif %}>{{ b }}</option>{% endfor %}</select>{% endif %}<label class="button" title="{% if l.statut == 'a_traiter' %}Crée la dépense (montant et date du relevé, fournisseur lu dans le PDF) avec la pièce jointe{% else %}Joint le fichier à la facture de cette ligne{% endif %}">📎 Joindre la pièce<input type="file" name="piece" accept=".pdf,.xml,image/*" onchange="this.form.submit()"></label></form>{% endif %}
         <details class="bq-changer"><summary class="button">{% if l.prop.validable %}Changer{% else %}Choisir{% endif %}</summary>
           <form method="post">{% csrf_token %}<input type="hidden" name="ligne" value="{{ l.pk }}"><input type="hidden" name="action" value="choisir">
           <div class="grille">
