@@ -74,15 +74,25 @@ def loyers_detailles(bien, annee):
 
     lignes = []
     paiements = Paiement.objects.filter(date__year=annee, echeance__bail__lot__bien=bien) \
-        .select_related("echeance__bail__lot").prefetch_related("echeance__bail__locataires")
-    deja = set()
+        .select_related("echeance__bail__lot").prefetch_related("echeance__bail__locataires").order_by("date", "echeance__periode", "pk")
+    # un paiement reçu réparti sur plusieurs loyers (il finit un mois et en avance un autre) = une seule ligne
+    groupes = {}
     for p in paiements:
-        e = p.echeance
-        part_charges = (p.montant * e.charges / e.total).quantize(Decimal("0.01"), ROUND_HALF_UP) if e.total else ZERO
+        groupes.setdefault((p.versement_id, p.date, p.echeance.bail_id), []).append(p)
+    deja = set()
+    for parts in groupes.values():
+        p, e = parts[0], parts[0].echeance
+        montant, charges, mois = ZERO, ZERO, []
+        for q in parts:
+            eq = q.echeance
+            c = (q.montant * eq.charges / eq.total).quantize(Decimal("0.01"), ROUND_HALF_UP) if eq.total else ZERO
+            montant += _retenu(q.montant, c, eq.bail)
+            charges += c
+            mois.append((eq.periode, _retenu(q.montant, c, eq.bail)))
         noms = ", ".join(str(l) for l in e.bail.locataires.all()) or "locataire"
-        lignes.append({"date": p.date, "lot": e.bail.lot, "montant": _retenu(p.montant, part_charges, e.bail),
-                       "libelle": f"{p.date:%d/%m/%Y} · loyer de {MOIS_LONGS[e.periode.month - 1]} {e.periode.year} · {noms} "
-                                  f"({e.bail.lot.designation}){_precision(e.bail, part_charges)}"})
+        lignes.append({"date": p.date, "lot": e.bail.lot, "montant": montant,
+                       "libelle": f"{p.date:%d/%m/%Y} · {_mois_couverts(mois)} · {noms} "
+                                  f"({e.bail.lot.designation}){_precision(e.bail, charges)}"})
         deja.add((e.bail.lot_id, p.date.month))
     for h in EncaissementHistorique.objects.filter(mois__year=annee, lot__bien=bien).select_related("lot"):
         if (h.lot_id, h.mois.month) in deja:
@@ -114,6 +124,19 @@ def grouper_par_lot(elements, montant=lambda e: e["montant"]):
         debut["groupe"]["nb"] += 1
         debut["groupe"]["total"] += montant(e)
     return ranges
+
+
+def _euros(m):
+    return f"{m:,.2f} €".replace(",", " ").replace(".", ",")
+
+
+def _mois_couverts(mois):
+    """« loyer de mai 2025 », ou pour un paiement réparti : « loyer de mai 2025 (564,00 €) et juin 2025 (136,00 €) »."""
+    noms = [f"{MOIS_LONGS[m.month - 1]} {m.year}" for m, _ in mois]
+    if len(mois) == 1:
+        return f"loyer de {noms[0]}"
+    detail = [f"{n} ({_euros(montant)})" for n, (_, montant) in zip(noms, mois)]
+    return "loyer de " + ", ".join(detail[:-1]) + " et " + detail[-1]
 
 
 def _precision(bail, charges):
